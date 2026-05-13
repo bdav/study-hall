@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Flashcard study app — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with SQLite (local dev; Postgres is the future production target). The project follows a TDD-oriented development approach outlined in `implementation-plan.md`.
+Flashcard study app — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with SQLite (local dev; Postgres is the production target). The project follows a TDD-oriented development approach.
+
+**Status:** MVP complete. v2 planning is in progress — see `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Commands
 
@@ -115,14 +117,27 @@ Five models in `prisma/schema.prisma`: `User`, `Deck`, `Card`, `StudySession`, `
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
 
-## Implementation Plan
+## Planning Docs
 
-See `implementation-plan.md` for the original plan, PR breakdown, and design decisions. All planned PRs (1–19) are delivered. Future work is post-MVP.
+All planning documents live in `docs/architecture/`:
 
-### Post-MVP Enhancement Ideas
+| Doc                               | Purpose                                                                                                        |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `updated-plan.md`                 | **Canonical v2 plan** — consolidated handoff with locked constraints, open questions, and implementation order |
+| `learning-model-and-scheduler.md` | Scheduler philosophy, lifecycle model, interval tables, session/queue design                                   |
+| `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                         |
+| `v2-implementation-plan.md`       | **v2 PR sequence** (PRs 1–11) — incremental implementation milestones                                          |
+| `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                         |
+| `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                             |
 
-- **AI answer grading**: 3-tier pipeline (deterministic → embedding similarity → local LLM). Architecture detailed in `implementation-plan.md`
-- **Spaced repetition**: `CardProgress` model with ease/streak/dueAt fields
-- **PostgreSQL deployment**: Schema is Postgres-ready, swap adapter + connection string
-- **E2E tests**: Playwright for core user journeys
-- **Deck sharing / public marketplace**
+### v2 Direction
+
+v2 is an architectural evolution of the MVP, not a greenfield rewrite. Key changes:
+
+- **Spaced repetition scheduler**: Explicit lifecycle states (NEW/LEARNING/STABLE/RETIRED), table-driven intervals, finite energy-budgeted sessions
+- **AI answer grading**: 3-tier pipeline (deterministic → embeddings → hosted LLM fallback)
+- **Postgres migration**: SQLite → Postgres (Railway), Docker Compose for local dev
+- **Deployment**: Vercel (frontend) + Railway (API + Postgres)
+- **New features**: Study modes (Study/Drill Weakest/Cram), reverse decks, marketplace (deferred scope)
+
+See `docs/architecture/updated-plan.md` §28 for locked constraints and §29 for remaining open questions.
