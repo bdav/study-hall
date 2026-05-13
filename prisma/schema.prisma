@@ -3,13 +3,57 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
-enum AttemptResult {
-  correct
-  incorrect
+// --- Enums ---
+
+enum RecallGrade {
+  MISSED
+  PARTIALLY_CORRECT
+  GOOD
+  NAILED
 }
+
+enum CardLifecycleState {
+  NEW
+  LEARNING
+  STABLE
+  RETIRED
+}
+
+enum StudySessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum StudySessionItemStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+}
+
+enum SessionType {
+  QUICK
+  STANDARD
+  DEEP
+}
+
+enum StudyMode {
+  STUDY
+  DRILL_WEAKEST
+  CRAM
+}
+
+enum GradingMethod {
+  DETERMINISTIC
+  SEMANTIC
+  LLM
+  REFINED_VARIANT
+}
+
+// --- Models ---
 
 model User {
   id            String         @id @default(cuid())
@@ -20,6 +64,7 @@ model User {
   decks         Deck[]
   studySessions StudySession[]
   sessions      Session[]
+  cardProgress  CardProgress[]
 }
 
 model Session {
@@ -48,44 +93,131 @@ model Deck {
 }
 
 model Card {
-  id        String        @id @default(cuid())
-  deckId    String
-  front     String
-  back      String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  deck      Deck          @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  attempts  CardAttempt[]
+  id               String             @id @default(cuid())
+  deckId           String
+  front            String
+  position         Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  deck             Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  canonicalAnswers CanonicalAnswer[]
+  attempts         CardAttempt[]
+  progress         CardProgress[]
+  sessionItems     StudySessionItem[]
 
   @@index([deckId])
+  @@index([deckId, position])
+}
+
+model CanonicalAnswer {
+  id               String            @id @default(cuid())
+  cardId           String
+  text             String
+  normalizedText   String?
+  isPrimary        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  card             Card              @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  acceptedVariants AcceptedVariant[]
+
+  @@unique([cardId, text])
+  @@index([cardId])
+}
+
+model AcceptedVariant {
+  id                String          @id @default(cuid())
+  canonicalAnswerId String
+  text              String
+  normalizedText    String?
+  createdAt         DateTime        @default(now())
+  canonicalAnswer   CanonicalAnswer @relation(fields: [canonicalAnswerId], references: [id], onDelete: Cascade)
+
+  @@unique([canonicalAnswerId, text])
+  @@index([canonicalAnswerId])
+}
+
+model CardProgress {
+  id               String             @id @default(cuid())
+  userId           String
+  cardId           String
+  deckId           String
+  lifecycleState   CardLifecycleState @default(NEW)
+  masteryScore     Int                @default(0)
+  dueAt            DateTime?
+  lastReviewedAt   DateTime?
+  lastIntervalDays Float?
+  lapseCount       Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card             Card               @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@index([userId, deckId, lifecycleState, dueAt])
+  @@index([userId, deckId, lifecycleState, masteryScore])
+  @@index([userId, deckId, dueAt])
 }
 
 model StudySession {
-  id        String        @id @default(cuid())
-  userId    String
-  deckId    String
-  startedAt DateTime      @default(now())
-  endedAt   DateTime?
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deck      Deck          @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  attempts  CardAttempt[]
+  id          String             @id @default(cuid())
+  userId      String
+  deckId      String
+  status      StudySessionStatus @default(ACTIVE)
+  sessionType SessionType
+  studyMode   StudyMode          @default(STUDY)
+  startedAt   DateTime           @default(now())
+  endedAt     DateTime?
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck        Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  items       StudySessionItem[]
+  attempts    CardAttempt[]
 
   @@index([userId])
   @@index([deckId])
+  @@index([userId, deckId, status])
+}
+
+model StudySessionItem {
+  id             String                 @id @default(cuid())
+  studySessionId String
+  cardId         String
+  position       Int
+  status         StudySessionItemStatus @default(PENDING)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  studySession   StudySession           @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
+  card           Card                   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  attempts       CardAttempt[]
+
+  @@unique([studySessionId, position])
+  @@index([studySessionId])
+  @@index([studySessionId, status])
+  @@index([cardId])
 }
 
 model CardAttempt {
-  id             String        @id @default(cuid())
-  studySessionId String
-  cardId         String
-  userAnswer     String?
-  result         AttemptResult
-  attemptNumber  Int           @default(1)
-  createdAt      DateTime      @default(now())
-  studySession   StudySession  @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
-  card           Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  id                    String            @id @default(cuid())
+  studySessionId        String
+  studySessionItemId    String?
+  cardId                String
+  userAnswer            String?
+  recallGrade           RecallGrade
+  attemptNumber         Int               @default(1)
+  isRetry               Boolean           @default(false)
+  gradingMethod         GradingMethod     @default(DETERMINISTIC)
+  gradingConfidence     Float?
+  semanticScore         Float?
+  initialSuggestedGrade RecallGrade?
+  refinementApplied     Boolean           @default(false)
+  latencyMs             Int?
+  createdAt             DateTime          @default(now())
+  studySession          StudySession      @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
+  studySessionItem      StudySessionItem? @relation(fields: [studySessionItemId], references: [id], onDelete: SetNull)
+  card                  Card              @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([studySessionId])
+  @@index([studySessionItemId])
   @@index([cardId])
   @@index([studySessionId, cardId])
 }
