@@ -1,5 +1,19 @@
 # Flashcard App v2 — Implementation Plan
 
+> **Tracked in GitHub issues (2026-10-21):** This document remains the design reference for v2, and tickets cite its sections. Work and status now live in GitHub issues #2–#12, which re-slice PRs 2–8 into end-to-end tickets with native blocking links. PR 1 is delivered. PRs 9–11 are deferred and redesigned after the course slices (see `courses-plan.md`).
+>
+> | PR  | Tickets      |
+> | --- | ------------ |
+> | 2   | #2           |
+> | 3   | #3, #4, #6   |
+> | 4   | #5, #7       |
+> | 5   | #8, #9       |
+> | 6   | #5, #10, #11 |
+> | 7   | #5, #10, #12 |
+> | 8   | #3, #4       |
+>
+> #2 also moves the MVP features onto the v2 schema, which PR 1 left undone.
+
 ## Overview
 
 This document defines the v2 milestone breakdown — a sequence of PRs that implements v2

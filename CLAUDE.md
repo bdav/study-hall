@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with SQLite (local dev; Postgres is the production target). The project follows a TDD-oriented development approach.
+Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-**Status:** MVP complete. v2 planning is in progress — see `docs/architecture/updated-plan.md` for the canonical consolidated plan.
+**Status:** MVP complete. v2 implementation is in progress, tracked as GitHub issues #2–#12, with courses (spec #1) to follow. The v2 schema is applied, but the MVP features haven't been moved onto it yet (#2), so the API tests and web build fail until #2 lands. See `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Commands
 
@@ -29,20 +29,22 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ### Database
 
+- `docker compose up -d` — start local Postgres (required for `pnpm dev` and API tests)
 - `pnpm prisma migrate dev` — run migrations
+- `pnpm db:seed` — seed the dev database (log in as `dev@example.com` / `password`)
 - `pnpm prisma generate` — regenerate Prisma client
 
 ### Environment Variables
 
-- `DATABASE_URL` — SQLite connection string (default: `file:./dev.db`), defined in `.env`
+- `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
 
 ## Architecture
 
 **Frontend** (`apps/web/src/`): Vite + React 19 + TypeScript. Uses React Router for routing (`router.tsx`), TanStack Query for server state (`providers.tsx`), Tailwind CSS + shadcn/ui for styling. Path alias `@/*` maps to `src/*`.
 
-**Backend** (`apps/api/src/`): Express 5 + tRPC + Zod validation. Entry point is `server.ts` (port 3001). Prisma client initialized in `db.ts` using better-sqlite3 adapter. All tRPC procedure inputs must be validated with Zod schemas.
+**Backend** (`apps/api/src/`): Express 5 + tRPC + Zod validation. Entry point is `server.ts` (port 3001). Prisma client initialized in `db.ts` using the `@prisma/adapter-pg` driver adapter. All tRPC procedure inputs must be validated with Zod schemas.
 
-**Database**: SQLite via Prisma ORM (local dev). Schema in `prisma/schema.prisma`, database file at `dev.db`. Config in `prisma.config.ts`. Production target is PostgreSQL — avoid SQLite-specific behavior in application code.
+**Database**: PostgreSQL via Prisma ORM, run locally with Docker Compose. Schema in `prisma/schema.prisma`, config in `prisma.config.ts`.
 
 **Communication**: tRPC provides end-to-end type safety between frontend and backend. No REST API beyond the `/health` check endpoint.
 
@@ -109,27 +111,27 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 
 ### Data Model
 
-Five models in `prisma/schema.prisma`: `User`, `Deck`, `Card`, `StudySession`, `CardAttempt`. `AttemptResult` enum (`CORRECT`/`INCORRECT`). Cascade deletes on all parent relationships. Composite index on `[studySessionId, cardId]` for attempt lookups.
+The v2 schema (`prisma/schema.prisma`, designed in `v2-schema-proposal.md`) has these models: `User`, `Session` (login sessions), `Deck`, `Card`, `CanonicalAnswer`, `AcceptedVariant`, `CardProgress`, `StudySession`, `StudySessionItem` and `CardAttempt`. A card has no single "back" field: its answers are `CanonicalAnswer` rows, and attempts record a `RecallGrade`. Cascade deletes on all parent relationships. Card edits reset progress but keep attempts (ADR-0004).
 
 ### Testing Patterns
 
-- **API tests** use isolated per-suite SQLite databases via `apps/api/src/test-helpers.ts` — each test suite gets its own DB, Prisma client, and tRPC caller
+- **API tests** use isolated per-suite Postgres schemas via `apps/api/src/test-helpers.ts`: each test suite gets its own schema, Prisma client and tRPC caller. Docker Postgres must be running.
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
 
 ## Planning Docs
 
-All planning documents live in `docs/architecture/`:
+All planning documents live in `docs/architecture/`. They hold the design and decisions. Work and its status are tracked in GitHub issues, so point to the issues instead of copying their status into these docs.
 
-| Doc                               | Purpose                                                                                                        |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `updated-plan.md`                 | **Canonical v2 plan** — consolidated handoff with locked constraints, open questions, and implementation order |
-| `learning-model-and-scheduler.md` | Scheduler philosophy, lifecycle model, interval tables, session/queue design                                   |
-| `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                         |
-| `v2-implementation-plan.md`       | **v2 PR sequence** (PRs 1–11) — incremental implementation milestones                                          |
-| `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                         |
-| `courses-plan.md`                 | **Courses plan** — AI courses, lessons, exercises and tutor on top of v2; slices A–C, follows v2 PRs 2–8       |
-| `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                             |
+| Doc                               | Purpose                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `updated-plan.md`                 | **Canonical v2 plan** — consolidated handoff with locked constraints, open questions, and implementation order     |
+| `learning-model-and-scheduler.md` | Scheduler philosophy, lifecycle model, interval tables, session/queue design                                       |
+| `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                             |
+| `v2-implementation-plan.md`       | **v2 design by milestone** (PRs 1–11); work is tracked as issues #2–#12, mapped at the top of the doc              |
+| `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                             |
+| `courses-plan.md`                 | **Courses plan** — AI courses, lessons, exercises and tutor on top of v2; slices A–C, follows v2 (#2–#12); spec #1 |
+| `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                                 |
 
 ### v2 Direction
 

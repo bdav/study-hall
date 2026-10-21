@@ -20,13 +20,13 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 
 ## Sequencing
 
-1. **Finish v2 PRs 2–8** from `v2-implementation-plan.md`: Postgres test infrastructure, canonical answers, ProgressUpdater, QueueGenerator, session orchestration, the study flow UI and card management. The API does not currently build against the v2 schema (routers still use `Card.back` and `AttemptResult`), so this comes first regardless.
+1. **Finish v2 PRs 2–8** from `v2-implementation-plan.md`, tracked as GitHub issues #2–#12: Postgres test infrastructure, canonical answers, ProgressUpdater, QueueGenerator, session orchestration, the study flow UI and card management. The API does not currently build against the v2 schema (routers still use `Card.back` and `AttemptResult`), so this comes first regardless (#2).
 2. **Course slices A → B → C** (below), each a short sequence of PRs.
 3. **v2 PRs 9–11** (stats, seed, polish) are redesigned once course progress exists, rather than built as originally specified.
 
 ### Changes to the v2 PRs
 
-- **PR 3 (canonical answers and grading):** implement accent mismatches per ADR-0002. Normalization still strips diacritics for matching, but the grader reports when the only difference is accents, so the UI can show the accented form and the card grade is capped at GOOD.
+- **PR 3 (canonical answers and grading), tracked as #6:** implement accent mismatches per ADR-0002. Normalization still strips diacritics for matching, but the grader reports when the only difference is accents, so the UI can show the accented form and the card grade is capped at GOOD.
 - No other v2 PR changes. Schema additions for courses (`Deck` → course link, `Card.sourceLessonId`) land in the course slices, because they reference course models.
 
 ---

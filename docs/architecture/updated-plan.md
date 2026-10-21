@@ -1488,6 +1488,8 @@ AI grading should remain mostly invisible.
 
 18.1 Canonical Answers
 
+> **Decided (2026-10-21):** Editing a card's front or a Canonical Answer resets its progress to NEW and keeps its attempts. Only attempts made since the latest reset count toward stats and scheduling, and Accepted Variant edits never reset progress. See `docs/adr/0004-card-edits-reset-progress-but-keep-attempts.md`.
+
 Canonical answers are equally correct target answers.
 
 Editing canonical answers is potentially destructive and may reset or affect progress/history.
