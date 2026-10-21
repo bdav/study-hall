@@ -101,7 +101,10 @@ async function main() {
     [
       { front: 'What is the capital of France?', answers: ['Paris'] },
       { front: 'What is the capital of Japan?', answers: ['Tokyo'] },
-      { front: 'What is the capital of Brazil?', answers: ['Brasília', 'Brasilia'] },
+      {
+        front: 'What is the capital of Brazil?',
+        answers: ['Brasília', 'Brasilia'],
+      },
       { front: 'What is the capital of Australia?', answers: ['Canberra'] },
       { front: 'What is the capital of Canada?', answers: ['Ottawa'] },
       { front: 'What is the capital of Egypt?', answers: ['Cairo'] },
@@ -174,7 +177,9 @@ async function main() {
       },
       {
         front: 'What is a closure?',
-        answers: ['A function that captures variables from its enclosing scope'],
+        answers: [
+          'A function that captures variables from its enclosing scope',
+        ],
       },
       {
         front: 'What does REST stand for?',
@@ -197,41 +202,45 @@ async function main() {
     },
   });
 
-  const capitalsAttempts: AttemptInput[] = capitals.cards.flatMap((card, i): AttemptInput[] => {
-    const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
-    const isMissed = i === 2 || i === 7; // Brasília and Buenos Aires missed first
-    if (isMissed) {
+  const capitalsAttempts: AttemptInput[] = capitals.cards.flatMap(
+    (card, i): AttemptInput[] => {
+      const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
+      const isMissed = i === 2 || i === 7; // Brasília and Buenos Aires missed first
+      if (isMissed) {
+        return [
+          {
+            studySessionId: session1.id,
+            cardId: card.id,
+            userAnswer: 'wrong answer',
+            recallGrade: 'MISSED' as const,
+            attemptNumber: 1,
+          },
+          {
+            studySessionId: session1.id,
+            cardId: card.id,
+            userAnswer: primaryAnswer.text,
+            recallGrade: 'GOOD' as const,
+            attemptNumber: 2,
+            isRetry: true,
+          },
+        ];
+      }
       return [
         {
           studySessionId: session1.id,
           cardId: card.id,
-          userAnswer: 'wrong answer',
-          recallGrade: 'MISSED' as const,
+          userAnswer: primaryAnswer.text,
+          recallGrade: i < 5 ? ('NAILED' as const) : ('GOOD' as const),
           attemptNumber: 1,
         },
-        {
-          studySessionId: session1.id,
-          cardId: card.id,
-          userAnswer: primaryAnswer.text,
-          recallGrade: 'GOOD' as const,
-          attemptNumber: 2,
-          isRetry: true,
-        },
       ];
-    }
-    return [
-      {
-        studySessionId: session1.id,
-        cardId: card.id,
-        userAnswer: primaryAnswer.text,
-        recallGrade: i < 5 ? ('NAILED' as const) : ('GOOD' as const),
-        attemptNumber: 1,
-      },
-    ];
-  });
+    },
+  );
 
   await prisma.cardAttempt.createMany({ data: capitalsAttempts });
-  console.log('Seeded study session 1: World Capitals (completed, mixed grades)');
+  console.log(
+    'Seeded study session 1: World Capitals (completed, mixed grades)',
+  );
 
   // Session 2: Basic Math — all nailed
   const session2 = await prisma.studySession.create({
@@ -269,21 +278,48 @@ async function main() {
     },
   });
 
-  const spanishAttempts: AttemptInput[] = spanish.cards.flatMap((card, i): AttemptInput[] => {
-    const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
-    if (i < 4) {
-      return [
-        {
-          studySessionId: session3.id,
-          cardId: card.id,
-          userAnswer: primaryAnswer.text,
-          recallGrade: 'GOOD' as const,
-          attemptNumber: 1,
-        },
-      ];
-    }
-    if (i === 7) {
-      // Card 7 takes 3 attempts
+  const spanishAttempts: AttemptInput[] = spanish.cards.flatMap(
+    (card, i): AttemptInput[] => {
+      const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
+      if (i < 4) {
+        return [
+          {
+            studySessionId: session3.id,
+            cardId: card.id,
+            userAnswer: primaryAnswer.text,
+            recallGrade: 'GOOD' as const,
+            attemptNumber: 1,
+          },
+        ];
+      }
+      if (i === 7) {
+        // Card 7 takes 3 attempts
+        return [
+          {
+            studySessionId: session3.id,
+            cardId: card.id,
+            userAnswer: 'wrong',
+            recallGrade: 'MISSED' as const,
+            attemptNumber: 1,
+          },
+          {
+            studySessionId: session3.id,
+            cardId: card.id,
+            userAnswer: 'still wrong',
+            recallGrade: 'MISSED' as const,
+            attemptNumber: 2,
+            isRetry: true,
+          },
+          {
+            studySessionId: session3.id,
+            cardId: card.id,
+            userAnswer: primaryAnswer.text,
+            recallGrade: 'PARTIALLY_CORRECT' as const,
+            attemptNumber: 3,
+            isRetry: true,
+          },
+        ];
+      }
       return [
         {
           studySessionId: session3.id,
@@ -295,39 +331,14 @@ async function main() {
         {
           studySessionId: session3.id,
           cardId: card.id,
-          userAnswer: 'still wrong',
-          recallGrade: 'MISSED' as const,
+          userAnswer: primaryAnswer.text,
+          recallGrade: 'GOOD' as const,
           attemptNumber: 2,
           isRetry: true,
         },
-        {
-          studySessionId: session3.id,
-          cardId: card.id,
-          userAnswer: primaryAnswer.text,
-          recallGrade: 'PARTIALLY_CORRECT' as const,
-          attemptNumber: 3,
-          isRetry: true,
-        },
       ];
-    }
-    return [
-      {
-        studySessionId: session3.id,
-        cardId: card.id,
-        userAnswer: 'wrong',
-        recallGrade: 'MISSED' as const,
-        attemptNumber: 1,
-      },
-      {
-        studySessionId: session3.id,
-        cardId: card.id,
-        userAnswer: primaryAnswer.text,
-        recallGrade: 'GOOD' as const,
-        attemptNumber: 2,
-        isRetry: true,
-      },
-    ];
-  });
+    },
+  );
 
   await prisma.cardAttempt.createMany({ data: spanishAttempts });
   console.log(
