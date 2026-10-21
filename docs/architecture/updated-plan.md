@@ -80,6 +80,8 @@ Existing useful modules/assets:
 
 3. Core Product Philosophy
 
+> **Superseded in part (2026-10-21):** The app is evolving into a general learning app with courses, AI-generated lessons and a contextual tutor, so "not an AI tutor" no longer holds. The flashcard and review principles below still apply to cards. See `courses-plan.md` and `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`.
+
 The app is:
 
 * retrieval-first
@@ -1335,6 +1337,8 @@ Avoid browser model loading in v1.
 
 17.4 LLM Provider
 
+> **Superseded (2026-10-21):** The initial implementation uses Anthropic Claude for all AI work (grading fallback, generation, tutoring), still behind a provider-abstracted interface. See `courses-plan.md`.
+
 Use provider-abstracted interface.
 
 Initial implementation:
@@ -1412,6 +1416,8 @@ Prompt/model versions should be versioned for audit/debugging.
 
 17.9 Deterministic Normalization
 
+> **Amended (2026-10-21):** An answer that differs from a correct answer only in accents is still accepted, but the accented form is always shown and on cards it grades GOOD, never NAILED. See `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`.
+
 Include:
 
 * case folding
@@ -1461,6 +1467,8 @@ Need decide exact schema later.
 ⸻
 
 17.12 AI Boundary
+
+> **Scope narrowed (2026-10-21):** This boundary now applies to card grading only. Tutoring, hints, explanation generation and AI-generated content are allowed in course features per `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`.
 
 v1 AI grading must explicitly avoid:
 
@@ -1597,6 +1605,8 @@ accepted variant suggestion
 ⸻
 
 21. AI Deck Generation
+
+> **Superseded in part (2026-10-21):** Course lessons now propose cards via AI, which the learner confirms into the course deck (`courses-plan.md`, `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`). Generating standalone decks from scratch is still not built in.
 
 No built-in AI deck generation in v1.
 
@@ -1817,6 +1827,8 @@ Need decide whether existing data must be preserved perfectly or can be reset fo
 28. Locked Constraints
 
 Do not reopen unless a concrete implementation contradiction appears.
+
+> **Amended (2026-10-21):** These constraints still govern flashcards and the review scheduler, with these exceptions. "No multiple choice" and the AI-grading bullets apply to cards only; course features (courses, lessons, exercises, tutor) may use generative AI per `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`. Accent handling in grading is amended by `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`. See `courses-plan.md`.
 
 * Not a greenfield rewrite
 * Keep React/Vite frontend

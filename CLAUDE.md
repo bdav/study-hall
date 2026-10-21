@@ -128,6 +128,7 @@ All planning documents live in `docs/architecture/`:
 | `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                         |
 | `v2-implementation-plan.md`       | **v2 PR sequence** (PRs 1–11) — incremental implementation milestones                                          |
 | `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                         |
+| `courses-plan.md`                 | **Courses plan** — AI courses, lessons, exercises and tutor on top of v2; slices A–C, follows v2 PRs 2–8       |
 | `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                             |
 
 ### v2 Direction
