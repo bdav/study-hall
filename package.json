@@ -1,5 +1,6 @@
 {
   "name": "study-hall",
+  "packageManager": "pnpm@8.14.1",
   "version": "1.0.0",
   "description": "",
   "type": "module",
