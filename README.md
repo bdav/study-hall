@@ -1,6 +1,6 @@
-# Flashcards
+# Study Hall
 
-A full-stack flashcard study app where users can create decks, upload cards via CSV, study with instant feedback, and track their performance over time. Built as an exercise in test-driven development with a modern TypeScript stack.
+Study Hall is a full-stack learning app. Today it is a flashcard study app where users can create decks, upload cards via CSV, study with instant feedback, and track their performance over time; AI-assisted courses with generated lessons, exercises and a tutor are planned (see `docs/architecture/courses-plan.md`). Built as an exercise in test-driven development with a modern TypeScript stack.
 
 ## Tech Stack
 

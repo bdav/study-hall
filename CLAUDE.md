@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Flashcard study app — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with SQLite (local dev; Postgres is the production target). The project follows a TDD-oriented development approach.
+Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with SQLite (local dev; Postgres is the production target). The project follows a TDD-oriented development approach.
 
 **Status:** MVP complete. v2 planning is in progress — see `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 

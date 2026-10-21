@@ -22,7 +22,7 @@ export function NavBar() {
   return (
     <nav className="flex items-center gap-4 px-8 py-4">
       <Link to="/" className="text-lg font-bold tracking-wide text-white">
-        Flashcards
+        Study Hall
       </Link>
       <Link to="/" className={linkClass} aria-label="Home">
         <Home className="h-4 w-4" />

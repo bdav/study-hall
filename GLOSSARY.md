@@ -1,4 +1,4 @@
-# Flashcards
+# Study Hall
 
 A personal learning app: standalone flashcard decks with spaced repetition, plus AI-assisted courses that teach material and feed what was learned into the same review cycle.
 
