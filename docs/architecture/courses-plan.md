@@ -147,7 +147,14 @@ Every row writes an AI usage record and goes through `canUseAI`.
 
 ## PR Sequence
 
-All PRs follow the TDD workflow in `CLAUDE.md`. Backend PRs land before their frontend PRs. Tests never call a real model: the provider interface has a fake implementation that returns fixtures, and every output schema is tested against both valid and invalid fixture outputs.
+All PRs follow the TDD workflow in `CLAUDE.md`. Backend PRs land before their frontend PRs. Spec: GitHub issue #1.
+
+Test seams:
+
+- **The tRPC router (main seam):** behavior is tested through a tRPC caller against an isolated Postgres schema, as the existing suites do.
+- **The AI provider on the tRPC context (the one new seam):** tests supply a fake that returns fixtures and records its inputs, so no test calls a real model. Every output schema is tested against both valid and invalid fixture outputs.
+- **Pure-function unit tests:** only for context assembly and accent-mismatch detection.
+- **Web tests:** mock the tRPC hooks.
 
 ### Slice A — Course → Lesson
 
@@ -202,7 +209,7 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 
 - Tutor Thread per Lesson Version, with messages.
 - Context assembly as a pure function, plus the system prompt built from the Study Agent tutor rules.
-- Streaming endpoint: a tRPC subscription or a plain Express server-sent-events route, whichever fits better with the existing cookie auth.
+- Streaming through a tRPC subscription, so streaming is tested through the same tRPC caller as everything else.
 - Prompt caching for lesson content; usage records.
 
 **B2: Tutor panel (frontend)**
