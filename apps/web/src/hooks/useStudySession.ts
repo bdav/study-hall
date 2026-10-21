@@ -1,11 +1,10 @@
 import { useCallback, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { type Flashcard } from '@/lib/cards';
 import { type useCardQueue } from './useCardQueue';
 
-type Card = { id: string; front: string; back: string };
-
 type HistoryEntry = {
-  card: Card;
+  card: Flashcard;
   result: 'correct' | 'incorrect';
   userAnswer: string;
 };
@@ -72,15 +71,17 @@ export function useStudySession(
         cardId: card.id,
         userAnswer: answerInput,
       });
+      // The MVP study flow only grades NAILED (correct) or MISSED.
+      const result = attempt.recallGrade === 'NAILED' ? 'correct' : 'incorrect';
 
       setHistory((prev) => [
         ...prev,
-        { card, result: attempt.result, userAnswer: answerInput },
+        { card, result, userAnswer: answerInput },
       ]);
 
       setStudyState({
         phase: 'result',
-        result: attempt.result,
+        result,
         userAnswer: answerInput,
         showingBack: true,
       });

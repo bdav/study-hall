@@ -1,14 +1,11 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
-import { type AttemptResult } from '@prisma/client';
-
-interface Attempt {
-  studySessionId: string;
-  cardId: string;
-  attemptNumber: number;
-  result: AttemptResult;
-}
+import {
+  type CountedAttempt,
+  findCountedAttempts,
+  isCorrect,
+} from '../services/countedAttempts.js';
 
 interface PerCardStats {
   cardId: string;
@@ -20,13 +17,13 @@ interface PerCardStats {
  * Computes per-card stats from a list of attempts, scoped per session.
  * Groups by (sessionId, cardId), then averages attempts-to-correct across sessions.
  */
-function computePerCardStats(attempts: Attempt[]): {
+function computePerCardStats(attempts: CountedAttempt[]): {
   perCard: PerCardStats[];
   firstTryAccuracy: number;
   uniqueCardsStudied: number;
 } {
   // Group attempts by (sessionId, cardId)
-  const bySessionCard = new Map<string, Attempt[]>();
+  const bySessionCard = new Map<string, CountedAttempt[]>();
   for (const attempt of attempts) {
     const key = `${attempt.studySessionId}:${attempt.cardId}`;
     const existing = bySessionCard.get(key);
@@ -45,7 +42,7 @@ function computePerCardStats(attempts: Attempt[]): {
     const first = sessionCardAttempts.reduce((min, a) =>
       a.attemptNumber < min.attemptNumber ? a : min,
     );
-    if (first.result === 'correct') {
+    if (isCorrect(first.recallGrade)) {
       firstTryCorrect++;
     }
   }
@@ -59,7 +56,7 @@ function computePerCardStats(attempts: Attempt[]): {
     const sorted = [...sessionCardAttempts].sort(
       (a, b) => a.attemptNumber - b.attemptNumber,
     );
-    const firstCorrectIdx = sorted.findIndex((a) => a.result === 'correct');
+    const firstCorrectIdx = sorted.findIndex((a) => isCorrect(a.recallGrade));
     const attemptsToCorrect =
       firstCorrectIdx === -1 ? null : firstCorrectIdx + 1;
 
@@ -109,14 +106,9 @@ export const statsRouter = router({
         });
       }
 
-      const attempts = await ctx.prisma.cardAttempt.findMany({
-        where: {
-          studySession: {
-            deckId: input.deckId,
-            userId: ctx.userId,
-          },
-        },
-        orderBy: { createdAt: 'asc' },
+      const attempts = await findCountedAttempts(ctx.prisma, {
+        userId: ctx.userId,
+        deckIds: [input.deckId],
       });
 
       if (attempts.length === 0) {
@@ -130,8 +122,8 @@ export const statsRouter = router({
       }
 
       const totalAttempts = attempts.length;
-      const totalCorrect = attempts.filter(
-        (a) => a.result === 'correct',
+      const totalCorrect = attempts.filter((a) =>
+        isCorrect(a.recallGrade),
       ).length;
       const overallAccuracy = totalCorrect / totalAttempts;
 
@@ -163,15 +155,8 @@ export const statsRouter = router({
 
   overallStats: protectedProcedure.query(async ({ ctx }) => {
     // TODO: Add pagination or date-range filtering for users with large attempt histories
-    const attempts = await ctx.prisma.cardAttempt.findMany({
-      where: {
-        studySession: {
-          userId: ctx.userId,
-        },
-      },
-      include: {
-        studySession: { select: { deckId: true } },
-      },
+    const attempts = await findCountedAttempts(ctx.prisma, {
+      userId: ctx.userId,
     });
 
     if (attempts.length === 0) {
@@ -191,9 +176,11 @@ export const statsRouter = router({
     }
 
     const totalAttempts = attempts.length;
-    const totalCorrect = attempts.filter((a) => a.result === 'correct').length;
+    const totalCorrect = attempts.filter((a) =>
+      isCorrect(a.recallGrade),
+    ).length;
     const overallAccuracy = totalCorrect / totalAttempts;
-    const deckIds = new Set(attempts.map((a) => a.studySession.deckId));
+    const deckIds = new Set(attempts.map((a) => a.deckId));
 
     const { perCard } = computePerCardStats(attempts);
 

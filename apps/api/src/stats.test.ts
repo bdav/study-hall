@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createTestPrisma } from './test-helpers.js';
+import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -25,35 +25,25 @@ beforeAll(async () => {
   });
   userId = user.id;
 
-  const deck = await prisma.deck.create({
-    data: {
-      name: 'Stats Deck 1',
-      userId: user.id,
-      cards: {
-        create: [
-          { front: 'Capital of France', back: 'Paris' },
-          { front: 'Capital of Japan', back: 'Tokyo' },
-          { front: 'Capital of Brazil', back: 'Brasília' },
-        ],
-      },
-    },
-    include: { cards: true },
+  const deck = await createDeckWithCards(prisma, {
+    userId: user.id,
+    name: 'Stats Deck 1',
+    cards: [
+      { front: 'Capital of France', canonicalAnswer: 'Paris' },
+      { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
+      { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+    ],
   });
   deckId = deck.id;
   cardIds = deck.cards.map((c) => c.id);
 
-  const deck2 = await prisma.deck.create({
-    data: {
-      name: 'Stats Deck 2',
-      userId: user.id,
-      cards: {
-        create: [
-          { front: '2+2', back: '4' },
-          { front: '3+3', back: '6' },
-        ],
-      },
-    },
-    include: { cards: true },
+  const deck2 = await createDeckWithCards(prisma, {
+    userId: user.id,
+    name: 'Stats Deck 2',
+    cards: [
+      { front: '2+2', canonicalAnswer: '4' },
+      { front: '3+3', canonicalAnswer: '6' },
+    ],
   });
   deck2Id = deck2.id;
   deck2CardIds = deck2.cards.map((c) => c.id);
@@ -230,13 +220,70 @@ describe('statsRouter', () => {
       expect(card2Stats.avgAttemptsToCorrect).toBeNull();
     });
 
+    it("counts only attempts made since the card's latest progress reset", async () => {
+      const editedDeck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Edited Deck',
+        cards: [
+          { front: 'Capital of Australia', canonicalAnswer: 'Sydney' },
+          { front: 'Capital of Canada', canonicalAnswer: 'Ottawa' },
+        ],
+      });
+      const [australia, canada] = editedDeck.cards;
+      const caller = createCaller();
+
+      // Before the edit: Australia answered with the old answer, Canada missed
+      const s1 = await caller.study.startSession({ deckId: editedDeck.id });
+      await caller.study.submitAttempt({
+        studySessionId: s1.id,
+        cardId: australia.id,
+        userAnswer: 'Melbourne',
+      });
+      await caller.study.submitAttempt({
+        studySessionId: s1.id,
+        cardId: australia.id,
+        userAnswer: 'Sydney',
+      });
+      await caller.study.submitAttempt({
+        studySessionId: s1.id,
+        cardId: canada.id,
+        userAnswer: 'Toronto',
+      });
+      await caller.study.finishSession({ id: s1.id });
+
+      await caller.card.update({
+        cardId: australia.id,
+        canonicalAnswer: 'Canberra',
+      });
+
+      // After the edit: Australia right first time
+      const s2 = await caller.study.startSession({ deckId: editedDeck.id });
+      await caller.study.submitAttempt({
+        studySessionId: s2.id,
+        cardId: australia.id,
+        userAnswer: 'Canberra',
+      });
+      await caller.study.finishSession({ id: s2.id });
+
+      const stats = await caller.stats.deckStats({ deckId: editedDeck.id });
+
+      // Australia: only the post-edit attempt. Canada: its one miss.
+      expect(stats.totalAttempts).toBe(2);
+      expect(stats.uniqueCardsStudied).toBe(2);
+      expect(stats.overallAccuracy).toBeCloseTo(1 / 2, 5);
+      expect(stats.firstTryAccuracy).toBeCloseTo(1 / 2, 5);
+      const australiaStats = stats.cardStats.find(
+        (c: { cardId: string }) => c.cardId === australia.id,
+      );
+      expect(australiaStats.totalAttempts).toBe(1);
+      expect(australiaStats.avgAttemptsToCorrect).toBe(1);
+    });
+
     it('handles zero-attempt case gracefully', async () => {
-      const emptyDeck = await prisma.deck.create({
-        data: {
-          name: 'Empty Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
+      const emptyDeck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Empty Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -334,6 +381,40 @@ describe('statsRouter', () => {
       expect(stats.weakCards[1].avgAttemptsToCorrect).toBe(2);
       expect(stats.weakCards[1].front).toBe('Capital of Japan');
       expect(stats.weakCards[1].deckName).toBe('Stats Deck 1');
+    });
+
+    it('stops treating a card as weak once it is edited', async () => {
+      const editedDeck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Weak Deck',
+        cards: [{ front: '5+5', canonicalAnswer: '11' }],
+      });
+      const cardId = editedDeck.cards[0].id;
+      const caller = createCaller();
+
+      const session = await caller.study.startSession({
+        deckId: editedDeck.id,
+      });
+      await caller.study.submitAttempt({
+        studySessionId: session.id,
+        cardId,
+        userAnswer: '10',
+      });
+      await caller.study.submitAttempt({
+        studySessionId: session.id,
+        cardId,
+        userAnswer: '11',
+      });
+      await caller.study.finishSession({ id: session.id });
+
+      const before = await caller.stats.overallStats();
+      expect(before.weakCards.map((c) => c.cardId)).toContain(cardId);
+
+      await caller.card.update({ cardId, canonicalAnswer: '10' });
+
+      const after = await caller.stats.overallStats();
+      expect(after.totalAttempts).toBe(0);
+      expect(after.weakCards).toHaveLength(0);
     });
 
     it('handles no study data gracefully', async () => {

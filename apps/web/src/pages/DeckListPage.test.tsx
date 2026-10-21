@@ -190,16 +190,16 @@ describe('DeckListPage', () => {
   it('navigates to new deck after successful creation', async () => {
     setupMocks();
     let onSuccessCallback: (data: { id: string }) => void;
-    vi.mocked(trpc.deck.create.useMutation).mockImplementation(
-      (opts: { onSuccess?: (data: { id: string }) => void } = {}) => {
-        onSuccessCallback = opts.onSuccess!;
-        return {
-          mutate: vi.fn(() => onSuccessCallback({ id: 'new-deck-123' })),
-          mutateAsync: vi.fn(),
-          isPending: false,
-        } as unknown as ReturnType<typeof trpc.deck.create.useMutation>;
-      },
-    );
+    vi.mocked(trpc.deck.create.useMutation).mockImplementation(((
+      opts: { onSuccess?: (data: { id: string }) => void } = {},
+    ) => {
+      onSuccessCallback = opts.onSuccess!;
+      return {
+        mutate: vi.fn(() => onSuccessCallback({ id: 'new-deck-123' })),
+        mutateAsync: vi.fn(),
+        isPending: false,
+      } as unknown as ReturnType<typeof trpc.deck.create.useMutation>;
+    }) as unknown as typeof trpc.deck.create.useMutation);
 
     const user = userEvent.setup();
     renderDeckListPage();

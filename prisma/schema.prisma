@@ -147,6 +147,9 @@ model CardProgress {
   lastReviewedAt   DateTime?
   lastIntervalDays Float?
   lapseCount       Int                @default(0)
+  // When this progress last started over from NEW: its creation or a card
+  // edit reset (ADR-0004). Only attempts since then count toward stats.
+  resetAt          DateTime           @default(now())
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)

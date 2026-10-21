@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '../apps/api/src/auth/password.js';
+import { createCards, type NewCard } from '../apps/api/src/services/cards.js';
 
 type AttemptInput = Prisma.CardAttemptCreateManyInput;
 
@@ -15,57 +16,21 @@ const SEED_DECK_IDS = [
   'seed-deck-programming',
 ];
 
-interface CardInput {
-  front: string;
-  answers: string[]; // first is primary
-}
-
 async function createDeckWithCards(
   deckId: string,
   userId: string,
   name: string,
   description: string,
-  cards: CardInput[],
+  cards: NewCard[],
 ) {
   const deck = await prisma.deck.create({
-    data: {
-      id: deckId,
-      name,
-      description,
-      userId,
-    },
+    data: { id: deckId, name, description, userId },
   });
-
-  const createdCards = [];
-  for (let i = 0; i < cards.length; i++) {
-    const { front, answers } = cards[i];
-    const card = await prisma.card.create({
-      data: {
-        deckId: deck.id,
-        front,
-        position: i,
-        canonicalAnswers: {
-          create: answers.map((text, j) => ({
-            text,
-            normalizedText: text.toLowerCase().trim(),
-            isPrimary: j === 0,
-          })),
-        },
-      },
-      include: { canonicalAnswers: true },
-    });
-
-    // Eagerly create CardProgress for the deck owner
-    await prisma.cardProgress.create({
-      data: {
-        userId,
-        cardId: card.id,
-        deckId: deck.id,
-      },
-    });
-
-    createdCards.push(card);
-  }
+  const createdCards = await createCards(prisma, {
+    deckId: deck.id,
+    userId,
+    cards,
+  });
 
   console.log(`Seeded deck: ${name} with ${createdCards.length} cards`);
   return { deck, cards: createdCards };
@@ -99,39 +64,48 @@ async function main() {
     'World Capitals',
     'Test your knowledge of world capitals',
     [
-      { front: 'What is the capital of France?', answers: ['Paris'] },
-      { front: 'What is the capital of Japan?', answers: ['Tokyo'] },
+      { front: 'What is the capital of France?', canonicalAnswer: 'Paris' },
+      { front: 'What is the capital of Japan?', canonicalAnswer: 'Tokyo' },
       {
         front: 'What is the capital of Brazil?',
-        answers: ['Brasília', 'Brasilia'],
+        canonicalAnswer: 'Brasília',
       },
-      { front: 'What is the capital of Australia?', answers: ['Canberra'] },
-      { front: 'What is the capital of Canada?', answers: ['Ottawa'] },
-      { front: 'What is the capital of Egypt?', answers: ['Cairo'] },
-      { front: 'What is the capital of South Korea?', answers: ['Seoul'] },
-      { front: 'What is the capital of Argentina?', answers: ['Buenos Aires'] },
+      {
+        front: 'What is the capital of Australia?',
+        canonicalAnswer: 'Canberra',
+      },
+      { front: 'What is the capital of Canada?', canonicalAnswer: 'Ottawa' },
+      { front: 'What is the capital of Egypt?', canonicalAnswer: 'Cairo' },
+      {
+        front: 'What is the capital of South Korea?',
+        canonicalAnswer: 'Seoul',
+      },
+      {
+        front: 'What is the capital of Argentina?',
+        canonicalAnswer: 'Buenos Aires',
+      },
       {
         front: 'What is the capital of South Africa (executive)?',
-        answers: ['Pretoria'],
+        canonicalAnswer: 'Pretoria',
       },
-      { front: 'What is the capital of Thailand?', answers: ['Bangkok'] },
+      { front: 'What is the capital of Thailand?', canonicalAnswer: 'Bangkok' },
     ],
   );
 
-  // --- Deck 2: Basic Math (multi-answer example) ---
+  // --- Deck 2: Basic Math ---
   const math = await createDeckWithCards(
     'seed-deck-basic-math',
     user.id,
     'Basic Math',
     'Arithmetic and simple math facts',
     [
-      { front: '7 × 8', answers: ['56'] },
-      { front: '144 ÷ 12', answers: ['12'] },
-      { front: '√81', answers: ['9'] },
-      { front: '15² (15 squared)', answers: ['225'] },
-      { front: '2⁸ (2 to the 8th power)', answers: ['256'] },
-      { front: 'What is 17 + 38?', answers: ['55'] },
-      { front: 'What is 1000 - 387?', answers: ['613'] },
+      { front: '7 × 8', canonicalAnswer: '56' },
+      { front: '144 ÷ 12', canonicalAnswer: '12' },
+      { front: '√81', canonicalAnswer: '9' },
+      { front: '15² (15 squared)', canonicalAnswer: '225' },
+      { front: '2⁸ (2 to the 8th power)', canonicalAnswer: '256' },
+      { front: 'What is 17 + 38?', canonicalAnswer: '55' },
+      { front: 'What is 1000 - 387?', canonicalAnswer: '613' },
     ],
   );
 
@@ -142,16 +116,16 @@ async function main() {
     'Spanish Vocabulary',
     'Common Spanish words and phrases',
     [
-      { front: 'Hello', answers: ['Hola'] },
-      { front: 'Thank you', answers: ['Gracias'] },
-      { front: 'Goodbye', answers: ['Adiós', 'Adios'] },
-      { front: 'Please', answers: ['Por favor'] },
-      { front: 'How are you?', answers: ['¿Cómo estás?', 'Como estas'] },
-      { front: 'Good morning', answers: ['Buenos días', 'Buenos dias'] },
-      { front: "I don't understand", answers: ['No entiendo'] },
+      { front: 'Hello', canonicalAnswer: 'Hola' },
+      { front: 'Thank you', canonicalAnswer: 'Gracias' },
+      { front: 'Goodbye', canonicalAnswer: 'Adiós' },
+      { front: 'Please', canonicalAnswer: 'Por favor' },
+      { front: 'How are you?', canonicalAnswer: '¿Cómo estás?' },
+      { front: 'Good morning', canonicalAnswer: 'Buenos días' },
+      { front: "I don't understand", canonicalAnswer: 'No entiendo' },
       {
         front: 'Where is the bathroom?',
-        answers: ['¿Dónde está el baño?', 'Donde esta el bano'],
+        canonicalAnswer: '¿Dónde está el baño?',
       },
     ],
   );
@@ -165,32 +139,31 @@ async function main() {
     [
       {
         front: 'What does HTTP stand for?',
-        answers: ['HyperText Transfer Protocol'],
+        canonicalAnswer: 'HyperText Transfer Protocol',
       },
       {
         front: 'What is the time complexity of binary search?',
-        answers: ['O(log n)'],
+        canonicalAnswer: 'O(log n)',
       },
       {
         front: 'What does SQL stand for?',
-        answers: ['Structured Query Language'],
+        canonicalAnswer: 'Structured Query Language',
       },
       {
         front: 'What is a closure?',
-        answers: [
+        canonicalAnswer:
           'A function that captures variables from its enclosing scope',
-        ],
       },
       {
         front: 'What does REST stand for?',
-        answers: ['Representational State Transfer'],
+        canonicalAnswer: 'Representational State Transfer',
       },
     ],
   );
 
   // --- Sample Study Sessions ---
 
-  // Session 1: World Capitals — completed, mixed grades
+  // Session 1: World Capitals — completed, two cards missed first
   const session1 = await prisma.studySession.create({
     data: {
       userId: user.id,
@@ -204,7 +177,7 @@ async function main() {
 
   const capitalsAttempts: AttemptInput[] = capitals.cards.flatMap(
     (card, i): AttemptInput[] => {
-      const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
+      const primaryAnswer = card.canonicalAnswers[0];
       const isMissed = i === 2 || i === 7; // Brasília and Buenos Aires missed first
       if (isMissed) {
         return [
@@ -219,7 +192,7 @@ async function main() {
             studySessionId: session1.id,
             cardId: card.id,
             userAnswer: primaryAnswer.text,
-            recallGrade: 'GOOD' as const,
+            recallGrade: 'NAILED' as const,
             attemptNumber: 2,
             isRetry: true,
           },
@@ -230,7 +203,7 @@ async function main() {
           studySessionId: session1.id,
           cardId: card.id,
           userAnswer: primaryAnswer.text,
-          recallGrade: i < 5 ? ('NAILED' as const) : ('GOOD' as const),
+          recallGrade: 'NAILED' as const,
           attemptNumber: 1,
         },
       ];
@@ -239,7 +212,7 @@ async function main() {
 
   await prisma.cardAttempt.createMany({ data: capitalsAttempts });
   console.log(
-    'Seeded study session 1: World Capitals (completed, mixed grades)',
+    'Seeded study session 1: World Capitals (completed, two cards missed first)',
   );
 
   // Session 2: Basic Math — all nailed
@@ -258,7 +231,7 @@ async function main() {
     data: math.cards.map((card) => ({
       studySessionId: session2.id,
       cardId: card.id,
-      userAnswer: card.canonicalAnswers.find((a) => a.isPrimary)!.text,
+      userAnswer: card.canonicalAnswers[0].text,
       recallGrade: 'NAILED' as const,
       attemptNumber: 1,
     })),
@@ -280,14 +253,14 @@ async function main() {
 
   const spanishAttempts: AttemptInput[] = spanish.cards.flatMap(
     (card, i): AttemptInput[] => {
-      const primaryAnswer = card.canonicalAnswers.find((a) => a.isPrimary)!;
+      const primaryAnswer = card.canonicalAnswers[0];
       if (i < 4) {
         return [
           {
             studySessionId: session3.id,
             cardId: card.id,
             userAnswer: primaryAnswer.text,
-            recallGrade: 'GOOD' as const,
+            recallGrade: 'NAILED' as const,
             attemptNumber: 1,
           },
         ];
@@ -314,7 +287,7 @@ async function main() {
             studySessionId: session3.id,
             cardId: card.id,
             userAnswer: primaryAnswer.text,
-            recallGrade: 'PARTIALLY_CORRECT' as const,
+            recallGrade: 'NAILED' as const,
             attemptNumber: 3,
             isRetry: true,
           },
@@ -332,7 +305,7 @@ async function main() {
           studySessionId: session3.id,
           cardId: card.id,
           userAnswer: primaryAnswer.text,
-          recallGrade: 'GOOD' as const,
+          recallGrade: 'NAILED' as const,
           attemptNumber: 2,
           isRetry: true,
         },

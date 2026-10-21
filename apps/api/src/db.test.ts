@@ -49,17 +49,26 @@ describe('Database connection', () => {
         userId: user.id,
         cards: {
           create: [
-            { front: 'Q1', back: 'A1' },
-            { front: 'Q2', back: 'A2' },
+            {
+              front: 'Q1',
+              canonicalAnswers: { create: { text: 'A1', isPrimary: true } },
+            },
+            {
+              front: 'Q2',
+              canonicalAnswers: { create: { text: 'A2', isPrimary: true } },
+            },
           ],
         },
       },
-      include: { cards: true },
+      include: { cards: { include: { canonicalAnswers: true } } },
     });
 
     expect(deck.name).toBe('Test Deck');
     expect(deck.cards).toHaveLength(2);
     expect(deck.cards[0].front).toBe('Q1');
+    expect(deck.cards[0].canonicalAnswers).toEqual([
+      expect.objectContaining({ text: 'A1', isPrimary: true }),
+    ]);
   });
 
   it('can create a study session with card attempts', async () => {
@@ -75,7 +84,12 @@ describe('Database connection', () => {
         name: 'Study Deck',
         userId: user.id,
         cards: {
-          create: [{ front: 'Q1', back: 'A1' }],
+          create: [
+            {
+              front: 'Q1',
+              canonicalAnswers: { create: { text: 'A1', isPrimary: true } },
+            },
+          ],
         },
       },
       include: { cards: true },
@@ -85,6 +99,7 @@ describe('Database connection', () => {
       data: {
         userId: user.id,
         deckId: deck.id,
+        sessionType: 'STANDARD',
       },
     });
 
@@ -95,11 +110,11 @@ describe('Database connection', () => {
       data: {
         studySessionId: session.id,
         cardId: deck.cards[0].id,
-        result: 'correct',
+        recallGrade: 'NAILED',
       },
     });
 
-    expect(attempt.result).toBe('correct');
+    expect(attempt.recallGrade).toBe('NAILED');
 
     const sessionWithAttempts = await prisma.studySession.findUnique({
       where: { id: session.id },
@@ -122,7 +137,12 @@ describe('Database connection', () => {
         name: 'Cascade Deck',
         userId: user.id,
         cards: {
-          create: [{ front: 'Q1', back: 'A1' }],
+          create: [
+            {
+              front: 'Q1',
+              canonicalAnswers: { create: { text: 'A1', isPrimary: true } },
+            },
+          ],
         },
       },
       include: { cards: true },
@@ -132,8 +152,9 @@ describe('Database connection', () => {
       data: {
         userId: user.id,
         deckId: deck.id,
+        sessionType: 'STANDARD',
         attempts: {
-          create: [{ cardId: deck.cards[0].id, result: 'correct' }],
+          create: [{ cardId: deck.cards[0].id, recallGrade: 'NAILED' }],
         },
       },
     });

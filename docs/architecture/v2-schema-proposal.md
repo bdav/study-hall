@@ -228,6 +228,7 @@ model CardProgress {
   lastReviewedAt   DateTime?
   lastIntervalDays Float?
   lapseCount       Int                @default(0)
+  resetAt          DateTime           @default(now())
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -249,6 +250,7 @@ model CardProgress {
 - Queue generation queries hit this table heavily — indexes designed for bucket queries
 - `masteryScore` is 0–10 integer, clamped in app code
 - `lifecycleState` transitions managed by explicit state machine in ProgressUpdater service
+- `resetAt` is when the progress last started over from NEW: its creation, or an edit to the card's front or a Canonical Answer (ADR-0004). Only attempts made at or after `resetAt` count toward stats and scheduling; earlier attempts are kept as history. Added by #2.
 
 ---
 

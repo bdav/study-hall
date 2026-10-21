@@ -27,13 +27,13 @@ export interface CsvDiffResult {
 export interface ExistingCard {
   id: string;
   front: string;
-  back: string;
+  canonicalAnswer: string;
 }
 
 /**
  * Compares parsed CSV rows against existing cards in a deck.
- * Categorizes into: new (no front match), update (front match, different back),
- * duplicate (exact front+back match), error (from parser).
+ * Categorizes into: new (no front match), update (front match, back differs
+ * from the canonical answer), duplicate (exact match), error (from parser).
  */
 export function diffCsvRows(
   validRows: CsvRow[],
@@ -53,11 +53,11 @@ export function diffCsvRows(
 
     if (!existing) {
       newCards.push({ front: row.front, back: row.back });
-    } else if (existing.back !== row.back) {
+    } else if (existing.canonicalAnswer !== row.back) {
       updateCards.push({
         cardId: existing.id,
         front: row.front,
-        oldBack: existing.back,
+        oldBack: existing.canonicalAnswer,
         newBack: row.back,
       });
     } else {

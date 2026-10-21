@@ -34,7 +34,7 @@ const mockDeck = {
       id: 'card-1',
       deckId: 'deck-1',
       front: 'What is 2+2?',
-      back: '4',
+      canonicalAnswers: [{ id: 'answer-4', text: '4', isPrimary: true }],
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -42,7 +42,9 @@ const mockDeck = {
       id: 'card-2',
       deckId: 'deck-1',
       front: 'Capital of France?',
-      back: 'Paris',
+      canonicalAnswers: [
+        { id: 'answer-Paris', text: 'Paris', isPrimary: true },
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -72,16 +74,16 @@ function setupMocksWithStartSession(resultOverride?: 'correct' | 'incorrect') {
     isError: false,
   } as ReturnType<typeof trpc.deck.getById.useQuery>);
 
-  vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
-    (opts?: { onSuccess?: (data: { id: string }) => void }) => {
-      return {
-        mutate: vi.fn(() => {
-          opts?.onSuccess?.({ id: 'session-1' });
-        }),
-        mutateAsync: vi.fn(),
-      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
-    },
-  );
+  vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+    onSuccess?: (data: { id: string }) => void;
+  }) => {
+    return {
+      mutate: vi.fn(() => {
+        opts?.onSuccess?.({ id: 'session-1' });
+      }),
+      mutateAsync: vi.fn(),
+    } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
+  }) as unknown as typeof trpc.study.startSession.useMutation);
 
   vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
     mutate: vi.fn(),
@@ -91,7 +93,7 @@ function setupMocksWithStartSession(resultOverride?: 'correct' | 'incorrect') {
         studySessionId: args.studySessionId,
         cardId: args.cardId,
         userAnswer: args.userAnswer,
-        result: resultOverride ?? ('correct' as const),
+        recallGrade: resultOverride === 'incorrect' ? 'MISSED' : 'NAILED',
         createdAt: new Date(),
       });
     }),
@@ -341,16 +343,16 @@ describe('StudyPage', () => {
       isError: false,
     } as ReturnType<typeof trpc.deck.getById.useQuery>);
 
-    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
-      (opts?: { onSuccess?: (data: { id: string }) => void }) => {
-        return {
-          mutate: vi.fn(() => {
-            opts?.onSuccess?.({ id: 'session-1' });
-          }),
-          mutateAsync: vi.fn(),
-        } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
-      },
-    );
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+      onSuccess?: (data: { id: string }) => void;
+    }) => {
+      return {
+        mutate: vi.fn(() => {
+          opts?.onSuccess?.({ id: 'session-1' });
+        }),
+        mutateAsync: vi.fn(),
+      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
+    }) as unknown as typeof trpc.study.startSession.useMutation);
 
     vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
       mutate: vi.fn(),
@@ -361,8 +363,7 @@ describe('StudyPage', () => {
           studySessionId: args.studySessionId,
           cardId: args.cardId,
           userAnswer: args.userAnswer,
-          result:
-            callCount === 1 ? ('correct' as const) : ('incorrect' as const),
+          recallGrade: callCount === 1 ? 'NAILED' : 'MISSED',
           createdAt: new Date(),
         });
       }),
@@ -412,7 +413,7 @@ describe('StudyPage', () => {
           studySessionId: args.studySessionId,
           cardId: args.cardId,
           userAnswer: args.userAnswer,
-          result: 'correct' as const,
+          recallGrade: 'NAILED',
           createdAt: new Date(),
         });
       }),

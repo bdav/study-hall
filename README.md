@@ -6,13 +6,14 @@ Study Hall is a full-stack learning app. Today it is a flashcard study app where
 
 - **Frontend:** React 19, Vite, TypeScript, React Router, TanStack Query, Tailwind CSS, shadcn/ui
 - **Backend:** Express 5, tRPC, Zod validation
-- **Database:** SQLite (local dev) via Prisma ORM — PostgreSQL is the production target
+- **Database:** PostgreSQL via Prisma ORM, run locally with Docker Compose
 - **Monorepo:** pnpm workspaces
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v18+
-- [pnpm](https://pnpm.io/) v9+
+- [pnpm](https://pnpm.io/) v8+
+- [Docker](https://www.docker.com/) for the local Postgres database
 
 ## Getting Started
 
@@ -23,6 +24,9 @@ cd study-hall
 
 # Install dependencies
 pnpm install
+
+# Start Postgres (must be running for development and API tests)
+docker compose up -d
 
 # Generate Prisma client
 pnpm prisma generate
@@ -62,15 +66,15 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 
 ## Environment Variables
 
-| Variable       | Default             | Description                              |
-| -------------- | ------------------- | ---------------------------------------- |
-| `DATABASE_URL` | `file:./dev.db`     | SQLite connection string (set in `.env`) |
-| `CORS_ORIGIN`  | `localhost:*` (dev) | Allowed CORS origin for the API          |
+| Variable       | Default             | Description                                |
+| -------------- | ------------------- | ------------------------------------------ |
+| `DATABASE_URL` | —                   | Postgres connection string (set in `.env`) |
+| `CORS_ORIGIN`  | `localhost:*` (dev) | Allowed CORS origin for the API            |
 
 Create a `.env` file in the project root:
 
 ```
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://flashcards:flashcards@localhost:5432/flashcards"
 ```
 
 ## Repo Structure
@@ -123,7 +127,7 @@ What does HTTP stand for,HyperText Transfer Protocol
 
 ## Testing
 
-The project follows test-driven development. Tests use Vitest with isolated per-test SQLite databases on the backend and React Testing Library on the frontend.
+The project follows test-driven development. Tests use Vitest with React Testing Library on the frontend. API tests run against the Docker Compose Postgres, so it must be running (`docker compose up -d`); each test suite migrates and uses its own Postgres schema, which is dropped afterwards.
 
 ```bash
 # Run all API tests
@@ -135,6 +139,6 @@ pnpm --filter web test
 
 ## Deployment Notes
 
-- The app uses SQLite for local development. For production, switch the Prisma datasource provider to `postgresql` and set `DATABASE_URL` to a PostgreSQL connection string.
+- The app uses PostgreSQL in every environment. For production, set `DATABASE_URL` to the production database's connection string.
 - The API serves tRPC over HTTP. A `/health` endpoint is available for health checks.
 - CORS is configured to allow any localhost port in development. Set `CORS_ORIGIN` for production.

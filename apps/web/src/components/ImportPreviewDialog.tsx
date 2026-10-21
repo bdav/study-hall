@@ -70,8 +70,8 @@ interface ImportPreviewDialogProps {
   open: boolean;
   onClose: () => void;
   onImport: (data: {
-    new: { front: string; back: string }[];
-    update: { cardId: string; back: string }[];
+    new: { front: string; canonicalAnswer: string }[];
+    update: { cardId: string; canonicalAnswer: string }[];
   }) => void;
   isPending: boolean;
   initialNewCards: NewCard[];
@@ -95,8 +95,11 @@ export function ImportPreviewDialog({
 
   function handleImport() {
     onImport({
-      new: newCards.map((c) => ({ front: c.front, back: c.back })),
-      update: updateCards.map((c) => ({ cardId: c.cardId, back: c.newBack })),
+      new: newCards.map((c) => ({ front: c.front, canonicalAnswer: c.back })),
+      update: updateCards.map((c) => ({
+        cardId: c.cardId,
+        canonicalAnswer: c.newBack,
+      })),
     });
   }
 

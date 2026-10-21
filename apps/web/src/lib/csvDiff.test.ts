@@ -22,7 +22,7 @@ describe('csvDiff', () => {
   it('identifies updates when front matches but back differs', () => {
     const csvRows: CsvRow[] = [{ front: 'Capital of France', back: 'Paris' }];
     const existingCards = [
-      { id: 'card-1', front: 'Capital of France', back: 'Lyon' },
+      { id: 'card-1', front: 'Capital of France', canonicalAnswer: 'Lyon' },
     ];
 
     const result = diffCsvRows(csvRows, existingCards, []);
@@ -41,7 +41,9 @@ describe('csvDiff', () => {
 
   it('identifies exact duplicates as skipped', () => {
     const csvRows: CsvRow[] = [{ front: 'Q1', back: 'A1' }];
-    const existingCards = [{ id: 'card-1', front: 'Q1', back: 'A1' }];
+    const existingCards = [
+      { id: 'card-1', front: 'Q1', canonicalAnswer: 'A1' },
+    ];
 
     const result = diffCsvRows(csvRows, existingCards, []);
 
@@ -64,7 +66,9 @@ describe('csvDiff', () => {
 
   it('matches case-insensitively on front', () => {
     const csvRows: CsvRow[] = [{ front: 'hello', back: 'world' }];
-    const existingCards = [{ id: 'card-1', front: 'Hello', back: 'world' }];
+    const existingCards = [
+      { id: 'card-1', front: 'Hello', canonicalAnswer: 'world' },
+    ];
 
     const result = diffCsvRows(csvRows, existingCards, []);
 
@@ -80,8 +84,8 @@ describe('csvDiff', () => {
       { front: 'Exact Q', back: 'Exact A' },
     ];
     const existingCards = [
-      { id: 'card-1', front: 'Update Q', back: 'Old A' },
-      { id: 'card-2', front: 'Exact Q', back: 'Exact A' },
+      { id: 'card-1', front: 'Update Q', canonicalAnswer: 'Old A' },
+      { id: 'card-2', front: 'Exact Q', canonicalAnswer: 'Exact A' },
     ];
 
     const result = diffCsvRows(csvRows, existingCards, []);

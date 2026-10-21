@@ -48,7 +48,8 @@ const mockCards = [
     id: 'card-1',
     deckId: 'deck-1',
     front: 'Capital of France',
-    back: 'Paris',
+    position: 0,
+    canonicalAnswers: [{ id: 'answer-Paris', text: 'Paris', isPrimary: true }],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
   },
@@ -56,7 +57,10 @@ const mockCards = [
     id: 'card-2',
     deckId: 'deck-1',
     front: 'Capital of Germany',
-    back: 'Berlin',
+    position: 0,
+    canonicalAnswers: [
+      { id: 'answer-Berlin', text: 'Berlin', isPrimary: true },
+    ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
   },
@@ -233,7 +237,7 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).toHaveBeenCalledWith({
       deckId: 'deck-1',
       front: 'Capital of Spain',
-      back: 'Madrid',
+      canonicalAnswer: 'Madrid',
     });
   });
 
@@ -318,7 +322,7 @@ describe('DeckCardsPage', () => {
 
     expect(mockMutate).toHaveBeenCalledWith({
       deckId: 'deck-1',
-      new: [{ front: 'Capital of Spain', back: 'Madrid' }],
+      new: [{ front: 'Capital of Spain', canonicalAnswer: 'Madrid' }],
       update: [],
     });
   });
@@ -451,7 +455,7 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).toHaveBeenCalledWith({
       cardId: 'card-1',
       front: 'Capital of Italy',
-      back: 'Paris',
+      canonicalAnswer: 'Paris',
     });
 
     vi.useRealTimers();
@@ -502,17 +506,17 @@ describe('DeckCardsPage', () => {
   it('calls deck delete and navigates home when confirmed', async () => {
     setupMocks();
     const mockMutate = vi.fn();
-    vi.mocked(trpc.deck.delete.useMutation).mockImplementation(
-      (opts?: { onSuccess?: () => void }) => {
-        return {
-          ...defaultMutationReturn,
-          mutate: vi.fn((...args: unknown[]) => {
-            mockMutate(...args);
-            opts?.onSuccess?.();
-          }),
-        } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>;
-      },
-    );
+    vi.mocked(trpc.deck.delete.useMutation).mockImplementation(((opts?: {
+      onSuccess?: () => void;
+    }) => {
+      return {
+        ...defaultMutationReturn,
+        mutate: vi.fn((...args: unknown[]) => {
+          mockMutate(...args);
+          opts?.onSuccess?.();
+        }),
+      } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>;
+    }) as unknown as typeof trpc.deck.delete.useMutation);
 
     const user = userEvent.setup();
     renderDeckCardsPage();

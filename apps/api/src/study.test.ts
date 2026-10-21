@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createTestPrisma } from './test-helpers.js';
+import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -25,19 +25,14 @@ beforeAll(async () => {
   });
   userId = user.id;
 
-  const deck = await prisma.deck.create({
-    data: {
-      name: 'Test Study Deck',
-      userId: user.id,
-      cards: {
-        create: [
-          { front: 'Capital of France', back: 'Paris' },
-          { front: 'Capital of Japan', back: 'Tokyo' },
-          { front: 'Capital of Brazil', back: 'Brasília' },
-        ],
-      },
-    },
-    include: { cards: true },
+  const deck = await createDeckWithCards(prisma, {
+    userId: user.id,
+    name: 'Test Study Deck',
+    cards: [
+      { front: 'Capital of France', canonicalAnswer: 'Paris' },
+      { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
+      { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+    ],
   });
   deckId = deck.id;
   cardIds = deck.cards.map((c) => c.id);
@@ -94,6 +89,8 @@ describe('studyRouter', () => {
       expect(session.deckId).toBe(deckId);
       expect(session.userId).toBe(userId);
       expect(session.endedAt).toBeNull();
+      expect(session.status).toBe('ACTIVE');
+      expect(session.studyMode).toBe('STUDY');
     });
 
     it('throws NOT_FOUND for a nonexistent deck', async () => {
@@ -109,7 +106,7 @@ describe('studyRouter', () => {
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId });
 
-      // Card 0 back is 'Paris'
+      // Card 0's canonical answer is 'Paris'
       const attempt = await caller.study.submitAttempt({
         studySessionId: session.id,
         cardId: cardIds[0],
@@ -120,21 +117,42 @@ describe('studyRouter', () => {
       expect(attempt.studySessionId).toBe(session.id);
       expect(attempt.cardId).toBe(cardIds[0]);
       expect(attempt.userAnswer).toBe('Paris');
-      expect(attempt.result).toBe('correct');
+      expect(attempt.recallGrade).toBe('NAILED');
     });
 
     it('grades correct with normalized matching (case, whitespace, punctuation)', async () => {
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId });
 
-      // Card 0 back is 'Paris'
+      // Card 0's canonical answer is 'Paris'
       const attempt = await caller.study.submitAttempt({
         studySessionId: session.id,
         cardId: cardIds[0],
         userAnswer: '  paris.  ',
       });
 
-      expect(attempt.result).toBe('correct');
+      expect(attempt.recallGrade).toBe('NAILED');
+    });
+
+    it('grades against the edited canonical answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Capital of Australia', canonicalAnswer: 'Sydney' }],
+      });
+      const caller = createCaller();
+      await caller.card.update({
+        cardId: deck.cards[0].id,
+        canonicalAnswer: 'Canberra',
+      });
+      const session = await caller.study.startSession({ deckId: deck.id });
+
+      const attempt = await caller.study.submitAttempt({
+        studySessionId: session.id,
+        cardId: deck.cards[0].id,
+        userAnswer: 'canberra',
+      });
+
+      expect(attempt.recallGrade).toBe('NAILED');
     });
 
     it('grades an incorrect answer', async () => {
@@ -148,7 +166,7 @@ describe('studyRouter', () => {
       });
 
       expect(attempt.userAnswer).toBe('London');
-      expect(attempt.result).toBe('incorrect');
+      expect(attempt.recallGrade).toBe('MISSED');
     });
 
     it('allows multiple attempts for the same card in a session (re-queue)', async () => {
@@ -161,7 +179,7 @@ describe('studyRouter', () => {
         cardId: cardIds[0],
         userAnswer: 'London',
       });
-      expect(attempt1.result).toBe('incorrect');
+      expect(attempt1.recallGrade).toBe('MISSED');
       expect(attempt1.attemptNumber).toBe(1);
 
       // Second attempt: correct
@@ -170,8 +188,10 @@ describe('studyRouter', () => {
         cardId: cardIds[0],
         userAnswer: 'Paris',
       });
-      expect(attempt2.result).toBe('correct');
+      expect(attempt2.recallGrade).toBe('NAILED');
       expect(attempt2.attemptNumber).toBe(2);
+      expect(attempt1.isRetry).toBe(false);
+      expect(attempt2.isRetry).toBe(true);
     });
 
     it('assigns incrementing attemptNumber per card per session', async () => {
@@ -208,15 +228,10 @@ describe('studyRouter', () => {
     });
 
     it('rejects attempt for a card from a different deck', async () => {
-      const otherDeck = await prisma.deck.create({
-        data: {
-          name: 'Other Deck',
-          userId,
-          cards: {
-            create: [{ front: 'Other Q', back: 'Other A' }],
-          },
-        },
-        include: { cards: true },
+      const otherDeck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Other Deck',
+        cards: [{ front: 'Other Q', canonicalAnswer: 'Other A' }],
       });
 
       const caller = createCaller();
@@ -254,6 +269,7 @@ describe('studyRouter', () => {
       const finished = await caller.study.finishSession({ id: session.id });
 
       expect(finished.endedAt).not.toBeNull();
+      expect(finished.status).toBe('COMPLETED');
       expect(finished.id).toBe(session.id);
     });
 
@@ -295,11 +311,11 @@ describe('studyRouter', () => {
       expect(fetched.attempts).toHaveLength(3);
       // First attempt for card 0: incorrect
       expect(fetched.attempts[0].cardId).toBe(cardIds[0]);
-      expect(fetched.attempts[0].result).toBe('incorrect');
+      expect(fetched.attempts[0].recallGrade).toBe('MISSED');
       expect(fetched.attempts[0].attemptNumber).toBe(1);
       // Retry for card 0: correct
       expect(fetched.attempts[1].cardId).toBe(cardIds[0]);
-      expect(fetched.attempts[1].result).toBe('correct');
+      expect(fetched.attempts[1].recallGrade).toBe('NAILED');
       expect(fetched.attempts[1].attemptNumber).toBe(2);
       // Card 1
       expect(fetched.attempts[2].cardId).toBe(cardIds[1]);
@@ -320,7 +336,7 @@ describe('studyRouter', () => {
 
       const session = await caller.study.startSession({ deckId });
 
-      // Card backs: 'Paris', 'Tokyo', 'Brasília'
+      // Canonical answers: 'Paris', 'Tokyo', 'Brasília'
       await caller.study.submitAttempt({
         studySessionId: session.id,
         cardId: cardIds[0],
@@ -345,7 +361,7 @@ describe('studyRouter', () => {
       expect(fetched.endedAt).not.toBeNull();
 
       const correctCount = fetched.attempts.filter(
-        (a) => a.result === 'correct',
+        (a) => a.recallGrade === 'NAILED',
       ).length;
       expect(correctCount).toBe(2); // Paris (normalized) + Brasilia (diacritics stripped)
     });

@@ -2,9 +2,9 @@ import { renderHook, act } from '@testing-library/react';
 import { useCardQueue } from './useCardQueue';
 
 const cards = [
-  { id: 'card-1', front: 'What is 2+2?', back: '4' },
-  { id: 'card-2', front: 'Capital of France?', back: 'Paris' },
-  { id: 'card-3', front: 'Color of sky?', back: 'Blue' },
+  { id: 'card-1', front: 'What is 2+2?', canonicalAnswer: '4' },
+  { id: 'card-2', front: 'Capital of France?', canonicalAnswer: 'Paris' },
+  { id: 'card-3', front: 'Color of sky?', canonicalAnswer: 'Blue' },
 ];
 
 describe('useCardQueue', () => {

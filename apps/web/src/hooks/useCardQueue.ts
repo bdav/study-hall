@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react';
+import { type Flashcard } from '@/lib/cards';
 
-type Card = { id: string; front: string; back: string };
-
-export function useCardQueue(cards: Card[]) {
-  const [queue, setQueue] = useState<Card[]>([]);
+export function useCardQueue(cards: Flashcard[]) {
+  const [queue, setQueue] = useState<Flashcard[]>([]);
   const [cardsStudied, setCardsStudied] = useState(0);
 
   const currentCard = queue[0] ?? null;

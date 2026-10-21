@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { toFlashcard } from '@/lib/cards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -58,7 +59,7 @@ function CardBack({
   result,
   onFlip,
 }: {
-  card: { front: string; back: string };
+  card: CardSnapshot['card'];
   result: { result: 'correct' | 'incorrect'; userAnswer: string };
   onFlip?: () => void;
 }) {
@@ -68,7 +69,7 @@ function CardBack({
         {card.front}
       </p>
       <p className="mt-2 text-3xl font-bold uppercase tracking-wide text-white">
-        {card.back}
+        {card.canonicalAnswer}
       </p>
       <p
         className={`mt-4 inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${result.result === 'correct' ? 'bg-green-500' : 'bg-red-400'}`}
@@ -102,7 +103,7 @@ export default function StudyPage() {
   );
 
   const deck = deckQuery.data;
-  const cards = deck?.cards ?? [];
+  const cards = useMemo(() => deck?.cards.map(toFlashcard) ?? [], [deck]);
 
   const cardQueue = useCardQueue(cards);
   const {
@@ -322,7 +323,7 @@ export default function StudyPage() {
   // Helper to render a study card — used for both the active card and the
   // frozen snapshot during slide animations, avoiding JSX duplication.
   const renderStudyCard = (
-    card: { front: string; back: string },
+    card: CardSnapshot['card'],
     result: CardSnapshot['result'],
     flipped: boolean,
     queueLength: number,

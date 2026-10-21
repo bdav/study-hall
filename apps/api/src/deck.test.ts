@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createTestPrisma } from './test-helpers.js';
+import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -40,6 +40,20 @@ function createCaller(overrideUserId?: string) {
     userId: overrideUserId ?? userId,
     sessionToken: null,
   });
+}
+
+/** Runs one finished study session, answering each card in turn. */
+async function study(deckId: string, answers: [string, string][]) {
+  const caller = createCaller();
+  const session = await caller.study.startSession({ deckId });
+  for (const [cardId, userAnswer] of answers) {
+    await caller.study.submitAttempt({
+      studySessionId: session.id,
+      cardId,
+      userAnswer,
+    });
+  }
+  await caller.study.finishSession({ id: session.id });
 }
 
 describe('deckRouter', () => {
@@ -95,17 +109,13 @@ describe('deckRouter', () => {
     });
 
     it('returns decks with card count', async () => {
-      await prisma.deck.create({
-        data: {
-          name: 'Deck With Cards',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
+      await createDeckWithCards(prisma, {
+        userId,
+        name: 'Deck With Cards',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
       });
 
       const caller = createCaller();
@@ -115,42 +125,18 @@ describe('deckRouter', () => {
     });
 
     it('returns decks with summary stats (accuracy, last studied)', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Stats Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
-        include: { cards: true },
-      });
-
-      // Create a study session with some attempts
-      const session = await prisma.studySession.create({
-        data: { userId, deckId: deck.id },
-      });
-      await prisma.cardAttempt.createMany({
-        data: [
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[0].id,
-            userAnswer: 'A1',
-            result: 'correct',
-            attemptNumber: 1,
-          },
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[1].id,
-            userAnswer: 'wrong',
-            result: 'incorrect',
-            attemptNumber: 1,
-          },
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Stats Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
         ],
       });
+      await study(deck.id, [
+        [deck.cards[0].id, 'A1'],
+        [deck.cards[1].id, 'wrong'],
+      ]);
 
       const caller = createCaller();
       const result = await caller.deck.list();
@@ -158,6 +144,31 @@ describe('deckRouter', () => {
       expect(result[0].totalAttempts).toBe(2);
       expect(result[0].accuracy).toBeCloseTo(0.5, 5);
       expect(result[0].lastStudied).toBeDefined();
+    });
+
+    it("counts only attempts made since each card's latest progress reset", async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Edited Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
+      });
+      await study(deck.id, [
+        [deck.cards[0].id, 'wrong'],
+        [deck.cards[1].id, 'A2'],
+      ]);
+
+      const caller = createCaller();
+      await caller.card.update({ cardId: deck.cards[0].id, front: 'New Q1' });
+      await study(deck.id, [[deck.cards[0].id, 'A1']]);
+
+      const result = await caller.deck.list();
+
+      // Q1's pre-edit miss no longer counts
+      expect(result[0].totalAttempts).toBe(2);
+      expect(result[0].accuracy).toBe(1);
     });
 
     it('returns null lastStudied when deck has no sessions', async () => {
@@ -284,13 +295,10 @@ describe('deckRouter', () => {
     });
 
     it('cascades delete to cards', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'To Delete',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'To Delete',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
       const cardId = deck.cards[0].id;
 

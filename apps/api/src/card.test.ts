@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createTestPrisma } from './test-helpers.js';
+import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -33,6 +33,40 @@ afterAll(async () => {
   await cleanup();
 });
 
+const NEW_PROGRESS = {
+  lifecycleState: 'NEW',
+  masteryScore: 0,
+  dueAt: null,
+  lapseCount: 0,
+};
+
+// Card progress has no read procedure yet, so these read it directly.
+function progressOf(cardId: string) {
+  return prisma.cardProgress.findUniqueOrThrow({
+    where: { userId_cardId: { userId, cardId } },
+  });
+}
+
+function makeProgressAdvanced(cardId: string) {
+  return prisma.cardProgress.update({
+    where: { userId_cardId: { userId, cardId } },
+    data: {
+      lifecycleState: 'LEARNING',
+      masteryScore: 5,
+      dueAt: new Date('2030-01-01'),
+      lapseCount: 2,
+    },
+  });
+}
+
+function primaryAnswer(card: {
+  canonicalAnswers: { text: string; isPrimary: boolean }[];
+}) {
+  const primaries = card.canonicalAnswers.filter((a) => a.isPrimary);
+  expect(primaries).toHaveLength(1);
+  return primaries[0].text;
+}
+
 function createCaller(overrideUserId?: string) {
   return appRouter.createCaller({
     prisma,
@@ -44,17 +78,13 @@ function createCaller(overrideUserId?: string) {
 describe('cardRouter', () => {
   describe('listByDeck', () => {
     it('returns cards for a deck', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
       });
 
       const caller = createCaller();
@@ -96,7 +126,7 @@ describe('cardRouter', () => {
   });
 
   describe('create', () => {
-    it('creates a card with front and back on a deck', async () => {
+    it('creates a card with front and a primary canonical answer on a deck', async () => {
       const deck = await prisma.deck.create({
         data: { name: 'Test Deck', userId },
       });
@@ -105,13 +135,32 @@ describe('cardRouter', () => {
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        back: '4',
+        canonicalAnswer: '4',
       });
 
       expect(card.front).toBe('What is 2+2?');
-      expect(card.back).toBe('4');
+      expect(primaryAnswer(card)).toBe('4');
       expect(card.deckId).toBe(deck.id);
       expect(card.id).toBeDefined();
+    });
+
+    it('creates card progress in NEW state with mastery 0', async () => {
+      const deck = await prisma.deck.create({
+        data: { name: 'Test Deck', userId },
+      });
+
+      const caller = createCaller();
+      const card = await caller.card.create({
+        deckId: deck.id,
+        front: 'Q1',
+        canonicalAnswer: 'A1',
+      });
+
+      expect(await progressOf(card.id)).toMatchObject({
+        userId,
+        deckId: deck.id,
+        ...NEW_PROGRESS,
+      });
     });
 
     it('persists the card so it appears in listByDeck', async () => {
@@ -123,7 +172,7 @@ describe('cardRouter', () => {
       await caller.card.create({
         deckId: deck.id,
         front: 'Q1',
-        back: 'A1',
+        canonicalAnswer: 'A1',
       });
 
       const cards = await caller.card.listByDeck({ deckId: deck.id });
@@ -141,7 +190,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: otherDeck.id,
           front: 'Q',
-          back: 'A',
+          canonicalAnswer: 'A',
         }),
       ).rejects.toThrow(/not found/i);
     });
@@ -152,7 +201,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: 'nonexistent',
           front: 'Q',
-          back: 'A',
+          canonicalAnswer: 'A',
         }),
       ).rejects.toThrow(/not found/i);
     });
@@ -167,12 +216,12 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: deck.id,
           front: '',
-          back: 'A',
+          canonicalAnswer: 'A',
         }),
       ).rejects.toThrow();
     });
 
-    it('rejects empty back', async () => {
+    it('rejects empty canonical answer', async () => {
       const deck = await prisma.deck.create({
         data: { name: 'Test Deck', userId },
       });
@@ -182,12 +231,12 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: deck.id,
           front: 'Q',
-          back: '',
+          canonicalAnswer: '',
         }),
       ).rejects.toThrow();
     });
 
-    it('trims whitespace from front and back', async () => {
+    it('trims whitespace from front and canonical answer', async () => {
       const deck = await prisma.deck.create({
         data: { name: 'Test Deck', userId },
       });
@@ -196,77 +245,68 @@ describe('cardRouter', () => {
       const card = await caller.card.create({
         deckId: deck.id,
         front: '  What is 2+2?  ',
-        back: '  4  ',
+        canonicalAnswer: '  4  ',
       });
 
       expect(card.front).toBe('What is 2+2?');
-      expect(card.back).toBe('4');
+      expect(primaryAnswer(card)).toBe('4');
     });
 
-    it('returns existing card when front and back both match', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'What is 2+2?', back: '4' }] },
-        },
-        include: { cards: true },
+    it('returns existing card when front and canonical answer both match', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'What is 2+2?', canonicalAnswer: '4' }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        back: '4',
+        canonicalAnswer: '4',
       });
 
       expect(card.id).toBe(deck.cards[0].id);
-      expect(card.back).toBe('4');
+      expect(primaryAnswer(card)).toBe('4');
 
       const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(1);
     });
 
-    it('updates existing card back when front matches with different answer', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'What is 2+2?', back: '5' }] },
-        },
-        include: { cards: true },
+    it('updates existing card canonical answer when front matches with different answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'What is 2+2?', canonicalAnswer: '5' }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        back: '4',
+        canonicalAnswer: '4',
       });
 
       expect(card.id).toBe(deck.cards[0].id);
-      expect(card.back).toBe('4');
+      expect(primaryAnswer(card)).toBe('4');
 
       const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(1);
-      expect(cards[0].back).toBe('4');
+      expect(primaryAnswer(cards[0])).toBe('4');
     });
 
     it('dedupes case-insensitively on front', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Hello', back: 'World' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Hello', canonicalAnswer: 'World' }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'hello',
-        back: 'world',
+        canonicalAnswer: 'world',
       });
 
       expect(card.id).toBe(deck.cards[0].id);
@@ -277,35 +317,29 @@ describe('cardRouter', () => {
   });
 
   describe('update', () => {
-    it('updates a card front and back', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Old Q', back: 'Old A' }] },
-        },
-        include: { cards: true },
+    it('updates a card front and canonical answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
         front: 'New Q',
-        back: 'New A',
+        canonicalAnswer: 'New A',
       });
 
       expect(updated.front).toBe('New Q');
-      expect(updated.back).toBe('New A');
+      expect(primaryAnswer(updated)).toBe('New A');
     });
 
     it('supports partial update (only front)', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Old Q', back: 'Old A' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
       });
 
       const caller = createCaller();
@@ -315,37 +349,31 @@ describe('cardRouter', () => {
       });
 
       expect(updated.front).toBe('New Q');
-      expect(updated.back).toBe('Old A');
+      expect(primaryAnswer(updated)).toBe('Old A');
     });
 
-    it('supports partial update (only back)', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Old Q', back: 'Old A' }] },
-        },
-        include: { cards: true },
+    it('supports partial update (only canonical answer)', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
-        back: 'New A',
+        canonicalAnswer: 'New A',
       });
 
       expect(updated.front).toBe('Old Q');
-      expect(updated.back).toBe('New A');
+      expect(primaryAnswer(updated)).toBe('New A');
     });
 
     it('rejects update on a card belonging to another user', async () => {
-      const otherDeck = await prisma.deck.create({
-        data: {
-          name: 'Other Deck',
-          userId: otherUserId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const otherDeck = await createDeckWithCards(prisma, {
+        userId: otherUserId,
+        name: 'Other Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -368,13 +396,10 @@ describe('cardRouter', () => {
     });
 
     it('rejects empty front when provided', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -386,54 +411,45 @@ describe('cardRouter', () => {
       ).rejects.toThrow();
     });
 
-    it('rejects empty back when provided', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+    it('rejects empty canonical answer when provided', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
       await expect(
         caller.card.update({
           cardId: deck.cards[0].id,
-          back: '',
+          canonicalAnswer: '',
         }),
       ).rejects.toThrow();
     });
 
-    it('trims whitespace from front and back', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+    it('trims whitespace from front and canonical answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
         front: '  New Q  ',
-        back: '  New A  ',
+        canonicalAnswer: '  New A  ',
       });
 
       expect(updated.front).toBe('New Q');
-      expect(updated.back).toBe('New A');
+      expect(primaryAnswer(updated)).toBe('New A');
     });
 
-    it('rejects update with neither front nor back', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+    it('rejects update with neither front nor canonical answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -442,125 +458,120 @@ describe('cardRouter', () => {
       ).rejects.toThrow(/at least one/i);
     });
 
-    it('deletes card attempts when card is updated', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'Wrong A' }] },
-        },
-        include: { cards: true },
+    it('resets card progress to NEW when the front changes', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
-
-      const session = await prisma.studySession.create({
-        data: { userId, deckId: deck.id },
-      });
-
-      await prisma.cardAttempt.create({
-        data: {
-          studySessionId: session.id,
-          cardId: deck.cards[0].id,
-          userAnswer: 'Wrong A',
-          result: 'correct',
-          attemptNumber: 1,
-        },
-      });
+      await makeProgressAdvanced(deck.cards[0].id);
 
       const caller = createCaller();
-      await caller.card.update({
-        cardId: deck.cards[0].id,
-        back: 'Correct A',
-      });
+      await caller.card.update({ cardId: deck.cards[0].id, front: 'New Q' });
 
-      const attempts = await prisma.cardAttempt.findMany({
-        where: { cardId: deck.cards[0].id },
-      });
-      expect(attempts).toHaveLength(0);
+      expect(await progressOf(deck.cards[0].id)).toMatchObject(NEW_PROGRESS);
     });
 
-    it('does not delete attempts for other cards when one card is updated', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
-        include: { cards: true },
+    it('resets card progress to NEW when the canonical answer changes', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
-
-      const session = await prisma.studySession.create({
-        data: { userId, deckId: deck.id },
-      });
-
-      await prisma.cardAttempt.createMany({
-        data: [
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[0].id,
-            userAnswer: 'A1',
-            result: 'correct',
-            attemptNumber: 1,
-          },
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[1].id,
-            userAnswer: 'A2',
-            result: 'correct',
-            attemptNumber: 1,
-          },
-        ],
-      });
+      await makeProgressAdvanced(deck.cards[0].id);
 
       const caller = createCaller();
       await caller.card.update({
         cardId: deck.cards[0].id,
-        back: 'New A1',
+        canonicalAnswer: 'New A',
       });
 
-      const card1Attempts = await prisma.cardAttempt.findMany({
-        where: { cardId: deck.cards[0].id },
+      expect(await progressOf(deck.cards[0].id)).toMatchObject(NEW_PROGRESS);
+    });
+
+    it('does not reset progress when nothing actually changes', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
-      const card2Attempts = await prisma.cardAttempt.findMany({
-        where: { cardId: deck.cards[1].id },
+      await makeProgressAdvanced(deck.cards[0].id);
+
+      const caller = createCaller();
+      await caller.card.update({
+        cardId: deck.cards[0].id,
+        front: 'Q',
+        canonicalAnswer: 'A',
       });
-      expect(card1Attempts).toHaveLength(0);
-      expect(card2Attempts).toHaveLength(1);
+
+      expect(await progressOf(deck.cards[0].id)).toMatchObject({
+        lifecycleState: 'LEARNING',
+        masteryScore: 5,
+      });
+    });
+
+    it('does not reset progress of other cards', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
+      });
+      await makeProgressAdvanced(deck.cards[1].id);
+
+      const caller = createCaller();
+      await caller.card.update({
+        cardId: deck.cards[0].id,
+        canonicalAnswer: 'New A1',
+      });
+
+      expect(await progressOf(deck.cards[1].id)).toMatchObject({
+        lifecycleState: 'LEARNING',
+      });
+    });
+
+    it('keeps the card attempts when the card is edited', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Q', canonicalAnswer: 'Wrong A' }],
+      });
+      const caller = createCaller();
+      const session = await caller.study.startSession({ deckId: deck.id });
+      await caller.study.submitAttempt({
+        studySessionId: session.id,
+        cardId: deck.cards[0].id,
+        userAnswer: 'Wrong A',
+      });
+
+      await caller.card.update({
+        cardId: deck.cards[0].id,
+        canonicalAnswer: 'Correct A',
+      });
+
+      const fetched = await caller.study.getSession({ id: session.id });
+      expect(fetched.attempts).toHaveLength(1);
+      expect(fetched.attempts[0].recallGrade).toBe('NAILED');
     });
   });
 
   describe('delete', () => {
     it('deletes a card', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
       await caller.card.delete({ cardId: deck.cards[0].id });
 
-      const cards = await prisma.card.findMany({
-        where: { deckId: deck.id },
-      });
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(0);
     });
 
     it('rejects deletion of a card belonging to another user', async () => {
-      const otherDeck = await prisma.deck.create({
-        data: {
-          name: 'Other Deck',
-          userId: otherUserId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const otherDeck = await createDeckWithCards(prisma, {
+        userId: otherUserId,
+        name: 'Other Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -577,18 +588,13 @@ describe('cardRouter', () => {
     });
 
     it('deleted card is no longer returned by listByDeck', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Test Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Test Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
       });
 
       const caller = createCaller();
@@ -610,8 +616,8 @@ describe('cardRouter', () => {
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [
-          { front: 'Capital of France', back: 'Paris' },
-          { front: '2 + 2', back: '4' },
+          { front: 'Capital of France', canonicalAnswer: 'Paris' },
+          { front: '2 + 2', canonicalAnswer: '4' },
         ],
         update: [],
       });
@@ -619,70 +625,56 @@ describe('cardRouter', () => {
       expect(result.createdCount).toBe(2);
       expect(result.updatedCount).toBe(0);
 
-      const cards = await prisma.card.findMany({
-        where: { deckId: deck.id },
-        orderBy: { createdAt: 'asc' },
-      });
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(2);
       expect(cards[0].front).toBe('Capital of France');
-      expect(cards[0].back).toBe('Paris');
+      expect(primaryAnswer(cards[0])).toBe('Paris');
       expect(cards[1].front).toBe('2 + 2');
-      expect(cards[1].back).toBe('4');
+      expect(primaryAnswer(cards[1])).toBe('4');
     });
 
-    it('updates existing cards back text', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Import Deck',
-          userId,
-          cards: { create: [{ front: 'Capital of France', back: 'Lyon' }] },
-        },
-        include: { cards: true },
+    it('updates existing cards canonical answer', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Import Deck',
+        cards: [{ front: 'Capital of France', canonicalAnswer: 'Lyon' }],
       });
 
       const caller = createCaller();
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [],
-        update: [{ cardId: deck.cards[0].id, back: 'Paris' }],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'Paris' }],
       });
 
       expect(result.createdCount).toBe(0);
       expect(result.updatedCount).toBe(1);
 
-      const cards = await prisma.card.findMany({
-        where: { deckId: deck.id },
-      });
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(1);
-      expect(cards[0].back).toBe('Paris');
+      expect(primaryAnswer(cards[0])).toBe('Paris');
     });
 
     it('handles mixed new and update in one call', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Import Deck',
-          userId,
-          cards: { create: [{ front: 'Existing Q', back: 'Old A' }] },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Import Deck',
+        cards: [{ front: 'Existing Q', canonicalAnswer: 'Old A' }],
       });
 
       const caller = createCaller();
       const result = await caller.card.importCards({
         deckId: deck.id,
-        new: [{ front: 'New Q', back: 'New A' }],
-        update: [{ cardId: deck.cards[0].id, back: 'Updated A' }],
+        new: [{ front: 'New Q', canonicalAnswer: 'New A' }],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'Updated A' }],
       });
 
       expect(result.createdCount).toBe(1);
       expect(result.updatedCount).toBe(1);
 
-      const cards = await prisma.card.findMany({
-        where: { deckId: deck.id },
-        orderBy: { createdAt: 'asc' },
-      });
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
       expect(cards).toHaveLength(2);
-      expect(cards[0].back).toBe('Updated A');
+      expect(primaryAnswer(cards[0])).toBe('Updated A');
       expect(cards[1].front).toBe('New Q');
     });
 
@@ -691,7 +683,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: 'nonexistent',
-          new: [{ front: 'Q', back: 'A' }],
+          new: [{ front: 'Q', canonicalAnswer: 'A' }],
           update: [],
         }),
       ).rejects.toThrow(/not found/i);
@@ -706,7 +698,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: otherDeck.id,
-          new: [{ front: 'Q', back: 'A' }],
+          new: [{ front: 'Q', canonicalAnswer: 'A' }],
           update: [],
         }),
       ).rejects.toThrow(/not found/i);
@@ -716,13 +708,10 @@ describe('cardRouter', () => {
       const deck = await prisma.deck.create({
         data: { name: 'My Deck', userId },
       });
-      const otherDeck = await prisma.deck.create({
-        data: {
-          name: 'Other Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+      const otherDeck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Other Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -730,7 +719,9 @@ describe('cardRouter', () => {
         caller.card.importCards({
           deckId: deck.id,
           new: [],
-          update: [{ cardId: otherDeck.cards[0].id, back: 'Hacked' }],
+          update: [
+            { cardId: otherDeck.cards[0].id, canonicalAnswer: 'Hacked' },
+          ],
         }),
       ).rejects.toThrow(/card.*does not belong|not found/i);
     });
@@ -744,13 +735,13 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: deck.id,
-          new: [{ front: '', back: 'A' }],
+          new: [{ front: '', canonicalAnswer: 'A' }],
           update: [],
         }),
       ).rejects.toThrow();
     });
 
-    it('rejects empty back in new cards', async () => {
+    it('rejects empty canonical answer in new cards', async () => {
       const deck = await prisma.deck.create({
         data: { name: 'Import Deck', userId },
       });
@@ -759,20 +750,17 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: deck.id,
-          new: [{ front: 'Q', back: '' }],
+          new: [{ front: 'Q', canonicalAnswer: '' }],
           update: [],
         }),
       ).rejects.toThrow();
     });
 
-    it('rejects empty back in update cards', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Import Deck',
-          userId,
-          cards: { create: [{ front: 'Q', back: 'A' }] },
-        },
-        include: { cards: true },
+    it('rejects empty canonical answer in update cards', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Import Deck',
+        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
       });
 
       const caller = createCaller();
@@ -780,37 +768,32 @@ describe('cardRouter', () => {
         caller.card.importCards({
           deckId: deck.id,
           new: [],
-          update: [{ cardId: deck.cards[0].id, back: '' }],
+          update: [{ cardId: deck.cards[0].id, canonicalAnswer: '' }],
         }),
       ).rejects.toThrow();
     });
 
     it('returns correct createdCount and updatedCount', async () => {
-      const deck = await prisma.deck.create({
-        data: {
-          name: 'Import Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'Old A1' },
-              { front: 'Q2', back: 'Old A2' },
-            ],
-          },
-        },
-        include: { cards: true },
+      const deck = await createDeckWithCards(prisma, {
+        userId: userId,
+        name: 'Import Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'Old A1' },
+          { front: 'Q2', canonicalAnswer: 'Old A2' },
+        ],
       });
 
       const caller = createCaller();
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [
-          { front: 'Q3', back: 'A3' },
-          { front: 'Q4', back: 'A4' },
-          { front: 'Q5', back: 'A5' },
+          { front: 'Q3', canonicalAnswer: 'A3' },
+          { front: 'Q4', canonicalAnswer: 'A4' },
+          { front: 'Q5', canonicalAnswer: 'A5' },
         ],
         update: [
-          { cardId: deck.cards[0].id, back: 'New A1' },
-          { cardId: deck.cards[1].id, back: 'New A2' },
+          { cardId: deck.cards[0].id, canonicalAnswer: 'New A1' },
+          { cardId: deck.cards[1].id, canonicalAnswer: 'New A2' },
         ],
       });
 
@@ -818,59 +801,58 @@ describe('cardRouter', () => {
       expect(result.updatedCount).toBe(2);
     });
 
-    it('deletes card attempts for updated cards', async () => {
+    it('creates card progress in NEW state for each new card', async () => {
       const deck = await prisma.deck.create({
-        data: {
-          name: 'Import Deck',
-          userId,
-          cards: {
-            create: [
-              { front: 'Q1', back: 'Old A1' },
-              { front: 'Q2', back: 'A2' },
-            ],
-          },
-        },
-        include: { cards: true },
-      });
-
-      const session = await prisma.studySession.create({
-        data: { userId, deckId: deck.id },
-      });
-
-      await prisma.cardAttempt.createMany({
-        data: [
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[0].id,
-            userAnswer: 'Old A1',
-            result: 'incorrect',
-            attemptNumber: 1,
-          },
-          {
-            studySessionId: session.id,
-            cardId: deck.cards[1].id,
-            userAnswer: 'A2',
-            result: 'correct',
-            attemptNumber: 1,
-          },
-        ],
+        data: { name: 'Import Deck', userId },
       });
 
       const caller = createCaller();
       await caller.card.importCards({
         deckId: deck.id,
-        new: [],
-        update: [{ cardId: deck.cards[0].id, back: 'New A1' }],
+        new: [
+          { front: 'Q1', canonicalAnswer: 'A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
+        update: [],
       });
 
-      const card1Attempts = await prisma.cardAttempt.findMany({
-        where: { cardId: deck.cards[0].id },
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
+      for (const card of cards) {
+        expect(await progressOf(card.id)).toMatchObject(NEW_PROGRESS);
+      }
+    });
+
+    it('resets progress of updated cards and keeps their attempts', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Import Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswer: 'Old A1' },
+          { front: 'Q2', canonicalAnswer: 'A2' },
+        ],
       });
-      const card2Attempts = await prisma.cardAttempt.findMany({
-        where: { cardId: deck.cards[1].id },
+      const caller = createCaller();
+      const session = await caller.study.startSession({ deckId: deck.id });
+      await caller.study.submitAttempt({
+        studySessionId: session.id,
+        cardId: deck.cards[0].id,
+        userAnswer: 'Old A1',
       });
-      expect(card1Attempts).toHaveLength(0);
-      expect(card2Attempts).toHaveLength(1);
+      await makeProgressAdvanced(deck.cards[0].id);
+      await makeProgressAdvanced(deck.cards[1].id);
+
+      await caller.card.importCards({
+        deckId: deck.id,
+        new: [],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'New A1' }],
+      });
+
+      expect(await progressOf(deck.cards[0].id)).toMatchObject(NEW_PROGRESS);
+      expect(await progressOf(deck.cards[1].id)).toMatchObject({
+        lifecycleState: 'LEARNING',
+      });
+      const fetched = await caller.study.getSession({ id: session.id });
+      expect(fetched.attempts).toHaveLength(1);
     });
   });
 });

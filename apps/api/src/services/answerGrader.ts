@@ -1,3 +1,5 @@
+import { type RecallGrade } from '@prisma/client';
+
 /**
  * Tier 1: Deterministic answer grading via normalized string matching.
  * Future tiers (embedding similarity, LLM adjudication) will extend this.
@@ -16,11 +18,11 @@ export function normalizeAnswer(answer: string): string {
 export function gradeAnswer(
   userAnswer: string,
   canonicalAnswer: string,
-): 'correct' | 'incorrect' {
+): Extract<RecallGrade, 'NAILED' | 'MISSED'> {
   const normalized = normalizeAnswer(userAnswer);
   const canonical = normalizeAnswer(canonicalAnswer);
 
-  if (!normalized) return 'incorrect';
+  if (!normalized) return 'MISSED';
 
-  return normalized === canonical ? 'correct' : 'incorrect';
+  return normalized === canonical ? 'NAILED' : 'MISSED';
 }

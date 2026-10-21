@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { type Flashcard } from '@/lib/cards';
 
 export type CardSnapshot = {
-  card: { front: string; back: string };
+  card: Pick<Flashcard, 'front' | 'canonicalAnswer'>;
   result: { result: 'correct' | 'incorrect'; userAnswer: string } | null;
   isFlipped: boolean;
   queueLength: number;
@@ -9,7 +10,7 @@ export type CardSnapshot = {
 };
 
 type CurrentDisplay = {
-  card: { front: string; back: string } | null;
+  card: CardSnapshot['card'] | null;
   result: CardSnapshot['result'];
   isFlipped: boolean;
   queueLength: number;
@@ -33,7 +34,7 @@ export function useSlideAnimation(
   // Ref to snapshot current display state before navigation.
   // Updated on every render so it's always current when event handlers read it.
   const displayRef = useRef<CardSnapshot>({
-    card: current.card ?? { front: '', back: '' },
+    card: current.card ?? { front: '', canonicalAnswer: '' },
     result: current.result,
     isFlipped: current.isFlipped,
     queueLength: current.queueLength,
@@ -41,7 +42,7 @@ export function useSlideAnimation(
   });
   useEffect(() => {
     displayRef.current = {
-      card: current.card ?? { front: '', back: '' },
+      card: current.card ?? { front: '', canonicalAnswer: '' },
       result: current.result,
       isFlipped: current.isFlipped,
       queueLength: current.queueLength,

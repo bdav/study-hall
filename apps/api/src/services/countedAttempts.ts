@@ -1,0 +1,60 @@
+import { type PrismaClient, type RecallGrade } from '@prisma/client';
+
+export interface CountedAttempt {
+  studySessionId: string;
+  cardId: string;
+  deckId: string;
+  attemptNumber: number;
+  recallGrade: RecallGrade;
+}
+
+/** The MVP study flow grades NAILED or MISSED; only NAILED counts as correct. */
+export function isCorrect(grade: RecallGrade) {
+  return grade === 'NAILED';
+}
+
+/**
+ * Finds a user's attempts that count toward stats: those made since each
+ * card's latest progress reset (ADR-0004). Earlier attempts are kept as
+ * history but answered what was effectively a different card.
+ */
+export async function findCountedAttempts(
+  prisma: PrismaClient,
+  { userId, deckIds }: { userId: string; deckIds?: string[] },
+): Promise<CountedAttempt[]> {
+  const attempts = await prisma.cardAttempt.findMany({
+    where: {
+      studySession: {
+        userId,
+        ...(deckIds && { deckId: { in: deckIds } }),
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      studySessionId: true,
+      cardId: true,
+      attemptNumber: true,
+      recallGrade: true,
+      createdAt: true,
+      studySession: { select: { deckId: true } },
+      card: {
+        select: {
+          progress: { where: { userId }, select: { resetAt: true } },
+        },
+      },
+    },
+  });
+
+  return attempts
+    .filter((a) => {
+      const resetAt = a.card.progress[0]?.resetAt;
+      return !resetAt || a.createdAt >= resetAt;
+    })
+    .map((a) => ({
+      studySessionId: a.studySessionId,
+      cardId: a.cardId,
+      deckId: a.studySession.deckId,
+      attemptNumber: a.attemptNumber,
+      recallGrade: a.recallGrade,
+    }));
+}

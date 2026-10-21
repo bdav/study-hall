@@ -1,16 +1,20 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { protectedProcedure, router } from './trpc.js';
+import {
+  createCards,
+  deckOrder,
+  editCard,
+  primaryAnswerText,
+  withCanonicalAnswers,
+} from '../services/cards.js';
+
+const front = z.string().trim().min(1);
+const canonicalAnswer = z.string().trim().min(1);
 
 export const cardRouter = router({
   create: protectedProcedure
-    .input(
-      z.object({
-        deckId: z.string(),
-        front: z.string().trim().min(1),
-        back: z.string().trim().min(1),
-      }),
-    )
+    .input(z.object({ deckId: z.string(), front, canonicalAnswer }))
     .mutation(async ({ ctx, input }) => {
       const deck = await ctx.prisma.deck.findUnique({
         where: { id: input.deckId, userId: ctx.userId },
@@ -23,32 +27,32 @@ export const cardRouter = router({
         });
       }
 
-      // Case-insensitive dedupe on front. Done in JS because SQLite doesn't
-      // support Prisma's `mode: 'insensitive'`. On Postgres, use findFirst
-      // with { mode: 'insensitive' } for DB-level filtering.
-      const existingCards = await ctx.prisma.card.findMany({
-        where: { deckId: input.deckId },
+      const duplicate = await ctx.prisma.card.findFirst({
+        where: {
+          deckId: input.deckId,
+          front: { equals: input.front, mode: 'insensitive' },
+        },
+        include: withCanonicalAnswers,
       });
-      const duplicate = existingCards.find(
-        (c) => c.front.toLowerCase() === input.front.toLowerCase(),
-      );
 
-      if (duplicate) {
-        if (duplicate.back.toLowerCase() !== input.back.toLowerCase()) {
-          return ctx.prisma.card.update({
-            where: { id: duplicate.id },
-            data: { back: input.back },
+      return ctx.prisma.$transaction(async (tx) => {
+        if (duplicate) {
+          const answer = primaryAnswerText(duplicate);
+          if (answer.toLowerCase() === input.canonicalAnswer.toLowerCase()) {
+            return duplicate;
+          }
+          return editCard(tx, {
+            cardId: duplicate.id,
+            canonicalAnswer: input.canonicalAnswer,
           });
         }
-        return duplicate;
-      }
 
-      return ctx.prisma.card.create({
-        data: {
+        const [card] = await createCards(tx, {
           deckId: input.deckId,
-          front: input.front,
-          back: input.back,
-        },
+          userId: ctx.userId,
+          cards: [input],
+        });
+        return card;
       });
     }),
 
@@ -57,12 +61,16 @@ export const cardRouter = router({
       z
         .object({
           cardId: z.string(),
-          front: z.string().trim().min(1).optional(),
-          back: z.string().trim().min(1).optional(),
+          front: front.optional(),
+          canonicalAnswer: canonicalAnswer.optional(),
         })
-        .refine((d) => d.front !== undefined || d.back !== undefined, {
-          message: 'At least one of front or back must be provided',
-        }),
+        .refine(
+          (d) => d.front !== undefined || d.canonicalAnswer !== undefined,
+          {
+            message:
+              'At least one of front or canonical answer must be provided',
+          },
+        ),
     )
     .mutation(async ({ ctx, input }) => {
       const card = await ctx.prisma.card.findUnique({
@@ -77,19 +85,7 @@ export const cardRouter = router({
         });
       }
 
-      return ctx.prisma.$transaction(async (tx) => {
-        await tx.cardAttempt.deleteMany({
-          where: { cardId: input.cardId },
-        });
-
-        return tx.card.update({
-          where: { id: input.cardId },
-          data: {
-            ...(input.front !== undefined && { front: input.front }),
-            ...(input.back !== undefined && { back: input.back }),
-          },
-        });
-      });
+      return ctx.prisma.$transaction((tx) => editCard(tx, input));
     }),
 
   delete: protectedProcedure
@@ -130,7 +126,8 @@ export const cardRouter = router({
 
       return ctx.prisma.card.findMany({
         where: { deckId: input.deckId },
-        orderBy: { createdAt: 'asc' },
+        orderBy: deckOrder,
+        include: withCanonicalAnswers,
       });
     }),
 
@@ -138,18 +135,8 @@ export const cardRouter = router({
     .input(
       z.object({
         deckId: z.string(),
-        new: z.array(
-          z.object({
-            front: z.string().trim().min(1),
-            back: z.string().trim().min(1),
-          }),
-        ),
-        update: z.array(
-          z.object({
-            cardId: z.string(),
-            back: z.string().trim().min(1),
-          }),
-        ),
+        new: z.array(z.object({ front, canonicalAnswer })),
+        update: z.array(z.object({ cardId: z.string(), canonicalAnswer })),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -186,28 +173,14 @@ export const cardRouter = router({
       }
 
       return ctx.prisma.$transaction(async (tx) => {
-        // Create new cards
-        if (input.new.length > 0) {
-          await tx.card.createMany({
-            data: input.new.map((card) => ({
-              deckId: input.deckId,
-              front: card.front,
-              back: card.back,
-            })),
-          });
-        }
+        await createCards(tx, {
+          deckId: input.deckId,
+          userId: ctx.userId,
+          cards: input.new,
+        });
 
-        // Update existing cards and reset their attempts
-        if (input.update.length > 0) {
-          await tx.cardAttempt.deleteMany({
-            where: { cardId: { in: input.update.map((c) => c.cardId) } },
-          });
-        }
         for (const card of input.update) {
-          await tx.card.update({
-            where: { id: card.cardId },
-            data: { back: card.back },
-          });
+          await editCard(tx, card);
         }
 
         return {

@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
 import { gradeAnswer } from '../services/answerGrader.js';
+import { primaryAnswerText, withCanonicalAnswers } from '../services/cards.js';
 
 export const studyRouter = router({
   startSession: protectedProcedure
@@ -18,10 +19,13 @@ export const studyRouter = router({
         });
       }
 
+      // The MVP study flow runs through every card in the deck; session
+      // types and modes come with the v2 session builder.
       return ctx.prisma.studySession.create({
         data: {
           userId: ctx.userId,
           deckId: input.deckId,
+          sessionType: 'STANDARD',
         },
       });
     }),
@@ -46,7 +50,7 @@ export const studyRouter = router({
         });
       }
 
-      if (session.endedAt) {
+      if (session.status !== 'ACTIVE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Session already finished',
@@ -55,6 +59,7 @@ export const studyRouter = router({
 
       const card = await ctx.prisma.card.findUnique({
         where: { id: input.cardId },
+        include: withCanonicalAnswers,
       });
 
       if (!card) {
@@ -71,7 +76,10 @@ export const studyRouter = router({
         });
       }
 
-      const result = gradeAnswer(input.userAnswer, card.back);
+      const recallGrade = gradeAnswer(
+        input.userAnswer,
+        primaryAnswerText(card),
+      );
 
       // Wrap count + create in a transaction to prevent race conditions on attemptNumber
       return ctx.prisma.$transaction(async (tx) => {
@@ -87,8 +95,9 @@ export const studyRouter = router({
             studySessionId: input.studySessionId,
             cardId: input.cardId,
             userAnswer: input.userAnswer,
-            result,
+            recallGrade,
             attemptNumber: previousAttempts + 1,
+            isRetry: previousAttempts > 0,
           },
         });
       });
@@ -108,7 +117,7 @@ export const studyRouter = router({
         });
       }
 
-      if (session.endedAt) {
+      if (session.status !== 'ACTIVE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Session already finished',
@@ -117,7 +126,7 @@ export const studyRouter = router({
 
       return ctx.prisma.studySession.update({
         where: { id: input.id },
-        data: { endedAt: new Date() },
+        data: { status: 'COMPLETED', endedAt: new Date() },
       });
     }),
 

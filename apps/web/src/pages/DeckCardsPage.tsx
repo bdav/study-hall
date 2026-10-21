@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { toFlashcard } from '@/lib/cards';
 import { parseCsv } from '@/lib/csvParser';
 import { diffCsvRows } from '@/lib/csvDiff';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
@@ -249,7 +250,7 @@ export default function DeckCardsPage() {
   }
 
   const deck = deckQuery.data;
-  const cards = cardsQuery.data ?? [];
+  const cards = (cardsQuery.data ?? []).map(toFlashcard);
 
   function handleCsvUpload(file: File) {
     const reader = new FileReader();
@@ -434,7 +435,7 @@ export default function DeckCardsPage() {
                             createCard.mutate({
                               deckId,
                               front: newFront.trim(),
-                              back: newBack.trim(),
+                              canonicalAnswer: newBack.trim(),
                             });
                           }}
                         >
@@ -588,9 +589,13 @@ export default function DeckCardsPage() {
               >
                 <FlashCardTile
                   front={card.front}
-                  back={card.back}
+                  back={card.canonicalAnswer}
                   onSave={(front, back) =>
-                    updateCard.mutate({ cardId: card.id, front, back })
+                    updateCard.mutate({
+                      cardId: card.id,
+                      front,
+                      canonicalAnswer: back,
+                    })
                   }
                   onDelete={() => deleteCard.mutate({ cardId: card.id })}
                   isSaving={

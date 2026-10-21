@@ -30,35 +30,35 @@ describe('normalizeAnswer', () => {
 });
 
 describe('gradeAnswer', () => {
-  it('returns correct for exact match', () => {
-    expect(gradeAnswer('Paris', 'Paris')).toBe('correct');
+  it('returns NAILED for exact match', () => {
+    expect(gradeAnswer('Paris', 'Paris')).toBe('NAILED');
   });
 
-  it('returns correct for case-insensitive match', () => {
-    expect(gradeAnswer('paris', 'Paris')).toBe('correct');
+  it('returns NAILED for case-insensitive match', () => {
+    expect(gradeAnswer('paris', 'Paris')).toBe('NAILED');
   });
 
-  it('returns correct when user answer has extra whitespace', () => {
-    expect(gradeAnswer('  Paris  ', 'Paris')).toBe('correct');
+  it('returns NAILED when user answer has extra whitespace', () => {
+    expect(gradeAnswer('  Paris  ', 'Paris')).toBe('NAILED');
   });
 
-  it('returns correct when user answer has trailing punctuation', () => {
-    expect(gradeAnswer('Paris.', 'Paris')).toBe('correct');
+  it('returns NAILED when user answer has trailing punctuation', () => {
+    expect(gradeAnswer('Paris.', 'Paris')).toBe('NAILED');
   });
 
-  it('returns incorrect for wrong answer', () => {
-    expect(gradeAnswer('London', 'Paris')).toBe('incorrect');
+  it('returns MISSED for wrong answer', () => {
+    expect(gradeAnswer('London', 'Paris')).toBe('MISSED');
   });
 
-  it('returns incorrect for empty answer', () => {
-    expect(gradeAnswer('', 'Paris')).toBe('incorrect');
+  it('returns MISSED for empty answer', () => {
+    expect(gradeAnswer('', 'Paris')).toBe('MISSED');
   });
 
-  it('returns correct for matching answer with different punctuation', () => {
-    expect(gradeAnswer("it's a test", "It's a test")).toBe('correct');
+  it('returns NAILED for matching answer with different punctuation', () => {
+    expect(gradeAnswer("it's a test", "It's a test")).toBe('NAILED');
   });
 
-  it('returns correct when canonical has punctuation too', () => {
-    expect(gradeAnswer('brasilia', 'Brasília')).toBe('correct');
+  it('returns NAILED when canonical has punctuation too', () => {
+    expect(gradeAnswer('brasilia', 'Brasília')).toBe('NAILED');
   });
 });

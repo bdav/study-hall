@@ -1,6 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
+import { deckOrder, withCanonicalAnswers } from '../services/cards.js';
+import { findCountedAttempts, isCorrect } from '../services/countedAttempts.js';
 
 export const deckRouter = router({
   getById: protectedProcedure
@@ -8,7 +10,12 @@ export const deckRouter = router({
     .query(async ({ ctx, input }) => {
       const deck = await ctx.prisma.deck.findUnique({
         where: { id: input.id, userId: ctx.userId },
-        include: { cards: true },
+        include: {
+          cards: {
+            orderBy: deckOrder,
+            include: withCanonicalAnswers,
+          },
+        },
       });
 
       if (!deck) {
@@ -35,7 +42,7 @@ export const deckRouter = router({
       },
     });
 
-    // Fetch attempt stats per deck in a single query
+    // Fetch counted attempt stats per deck in a single query
     const deckIds = decks.map((d) => d.id);
     const attemptsByDeck = new Map<
       string,
@@ -43,25 +50,19 @@ export const deckRouter = router({
     >();
 
     if (deckIds.length > 0) {
-      const attempts = await ctx.prisma.cardAttempt.findMany({
-        where: {
-          studySession: {
-            deckId: { in: deckIds },
-            userId: ctx.userId,
-          },
-        },
-        select: {
-          result: true,
-          studySession: { select: { deckId: true } },
-        },
+      const attempts = await findCountedAttempts(ctx.prisma, {
+        userId: ctx.userId,
+        deckIds,
       });
 
       for (const attempt of attempts) {
-        const did = attempt.studySession.deckId;
-        const stats = attemptsByDeck.get(did) ?? { total: 0, correct: 0 };
+        const stats = attemptsByDeck.get(attempt.deckId) ?? {
+          total: 0,
+          correct: 0,
+        };
         stats.total++;
-        if (attempt.result === 'correct') stats.correct++;
-        attemptsByDeck.set(did, stats);
+        if (isCorrect(attempt.recallGrade)) stats.correct++;
+        attemptsByDeck.set(attempt.deckId, stats);
       }
     }
 
