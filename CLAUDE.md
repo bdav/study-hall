@@ -141,3 +141,17 @@ v2 is an architectural evolution of the MVP, not a greenfield rewrite. Key chang
 - **New features**: Study modes (Study/Drill Weakest/Cram), reverse decks, marketplace (deferred scope)
 
 See `docs/architecture/updated-plan.md` §28 for locked constraints and §29 for remaining open questions.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `bdav/flashcards`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
