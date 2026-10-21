@@ -3,8 +3,9 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
+import { fileURLToPath } from 'url';
 
-const projectRoot = new URL('../../..', import.meta.url).pathname;
+const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 
 /**
  * Creates an isolated test database using a unique Postgres schema.
@@ -25,7 +26,10 @@ export function createTestPrisma() {
     stdio: 'pipe',
   });
 
-  const adapter = new PrismaPg({ connectionString: testUrl });
+  const adapter = new PrismaPg(
+    { connectionString: baseUrl },
+    { schema: schemaName },
+  );
   const prisma = new PrismaClient({ adapter });
 
   return {

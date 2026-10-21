@@ -19,7 +19,7 @@ Study Hall is a full-stack learning app. Today it is a flashcard study app where
 ```bash
 # Clone the repo
 git clone <repo-url>
-cd flashcards
+cd study-hall
 
 # Install dependencies
 pnpm install
@@ -76,7 +76,7 @@ DATABASE_URL="file:./dev.db"
 ## Repo Structure
 
 ```
-flashcards/
+study-hall/
   apps/
     web/          # Vite + React SPA
       src/
