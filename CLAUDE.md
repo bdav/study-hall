@@ -147,7 +147,7 @@ See `docs/architecture/updated-plan.md` §28 for locked constraints and §29 for
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `bdav/flashcards`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for `bdav/study-hall`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
