@@ -1417,6 +1417,8 @@ Prompt/model versions should be versioned for audit/debugging.
 17.9 Deterministic Normalization
 
 > **Amended (2026-10-21):** An answer that differs from a correct answer only in accents is still accepted, but the accented form is always shown and on cards it grades GOOD, never NAILED. See `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`.
+>
+> **Amended (2026-10-22):** Spacing is ignored entirely, like case and punctuation: an answer that differs from a correct answer only in where the spaces fall ("hyper text" for "Hypertext") grades the same as an exact match. This accepts word-split collisions such as "a part" for "apart". `normalizeAnswer` and the stored `normalizedText` keep spaces; the rule is applied when `gradeAnswer` compares (#13).
 
 Include:
 
