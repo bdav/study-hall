@@ -1,4 +1,11 @@
-import { createBrowserRouter } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  Navigate,
+  type RouteObject,
+} from 'react-router-dom';
+import CoursesPage from './pages/CoursesPage';
+import NewCoursePage from './pages/NewCoursePage';
+import CoursePage from './pages/CoursePage';
 import DeckListPage from './pages/DeckListPage';
 import StudyPage from './pages/StudyPage';
 import StatsPage from './pages/StatsPage';
@@ -10,7 +17,7 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { RouteErrorFallback } from './components/RouteErrorFallback';
 
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   {
     path: '/login',
     element: <LoginPage />,
@@ -29,8 +36,25 @@ export const router = createBrowserRouter([
         element: <Layout />,
         errorElement: <RouteErrorFallback />,
         children: [
+          // `/` is kept free for a later view above both areas
           {
             path: '/',
+            element: <Navigate to="/courses" replace />,
+          },
+          {
+            path: '/courses',
+            element: <CoursesPage />,
+          },
+          {
+            path: '/courses/new',
+            element: <NewCoursePage />,
+          },
+          {
+            path: '/courses/:courseId',
+            element: <CoursePage />,
+          },
+          {
+            path: '/flashcards',
             element: <DeckListPage />,
           },
           {
@@ -53,4 +77,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(routes);

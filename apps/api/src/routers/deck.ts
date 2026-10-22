@@ -33,6 +33,7 @@ export const deckRouter = router({
       where: { userId: ctx.userId },
       orderBy: { createdAt: 'desc' },
       include: {
+        course: { select: { id: true, title: true } },
         _count: { select: { cards: true } },
         studySessions: {
           orderBy: { startedAt: 'desc' },
@@ -77,6 +78,7 @@ export const deckRouter = router({
         createdAt: deck.createdAt,
         updatedAt: deck.updatedAt,
         userId: deck.userId,
+        course: deck.course,
         cardCount: deck._count.cards,
         totalAttempts: stats.total,
         accuracy,

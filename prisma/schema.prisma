@@ -53,6 +53,10 @@ enum GradingMethod {
   REFINED_VARIANT
 }
 
+enum AiPurpose {
+  SYLLABUS_GENERATION
+}
+
 // --- Models ---
 
 model User {
@@ -65,6 +69,8 @@ model User {
   studySessions StudySession[]
   sessions      Session[]
   cardProgress  CardProgress[]
+  courses       Course[]
+  aiUsage       AiUsage[]
 }
 
 model Session {
@@ -81,11 +87,14 @@ model Session {
 model Deck {
   id            String         @id @default(cuid())
   userId        String
+  // Set on a Course Deck. The deck outlives its course (ADR-0003).
+  courseId      String?        @unique
   name          String
   description   String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course        Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
   cards         Card[]
   studySessions StudySession[]
 
@@ -223,4 +232,69 @@ model CardAttempt {
   @@index([studySessionItemId])
   @@index([cardId])
   @@index([studySessionId, cardId])
+}
+
+// --- Courses ---
+
+model Course {
+  id             String            @id @default(cuid())
+  userId         String
+  title          String
+  // Setup answers from the course form
+  topic          String
+  goal           String
+  priorKnowledge String
+  timePerWeek    String
+  depth          String
+  notes          String
+  archivedAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck           Deck?
+  proposal       SyllabusProposal?
+  lessons        Lesson[]
+
+  @@index([userId, archivedAt])
+}
+
+model SyllabusProposal {
+  id            String    @id @default(cuid())
+  courseId      String    @unique
+  // Ordered lessons: [{ title, objectives: string[] }]
+  lessons       Json
+  model         String
+  promptVersion String
+  acceptedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model Lesson {
+  id         String    @id @default(cuid())
+  courseId   String
+  title      String
+  position   Int
+  objectives String[]
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  course     Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, position])
+}
+
+model AiUsage {
+  id           String    @id @default(cuid())
+  userId       String
+  purpose      AiPurpose
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }

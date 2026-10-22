@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { publicProcedure, router } from './trpc.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { SESSION_DURATION_MS } from '../context.js';
+import { canUseAI } from '../ai/access.js';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -122,7 +123,7 @@ export const authRouter = router({
     }
 
     return {
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, canUseAI: canUseAI(user) },
     };
   }),
 

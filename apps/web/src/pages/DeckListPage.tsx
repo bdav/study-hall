@@ -161,6 +161,11 @@ export default function DeckListPage() {
                   <p className="text-center text-lg font-bold uppercase tracking-wide text-white">
                     {deck.name}
                   </p>
+                  {deck.course && (
+                    <p className="mt-0.5 text-center text-xs text-white/50">
+                      Course: {deck.course.title}
+                    </p>
+                  )}
                   <p className="mt-1 text-sm text-white/60">
                     {deck.cardCount} cards
                   </p>

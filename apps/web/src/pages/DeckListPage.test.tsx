@@ -40,6 +40,7 @@ const mockDecks = [
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-15T12:00:00.000Z',
     userId: 'user-1',
+    course: null,
   },
   {
     id: 'deck-2',
@@ -52,6 +53,7 @@ const mockDecks = [
     createdAt: '2026-03-10T00:00:00.000Z',
     updatedAt: '2026-03-10T00:00:00.000Z',
     userId: 'user-1',
+    course: null,
   },
 ];
 
@@ -105,6 +107,24 @@ describe('DeckListPage', () => {
     expect(screen.getByText('Math Facts')).toBeInTheDocument();
     expect(screen.getByText(/10 cards/)).toBeInTheDocument();
     expect(screen.getByText(/5 cards/)).toBeInTheDocument();
+  });
+
+  it('labels a Course Deck with its course', () => {
+    setupMocks({
+      data: [
+        { ...mockDecks[1], course: null },
+        {
+          ...mockDecks[0],
+          id: 'deck-3',
+          name: 'Italian',
+          course: { id: 'course-1', title: 'Italian: A1 to A2' },
+        },
+      ],
+    } as Partial<ReturnType<typeof trpc.deck.list.useQuery>>);
+    renderDeckListPage();
+
+    expect(screen.getByText('Course: Italian: A1 to A2')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Course:/)).toHaveLength(1);
   });
 
   it('renders deck summary stats (accuracy and last studied)', () => {

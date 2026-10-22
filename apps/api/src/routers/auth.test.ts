@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createTestPrisma } from '../test-helpers.js';
 import { appRouter } from './index.js';
+import { createFakeAiProvider } from '../ai/fakeProvider.js';
 import type { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../auth/password.js';
 
@@ -25,6 +26,7 @@ function createPublicCaller() {
       prisma,
       userId: null,
       sessionToken: null,
+      ai: createFakeAiProvider(),
       setCookie: (name: string, value: string) => {
         cookies[name] = value;
       },
@@ -50,6 +52,7 @@ function createAuthenticatedCaller(
       prisma,
       userId,
       sessionToken: options?.sessionToken ?? null,
+      ai: createFakeAiProvider(),
       setCookie: (name: string, value: string) => {
         cookies[name] = value;
       },

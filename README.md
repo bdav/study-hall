@@ -66,10 +66,12 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 
 ## Environment Variables
 
-| Variable       | Default             | Description                                |
-| -------------- | ------------------- | ------------------------------------------ |
-| `DATABASE_URL` | —                   | Postgres connection string (set in `.env`) |
-| `CORS_ORIGIN`  | `localhost:*` (dev) | Allowed CORS origin for the API            |
+| Variable            | Default             | Description                                                       |
+| ------------------- | ------------------- | ----------------------------------------------------------------- |
+| `DATABASE_URL`      | —                   | Postgres connection string (set in `.env`)                        |
+| `CORS_ORIGIN`       | `localhost:*` (dev) | Allowed CORS origin for the API                                   |
+| `ANTHROPIC_API_KEY` | —                   | Anthropic API key for course features (AI calls only)             |
+| `AI_ALLOWED_EMAILS` | — (nobody)          | Comma-separated emails allowed to use AI features such as courses |
 
 Create a `.env` file in the project root:
 
@@ -90,8 +92,9 @@ study-hall/
         lib/          # Helpers, API client, query client
     api/          # Express + tRPC backend
       src/
-        routers/      # tRPC route definitions (auth, deck, card, study, stats)
+        routers/      # tRPC route definitions (auth, deck, card, course, study, stats)
         services/     # Business logic (answer grading)
+        ai/           # AI provider interface, access check and generation prompts
         auth/         # Password hashing, session helpers
   prisma/
     schema.prisma # Database schema

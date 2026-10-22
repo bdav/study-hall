@@ -203,7 +203,7 @@ export default function DeckCardsPage() {
     onSuccess: () => {
       utils.deck.list.invalidate();
       toast.success('Deck deleted');
-      navigate('/');
+      navigate('/flashcards');
     },
     onError: () => {
       toast.error('Failed to delete deck');

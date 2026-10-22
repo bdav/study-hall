@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
 import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
+import { createFakeAiProvider } from './ai/fakeProvider.js';
 import { type NewCard } from './services/cards.js';
 
 let prisma: PrismaClient;
@@ -42,7 +43,12 @@ afterAll(async () => {
 });
 
 function createCaller() {
-  return appRouter.createCaller({ prisma, userId, sessionToken: null });
+  return appRouter.createCaller({
+    prisma,
+    userId,
+    sessionToken: null,
+    ai: createFakeAiProvider(),
+  });
 }
 
 describe('deckRouter.getById', () => {
@@ -315,6 +321,7 @@ describe('studyRouter', () => {
         prisma,
         userId: other.id,
         sessionToken: null,
+        ai: createFakeAiProvider(),
       });
     }
 

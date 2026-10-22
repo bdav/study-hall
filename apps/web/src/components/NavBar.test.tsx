@@ -17,14 +17,14 @@ vi.mock('@/lib/trpc', () => ({
   },
 }));
 
-function renderNavBar() {
+function renderNavBar(path = '/') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <NavBar />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -44,11 +44,38 @@ beforeEach(() => {
 });
 
 describe('NavBar', () => {
-  it('renders Home link pointing to /', () => {
+  it('renders Courses and Flashcards as peer areas', () => {
     renderNavBar();
 
-    const homeLink = screen.getByRole('link', { name: /home/i });
-    expect(homeLink).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Courses' })).toHaveAttribute(
+      'href',
+      '/courses',
+    );
+    expect(screen.getByRole('link', { name: 'Flashcards' })).toHaveAttribute(
+      'href',
+      '/flashcards',
+    );
+  });
+
+  it('marks Flashcards as the current area on a deck page', () => {
+    renderNavBar('/decks/deck-1/cards');
+
+    expect(screen.getByRole('link', { name: 'Flashcards' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByRole('link', { name: 'Courses' })).not.toHaveAttribute(
+      'aria-current',
+    );
+  });
+
+  it('marks Courses as the current area on a course page', () => {
+    renderNavBar('/courses/course-1');
+
+    expect(screen.getByRole('link', { name: 'Courses' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('renders Stats link pointing to /stats', () => {

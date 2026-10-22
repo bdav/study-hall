@@ -75,3 +75,34 @@ export function StudySkeleton() {
     </CenteredPage>
   );
 }
+
+export function CourseListSkeleton() {
+  return (
+    <CenteredPage>
+      <div className="w-full max-w-2xl" role="status" aria-label="Loading">
+        <Skeleton className="h-8 w-40" />
+        <div className="mt-6 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    </CenteredPage>
+  );
+}
+
+export function CourseSkeleton() {
+  return (
+    <CenteredPage>
+      <div className="w-full max-w-2xl" role="status" aria-label="Loading">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="mt-2 h-5 w-72" />
+        <div className="mt-8 space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    </CenteredPage>
+  );
+}

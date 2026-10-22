@@ -49,6 +49,8 @@ New tickets join this list when they're created.
 ### Environment Variables
 
 - `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
+- `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it
+- `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
 
 ## Architecture
 
@@ -87,34 +89,41 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 - **Cards**: Create single cards, CSV import with preview (client-side parsing, diff against existing cards, editable preview dialog, structured `importCards` mutation), update (partial), delete, list by deck
 - **Study**: Study Sessions (#5): a Standard queue of up to 25 due and NEW cards built at start, one graded answer per card (typed or "I don't know"), the card's progress updated by the scheduler after every answer, finish at the last card or early (remaining cards skipped), and a "nothing is due" state
 - **Stats**: Per-deck stats (first-try accuracy, overall accuracy, per-card avg attempts-to-correct), overall stats (aggregates + weak cards), empty/loading/error states
+- **Courses** (#14): Courses and Flashcards are peer top-level areas, with Courses as the landing page. The course form generates a Syllabus Proposal (Sonnet-class model); accepting it creates the Lessons and the Course Deck, listed in Flashcards with its course label. An unaccepted proposal can be discarded, which deletes the course (no learning history exists yet). Course creation is gated by `canUseAI`
 - **UX Polish**: Loading skeletons, Sonner toast notifications, error boundaries (app root + per-route), seed data (4 decks, 30 cards, 3 study sessions)
 
 ### Routes
 
-| Path                   | Page                | Auth      |
-| ---------------------- | ------------------- | --------- |
-| `/login`               | LoginPage           | Public    |
-| `/signup`              | SignupPage          | Public    |
-| `/`                    | DeckListPage (home) | Protected |
-| `/decks/:deckId`       | StudyPage           | Protected |
-| `/decks/:deckId/cards` | DeckCardsPage       | Protected |
-| `/decks/:deckId/stats` | DeckStatsPage       | Protected |
-| `/stats`               | StatsPage (overall) | Protected |
+| Path                   | Page                                                             | Auth      |
+| ---------------------- | ---------------------------------------------------------------- | --------- |
+| `/login`               | LoginPage                                                        | Public    |
+| `/signup`              | SignupPage                                                       | Public    |
+| `/`                    | Redirects to `/courses` (kept for a later view above both areas) | Protected |
+| `/courses`             | CoursesPage                                                      | Protected |
+| `/courses/new`         | NewCoursePage                                                    | Protected |
+| `/courses/:courseId`   | CoursePage (proposal or Syllabus)                                | Protected |
+| `/flashcards`          | DeckListPage                                                     | Protected |
+| `/decks/:deckId`       | StudyPage                                                        | Protected |
+| `/decks/:deckId/cards` | DeckCardsPage                                                    | Protected |
+| `/decks/:deckId/stats` | DeckStatsPage                                                    | Protected |
+| `/stats`               | StatsPage (overall)                                              | Protected |
 
 ### tRPC API
 
-All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
+All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI`. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
-| Router  | Procedure                                                   | Type     |
-| ------- | ----------------------------------------------------------- | -------- |
-| `auth`  | `signup`, `login`, `logout`                                 | mutation |
-| `auth`  | `me`                                                        | query    |
-| `deck`  | `create`, `update`, `delete`                                | mutation |
-| `deck`  | `getById`, `list`                                           | query    |
-| `card`  | `create`, `update`, `delete`, `importCards`                 | mutation |
-| `card`  | `listByDeck`                                                | query    |
-| `study` | `startSession`, `submitAnswer`, `dontKnow`, `finishSession` | mutation |
-| `stats` | `deckStats`, `overallStats`                                 | query    |
+| Router   | Procedure                                                         | Type     |
+| -------- | ----------------------------------------------------------------- | -------- |
+| `auth`   | `signup`, `login`, `logout`                                       | mutation |
+| `auth`   | `me`                                                              | query    |
+| `deck`   | `create`, `update`, `delete`                                      | mutation |
+| `deck`   | `getById`, `list`                                                 | query    |
+| `card`   | `create`, `update`, `delete`, `importCards`                       | mutation |
+| `card`   | `listByDeck`                                                      | query    |
+| `course` | `create` (AI, `aiProcedure`), `acceptProposal`, `discardProposal` | mutation |
+| `course` | `list`, `getById`                                                 | query    |
+| `study`  | `startSession`, `submitAnswer`, `dontKnow`, `finishSession`       | mutation |
+| `stats`  | `deckStats`, `overallStats`                                       | query    |
 
 ### Key Services
 
@@ -123,15 +132,18 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 - **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer: NEW → LEARNING, mastery change by Recall Grade (0–10), and the next due date from the LEARNING interval table.
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue, applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 
+- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error.
+
 ### Data Model
 
-The v2 schema (`prisma/schema.prisma`, designed in `v2-schema-proposal.md`) has these models: `User`, `Session` (login sessions), `Deck`, `Card`, `CanonicalAnswer`, `AcceptedVariant`, `CardProgress`, `StudySession`, `StudySessionItem` and `CardAttempt`. A card has no single "back" field: its answers are `CanonicalAnswer` rows, and attempts record a `RecallGrade`. Cascade deletes on all parent relationships. Card edits reset progress but keep attempts (ADR-0004): only attempts made since `CardProgress.resetAt` count toward stats, via `services/countedAttempts.ts`. Cards are created and edited through `services/cards.ts`, which keeps each card's primary Canonical Answer and NEW card progress in step.
+The v2 schema (`prisma/schema.prisma`, designed in `v2-schema-proposal.md`) has these models: `User`, `Session` (login sessions), `Deck`, `Card`, `CanonicalAnswer`, `AcceptedVariant`, `CardProgress`, `StudySession`, `StudySessionItem` and `CardAttempt`, plus `Course`, `SyllabusProposal`, `Lesson` and `AiUsage` for courses. A Course Deck is a `Deck` with `courseId` set; it survives its course (`SetNull`). A card has no single "back" field: its answers are `CanonicalAnswer` rows, and attempts record a `RecallGrade`. Cascade deletes on all parent relationships. Card edits reset progress but keep attempts (ADR-0004): only attempts made since `CardProgress.resetAt` count toward stats, via `services/countedAttempts.ts`. Cards are created and edited through `services/cards.ts`, which keeps each card's primary Canonical Answer and NEW card progress in step.
 
 ### Testing Patterns
 
 - **API tests** use isolated per-suite Postgres schemas via `apps/api/src/test-helpers.ts`: each test suite gets its own schema, Prisma client and tRPC caller. Docker Postgres must be running.
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
+- **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith` and inspect `requests`. Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`
 - **Test fixtures**: build decks with `createDeckWithCards` from `test-helpers.ts`, which creates cards the way the app does
 
 ## Planning Docs

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
 import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
+import { createFakeAiProvider } from './ai/fakeProvider.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -76,6 +77,7 @@ function createCaller(overrideUserId?: string) {
     prisma,
     userId: overrideUserId ?? userId,
     sessionToken: null,
+    ai: createFakeAiProvider(),
   });
 }
 

@@ -503,7 +503,7 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('calls deck delete and navigates home when confirmed', async () => {
+  it('calls deck delete and navigates to Flashcards when confirmed', async () => {
     setupMocks();
     const mockMutate = vi.fn();
     vi.mocked(trpc.deck.delete.useMutation).mockImplementation(((opts?: {
@@ -529,7 +529,7 @@ describe('DeckCardsPage', () => {
     await user.click(confirmButton);
 
     expect(mockMutate).toHaveBeenCalledWith({ id: 'deck-1' });
-    expect(mockNavigate).toHaveBeenCalledWith('/');
+    expect(mockNavigate).toHaveBeenCalledWith('/flashcards');
   });
 
   it('does not delete deck when confirmation is cancelled', async () => {

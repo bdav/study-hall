@@ -1,11 +1,15 @@
 import { type PrismaClient } from '@prisma/client';
 import { prisma } from './db.js';
+import { type AiProvider } from './ai/provider.js';
+import { createAnthropicProvider } from './ai/anthropicProvider.js';
 
 export type Context = {
   prisma: PrismaClient;
   userId: string | null;
   /** The current session token, if authenticated. Used for single-session logout. */
   sessionToken: string | null;
+  /** Every model call goes through this. Tests supply a fake. */
+  ai: AiProvider;
   /** Set a cookie on the response. Only available in HTTP context (not in test callers). */
   setCookie?: (name: string, value: string, options: CookieOptions) => void;
   /** Clear a cookie on the response. Only available in HTTP context. */
@@ -22,6 +26,8 @@ export type CookieOptions = {
 };
 
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const ai = createAnthropicProvider();
 
 /**
  * Creates tRPC context from an Express request.
@@ -55,6 +61,7 @@ export async function createContext({
     prisma,
     userId,
     sessionToken: token ?? null,
+    ai,
     setCookie: (name, value, options) => res.cookie(name, value, options),
     clearCookie: (name, options) => res.clearCookie(name, options),
   };
