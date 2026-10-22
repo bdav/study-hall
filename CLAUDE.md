@@ -13,7 +13,7 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 When picking the next ticket, work the first open issue in this list whose blockers are all closed. The order gets one course usable end to end early, then finishes the tutor and the rest of v2.
 
 1. Core study loop: #13, #5, #6
-2. Usable course: #14, #15, #28, #18, #20, #21, #22
+2. Usable course: #14, #29, #15, #28, #18, #20, #21, #22
 3. Learn → Review loop: #25, #26, #27, #7
 4. Syllabus editing and tutor: #16, #23, #24
 5. Rest of v2 and courses: #3, #4, #12, #10, #11, #8, #9, #17, #19
@@ -25,6 +25,7 @@ New tickets join this list when they're created.
 ### Development
 
 - `pnpm dev` — start both API (port 3001) and web (port 5173) concurrently
+- `pnpm dev:op` — same, but the API runs under `op run` with secrets from the gitignored `.env.1password` (optional; see README)
 - `pnpm dev:api` — start API server only
 - `pnpm dev:web` — start web dev server only
 
@@ -50,7 +51,7 @@ New tickets join this list when they're created.
 ### Environment Variables
 
 - `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
-- `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it
+- `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it. Set it in `.env`, or as a 1Password secret reference in `.env.1password` for `pnpm dev:op`
 - `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
 
 ## Architecture

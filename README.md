@@ -47,23 +47,24 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 
 ## Scripts
 
-| Script                         | Description                           |
-| ------------------------------ | ------------------------------------- |
-| `pnpm dev`                     | Start both API and web dev servers    |
-| `pnpm dev:api`                 | Start API server only (port 3001)     |
-| `pnpm dev:web`                 | Start web dev server only (port 5173) |
-| `pnpm --filter api test`       | Run API tests                         |
-| `pnpm --filter web test`       | Run web tests                         |
-| `pnpm --filter web test:watch` | Run web tests in watch mode           |
-| `pnpm --filter web build`      | Production build of the web app       |
-| `pnpm --filter web lint`       | Lint the web app                      |
-| `pnpm lint`                    | Lint both apps                        |
-| `pnpm typecheck`               | Typecheck both apps                   |
-| `pnpm format`                  | Format all files with Prettier        |
-| `pnpm format:check`            | Check formatting                      |
-| `pnpm prisma migrate dev`      | Run database migrations               |
-| `pnpm prisma generate`         | Regenerate Prisma client              |
-| `pnpm db:seed`                 | Seed database with demo data          |
+| Script                         | Description                            |
+| ------------------------------ | -------------------------------------- |
+| `pnpm dev`                     | Start both API and web dev servers     |
+| `pnpm dev:op`                  | `pnpm dev` with secrets from 1Password |
+| `pnpm dev:api`                 | Start API server only (port 3001)      |
+| `pnpm dev:web`                 | Start web dev server only (port 5173)  |
+| `pnpm --filter api test`       | Run API tests                          |
+| `pnpm --filter web test`       | Run web tests                          |
+| `pnpm --filter web test:watch` | Run web tests in watch mode            |
+| `pnpm --filter web build`      | Production build of the web app        |
+| `pnpm --filter web lint`       | Lint the web app                       |
+| `pnpm lint`                    | Lint both apps                         |
+| `pnpm typecheck`               | Typecheck both apps                    |
+| `pnpm format`                  | Format all files with Prettier         |
+| `pnpm format:check`            | Check formatting                       |
+| `pnpm prisma migrate dev`      | Run database migrations                |
+| `pnpm prisma generate`         | Regenerate Prisma client               |
+| `pnpm db:seed`                 | Seed database with demo data           |
 
 ## Environment Variables
 
@@ -79,6 +80,20 @@ Create a `.env` file in the project root:
 ```
 DATABASE_URL="postgresql://flashcards:flashcards@localhost:5432/flashcards"
 ```
+
+### Optional: secrets from 1Password
+
+Instead of putting `ANTHROPIC_API_KEY` in `.env`, you can keep it in 1Password and start the app with `pnpm dev:op`. This runs the API under [`op run`](https://www.1password.dev/cli/secrets-environment-variables/), which reads the key once when the API starts. Production and `pnpm dev` still use plain environment variables.
+
+1. Install the [1Password CLI](https://www.1password.dev/cli/get-started/) (`brew install 1password-cli`).
+2. In the 1Password desktop app, open Settings → Developer and turn on **Integrate with 1Password CLI**, so `op` unlocks with Touch ID.
+3. Create a gitignored `.env.1password` in the project root with a [secret reference](https://www.1password.dev/cli/secret-references/) to the key:
+
+   ```
+   ANTHROPIC_API_KEY=op://<vault>/<item>/credential
+   ```
+
+A variable that 1Password provides overrides the same variable in `.env`.
 
 ## Repo Structure
 
