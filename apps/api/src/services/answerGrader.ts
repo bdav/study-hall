@@ -24,5 +24,15 @@ export function gradeAnswer(
 
   if (!normalized) return 'MISSED';
 
-  return normalized === canonical ? 'NAILED' : 'MISSED';
+  return withoutSpaces(normalized) === withoutSpaces(canonical)
+    ? 'NAILED'
+    : 'MISSED';
+}
+
+/**
+ * Spacing never affects the grade, like case and punctuation: splitting or
+ * joining a word ("hyper text" for "hypertext") isn't a recall failure.
+ */
+function withoutSpaces(text: string): string {
+  return text.replaceAll(' ', '');
 }

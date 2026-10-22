@@ -61,4 +61,33 @@ describe('gradeAnswer', () => {
   it('returns NAILED when canonical has punctuation too', () => {
     expect(gradeAnswer('brasilia', 'Brasília')).toBe('NAILED');
   });
+
+  it('returns NAILED when the answer splits a word the canonical joins', () => {
+    expect(
+      gradeAnswer(
+        'hyper text transfer protocol',
+        'Hypertext Transfer Protocol',
+      ),
+    ).toBe('NAILED');
+  });
+
+  it('returns NAILED when the answer joins words the canonical splits', () => {
+    expect(gradeAnswer('database', 'data base')).toBe('NAILED');
+  });
+
+  it('returns NAILED when a space is moved within the answer', () => {
+    expect(gradeAnswer('ne wyork', 'New York')).toBe('NAILED');
+  });
+
+  it('returns NAILED when spacing, case, punctuation and surrounding whitespace all differ', () => {
+    expect(gradeAnswer('  Data base! ', 'Database')).toBe('NAILED');
+  });
+
+  it('returns MISSED when the answer differs in more than spacing', () => {
+    expect(gradeAnswer('hyper test', 'Hypertext')).toBe('MISSED');
+  });
+
+  it('returns MISSED for a whitespace-only answer', () => {
+    expect(gradeAnswer('   ', 'Paris')).toBe('MISSED');
+  });
 });
