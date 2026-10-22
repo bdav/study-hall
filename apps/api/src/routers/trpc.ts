@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { type Context } from '../context.js';
 import { AI_ACCESS_DENIED_MESSAGE, canUseAI } from '../ai/access.js';
+import { AI_PAUSED_MESSAGE, isAiPaused } from '../ai/spend.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -30,7 +31,8 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 
 /**
  * Procedure for AI-backed capabilities: requires an authenticated user who
- * passes `canUseAI`. Throws FORBIDDEN otherwise.
+ * passes `canUseAI`, and throws FORBIDDEN otherwise. Once this month's AI
+ * spend reaches the cap it throws TOO_MANY_REQUESTS before any model call.
  */
 export const aiProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = await ctx.prisma.user.findUnique({
@@ -42,6 +44,13 @@ export const aiProcedure = protectedProcedure.use(async ({ ctx, next }) => {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: AI_ACCESS_DENIED_MESSAGE,
+    });
+  }
+
+  if (await isAiPaused(ctx.prisma)) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: AI_PAUSED_MESSAGE,
     });
   }
 

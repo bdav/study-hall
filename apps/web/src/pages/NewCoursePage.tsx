@@ -38,6 +38,31 @@ function Field({
   );
 }
 
+/** Shown instead of the form when AI can't be used, pointing to flashcards. */
+function AiUnavailableNotice({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <CenteredPage centered>
+      <div className="max-w-md text-center text-white">
+        <h1 className="text-2xl font-bold">{title}</h1>
+        <p className="mt-2 text-white/70">{children}</p>
+        <p className="mt-4 text-white/70">
+          Standalone{' '}
+          <Link to="/flashcards" className="underline hover:text-white">
+            flashcards
+          </Link>{' '}
+          are fully available.
+        </p>
+      </div>
+    </CenteredPage>
+  );
+}
+
 export default function NewCoursePage() {
   const [form, setForm] = useState(emptyForm);
   const navigate = useNavigate();
@@ -53,22 +78,19 @@ export default function NewCoursePage() {
 
   if (me.data?.user && !me.data.user.canUseAI) {
     return (
-      <CenteredPage centered>
-        <div className="max-w-md text-center text-white">
-          <h1 className="text-2xl font-bold">Courses need AI access</h1>
-          <p className="mt-2 text-white/70">
-            Your account doesn&apos;t have access to AI features yet, and
-            courses use them to build your syllabus and lessons.
-          </p>
-          <p className="mt-4 text-white/70">
-            Standalone{' '}
-            <Link to="/flashcards" className="underline hover:text-white">
-              flashcards
-            </Link>{' '}
-            are fully available.
-          </p>
-        </div>
-      </CenteredPage>
+      <AiUnavailableNotice title="Courses need AI access">
+        Your account doesn&apos;t have access to AI features yet, and courses
+        use them to build your syllabus and lessons.
+      </AiUnavailableNotice>
+    );
+  }
+
+  // The monthly AI spending cap was reached: AI is paused, not broken
+  if (createCourse.error?.data?.code === 'TOO_MANY_REQUESTS') {
+    return (
+      <AiUnavailableNotice title="AI features are paused">
+        {createCourse.error.message}
+      </AiUnavailableNotice>
     );
   }
 

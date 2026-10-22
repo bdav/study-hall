@@ -128,6 +128,28 @@ describe('NewCoursePage', () => {
     ).toBeEnabled();
   });
 
+  it('says AI features are paused, not broken, once the monthly cap is reached', () => {
+    renderPage({
+      mutation: {
+        error: {
+          message:
+            "AI features are paused until next month because this month's AI spending cap has been reached.",
+          data: { code: 'TOO_MANY_REQUESTS' },
+        } as CreateMutation['error'],
+      },
+    });
+
+    expect(
+      screen.getByRole('heading', { name: /AI features are paused/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/until next month/i)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /flashcards/i })).toHaveAttribute(
+      'href',
+      '/flashcards',
+    );
+  });
+
   it('tells a learner without AI access that courses need it', () => {
     renderPage({ canUseAI: false });
 

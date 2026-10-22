@@ -68,12 +68,13 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 
 ## Environment Variables
 
-| Variable            | Default             | Description                                                       |
-| ------------------- | ------------------- | ----------------------------------------------------------------- |
-| `DATABASE_URL`      | —                   | Postgres connection string (set in `.env`)                        |
-| `CORS_ORIGIN`       | `localhost:*` (dev) | Allowed CORS origin for the API                                   |
-| `ANTHROPIC_API_KEY` | —                   | Anthropic API key for course features (AI calls only)             |
-| `AI_ALLOWED_EMAILS` | — (nobody)          | Comma-separated emails allowed to use AI features such as courses |
+| Variable             | Default             | Description                                                                                  |
+| -------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | —                   | Postgres connection string (set in `.env`)                                                   |
+| `CORS_ORIGIN`        | `localhost:*` (dev) | Allowed CORS origin for the API                                                              |
+| `ANTHROPIC_API_KEY`  | —                   | Anthropic API key for course features (AI calls only)                                        |
+| `AI_ALLOWED_EMAILS`  | — (nobody)          | Comma-separated emails allowed to use AI features such as courses                            |
+| `AI_MONTHLY_CAP_USD` | — (AI paused)       | Monthly AI spending cap in US dollars, across all users; AI features pause once it's reached |
 
 Create a `.env` file in the project root:
 

@@ -53,6 +53,7 @@ New tickets join this list when they're created.
 - `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
 - `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it. Set it in `.env`, or as a 1Password secret reference in `.env.1password` for `pnpm dev:op`
 - `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
+- `AI_MONTHLY_CAP_USD` — monthly AI spending cap in US dollars, across all users (`apps/api/src/ai/spend.ts`); unset or invalid means AI is paused
 
 ## Architecture
 
@@ -112,7 +113,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 
 ### tRPC API
 
-All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI`. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
+All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the month's AI spend reaches the cap, before any model call. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
 | Router   | Procedure                                                         | Type     |
 | -------- | ----------------------------------------------------------------- | -------- |
@@ -134,7 +135,7 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 - **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer: NEW → LEARNING, mastery change by Recall Grade (0–10), and the next due date from the LEARNING interval table.
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue, applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 
-- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error.
+- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rate) and totals the current UTC month; the spending cap and #28's usage view both use it.
 
 ### Data Model
 

@@ -65,6 +65,7 @@ beforeEach(async () => {
     'AI_ALLOWED_EMAILS',
     'course-test@example.com, other-course@example.com',
   );
+  vi.stubEnv('AI_MONTHLY_CAP_USD', '100');
 });
 
 afterAll(async () => {
@@ -139,6 +140,119 @@ describe('courseRouter', () => {
       });
       const session = await caller.study.startSession({ deckId: deck.id });
 
+      expect(session?.items).toHaveLength(1);
+    });
+  });
+
+  describe('monthly AI spending cap', () => {
+    /** Records AI usage costing the given dollars at Sonnet 5.5's $10 per million output tokens. */
+    async function recordSpend(
+      dollars: number,
+      { by = userId, at = new Date() }: { by?: string; at?: Date } = {},
+    ) {
+      await prisma.aiUsage.create({
+        data: {
+          userId: by,
+          purpose: 'SYLLABUS_GENERATION',
+          model: 'claude-sonnet-5-5',
+          inputTokens: 0,
+          outputTokens: dollars * 100_000,
+          createdAt: at,
+        },
+      });
+    }
+
+    it('pauses AI features once the month reaches the cap, without calling the model', async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(5);
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({
+          code: 'TOO_MANY_REQUESTS',
+          message: expect.stringMatching(/paused/),
+        }),
+      );
+      expect(ai.requests).toHaveLength(0);
+      expect(await prisma.course.count()).toBe(0);
+    });
+
+    it('keeps AI features available below the cap', async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(4.99);
+
+      await expect(createCourse()).resolves.toHaveProperty('id');
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('stays paused over the cap', async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(7.5);
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it("counts every user's AI usage toward the cap", async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(3);
+      await recordSpend(2, { by: otherUserId });
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
+      );
+    });
+
+    it('starts each month afresh, in UTC', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-15T12:00:00Z'));
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+
+      try {
+        await recordSpend(5, { at: new Date('2026-09-30T23:59:59.999Z') });
+        await expect(createCourse()).resolves.toHaveProperty('id');
+
+        await recordSpend(5, { at: new Date('2026-10-01T00:00:00Z') });
+        await expect(createCourse()).rejects.toThrow(
+          expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([
+      ['unset', undefined],
+      ['not a number', 'ten dollars'],
+    ])('pauses AI features when the cap is %s', async (_, cap) => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', cap);
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('keeps flashcards and existing courses usable while paused', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(5);
+
+      await caller.course.acceptProposal({ courseId: id });
+      const course = await caller.course.getById({ id });
+      const courses = await caller.course.list();
+      const deck = await caller.deck.create({ name: 'Capitals' });
+      await caller.card.create({
+        deckId: deck.id,
+        front: 'France',
+        canonicalAnswer: 'Paris',
+      });
+      const session = await caller.study.startSession({ deckId: deck.id });
+
+      expect(course.lessons).toHaveLength(syllabus.lessons.length);
+      expect(courses).toHaveLength(1);
       expect(session?.items).toHaveLength(1);
     });
   });
