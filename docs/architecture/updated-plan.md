@@ -2009,6 +2009,29 @@ I. Signup / Access Control
 
 Open. Need decide: open signup, invite-only, or allowlist for portfolio app.
 
+The current email/password auth (bcrypt, DB-backed sessions, HttpOnly
+SameSite=Lax cookie) is sound for local use. If other people ever sign up,
+choose between:
+
+* keeping passwords: add password reset and email verification (needs an
+  email provider)
+* adding Google sign-in through a library (Arctic, Better Auth): no password
+  reset or stored passwords, and users get Google's two-factor sign-in
+
+⸻
+
+J. Hosting Readiness
+
+Open, and only relevant if the app is ever hosted. Before a public deployment:
+
+* Cookies across domains: on default Vercel and Railway domains the web app
+  and API are different sites, so the SameSite=Lax session cookie is never
+  sent. Put both on one custom domain (app. and api.), or switch to
+  SameSite=None; Secure
+* Rate limiting on login and signup
+* Cleanup of expired sessions (TODO in apps/api/src/context.ts)
+* The seed account (dev@example.com / password) must not exist in production
+
 ⸻
 
 30. Recommended Next Implementation Planning Order
