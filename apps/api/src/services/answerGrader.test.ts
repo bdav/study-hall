@@ -14,8 +14,13 @@ describe('matchAnswer', () => {
     expect(matchAnswer(answer, correct)).toBe('accent-mismatch');
   });
 
-  it('is exact when the accents are right, whatever the case, punctuation and spacing', () => {
-    expect(matchAnswer('  per ché? ', 'Perché')).toBe('exact');
+  it('is exact when the accents are right, whatever the case, punctuation and surrounding whitespace', () => {
+    expect(matchAnswer('  perché? ', 'Perché')).toBe('exact');
+  });
+
+  it('is no match when the spaces between words differ', () => {
+    expect(matchAnswer('por que', 'porque')).toBe('no-match');
+    expect(matchAnswer('por qué', 'porqué')).toBe('no-match');
   });
 
   it('is no match when the answer differs in more than accents', () => {
@@ -108,27 +113,20 @@ describe('gradeAnswer', () => {
     });
   });
 
-  it('returns NAILED when the answer splits a word the canonical joins', () => {
-    expect(
-      gradeAnswer('hyper text transfer protocol', 'Hypertext Transfer Protocol')
-        .recallGrade,
-    ).toBe('NAILED');
+  // Spaces between words are meaningful: "por que" (why) is not "porque"
+  // (because)
+  it.each([
+    ['por que', 'porque', 'splits a word'],
+    ['database', 'data base', 'joins two words'],
+    ['ne wyork', 'New York', 'moves a space'],
+  ])('returns MISSED when %s for %s %s', (answer, canonical) => {
+    expect(gradeAnswer(answer, canonical).recallGrade).toBe('MISSED');
   });
 
-  it('returns NAILED when the answer joins words the canonical splits', () => {
-    expect(gradeAnswer('database', 'data base').recallGrade).toBe('NAILED');
-  });
-
-  it('returns NAILED when a space is moved within the answer', () => {
-    expect(gradeAnswer('ne wyork', 'New York').recallGrade).toBe('NAILED');
-  });
-
-  it('returns NAILED when spacing, case, punctuation and surrounding whitespace all differ', () => {
-    expect(gradeAnswer('  Data base! ', 'Database').recallGrade).toBe('NAILED');
-  });
-
-  it('returns MISSED when the answer differs in more than spacing', () => {
-    expect(gradeAnswer('hyper test', 'Hypertext').recallGrade).toBe('MISSED');
+  it('returns NAILED when case, punctuation and surrounding whitespace all differ', () => {
+    expect(gradeAnswer('  data  BASE! ', 'Data base').recallGrade).toBe(
+      'NAILED',
+    );
   });
 
   it('returns MISSED for a whitespace-only answer', () => {

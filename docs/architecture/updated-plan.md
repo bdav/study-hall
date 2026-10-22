@@ -1418,7 +1418,7 @@ Prompt/model versions should be versioned for audit/debugging.
 
 > **Amended (2026-10-21):** An answer that differs from a correct answer only in accents is still accepted, but the accented form is always shown and on cards it grades GOOD, never NAILED. See `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`.
 >
-> **Amended (2026-10-22):** Spacing is ignored entirely, like case and punctuation: an answer that differs from a correct answer only in where the spaces fall ("hyper text" for "Hypertext") grades the same as an exact match. This accepts word-split collisions such as "a part" for "apart". `normalizeAnswer` and the stored `normalizedText` keep spaces; the rule is applied when `gradeAnswer` compares (#13).
+> **Amended (2026-10-22), then reversed the same day:** #13 briefly ignored spacing entirely, so "hyper text" matched "Hypertext". That was undone because the spaces between words can change the word: "por que" (why) is not "porque" (because), nor "a part" "apart". Whitespace normalization still collapses runs of spaces and trims the ends, but an answer that splits, joins or moves a word grades as a miss. The comparison is `matchAnswer` in `apps/api/src/services/answerGrader.ts`.
 
 Include:
 

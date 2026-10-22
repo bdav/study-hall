@@ -122,7 +122,7 @@ What does HTTP stand for,HyperText Transfer Protocol
 - **Auth:** Email/password signup and login with cookie-based sessions
 - **Decks:** Create, rename, and delete flashcard decks
 - **Cards:** Add cards one at a time or bulk import via CSV; edit and delete cards
-- **Study:** Finite study sessions of due and new cards. Type your answer (or choose "I don't know"); answers are graded with normalized string matching that ignores case, spacing and punctuation. An answer wrong only in its accents is accepted as Good with the accented form shown. Each card is rescheduled after every answer
+- **Study:** Finite study sessions of due and new cards. Type your answer (or choose "I don't know"); answers are graded with normalized string matching that ignores case, punctuation and extra whitespace (but not the spaces between words). An answer wrong only in its accents is accepted as Good with the accented form shown. Each card is rescheduled after every answer
 - **Stats:** Per-deck and overall stats including first-try accuracy, overall accuracy, attempts-to-correct per card, and weak card identification
 
 ## Testing

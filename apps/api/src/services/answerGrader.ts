@@ -48,8 +48,8 @@ export type AnswerMatch = 'exact' | 'accent-mismatch' | 'no-match';
 /**
  * The one comparison between an answer and a correct answer: a Canonical
  * Answer today, and Accepted Variants (#4) and course exercises (#20, #21)
- * next. Case, punctuation and spacing never matter. An answer with no
- * letters or digits never matches.
+ * next. Case, punctuation and extra whitespace never matter, but the spaces
+ * between words do. An answer with no letters or digits never matches.
  */
 export function matchAnswer(
   answer: string,
@@ -69,11 +69,11 @@ export function matchAnswer(
 }
 
 /**
- * An answer reduced to its lowercase letters and digits, in any script.
- * Spacing is dropped too: splitting or joining a word ("hyper text" for
- * "hypertext") isn't a recall failure. Accent marks are the combining marks
- * Unicode splits off a letter (é, ñ, ç); letters such as ł, ø and ß have
- * none and always count.
+ * An answer reduced to its lowercase words of letters and digits, in any
+ * script, one space apart. Spaces between words are kept because they can
+ * change the word: "por que" (why) is not "porque" (because). Accent marks
+ * are the combining marks Unicode splits off a letter (é, ñ, ç); letters
+ * such as ł, ø and ß have none and always count.
  */
 function comparisonForm(
   answer: string,
@@ -82,5 +82,9 @@ function comparisonForm(
   const letters = keepAccents
     ? answer.normalize('NFC')
     : answer.normalize('NFD').replace(/\p{M}/gu, ''); // strip accent marks
-  return letters.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+  return letters
+    .replace(/[^\p{L}\p{N}\s]/gu, '') // strip punctuation
+    .replace(/\s+/g, ' ') // collapse whitespace
+    .trim()
+    .toLowerCase();
 }
