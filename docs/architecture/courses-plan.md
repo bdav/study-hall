@@ -1,5 +1,21 @@
 # Courses — Plan
 
+> **Tracked in GitHub issues (2026-10-21):** This document remains the design reference for courses, and tickets cite its sections. Work and status now live in GitHub issues #14–#27, sub-issues of the spec #1, which re-slice A1–C3 into end-to-end tickets with native blocking links. Course tickets are blocked only by the v2 tickets they need (#21 by #6, #27 by #5), so they interleave with the remaining v2 tickets rather than waiting for all of #2–#12 as **Sequencing** below says.
+>
+> | PR  | Tickets       |
+> | --- | ------------- |
+> | A1  | #14, #15      |
+> | A2  | #14, #16, #17 |
+> | A3  | #14, #16, #17 |
+> | A4  | #18, #19      |
+> | A5  | #20, #21, #22 |
+> | A6  | #18, #20, #22 |
+> | B1  | #23, #24      |
+> | B2  | #23, #24      |
+> | C1  | #25           |
+> | C2  | #25           |
+> | C3  | #26, #27      |
+
 ## Overview
 
 This plan evolves the flashcard app into a general learning app: AI-assisted **courses** that teach material through generated lessons, exercises and a contextual tutor, and feed what was learned into the existing flashcard review cycle. Standalone decks stay first-class. The motivating use case is learning Italian alongside Duolingo; nothing in the design is language-specific except where noted.
