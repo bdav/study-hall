@@ -47,6 +47,10 @@ function progressOf(cardId: string) {
   });
 }
 
+function attemptsIn(studySessionId: string) {
+  return prisma.cardAttempt.findMany({ where: { studySessionId } });
+}
+
 function makeProgressAdvanced(cardId: string) {
   return prisma.cardProgress.update({
     where: { userId_cardId: { userId, cardId } },
@@ -535,9 +539,8 @@ describe('cardRouter', () => {
       });
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId: deck.id });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: deck.cards[0].id,
+      await caller.study.submitAnswer({
+        itemId: session!.items[0].id,
         userAnswer: 'Wrong A',
       });
 
@@ -546,9 +549,9 @@ describe('cardRouter', () => {
         canonicalAnswer: 'Correct A',
       });
 
-      const fetched = await caller.study.getSession({ id: session.id });
-      expect(fetched.attempts).toHaveLength(1);
-      expect(fetched.attempts[0].recallGrade).toBe('NAILED');
+      const attempts = await attemptsIn(session!.id);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0].recallGrade).toBe('NAILED');
     });
   });
 
@@ -833,9 +836,8 @@ describe('cardRouter', () => {
       });
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId: deck.id });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: deck.cards[0].id,
+      await caller.study.submitAnswer({
+        itemId: session!.items[0].id,
         userAnswer: 'Old A1',
       });
       await makeProgressAdvanced(deck.cards[0].id);
@@ -851,8 +853,7 @@ describe('cardRouter', () => {
       expect(await progressOf(deck.cards[1].id)).toMatchObject({
         lifecycleState: 'LEARNING',
       });
-      const fetched = await caller.study.getSession({ id: session.id });
-      expect(fetched.attempts).toHaveLength(1);
+      expect(await attemptsIn(session!.id)).toHaveLength(1);
     });
   });
 });

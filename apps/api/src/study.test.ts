@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
 import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
+import { type NewCard } from './services/cards.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -9,7 +10,6 @@ let cleanup: () => Promise<void>;
 // Test data references
 let userId: string;
 let deckId: string;
-let cardIds: string[];
 
 beforeAll(async () => {
   const testDb = createTestPrisma();
@@ -35,7 +35,6 @@ beforeAll(async () => {
     ],
   });
   deckId = deck.id;
-  cardIds = deck.cards.map((c) => c.id);
 });
 
 afterAll(async () => {
@@ -79,291 +78,262 @@ describe('deckRouter.getById', () => {
   });
 });
 
+/** A fresh deck per test, so one test's answers can't change another's queue. */
+function deckWith(cards: NewCard[]) {
+  return createDeckWithCards(prisma, { userId, cards });
+}
+
+const capitals: NewCard[] = [
+  { front: 'Capital of France', canonicalAnswer: 'Paris' },
+  { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
+  { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+];
+
 describe('studyRouter', () => {
   describe('startSession', () => {
-    it('creates a StudySession record', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
+    it("starts an active Standard Study Session over the deck's NEW cards in deck order", async () => {
+      const deck = await deckWith(capitals);
 
-      expect(session.id).toBeDefined();
-      expect(session.deckId).toBe(deckId);
-      expect(session.userId).toBe(userId);
-      expect(session.endedAt).toBeNull();
-      expect(session.status).toBe('ACTIVE');
-      expect(session.studyMode).toBe('STUDY');
+      const session = await createCaller().study.startSession({
+        deckId: deck.id,
+      });
+
+      expect(session).toMatchObject({
+        deckId: deck.id,
+        status: 'ACTIVE',
+        sessionType: 'STANDARD',
+        studyMode: 'STUDY',
+      });
+      expect(session?.items.map((item) => item.card.front)).toEqual([
+        'Capital of France',
+        'Capital of Japan',
+        'Capital of Brazil',
+      ]);
     });
 
-    it('throws NOT_FOUND for a nonexistent deck', async () => {
-      const caller = createCaller();
-      await expect(
-        caller.study.startSession({ deckId: 'nonexistent-deck' }),
-      ).rejects.toThrow(/not found/i);
+    it('puts due cards first, earliest due first, and leaves out cards not yet due', async () => {
+      const deck = await deckWith([
+        { front: 'Due an hour ago', canonicalAnswer: 'A' },
+        { front: 'Due tomorrow', canonicalAnswer: 'B' },
+        { front: 'New', canonicalAnswer: 'C' },
+        { front: 'Due two hours ago', canonicalAnswer: 'D' },
+      ]);
+      const hour = 60 * 60 * 1000;
+      await scheduleCard(deck.cards[0].id, new Date(Date.now() - hour));
+      await scheduleCard(deck.cards[1].id, new Date(Date.now() + 24 * hour));
+      await scheduleCard(deck.cards[3].id, new Date(Date.now() - 2 * hour));
+
+      const session = await createCaller().study.startSession({
+        deckId: deck.id,
+      });
+
+      expect(session?.items.map((item) => item.card.front)).toEqual([
+        'Due two hours ago',
+        'Due an hour ago',
+        'New',
+      ]);
+    });
+
+    it('fills at most 25 items, the Standard size, due cards before NEW ones', async () => {
+      const deck = await deckWith(
+        Array.from({ length: 30 }, (_, i) => ({
+          front: `Q${i}`,
+          canonicalAnswer: `A${i}`,
+        })),
+      );
+      const lastCard = deck.cards[29];
+      await scheduleCard(lastCard.id, new Date(Date.now() - 60 * 1000));
+
+      const session = await createCaller().study.startSession({
+        deckId: deck.id,
+      });
+
+      expect(session?.items).toHaveLength(25);
+      expect(session?.items[0].card.front).toBe('Q29');
+      expect(session?.items[24].card.front).toBe('Q23');
+    });
+
+    it('starts no session when nothing is due and nothing is NEW', async () => {
+      const deck = await deckWith([{ front: 'Q', canonicalAnswer: 'A' }]);
+      await scheduleCard(deck.cards[0].id, new Date(Date.now() + 60 * 1000));
+
+      const session = await createCaller().study.startSession({
+        deckId: deck.id,
+      });
+
+      expect(session).toBeNull();
     });
   });
 
-  describe('submitAttempt', () => {
-    it('grades a correct answer and stores the attempt', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
+  describe('submitAnswer', () => {
+    it('grades the answer and saves it as a deterministically graded attempt', async () => {
+      const { items } = await startedSession(capitals);
 
-      // Card 0's canonical answer is 'Paris'
-      const attempt = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
+      const caller = createCaller();
+      const correct = await caller.study.submitAnswer({
+        itemId: items[0].id,
+        userAnswer: 'paris',
+      });
+      const wrong = await caller.study.submitAnswer({
+        itemId: items[1].id,
+        userAnswer: 'Kyoto',
+      });
+
+      expect(correct).toMatchObject({
+        recallGrade: 'NAILED',
+        gradingMethod: 'DETERMINISTIC',
+        userAnswer: 'paris',
+      });
+      expect(wrong.recallGrade).toBe('MISSED');
+    });
+
+    it("updates the card's progress: NEW to LEARNING, mastery and next due date", async () => {
+      const { items } = await startedSession(capitals);
+      const before = Date.now();
+
+      await createCaller().study.submitAnswer({
+        itemId: items[0].id,
         userAnswer: 'Paris',
       });
 
-      expect(attempt.id).toBeDefined();
-      expect(attempt.studySessionId).toBe(session.id);
-      expect(attempt.cardId).toBe(cardIds[0]);
-      expect(attempt.userAnswer).toBe('Paris');
-      expect(attempt.recallGrade).toBe('NAILED');
+      const progress = await progressOf(items[0].cardId);
+      expect(progress.lifecycleState).toBe('LEARNING');
+      expect(progress.masteryScore).toBe(2);
+      // NAILED on a LEARNING card is due again in 2 days
+      const twoDays = 2 * 24 * 60 * 60 * 1000;
+      expect(progress.dueAt!.getTime()).toBeGreaterThanOrEqual(
+        before + twoDays,
+      );
+      expect(progress.dueAt!.getTime()).toBeLessThanOrEqual(
+        Date.now() + twoDays,
+      );
     });
 
-    it('grades correct with normalized matching (case, whitespace, punctuation)', async () => {
+    it('completes the item, so it takes only one answer', async () => {
+      const { items } = await startedSession(capitals);
       const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      // Card 0's canonical answer is 'Paris'
-      const attempt = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: '  paris.  ',
+      await caller.study.submitAnswer({
+        itemId: items[0].id,
+        userAnswer: 'Lyon',
       });
-
-      expect(attempt.recallGrade).toBe('NAILED');
-    });
-
-    it('grades against the edited canonical answer', async () => {
-      const deck = await createDeckWithCards(prisma, {
-        userId,
-        cards: [{ front: 'Capital of Australia', canonicalAnswer: 'Sydney' }],
-      });
-      const caller = createCaller();
-      await caller.card.update({
-        cardId: deck.cards[0].id,
-        canonicalAnswer: 'Canberra',
-      });
-      const session = await caller.study.startSession({ deckId: deck.id });
-
-      const attempt = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: deck.cards[0].id,
-        userAnswer: 'canberra',
-      });
-
-      expect(attempt.recallGrade).toBe('NAILED');
-    });
-
-    it('grades an incorrect answer', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      const attempt = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'London',
-      });
-
-      expect(attempt.userAnswer).toBe('London');
-      expect(attempt.recallGrade).toBe('MISSED');
-    });
-
-    it('allows multiple attempts for the same card in a session (re-queue)', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      // First attempt: incorrect
-      const attempt1 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'London',
-      });
-      expect(attempt1.recallGrade).toBe('MISSED');
-      expect(attempt1.attemptNumber).toBe(1);
-
-      // Second attempt: correct
-      const attempt2 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'Paris',
-      });
-      expect(attempt2.recallGrade).toBe('NAILED');
-      expect(attempt2.attemptNumber).toBe(2);
-      expect(attempt1.isRetry).toBe(false);
-      expect(attempt2.isRetry).toBe(true);
-    });
-
-    it('assigns incrementing attemptNumber per card per session', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      const a1 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'wrong1',
-      });
-      const a2 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'wrong2',
-      });
-      const a3 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'Tokyo',
-      });
-
-      expect(a1.attemptNumber).toBe(1);
-      expect(a2.attemptNumber).toBe(2);
-      expect(a3.attemptNumber).toBe(3);
-
-      // Different card in same session starts at 1
-      const b1 = await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[2],
-        userAnswer: 'Brasilia',
-      });
-      expect(b1.attemptNumber).toBe(1);
-    });
-
-    it('rejects attempt for a card from a different deck', async () => {
-      const otherDeck = await createDeckWithCards(prisma, {
-        userId,
-        name: 'Other Deck',
-        cards: [{ front: 'Other Q', canonicalAnswer: 'Other A' }],
-      });
-
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
 
       await expect(
-        caller.study.submitAttempt({
-          studySessionId: session.id,
-          cardId: otherDeck.cards[0].id,
-          userAnswer: 'Other A',
-        }),
-      ).rejects.toThrow(/does not belong/i);
+        caller.study.submitAnswer({ itemId: items[0].id, userAnswer: 'Paris' }),
+      ).rejects.toThrow(/already answered/i);
     });
+  });
 
-    it('rejects attempt on a finished session', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-      await caller.study.finishSession({ id: session.id });
+  describe('dontKnow', () => {
+    it('saves a MISSED attempt with no answer and schedules the card like one', async () => {
+      const { items } = await startedSession(capitals);
+      const before = Date.now();
 
-      await expect(
-        caller.study.submitAttempt({
-          studySessionId: session.id,
-          cardId: cardIds[0],
-          userAnswer: 'Paris',
-        }),
-      ).rejects.toThrow(/already finished/i);
+      const attempt = await createCaller().study.dontKnow({
+        itemId: items[0].id,
+      });
+
+      expect(attempt).toMatchObject({
+        recallGrade: 'MISSED',
+        userAnswer: null,
+      });
+      const progress = await progressOf(items[0].cardId);
+      expect(progress.lifecycleState).toBe('LEARNING');
+      // MISSED on a LEARNING card is due again in 30 minutes
+      const thirtyMinutes = 30 * 60 * 1000;
+      expect(progress.dueAt!.getTime()).toBeGreaterThanOrEqual(
+        before + thirtyMinutes,
+      );
+      expect(progress.dueAt!.getTime()).toBeLessThanOrEqual(
+        Date.now() + thirtyMinutes,
+      );
     });
   });
 
   describe('finishSession', () => {
-    it('sets endedAt on the session', async () => {
+    it('completes the session with an end time and skips the unanswered items', async () => {
+      const { id, items } = await startedSession(capitals);
       const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      const finished = await caller.study.finishSession({ id: session.id });
-
-      expect(finished.endedAt).not.toBeNull();
-      expect(finished.status).toBe('COMPLETED');
-      expect(finished.id).toBe(session.id);
-    });
-
-    it('throws BAD_REQUEST when session is already finished', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-      await caller.study.finishSession({ id: session.id });
-
-      await expect(
-        caller.study.finishSession({ id: session.id }),
-      ).rejects.toThrow(/already finished/i);
-    });
-  });
-
-  describe('getSession', () => {
-    it('returns session with all attempts including retries', async () => {
-      const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'London',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
+      await caller.study.submitAnswer({
+        itemId: items[0].id,
         userAnswer: 'Paris',
       });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'Tokyo',
-      });
 
-      const fetched = await caller.study.getSession({ id: session.id });
+      const finished = await caller.study.finishSession({ id });
 
-      expect(fetched.id).toBe(session.id);
-      expect(fetched.attempts).toHaveLength(3);
-      // First attempt for card 0: incorrect
-      expect(fetched.attempts[0].cardId).toBe(cardIds[0]);
-      expect(fetched.attempts[0].recallGrade).toBe('MISSED');
-      expect(fetched.attempts[0].attemptNumber).toBe(1);
-      // Retry for card 0: correct
-      expect(fetched.attempts[1].cardId).toBe(cardIds[0]);
-      expect(fetched.attempts[1].recallGrade).toBe('NAILED');
-      expect(fetched.attempts[1].attemptNumber).toBe(2);
-      // Card 1
-      expect(fetched.attempts[2].cardId).toBe(cardIds[1]);
-      expect(fetched.attempts[2].attemptNumber).toBe(1);
+      expect(finished.status).toBe('COMPLETED');
+      expect(finished.endedAt).toBeInstanceOf(Date);
+      expect(finished.items.map((item) => item.status)).toEqual([
+        'COMPLETED',
+        'SKIPPED',
+        'SKIPPED',
+      ]);
     });
 
-    it('throws NOT_FOUND for a nonexistent session', async () => {
+    it('closes the session to further answers', async () => {
+      const { id, items } = await startedSession(capitals);
       const caller = createCaller();
+      await caller.study.finishSession({ id });
+
       await expect(
-        caller.study.getSession({ id: 'nonexistent-id' }),
-      ).rejects.toThrow(/not found/i);
+        caller.study.submitAnswer({ itemId: items[0].id, userAnswer: 'Paris' }),
+      ).rejects.toThrow(/finished/i);
+      await expect(caller.study.finishSession({ id })).rejects.toThrow(
+        /finished/i,
+      );
     });
   });
 
-  describe('full study flow', () => {
-    it('start -> submit all cards -> finish -> getSession shows everything', async () => {
-      const caller = createCaller();
-
-      const session = await caller.study.startSession({ deckId });
-
-      // Canonical answers: 'Paris', 'Tokyo', 'Brasília'
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'paris',
+  describe("another user's session", () => {
+    async function otherUserCaller() {
+      const other = await prisma.user.create({
+        data: { email: `other-${Date.now()}@example.com`, passwordHash: 'x' },
       });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'London',
+      return appRouter.createCaller({
+        prisma,
+        userId: other.id,
+        sessionToken: null,
       });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[2],
-        userAnswer: 'Brasilia',
-      });
+    }
 
-      const finished = await caller.study.finishSession({ id: session.id });
-      expect(finished.endedAt).not.toBeNull();
+    it('cannot be started on, answered, given up on or finished', async () => {
+      const deck = await deckWith(capitals);
+      const { id, items } = await startedSession(capitals);
+      const other = await otherUserCaller();
 
-      const fetched = await caller.study.getSession({ id: session.id });
-      expect(fetched.attempts).toHaveLength(3);
-      expect(fetched.endedAt).not.toBeNull();
-
-      const correctCount = fetched.attempts.filter(
-        (a) => a.recallGrade === 'NAILED',
-      ).length;
-      expect(correctCount).toBe(2); // Paris (normalized) + Brasilia (diacritics stripped)
+      await expect(
+        other.study.startSession({ deckId: deck.id }),
+      ).rejects.toThrow(/not found/i);
+      await expect(
+        other.study.submitAnswer({ itemId: items[0].id, userAnswer: 'Paris' }),
+      ).rejects.toThrow(/not found/i);
+      await expect(
+        other.study.dontKnow({ itemId: items[0].id }),
+      ).rejects.toThrow(/not found/i);
+      await expect(other.study.finishSession({ id })).rejects.toThrow(
+        /not found/i,
+      );
     });
   });
 });
+
+function progressOf(cardId: string) {
+  return prisma.cardProgress.findUniqueOrThrow({
+    where: { userId_cardId: { userId, cardId } },
+  });
+}
+
+/** Starts a session on a fresh deck holding the given cards. */
+async function startedSession(cards: NewCard[]) {
+  const deck = await deckWith(cards);
+  const session = await createCaller().study.startSession({ deckId: deck.id });
+  if (!session) throw new Error('Expected a session to start');
+  return session;
+}
+
+/** Makes a card a LEARNING card due at the given time. */
+async function scheduleCard(cardId: string, dueAt: Date) {
+  await prisma.cardProgress.update({
+    where: { userId_cardId: { userId, cardId } },
+    data: { lifecycleState: 'LEARNING', dueAt },
+  });
+}

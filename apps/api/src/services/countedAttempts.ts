@@ -8,7 +8,7 @@ export interface CountedAttempt {
   recallGrade: RecallGrade;
 }
 
-/** The MVP study flow grades NAILED or MISSED; only NAILED counts as correct. */
+/** Deterministic grading gives NAILED or MISSED; only NAILED counts as correct. */
 export function isCorrect(grade: RecallGrade) {
   return grade === 'NAILED';
 }

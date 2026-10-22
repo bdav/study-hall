@@ -16,7 +16,8 @@ vi.mock('@/lib/trpc', () => ({
     },
     study: {
       startSession: { useMutation: vi.fn() },
-      submitAttempt: { useMutation: vi.fn() },
+      submitAnswer: { useMutation: vi.fn() },
+      dontKnow: { useMutation: vi.fn() },
       finishSession: { useMutation: vi.fn() },
     },
   },
@@ -51,6 +52,12 @@ const mockDeck = {
   ],
 };
 
+// The session startSession hands back: one item per deck card, in order.
+const mockSession = {
+  id: 'session-1',
+  items: mockDeck.cards.map((card, i) => ({ id: `item-${i + 1}`, card })),
+};
+
 function renderStudyPage(deckId = 'deck-1') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -75,29 +82,37 @@ function setupMocksWithStartSession(resultOverride?: 'correct' | 'incorrect') {
   } as ReturnType<typeof trpc.deck.getById.useQuery>);
 
   vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
-    onSuccess?: (data: { id: string }) => void;
+    onSuccess?: (data: typeof mockSession | null) => void;
   }) => {
     return {
       mutate: vi.fn(() => {
-        opts?.onSuccess?.({ id: 'session-1' });
+        opts?.onSuccess?.(mockSession);
       }),
       mutateAsync: vi.fn(),
     } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
   }) as unknown as typeof trpc.study.startSession.useMutation);
 
-  vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
+  vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
     mutate: vi.fn(),
     mutateAsync: vi.fn((args) => {
       return Promise.resolve({
         id: 'attempt-1',
-        studySessionId: args.studySessionId,
-        cardId: args.cardId,
         userAnswer: args.userAnswer,
         recallGrade: resultOverride === 'incorrect' ? 'MISSED' : 'NAILED',
-        createdAt: new Date(),
       });
     }),
-  } as unknown as ReturnType<typeof trpc.study.submitAttempt.useMutation>);
+  } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+
+  vi.mocked(trpc.study.dontKnow.useMutation).mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(() =>
+      Promise.resolve({
+        id: 'attempt-1',
+        userAnswer: null,
+        recallGrade: 'MISSED',
+      }),
+    ),
+  } as unknown as ReturnType<typeof trpc.study.dontKnow.useMutation>);
 
   vi.mocked(trpc.study.finishSession.useMutation).mockReturnValue({
     mutate: vi.fn(),
@@ -125,10 +140,15 @@ function setupBasicMocks() {
     mutateAsync: vi.fn(),
   } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
 
-  vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
+  vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
     mutate: vi.fn(),
     mutateAsync: vi.fn(),
-  } as unknown as ReturnType<typeof trpc.study.submitAttempt.useMutation>);
+  } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+
+  vi.mocked(trpc.study.dontKnow.useMutation).mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof trpc.study.dontKnow.useMutation>);
 
   vi.mocked(trpc.study.finishSession.useMutation).mockReturnValue({
     mutate: vi.fn(),
@@ -176,7 +196,7 @@ describe('StudyPage', () => {
     await user.click(screen.getByRole('button', { name: /submit/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Correct!');
+      expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
     });
     // Card shows both question and correct answer
     const answerArea = screen.getByTestId('correct-answer');
@@ -196,7 +216,7 @@ describe('StudyPage', () => {
     await user.click(screen.getByRole('button', { name: /submit/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Incorrect');
+      expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
     });
     const answerArea = screen.getByTestId('correct-answer');
     expect(answerArea).toHaveTextContent('4');
@@ -211,7 +231,7 @@ describe('StudyPage', () => {
     await user.type(screen.getByRole('textbox'), '4{Enter}');
 
     await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Correct!');
+      expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
     });
   });
 
@@ -225,7 +245,7 @@ describe('StudyPage', () => {
     await user.click(screen.getByRole('button', { name: /submit/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Correct!');
+      expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
     });
 
     await user.keyboard('{Enter}');
@@ -233,7 +253,7 @@ describe('StudyPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Capital of France?')).toBeInTheDocument();
     });
-    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getByText('Card 2 of 2')).toBeInTheDocument();
   });
 
   it('shows progress indicator during study', async () => {
@@ -243,7 +263,7 @@ describe('StudyPage', () => {
 
     await user.click(screen.getByRole('button', { name: /test deck/i }));
 
-    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+    expect(screen.getByText('Card 1 of 2')).toBeInTheDocument();
   });
 
   it('advances to next card after clicking Next', async () => {
@@ -263,42 +283,8 @@ describe('StudyPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Capital of France?')).toBeInTheDocument();
     });
-    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getByText('Card 2 of 2')).toBeInTheDocument();
     expect(screen.getByRole('textbox')).toBeInTheDocument();
-  });
-
-  it('re-queues incorrect cards to the back of the deck', async () => {
-    setupMocksWithStartSession('incorrect');
-    const user = userEvent.setup();
-    renderStudyPage();
-
-    await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-    // Answer first card incorrectly
-    await user.type(screen.getByRole('textbox'), 'wrong');
-    await user.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Incorrect');
-    });
-    await user.click(screen.getByRole('button', { name: /next/i }));
-
-    // Should advance to second card
-    await waitFor(() => {
-      expect(screen.getByText('Capital of France?')).toBeInTheDocument();
-    });
-
-    // Answer second card incorrectly
-    await user.type(screen.getByRole('textbox'), 'wrong');
-    await user.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('result')).toHaveTextContent('Incorrect');
-    });
-    await user.click(screen.getByRole('button', { name: /next/i }));
-
-    // First card should reappear (it was re-queued)
-    await waitFor(() => {
-      expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
-    });
   });
 
   it('shows session complete after answering all cards', async () => {
@@ -331,120 +317,153 @@ describe('StudyPage', () => {
         screen.getByRole('heading', { name: /session complete/i }),
       ).toBeInTheDocument();
     });
-    expect(screen.getByText(/you studied all 2 cards/i)).toBeInTheDocument();
+    expect(screen.getByText(/you answered 2 of 2 cards/i)).toBeInTheDocument();
   });
 
-  it('shows session summary with correct/incorrect counts on complete', async () => {
-    // First card correct, second card incorrect
-    let callCount = 0;
-    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
-      data: mockDeck,
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof trpc.deck.getById.useQuery>);
-
-    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
-      onSuccess?: (data: { id: string }) => void;
-    }) => {
-      return {
-        mutate: vi.fn(() => {
-          opts?.onSuccess?.({ id: 'session-1' });
-        }),
-        mutateAsync: vi.fn(),
-      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>;
-    }) as unknown as typeof trpc.study.startSession.useMutation);
-
-    vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
-      mutate: vi.fn(),
-      mutateAsync: vi.fn((args) => {
-        callCount++;
-        return Promise.resolve({
-          id: `attempt-${callCount}`,
-          studySessionId: args.studySessionId,
-          cardId: args.cardId,
-          userAnswer: args.userAnswer,
-          recallGrade: callCount === 1 ? 'NAILED' : 'MISSED',
-          createdAt: new Date(),
-        });
-      }),
-    } as unknown as ReturnType<typeof trpc.study.submitAttempt.useMutation>);
-
-    vi.mocked(trpc.study.finishSession.useMutation).mockReturnValue({
-      mutate: vi.fn(),
-      mutateAsync: vi.fn((args) => {
-        return Promise.resolve({
-          id: args.id,
-          endedAt: new Date(),
-          userId: 'user-1',
-          deckId: 'deck-1',
-          startedAt: new Date(),
-        });
-      }),
-    } as unknown as ReturnType<typeof trpc.study.finishSession.useMutation>);
-
+  it('moves on after a miss without bringing the card back', async () => {
+    setupMocksWithStartSession('incorrect');
     const user = userEvent.setup();
     renderStudyPage();
 
-    // Card 1 — correct
     await user.click(screen.getByRole('button', { name: /test deck/i }));
-    await user.type(screen.getByRole('textbox'), '4');
-    await user.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
-    });
-    await user.click(screen.getByRole('button', { name: /next/i }));
+    for (const answer of ['5', 'Lyon']) {
+      await user.type(screen.getByRole('textbox'), answer);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
+      });
+      await user.click(screen.getByRole('button', { name: /next/i }));
+    }
 
-    // Card 2 — incorrect (but re-queued cards won't show since we need to finish)
-    await waitFor(() => {
-      expect(screen.getByText('Capital of France?')).toBeInTheDocument();
-    });
-    await user.type(screen.getByRole('textbox'), 'London');
-    await user.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
-    });
-
-    // Card 2 is incorrect so it gets re-queued — answer the re-queued card correctly
-    vi.mocked(trpc.study.submitAttempt.useMutation).mockReturnValue({
-      mutate: vi.fn(),
-      mutateAsync: vi.fn((args) => {
-        return Promise.resolve({
-          id: 'attempt-3',
-          studySessionId: args.studySessionId,
-          cardId: args.cardId,
-          userAnswer: args.userAnswer,
-          recallGrade: 'NAILED',
-          createdAt: new Date(),
-        });
-      }),
-    } as unknown as ReturnType<typeof trpc.study.submitAttempt.useMutation>);
-
-    await user.click(screen.getByRole('button', { name: /next/i }));
-
-    // Re-queued card appears
-    await waitFor(() => {
-      expect(screen.getByText('Capital of France?')).toBeInTheDocument();
-    });
-    await user.type(screen.getByRole('textbox'), 'Paris');
-    await user.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
-    });
-    await user.click(screen.getByRole('button', { name: /next/i }));
-
-    // Session complete — should show summary
     await waitFor(() => {
       expect(
         screen.getByRole('heading', { name: /session complete/i }),
       ).toBeInTheDocument();
     });
+  });
 
-    // Shows per-attempt counts
-    expect(screen.getByText(/2.*correct/i)).toBeInTheDocument();
-    expect(screen.getByText(/1.*incorrect/i)).toBeInTheDocument();
-    // Shows first-try accuracy (1 of 2 cards correct on first try = 50%)
-    expect(screen.getByText(/first-try accuracy/i)).toBeInTheDocument();
-    expect(screen.getByText(/50%/)).toBeInTheDocument();
+  it("records I don't know as a miss and shows the answer", async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.click(screen.getByRole('button', { name: /i don't know/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
+    });
+    expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
+    expect(
+      vi.mocked(trpc.study.dontKnow.useMutation).mock.results[0]?.value
+        .mutateAsync,
+    ).toHaveBeenCalledWith({ itemId: 'item-1' });
+  });
+
+  it('finishes the session early and summarises the cards answered', async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), '4{Enter}');
+    await waitFor(() => {
+      expect(screen.getByTestId('result')).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /finish session/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText(/you answered 1 of 2 cards/i)).toBeInTheDocument();
+    expect(
+      vi.mocked(trpc.study.finishSession.useMutation).mock.results[0]?.value
+        .mutateAsync,
+    ).toHaveBeenCalledWith({ id: 'session-1' });
+  });
+
+  it('shows an error and stays on the card when finishing fails', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.finishSession.useMutation).mockReturnValue({
+      mutateAsync: vi.fn(() => Promise.reject(new Error('network'))),
+    } as unknown as ReturnType<typeof trpc.study.finishSession.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.click(screen.getByRole('button', { name: /finish session/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/failed to finish/i)).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole('heading', { name: /session complete/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
+  });
+
+  it('summarises the session by grade and offers another session', async () => {
+    setupMocksWithStartSession();
+    const grades = ['NAILED', 'MISSED'];
+    vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn((args) =>
+        Promise.resolve({
+          id: 'attempt',
+          userAnswer: args.userAnswer,
+          recallGrade: grades.shift(),
+        }),
+      ),
+    } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    for (const answer of ['4', 'Lyon']) {
+      await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
+      await waitFor(() => {
+        expect(screen.getByTestId('result')).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /next/i }));
+    }
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText('1 Nailed it')).toBeInTheDocument();
+    expect(screen.getByText('1 Needs review')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /start another session/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Card 1 of 2')).toBeInTheDocument();
+    });
+    expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
+  });
+
+  it('says there is nothing to study when no session starts', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+      ((opts?: { onSuccess?: (data: null) => void }) =>
+        ({
+          mutate: vi.fn(() => opts?.onSuccess?.(null)),
+        }) as unknown as ReturnType<
+          typeof trpc.study.startSession.useMutation
+        >) as unknown as typeof trpc.study.startSession.useMutation,
+    );
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+    expect(screen.getByText(/nothing is due right now/i)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('does not submit when answer is empty', async () => {
@@ -459,7 +478,7 @@ describe('StudyPage', () => {
     expect(screen.queryByTestId('result')).not.toBeInTheDocument();
     expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
     expect(
-      vi.mocked(trpc.study.submitAttempt.useMutation).mock.results[0]?.value
+      vi.mocked(trpc.study.submitAnswer.useMutation).mock.results[0]?.value
         .mutateAsync,
     ).not.toHaveBeenCalled();
   });
@@ -655,6 +674,32 @@ describe('StudyPage', () => {
           screen.getByText(`${mockDeck.cards.length} cards`),
         ).toBeInTheDocument();
       });
+    });
+
+    it('resumes the same session going forward from the title card before any answer', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.click(screen.getByRole('button', { name: /previous/i }));
+      await waitFor(() => {
+        expect(
+          screen.getByText(`${mockDeck.cards.length} cards`),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
+      });
+      const startSession = vi.mocked(trpc.study.startSession.useMutation).mock
+        .results;
+      const starts = startSession.reduce(
+        (total, r) => total + r.value.mutate.mock.calls.length,
+        0,
+      );
+      expect(starts).toBe(1);
     });
 
     it('shows title card when backing past first history entry', async () => {

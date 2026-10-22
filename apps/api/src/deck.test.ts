@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
+import {
+  createDeckWithCards,
+  createTestPrisma,
+  recordStudySession,
+} from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -42,18 +46,13 @@ function createCaller(overrideUserId?: string) {
   });
 }
 
-/** Runs one finished study session, answering each card in turn. */
+/** Records one finished study session, answering each card in turn. */
 async function study(deckId: string, answers: [string, string][]) {
-  const caller = createCaller();
-  const session = await caller.study.startSession({ deckId });
-  for (const [cardId, userAnswer] of answers) {
-    await caller.study.submitAttempt({
-      studySessionId: session.id,
-      cardId,
-      userAnswer,
-    });
-  }
-  await caller.study.finishSession({ id: session.id });
+  await recordStudySession(prisma, {
+    userId,
+    deckId,
+    answers: answers.map(([cardId, userAnswer]) => ({ cardId, userAnswer })),
+  });
 }
 
 describe('deckRouter', () => {

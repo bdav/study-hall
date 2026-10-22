@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
+import {
+  createDeckWithCards,
+  createTestPrisma,
+  recordStudySession,
+} from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 
 let prisma: PrismaClient;
@@ -71,32 +75,19 @@ describe('statsRouter', () => {
   describe('deckStats', () => {
     it('returns total attempts, first-try accuracy, and overall accuracy for a single session', async () => {
       const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      // Card 0: correct on first try
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'Paris',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [
+          // Card 0: correct on first try
+          { cardId: cardIds[0], userAnswer: 'Paris' },
+          // Card 1: incorrect first, then correct
+          { cardId: cardIds[1], userAnswer: 'Beijing' },
+          { cardId: cardIds[1], userAnswer: 'Tokyo' },
+          // Card 2: incorrect (never corrected)
+          { cardId: cardIds[2], userAnswer: 'Lima' },
+        ],
       });
-      // Card 1: incorrect first, then correct
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'Beijing',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[1],
-        userAnswer: 'Tokyo',
-      });
-      // Card 2: incorrect (never corrected)
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[2],
-        userAnswer: 'Lima',
-      });
-      await caller.study.finishSession({ id: session.id });
 
       const stats = await caller.stats.deckStats({ deckId });
 
@@ -112,22 +103,18 @@ describe('statsRouter', () => {
       const caller = createCaller();
 
       // Session 1: card 0 incorrect
-      const s1 = await caller.study.startSession({ deckId });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: cardIds[0],
-        userAnswer: 'London',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [{ cardId: cardIds[0], userAnswer: 'London' }],
       });
-      await caller.study.finishSession({ id: s1.id });
 
       // Session 2: card 0 correct on first try
-      const s2 = await caller.study.startSession({ deckId });
-      await caller.study.submitAttempt({
-        studySessionId: s2.id,
-        cardId: cardIds[0],
-        userAnswer: 'Paris',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [{ cardId: cardIds[0], userAnswer: 'Paris' }],
       });
-      await caller.study.finishSession({ id: s2.id });
 
       const stats = await caller.stats.deckStats({ deckId });
 
@@ -141,29 +128,17 @@ describe('statsRouter', () => {
       const caller = createCaller();
 
       // Session 1: card 0 correct on first try
-      const s1 = await caller.study.startSession({ deckId: deck2Id });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: deck2CardIds[0],
-        userAnswer: '4',
+      await recordStudySession(prisma, {
+        userId,
+        deckId: deck2Id,
+        answers: [
+          { cardId: deck2CardIds[0], userAnswer: '4' },
+          // Session 1: card 1 takes 3 attempts
+          { cardId: deck2CardIds[1], userAnswer: '5' },
+          { cardId: deck2CardIds[1], userAnswer: '7' },
+          { cardId: deck2CardIds[1], userAnswer: '6' },
+        ],
       });
-      // Session 1: card 1 takes 3 attempts
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: deck2CardIds[1],
-        userAnswer: '5',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: deck2CardIds[1],
-        userAnswer: '7',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: deck2CardIds[1],
-        userAnswer: '6',
-      });
-      await caller.study.finishSession({ id: s1.id });
 
       const stats = await caller.stats.deckStats({ deckId: deck2Id });
 
@@ -182,14 +157,11 @@ describe('statsRouter', () => {
 
     it('includes card front text in cardStats', async () => {
       const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[0],
-        userAnswer: 'Paris',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [{ cardId: cardIds[0], userAnswer: 'Paris' }],
       });
-      await caller.study.finishSession({ id: session.id });
 
       const stats = await caller.stats.deckStats({ deckId });
 
@@ -201,15 +173,14 @@ describe('statsRouter', () => {
 
     it('returns null avgAttemptsToCorrect for cards never answered correctly', async () => {
       const caller = createCaller();
-      const session = await caller.study.startSession({ deckId });
-
-      // Only attempt card 2, get it wrong
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId: cardIds[2],
-        userAnswer: 'Lima',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [
+          // Only attempt card 2, get it wrong
+          { cardId: cardIds[2], userAnswer: 'Lima' },
+        ],
       });
-      await caller.study.finishSession({ id: session.id });
 
       const stats = await caller.stats.deckStats({ deckId });
 
@@ -233,23 +204,15 @@ describe('statsRouter', () => {
       const caller = createCaller();
 
       // Before the edit: Australia answered with the old answer, Canada missed
-      const s1 = await caller.study.startSession({ deckId: editedDeck.id });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: australia.id,
-        userAnswer: 'Melbourne',
+      await recordStudySession(prisma, {
+        userId,
+        deckId: editedDeck.id,
+        answers: [
+          { cardId: australia.id, userAnswer: 'Melbourne' },
+          { cardId: australia.id, userAnswer: 'Sydney' },
+          { cardId: canada.id, userAnswer: 'Toronto' },
+        ],
       });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: australia.id,
-        userAnswer: 'Sydney',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: canada.id,
-        userAnswer: 'Toronto',
-      });
-      await caller.study.finishSession({ id: s1.id });
 
       await caller.card.update({
         cardId: australia.id,
@@ -257,13 +220,11 @@ describe('statsRouter', () => {
       });
 
       // After the edit: Australia right first time
-      const s2 = await caller.study.startSession({ deckId: editedDeck.id });
-      await caller.study.submitAttempt({
-        studySessionId: s2.id,
-        cardId: australia.id,
-        userAnswer: 'Canberra',
+      await recordStudySession(prisma, {
+        userId,
+        deckId: editedDeck.id,
+        answers: [{ cardId: australia.id, userAnswer: 'Canberra' }],
       });
-      await caller.study.finishSession({ id: s2.id });
 
       const stats = await caller.stats.deckStats({ deckId: editedDeck.id });
 
@@ -323,42 +284,26 @@ describe('statsRouter', () => {
       const caller = createCaller();
 
       // Deck 1: card 0 correct first try, card 1 takes 2 attempts
-      const s1 = await caller.study.startSession({ deckId });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: cardIds[0],
-        userAnswer: 'Paris',
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [
+          { cardId: cardIds[0], userAnswer: 'Paris' },
+          { cardId: cardIds[1], userAnswer: 'Beijing' },
+          { cardId: cardIds[1], userAnswer: 'Tokyo' },
+        ],
       });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: cardIds[1],
-        userAnswer: 'Beijing',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: s1.id,
-        cardId: cardIds[1],
-        userAnswer: 'Tokyo',
-      });
-      await caller.study.finishSession({ id: s1.id });
 
       // Deck 2: card 0 takes 3 attempts
-      const s2 = await caller.study.startSession({ deckId: deck2Id });
-      await caller.study.submitAttempt({
-        studySessionId: s2.id,
-        cardId: deck2CardIds[0],
-        userAnswer: '1',
+      await recordStudySession(prisma, {
+        userId,
+        deckId: deck2Id,
+        answers: [
+          { cardId: deck2CardIds[0], userAnswer: '1' },
+          { cardId: deck2CardIds[0], userAnswer: '2' },
+          { cardId: deck2CardIds[0], userAnswer: '4' },
+        ],
       });
-      await caller.study.submitAttempt({
-        studySessionId: s2.id,
-        cardId: deck2CardIds[0],
-        userAnswer: '2',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: s2.id,
-        cardId: deck2CardIds[0],
-        userAnswer: '4',
-      });
-      await caller.study.finishSession({ id: s2.id });
 
       const stats = await caller.stats.overallStats();
 
@@ -392,20 +337,14 @@ describe('statsRouter', () => {
       const cardId = editedDeck.cards[0].id;
       const caller = createCaller();
 
-      const session = await caller.study.startSession({
+      await recordStudySession(prisma, {
+        userId,
         deckId: editedDeck.id,
+        answers: [
+          { cardId, userAnswer: '10' },
+          { cardId, userAnswer: '11' },
+        ],
       });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId,
-        userAnswer: '10',
-      });
-      await caller.study.submitAttempt({
-        studySessionId: session.id,
-        cardId,
-        userAnswer: '11',
-      });
-      await caller.study.finishSession({ id: session.id });
 
       const before = await caller.stats.overallStats();
       expect(before.weakCards.map((c) => c.cardId)).toContain(cardId);

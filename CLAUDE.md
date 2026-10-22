@@ -85,7 +85,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 - **Auth**: Email/password signup & login, bcrypt password hashing, session cookies (HTTP-only), protected routes with redirect to `/login`
 - **Decks**: Create, list (with summary stats: accuracy, card count, last studied), update name/description, delete with cascade
 - **Cards**: Create single cards, CSV import with preview (client-side parsing, diff against existing cards, editable preview dialog, structured `importCards` mutation), update (partial), delete, list by deck
-- **Study**: Type-answer flow with server-side grading, flashcard-style UI (front/back), incorrect cards re-queued, multi-attempt tracking with `attemptNumber`, session start/finish lifecycle
+- **Study**: Study Sessions (#5): a Standard queue of up to 25 due and NEW cards built at start, one graded answer per card (typed or "I don't know"), the card's progress updated by the scheduler after every answer, finish at the last card or early (remaining cards skipped), and a "nothing is due" state
 - **Stats**: Per-deck stats (first-try accuracy, overall accuracy, per-card avg attempts-to-correct), overall stats (aggregates + weak cards), empty/loading/error states
 - **UX Polish**: Loading skeletons, Sonner toast notifications, error boundaries (app root + per-route), seed data (4 decks, 30 cards, 3 study sessions)
 
@@ -105,21 +105,23 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 
 All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
-| Router  | Procedure                                        | Type     |
-| ------- | ------------------------------------------------ | -------- |
-| `auth`  | `signup`, `login`, `logout`                      | mutation |
-| `auth`  | `me`                                             | query    |
-| `deck`  | `create`, `update`, `delete`                     | mutation |
-| `deck`  | `getById`, `list`                                | query    |
-| `card`  | `create`, `update`, `delete`, `importCards`      | mutation |
-| `card`  | `listByDeck`                                     | query    |
-| `study` | `startSession`, `submitAttempt`, `finishSession` | mutation |
-| `study` | `getSession`                                     | query    |
-| `stats` | `deckStats`, `overallStats`                      | query    |
+| Router  | Procedure                                                   | Type     |
+| ------- | ----------------------------------------------------------- | -------- |
+| `auth`  | `signup`, `login`, `logout`                                 | mutation |
+| `auth`  | `me`                                                        | query    |
+| `deck`  | `create`, `update`, `delete`                                | mutation |
+| `deck`  | `getById`, `list`                                           | query    |
+| `card`  | `create`, `update`, `delete`, `importCards`                 | mutation |
+| `card`  | `listByDeck`                                                | query    |
+| `study` | `startSession`, `submitAnswer`, `dontKnow`, `finishSession` | mutation |
+| `stats` | `deckStats`, `overallStats`                                 | query    |
 
 ### Key Services
 
 - **`answerGrader.ts`**: Tier 1 deterministic grading — normalizes answers (lowercase, strip diacritics/punctuation, trim whitespace) and compares. Designed for future extension with embedding similarity (Tier 2) and local LLM adjudication (Tier 3). See `implementation-plan.md` "Future Enhancement" section.
+
+- **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer: NEW → LEARNING, mastery change by Recall Grade (0–10), and the next due date from the LEARNING interval table.
+- **`studySessions.ts`**: Study Session lifecycle: builds the queue, applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 
 ### Data Model
 

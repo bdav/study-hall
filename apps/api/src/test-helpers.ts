@@ -4,7 +4,13 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
-import { createCards, type NewCard } from './services/cards.js';
+import { gradeAnswer } from './services/answerGrader.js';
+import {
+  createCards,
+  primaryAnswerText,
+  withCanonicalAnswers,
+  type NewCard,
+} from './services/cards.js';
 
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 config({ path: `${projectRoot}.env` });
@@ -61,4 +67,56 @@ export async function createDeckWithCards(
     cards,
   });
   return { ...deck, cards: created };
+}
+
+/**
+ * Records a finished Study Session holding the given answers, in order, each
+ * graded the way the app grades it. A card answered more than once gets
+ * retry attempts. For suites that need attempt history, such as several
+ * attempts at one card, without going through the study flow.
+ */
+export async function recordStudySession(
+  prisma: PrismaClient,
+  {
+    userId,
+    deckId,
+    answers,
+  }: {
+    userId: string;
+    deckId: string;
+    answers: { cardId: string; userAnswer: string }[];
+  },
+) {
+  const session = await prisma.studySession.create({
+    data: {
+      userId,
+      deckId,
+      sessionType: 'STANDARD',
+      status: 'COMPLETED',
+      endedAt: new Date(),
+    },
+  });
+
+  const attemptsByCard = new Map<string, number>();
+  for (const { cardId, userAnswer } of answers) {
+    const card = await prisma.card.findUniqueOrThrow({
+      where: { id: cardId },
+      include: withCanonicalAnswers,
+    });
+    const attemptNumber = (attemptsByCard.get(cardId) ?? 0) + 1;
+    attemptsByCard.set(cardId, attemptNumber);
+
+    await prisma.cardAttempt.create({
+      data: {
+        studySessionId: session.id,
+        cardId,
+        userAnswer,
+        recallGrade: gradeAnswer(userAnswer, primaryAnswerText(card)),
+        attemptNumber,
+        isRetry: attemptNumber > 1,
+      },
+    });
+  }
+
+  return session;
 }

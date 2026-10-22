@@ -13,14 +13,25 @@ import {
 import { CardStack } from '@/components/CardStack';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
-import { useCardQueue } from '@/hooks/useCardQueue';
 import { useStudySession } from '@/hooks/useStudySession';
 import {
   useSlideAnimation,
   type CardSnapshot,
 } from '@/hooks/useSlideAnimation';
 import { DeckHeader } from '@/components/DeckHeader';
-import { formatPercent } from '@/lib/format';
+import {
+  recallGradeColors,
+  recallGradeLabels,
+  type RecallGrade,
+} from '@/lib/recallGrades';
+
+// The session summary lists grades best first.
+const summaryGradeOrder: RecallGrade[] = [
+  'NAILED',
+  'GOOD',
+  'PARTIALLY_CORRECT',
+  'MISSED',
+];
 
 const answerInputClasses =
   'h-auto flex-1 rounded-none border-0 border-b-2 border-white/40 bg-transparent py-2 text-center text-3xl font-bold uppercase tracking-wide text-white shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-white/30';
@@ -60,7 +71,7 @@ function CardBack({
   onFlip,
 }: {
   card: CardSnapshot['card'];
-  result: { result: 'correct' | 'incorrect'; userAnswer: string };
+  result: NonNullable<CardSnapshot['result']>;
   onFlip?: () => void;
 }) {
   return (
@@ -72,10 +83,10 @@ function CardBack({
         {card.canonicalAnswer}
       </p>
       <p
-        className={`mt-4 inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${result.result === 'correct' ? 'bg-green-500' : 'bg-red-400'}`}
+        className={`mt-4 inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${recallGradeColors[result.recallGrade]}`}
         data-testid="result"
       >
-        {result.result === 'correct' ? 'Correct!' : 'Incorrect'}
+        {recallGradeLabels[result.recallGrade]}
       </p>
       {onFlip && (
         <button
@@ -105,9 +116,12 @@ export default function StudyPage() {
   const deck = deckQuery.data;
   const cards = useMemo(() => deck?.cards.map(toFlashcard) ?? [], [deck]);
 
-  const cardQueue = useCardQueue(cards);
   const {
     studyState,
+    currentCard,
+    position,
+    sessionSize,
+    remainingCount,
     isFlipped,
     toggleFlip,
     answerInput,
@@ -116,15 +130,15 @@ export default function StudyPage() {
     history,
     handleStart,
     handleSubmitAnswer,
+    handleDontKnow,
+    handleFinish,
     handleNext,
     handleBack,
     handleForward,
     canGoBack,
     reviewEntry,
-    resetToIdle,
-  } = useStudySession(deckId, cardQueue);
+  } = useStudySession(deckId);
 
-  const currentCard = cardQueue.currentCard;
   const isReviewing = studyState.phase === 'reviewing';
   const isIdle = studyState.phase === 'idle';
   const isAtTitle = isIdle || (isReviewing && !reviewEntry);
@@ -138,11 +152,14 @@ export default function StudyPage() {
     isReviewing && reviewEntry
       ? reviewEntry
       : studyState.phase === 'result'
-        ? { result: studyState.result, userAnswer: studyState.userAnswer }
+        ? {
+            recallGrade: studyState.recallGrade,
+            userAnswer: studyState.userAnswer,
+          }
         : null;
   const progress = isReviewing
     ? undefined
-    : `${cardQueue.cardsStudied + 1} / ${cardQueue.cardsStudied + cardQueue.queue.length}`;
+    : `Card ${position + 1} of ${sessionSize}`;
 
   const onSlideNext = useCallback(() => {
     if (isIdle) handleStart();
@@ -163,7 +180,7 @@ export default function StudyPage() {
       card: displayCard ?? null,
       result: displayResult,
       isFlipped,
-      queueLength: cardQueue.queue.length,
+      queueLength: remainingCount,
       progress,
     },
     onSlideNext,
@@ -247,26 +264,34 @@ export default function StudyPage() {
     );
   }
 
-  if (studyState.phase === 'complete') {
-    const correctCount = history.filter((h) => h.result === 'correct').length;
-    const incorrectCount = history.filter(
-      (h) => h.result === 'incorrect',
-    ).length;
+  if (studyState.phase === 'nothing-due') {
+    return (
+      <CenteredPage>
+        <DeckHeader
+          deckName={deck.name}
+          deckId={deckId ?? ''}
+          activeTab="study"
+        />
+        <div className="flex w-full flex-1 flex-col items-center justify-center">
+          <div className="w-full max-w-md pt-3">
+            <div className="flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 text-center backdrop-blur-sm">
+              <p className="text-white/60">
+                Nothing is due right now. Come back later to review this deck.
+              </p>
+            </div>
+          </div>
+        </div>
+      </CenteredPage>
+    );
+  }
 
-    // First-try accuracy: for each unique card, check if the first attempt was correct
-    const firstAttemptByCard = new Map<string, 'correct' | 'incorrect'>();
-    for (const entry of history) {
-      if (!firstAttemptByCard.has(entry.card.id)) {
-        firstAttemptByCard.set(entry.card.id, entry.result);
-      }
-    }
-    const firstTryCorrect = [...firstAttemptByCard.values()].filter(
-      (r) => r === 'correct',
-    ).length;
-    const firstTryAccuracy =
-      firstAttemptByCard.size > 0
-        ? firstTryCorrect / firstAttemptByCard.size
-        : 0;
+  if (studyState.phase === 'complete') {
+    const gradeCounts = summaryGradeOrder
+      .map((grade) => ({
+        grade,
+        count: history.filter((h) => h.recallGrade === grade).length,
+      }))
+      .filter(({ count }) => count > 0);
 
     return (
       <CenteredPage>
@@ -282,19 +307,18 @@ export default function StudyPage() {
                 Session complete!
               </h2>
               <p className="mt-2 text-sm text-white/50">
-                You studied all {cards.length} cards.
+                You answered {history.length} of {sessionSize} cards.
               </p>
-              <div className="mt-4 flex gap-4">
-                <span className="inline-block rounded-full bg-green-500 px-4 py-1 text-lg font-semibold text-white">
-                  {correctCount} correct
-                </span>
-                <span className="inline-block rounded-full bg-red-400 px-4 py-1 text-lg font-semibold text-white">
-                  {incorrectCount} incorrect
-                </span>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {gradeCounts.map(({ grade, count }) => (
+                  <span
+                    key={grade}
+                    className={`inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${recallGradeColors[grade]}`}
+                  >
+                    {count} {recallGradeLabels[grade]}
+                  </span>
+                ))}
               </div>
-              <p className="mt-3 text-sm text-white/50">
-                First-try accuracy: {formatPercent(firstTryAccuracy)}
-              </p>
             </div>
             <Button
               onClick={slideToPrev}
@@ -309,10 +333,10 @@ export default function StudyPage() {
           <div className="mt-6">
             <button
               autoFocus
-              onClick={resetToIdle}
+              onClick={handleStart}
               className="animate-pulse-halo cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none"
             >
-              Study again
+              Start another session
             </button>
           </div>
         </div>
@@ -393,7 +417,7 @@ export default function StudyPage() {
                         displayCard,
                         displayResult,
                         isFlipped,
-                        cardQueue.queue.length,
+                        remainingCount,
                         progress,
                         toggleFlip,
                       )
@@ -417,7 +441,7 @@ export default function StudyPage() {
                 displayCard,
                 displayResult,
                 isFlipped,
-                cardQueue.queue.length,
+                remainingCount,
                 progress,
                 toggleFlip,
               )}
@@ -495,13 +519,38 @@ export default function StudyPage() {
             </form>
           )}
 
+          {studyState.phase === 'answering' && (
+            <div className="mt-2 text-center">
+              <button
+                type="button"
+                onClick={handleDontKnow}
+                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+              >
+                I don't know
+              </button>
+            </div>
+          )}
+
           {(studyState.phase === 'result' || isReviewing) && displayResult ? (
             <p className="py-2 text-center text-3xl font-bold uppercase tracking-wide text-white">
-              {displayResult.userAnswer}
+              {displayResult.userAnswer ?? "I don't know"}
             </p>
           ) : studyState.phase !== 'answering' ? (
             <div className="py-2 text-3xl">&nbsp;</div>
           ) : null}
+
+          {(studyState.phase === 'answering' ||
+            studyState.phase === 'result') && (
+            <div className="mt-2 text-center">
+              <button
+                type="button"
+                onClick={handleFinish}
+                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+              >
+                Finish session
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </CenteredPage>

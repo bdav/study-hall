@@ -1,21 +1,30 @@
 import { useCallback, useState } from 'react';
 import { trpc } from '@/lib/trpc';
-import { type Flashcard } from '@/lib/cards';
-import { type useCardQueue } from './useCardQueue';
+import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { type RecallGrade } from '@/lib/recallGrades';
 
 type HistoryEntry = {
   card: Flashcard;
-  result: 'correct' | 'incorrect';
-  userAnswer: string;
+  recallGrade: RecallGrade;
+  // null when the learner chose "I don't know"
+  userAnswer: string | null;
+};
+
+/** A Study Session's queue, in the order the server built it. */
+type StudySessionQueue = {
+  id: string;
+  items: { itemId: string; card: Flashcard }[];
 };
 
 type StudyState =
   | { phase: 'idle' }
+  // The deck has no due or NEW cards, so no session started
+  | { phase: 'nothing-due' }
   | { phase: 'answering' }
   | {
       phase: 'result';
-      result: 'correct' | 'incorrect';
-      userAnswer: string;
+      recallGrade: RecallGrade;
+      userAnswer: string | null;
       showingBack: boolean;
     }
   | {
@@ -25,23 +34,34 @@ type StudyState =
     }
   | { phase: 'complete' };
 
-export function useStudySession(
-  deckId: string | undefined,
-  cardQueue: ReturnType<typeof useCardQueue>,
-) {
+export function useStudySession(deckId: string | undefined) {
   const [studyState, setStudyState] = useState<StudyState>({ phase: 'idle' });
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [studySession, setStudySession] = useState<StudySessionQueue | null>(
+    null,
+  );
+  // Index of the current item in the session's queue
+  const [position, setPosition] = useState(0);
   const [answerInput, setAnswerInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const startSession = trpc.study.startSession.useMutation({
-    onSuccess: (session) => {
+    onSuccess: (started) => {
       setError(null);
-      setSessionId(session.id);
+      if (!started) {
+        setStudyState({ phase: 'nothing-due' });
+        return;
+      }
+      setStudySession({
+        id: started.id,
+        items: started.items.map((item) => ({
+          itemId: item.id,
+          card: toFlashcard(item.card),
+        })),
+      });
+      setPosition(0);
       setAnswerInput('');
       setHistory([]);
-      cardQueue.reset();
       setStudyState({ phase: 'answering' });
     },
     onError: () => {
@@ -49,40 +69,38 @@ export function useStudySession(
     },
   });
 
-  const submitAttempt = trpc.study.submitAttempt.useMutation();
+  const submitAnswer = trpc.study.submitAnswer.useMutation();
+  const dontKnow = trpc.study.dontKnow.useMutation();
   const finishSession = trpc.study.finishSession.useMutation();
+
+  const items = studySession?.items ?? [];
+  const currentItem = items[position] ?? null;
+  const currentCard = currentItem?.card ?? null;
+  const remainingCount = items.length - position;
 
   function handleStart() {
     if (!deckId) return;
     startSession.mutate({ deckId });
   }
 
-  async function handleSubmitAnswer() {
-    if (studyState.phase !== 'answering' || !sessionId) return;
-    if (!answerInput.trim()) return;
+  /** Saves the current card's answer and shows its result. */
+  async function answerCurrentCard(userAnswer: string | null) {
+    if (studyState.phase !== 'answering' || !currentItem) return;
 
     try {
       setError(null);
-      const card = cardQueue.currentCard;
-      if (!card) return;
+      const { itemId, card } = currentItem;
+      const { recallGrade } =
+        userAnswer === null
+          ? await dontKnow.mutateAsync({ itemId })
+          : await submitAnswer.mutateAsync({ itemId, userAnswer });
 
-      const attempt = await submitAttempt.mutateAsync({
-        studySessionId: sessionId,
-        cardId: card.id,
-        userAnswer: answerInput,
-      });
-      // The MVP study flow only grades NAILED (correct) or MISSED.
-      const result = attempt.recallGrade === 'NAILED' ? 'correct' : 'incorrect';
-
-      setHistory((prev) => [
-        ...prev,
-        { card, result, userAnswer: answerInput },
-      ]);
+      setHistory((prev) => [...prev, { card, recallGrade, userAnswer }]);
 
       setStudyState({
         phase: 'result',
-        result,
-        userAnswer: answerInput,
+        recallGrade,
+        userAnswer,
         showingBack: true,
       });
     } catch {
@@ -90,34 +108,44 @@ export function useStudySession(
     }
   }
 
-  const advanceOrFinish = useCallback(
-    async (requeue: boolean) => {
-      const remainingAfterAdvance =
-        cardQueue.queue.length - 1 + (requeue ? 1 : 0);
+  async function handleSubmitAnswer() {
+    if (!answerInput.trim()) return;
+    await answerCurrentCard(answerInput);
+  }
 
-      if (remainingAfterAdvance === 0) {
-        if (sessionId) {
-          try {
-            await finishSession.mutateAsync({ id: sessionId });
-          } catch (err) {
-            console.error('Failed to finish study session:', err);
-          }
-        }
-        cardQueue.advance(requeue);
-        setStudyState({ phase: 'complete' });
-      } else {
-        cardQueue.advance(requeue);
-        setAnswerInput('');
-        setStudyState({ phase: 'answering' });
+  async function handleDontKnow() {
+    await answerCurrentCard(null);
+  }
+
+  /** Ends the session, at its last card or early; unanswered cards are skipped. */
+  const finish = useCallback(async () => {
+    if (studySession) {
+      try {
+        setError(null);
+        await finishSession.mutateAsync({ id: studySession.id });
+      } catch {
+        setError('Failed to finish study session. Please try again.');
+        return;
       }
-    },
-    [sessionId, cardQueue, finishSession],
-  );
+    }
+    setPosition(items.length);
+    setStudyState({ phase: 'complete' });
+  }, [studySession, items.length, finishSession]);
+
+  const advanceOrFinish = useCallback(async () => {
+    if (position + 1 >= items.length) {
+      await finish();
+    } else {
+      setPosition(position + 1);
+      setAnswerInput('');
+      setStudyState({ phase: 'answering' });
+    }
+  }, [position, items.length, finish]);
 
   const handleNext = useCallback(async () => {
-    if (studyState.phase !== 'result' || !sessionId) return;
-    await advanceOrFinish(studyState.result === 'incorrect');
-  }, [studyState, sessionId, advanceOrFinish]);
+    if (studyState.phase !== 'result') return;
+    await advanceOrFinish();
+  }, [studyState, advanceOrFinish]);
 
   const handleBack = useCallback(() => {
     if (studyState.phase === 'answering' && history.length > 0) {
@@ -127,7 +155,9 @@ export function useStudySession(
         showingBack: true,
       });
     } else if (studyState.phase === 'answering' && history.length === 0) {
-      setStudyState({ phase: 'idle' });
+      // Back to the title card, still inside this session: going forward
+      // resumes it rather than starting another
+      setStudyState({ phase: 'reviewing', reviewIndex: -1, showingBack: true });
     } else if (studyState.phase === 'result' && history.length > 1) {
       setStudyState({
         phase: 'reviewing',
@@ -165,24 +195,17 @@ export function useStudySession(
         reviewIndex: studyState.reviewIndex + 1,
         showingBack: true,
       });
+    } else if (!currentCard) {
+      // Queue exhausted — return to complete screen
+      setStudyState({ phase: 'complete' });
+    } else if (history.length <= position) {
+      // We're on a card that hasn't been answered yet
+      setStudyState({ phase: 'answering' });
     } else {
-      // Return to current card (answering or result)
-      const lastEntry = history[history.length - 1];
-      const currentCard = cardQueue.currentCard;
-
-      if (!currentCard) {
-        // Queue exhausted — return to complete screen
-        setStudyState({ phase: 'complete' });
-        return;
-      } else if (currentCard.id !== lastEntry?.card.id) {
-        // We're on a new card that hasn't been answered yet
-        setStudyState({ phase: 'answering' });
-      } else if (lastEntry) {
-        // Current card was already answered — advance past it
-        await advanceOrFinish(lastEntry.result === 'incorrect');
-      }
+      // Current card was already answered — advance past it
+      await advanceOrFinish();
     }
-  }, [studyState, history, cardQueue, advanceOrFinish]);
+  }, [studyState, history, currentCard, position, advanceOrFinish]);
 
   const canGoBack =
     studyState.phase === 'answering' ||
@@ -208,12 +231,12 @@ export function useStudySession(
     });
   }, []);
 
-  const resetToIdle = useCallback(() => {
-    setStudyState({ phase: 'idle' });
-  }, []);
-
   return {
     studyState,
+    currentCard,
+    position,
+    sessionSize: items.length,
+    remainingCount,
     isFlipped,
     toggleFlip,
     answerInput,
@@ -222,11 +245,12 @@ export function useStudySession(
     history,
     handleStart,
     handleSubmitAnswer,
+    handleDontKnow,
+    handleFinish: finish,
     handleNext,
     handleBack,
     handleForward,
     canGoBack,
     reviewEntry,
-    resetToIdle,
   };
 }
