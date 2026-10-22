@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Flashcard } from '@/lib/cards';
-import { type RecallGrade } from '@/lib/recallGrades';
+import { type GradedAnswer } from '@/lib/recallGrades';
 
 export type CardSnapshot = {
   card: Pick<Flashcard, 'front' | 'canonicalAnswer'>;
-  result: { recallGrade: RecallGrade; userAnswer: string | null } | null;
+  result: GradedAnswer | null;
   isFlipped: boolean;
   queueLength: number;
   progress: string | undefined;

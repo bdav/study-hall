@@ -404,6 +404,33 @@ describe('StudyPage', () => {
     expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
   });
 
+  it('shows the accented answer and flags the accents after an Accent Mismatch', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+      mutateAsync: vi.fn((args) =>
+        Promise.resolve({
+          id: 'attempt-1',
+          userAnswer: args.userAnswer,
+          recallGrade: 'GOOD',
+          accentMismatch: true,
+        }),
+      ),
+    } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), '4{Enter}');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('result')).toHaveTextContent('Good');
+    });
+    expect(screen.getByTestId('accent-note')).toHaveTextContent(
+      /check the accents/i,
+    );
+    expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
+  });
+
   it('summarises the session by grade and offers another session', async () => {
     setupMocksWithStartSession();
     const grades = ['NAILED', 'MISSED'];

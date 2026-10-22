@@ -88,6 +88,11 @@ function CardBack({
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
+      {result.accentMismatch && (
+        <p className="mt-2 text-sm text-white/70" data-testid="accent-note">
+          Check the accents in the answer above.
+        </p>
+      )}
       {onFlip && (
         <button
           onClick={(e) => {
@@ -154,6 +159,7 @@ export default function StudyPage() {
       : studyState.phase === 'result'
         ? {
             recallGrade: studyState.recallGrade,
+            accentMismatch: studyState.accentMismatch,
             userAnswer: studyState.userAnswer,
           }
         : null;

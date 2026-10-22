@@ -1,14 +1,9 @@
 import { useCallback, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
-import { type RecallGrade } from '@/lib/recallGrades';
+import { type GradedAnswer } from '@/lib/recallGrades';
 
-type HistoryEntry = {
-  card: Flashcard;
-  recallGrade: RecallGrade;
-  // null when the learner chose "I don't know"
-  userAnswer: string | null;
-};
+type HistoryEntry = GradedAnswer & { card: Flashcard };
 
 /** A Study Session's queue, in the order the server built it. */
 type StudySessionQueue = {
@@ -21,12 +16,7 @@ type StudyState =
   // The deck has no due or NEW cards, so no session started
   | { phase: 'nothing-due' }
   | { phase: 'answering' }
-  | {
-      phase: 'result';
-      recallGrade: RecallGrade;
-      userAnswer: string | null;
-      showingBack: boolean;
-    }
+  | ({ phase: 'result'; showingBack: boolean } & GradedAnswer)
   | {
       phase: 'reviewing';
       reviewIndex: number;
@@ -90,16 +80,20 @@ export function useStudySession(deckId: string | undefined) {
     try {
       setError(null);
       const { itemId, card } = currentItem;
-      const { recallGrade } =
+      const { recallGrade, accentMismatch } =
         userAnswer === null
           ? await dontKnow.mutateAsync({ itemId })
           : await submitAnswer.mutateAsync({ itemId, userAnswer });
 
-      setHistory((prev) => [...prev, { card, recallGrade, userAnswer }]);
+      setHistory((prev) => [
+        ...prev,
+        { card, recallGrade, accentMismatch, userAnswer },
+      ]);
 
       setStudyState({
         phase: 'result',
         recallGrade,
+        accentMismatch,
         userAnswer,
         showingBack: true,
       });

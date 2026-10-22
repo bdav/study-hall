@@ -1,6 +1,6 @@
 import { type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
-import { gradeAnswer } from './answerGrader.js';
+import { gradeAnswer, type Grading } from './answerGrader.js';
 import { deckOrder, primaryAnswerText, withCanonicalAnswers } from './cards.js';
 import { applyAnswer } from './progressUpdater.js';
 
@@ -63,7 +63,7 @@ export async function startStudySession(
  * Grades the answer to one Study Session item. In one transaction it
  * completes the item, saves the attempt and updates the card's progress
  * (`updated-plan.md` §11.3). A null answer is "I don't know", a MISSED
- * attempt (§5.2).
+ * attempt (§5.2). Returns the attempt and whether it was an Accent Mismatch.
  */
 export async function answerItem(
   prisma: PrismaClient,
@@ -93,9 +93,9 @@ export async function answerItem(
     });
   }
 
-  const recallGrade =
+  const { recallGrade, accentMismatch }: Grading =
     userAnswer === null
-      ? 'MISSED'
+      ? { recallGrade: 'MISSED', accentMismatch: false }
       : gradeAnswer(userAnswer, primaryAnswerText(item.card));
   const progressKey = { userId_cardId: { userId, cardId: item.cardId } };
 
@@ -132,7 +132,7 @@ export async function answerItem(
       data: applyAnswer(progress, recallGrade, attempt.createdAt),
     });
 
-    return attempt;
+    return { ...attempt, accentMismatch };
   });
 }
 

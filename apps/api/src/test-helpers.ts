@@ -111,7 +111,8 @@ export async function recordStudySession(
         studySessionId: session.id,
         cardId,
         userAnswer,
-        recallGrade: gradeAnswer(userAnswer, primaryAnswerText(card)),
+        recallGrade: gradeAnswer(userAnswer, primaryAnswerText(card))
+          .recallGrade,
         attemptNumber,
         isRetry: attemptNumber > 1,
       },

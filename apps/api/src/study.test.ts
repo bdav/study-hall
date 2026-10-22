@@ -187,6 +187,29 @@ describe('studyRouter', () => {
       expect(wrong.recallGrade).toBe('MISSED');
     });
 
+    it('grades an Accent Mismatch GOOD, reports it and schedules the card as GOOD', async () => {
+      const { items } = await startedSession(capitals);
+      const brazil = items[2];
+      const before = Date.now();
+
+      const attempt = await createCaller().study.submitAnswer({
+        itemId: brazil.id,
+        userAnswer: 'Brasilia',
+      });
+
+      expect(attempt).toMatchObject({
+        recallGrade: 'GOOD',
+        accentMismatch: true,
+      });
+      // GOOD on a LEARNING card is due again in 1 day
+      const oneDay = 24 * 60 * 60 * 1000;
+      const progress = await progressOf(brazil.cardId);
+      expect(progress.dueAt!.getTime()).toBeGreaterThanOrEqual(before + oneDay);
+      expect(progress.dueAt!.getTime()).toBeLessThanOrEqual(
+        Date.now() + oneDay,
+      );
+    });
+
     it("updates the card's progress: NEW to LEARNING, mastery and next due date", async () => {
       const { items } = await startedSession(capitals);
       const before = Date.now();
