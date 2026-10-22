@@ -153,8 +153,8 @@ describe('statsRouter', () => {
         (c: { cardId: string }) => c.cardId === deck2CardIds[1],
       );
 
-      expect(card0Stats.avgAttemptsToCorrect).toBe(1);
-      expect(card1Stats.avgAttemptsToCorrect).toBe(3);
+      expect(card0Stats?.avgAttemptsToCorrect).toBe(1);
+      expect(card1Stats?.avgAttemptsToCorrect).toBe(3);
     });
 
     it('includes card front text in cardStats', async () => {
@@ -170,7 +170,7 @@ describe('statsRouter', () => {
       const card0Stats = stats.cardStats.find(
         (c: { cardId: string }) => c.cardId === cardIds[0],
       );
-      expect(card0Stats.front).toBe('Capital of France');
+      expect(card0Stats?.front).toBe('Capital of France');
     });
 
     it('returns null avgAttemptsToCorrect for cards never answered correctly', async () => {
@@ -190,7 +190,7 @@ describe('statsRouter', () => {
         (c: { cardId: string }) => c.cardId === cardIds[2],
       );
 
-      expect(card2Stats.avgAttemptsToCorrect).toBeNull();
+      expect(card2Stats?.avgAttemptsToCorrect).toBeNull();
     });
 
     it("counts only attempts made since the card's latest progress reset", async () => {
@@ -238,8 +238,8 @@ describe('statsRouter', () => {
       const australiaStats = stats.cardStats.find(
         (c: { cardId: string }) => c.cardId === australia.id,
       );
-      expect(australiaStats.totalAttempts).toBe(1);
-      expect(australiaStats.avgAttemptsToCorrect).toBe(1);
+      expect(australiaStats?.totalAttempts).toBe(1);
+      expect(australiaStats?.avgAttemptsToCorrect).toBe(1);
     });
 
     it('handles zero-attempt case gracefully', async () => {

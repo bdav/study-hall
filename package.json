@@ -10,6 +10,7 @@
     "dev:api": "pnpm --filter api dev",
     "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
     "lint": "pnpm --filter web lint && pnpm --filter api lint",
+    "typecheck": "pnpm --filter api typecheck && pnpm --filter web typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "echo \"Error: no test specified\" && exit 1",

@@ -33,6 +33,7 @@ New tickets join this list when they're created.
 - `pnpm --filter web test` — run web Vitest tests
 - `pnpm --filter web test:watch` — run web tests in watch mode
 - `pnpm --filter api test` — run API Vitest tests
+- `pnpm typecheck` — typecheck both apps, tests included (`tsx` and Vitest strip types without checking them)
 
 ### Web App (`apps/web`)
 

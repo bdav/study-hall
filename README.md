@@ -58,6 +58,7 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | `pnpm --filter web build`      | Production build of the web app       |
 | `pnpm --filter web lint`       | Lint the web app                      |
 | `pnpm lint`                    | Lint both apps                        |
+| `pnpm typecheck`               | Typecheck both apps                   |
 | `pnpm format`                  | Format all files with Prettier        |
 | `pnpm format:check`            | Check formatting                      |
 | `pnpm prisma migrate dev`      | Run database migrations               |
