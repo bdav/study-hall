@@ -13,9 +13,9 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 When picking the next ticket, work the first open issue in this list whose blockers are all closed. The order gets one course usable end to end early, then finishes the tutor and the rest of v2.
 
 1. Core study loop: #13, #5, #6
-2. Usable course: #14, #29, #15, #28, #18, #20, #21, #22
+2. Usable course: #14, #29, #15, #30, #28, #18, #20, #21, #22
 3. Learn → Review loop: #25, #26, #27, #7
-4. Syllabus editing and tutor: #16, #23, #24
+4. Syllabus editing and tutor: #16, #23, #31, #24
 5. Rest of v2 and courses: #3, #4, #12, #10, #11, #8, #9, #17, #19
 
 New tickets join this list when they're created.
