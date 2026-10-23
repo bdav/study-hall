@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estimateCostUsd } from './spend.js';
+import { estimateCostUsd, type PricedModel } from './spend.js';
 
 describe('estimateCostUsd', () => {
   it.each([
@@ -51,5 +51,15 @@ describe('estimateCostUsd', () => {
         outputTokens: 0,
       }),
     ).toBe(0);
+  });
+});
+
+describe('PricedModel', () => {
+  it('admits only models in the price table, so the app cannot call an unpriced one', () => {
+    const priced: PricedModel = 'claude-sonnet-5-5';
+    // @ts-expect-error: a model missing from the price table
+    const unpriced: PricedModel = 'claude-unpriced-1';
+
+    expect([priced, unpriced]).toHaveLength(2);
   });
 });

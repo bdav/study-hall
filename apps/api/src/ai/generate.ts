@@ -6,6 +6,7 @@ import {
   type AiProvider,
   type AiRequest,
 } from './provider.js';
+import { type PricedModel } from './spend.js';
 
 /**
  * Runs one structured AI operation and writes its AI usage record. Returns
@@ -22,7 +23,7 @@ export async function generateStructured<Schema extends z.ZodType>(
   request: {
     userId: string;
     purpose: AiPurpose;
-    model: string;
+    model: PricedModel;
     promptVersion: string;
     system: string;
     prompt: string;

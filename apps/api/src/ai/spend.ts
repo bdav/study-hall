@@ -16,7 +16,7 @@ type ModelPrice = Price & {
  * Anthropic first-party API prices. Update this table when prices change or
  * the app starts using another model.
  */
-const MODEL_PRICES: Record<string, ModelPrice> = {
+const MODEL_PRICES = {
   'claude-fable-5-1': { input: 10, output: 50 },
   'claude-opus-5-5': { input: 4, output: 20 },
   'claude-sonnet-5-5': { input: 2, output: 10 },
@@ -25,7 +25,13 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
     output: 0.5,
     longPrompt: { aboveInputTokens: 100_000, input: 0.5, output: 2.5 },
   },
-};
+} satisfies Record<string, ModelPrice>;
+
+/**
+ * A model in the price table. The app calls only these, so a new model
+ * can't be used until it has a price.
+ */
+export type PricedModel = keyof typeof MODEL_PRICES;
 
 /**
  * A server-side fallback can answer with a model missing from the table, so
@@ -42,7 +48,9 @@ export function estimateCostUsd(usage: {
   inputTokens: number;
   outputTokens: number;
 }): number {
-  const modelPrice = MODEL_PRICES[usage.model];
+  // The model that answered can differ from the one requested
+  const prices: Record<string, ModelPrice | undefined> = MODEL_PRICES;
+  const modelPrice = prices[usage.model];
   const price =
     modelPrice?.longPrompt &&
     usage.inputTokens > modelPrice.longPrompt.aboveInputTokens
