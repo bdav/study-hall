@@ -412,6 +412,40 @@ describe('lessonRouter', () => {
   });
 
   describe('getById', () => {
+    it('says when the lesson is being written by another open', async () => {
+      const [lesson] = await createCourseWithLessons();
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date() },
+      });
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened).toMatchObject({ version: null, generating: true });
+    });
+
+    it('stops saying so once a claim has gone stale', async () => {
+      const [lesson] = await createCourseWithLessons();
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date(Date.now() - 16 * 60 * 1000) },
+      });
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened.generating).toBe(false);
+    });
+
+    it('is not generating once the lesson has a version', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened.generating).toBe(false);
+    });
+
     it('shows a lesson that has not been generated yet, without calling the model', async () => {
       const [lesson] = await createCourseWithLessons();
 
@@ -420,6 +454,7 @@ describe('lessonRouter', () => {
       expect(opened).toMatchObject({
         title: 'Greetings',
         version: null,
+        generating: false,
         firstOpenedAt: null,
       });
       expect(ai.requests).toHaveLength(0);

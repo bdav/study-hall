@@ -23,6 +23,11 @@ import { courseSetupSchema } from '../ai/syllabus.js';
  */
 const GENERATION_CLAIM_MS = 15 * 60 * 1000;
 
+/** Claims made before this time have gone stale. */
+function staleClaimsBefore(now: Date): Date {
+  return new Date(now.getTime() - GENERATION_CLAIM_MS);
+}
+
 /** The newest Lesson Version is the lesson's current one. */
 const currentVersion = {
   orderBy: { createdAt: 'desc' },
@@ -57,12 +62,18 @@ async function findOwnedLesson(
  */
 function toLessonView(lesson: Awaited<ReturnType<typeof findOwnedLesson>>) {
   const [version] = lesson.versions;
+  const { generationClaimedAt } = lesson;
   return {
     id: lesson.id,
     title: lesson.title,
     objectives: lesson.objectives,
     firstOpenedAt: lesson.firstOpenedAt,
     course: lesson.course,
+    // Another open is writing the lesson; the page waits for it to finish
+    generating:
+      !version &&
+      generationClaimedAt !== null &&
+      generationClaimedAt >= staleClaimsBefore(new Date()),
     version: version
       ? {
           id: version.id,
@@ -114,9 +125,7 @@ export const lessonRouter = router({
           OR: [
             { generationClaimedAt: null },
             {
-              generationClaimedAt: {
-                lt: new Date(now.getTime() - GENERATION_CLAIM_MS),
-              },
+              generationClaimedAt: { lt: staleClaimsBefore(now) },
             },
           ],
         },

@@ -7,6 +7,9 @@ import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 
+/** How often to check on a lesson another open is writing. */
+const GENERATING_POLL_MS = 3000;
+
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 type LessonVersion = NonNullable<Lesson['version']>;
 type ExerciseType = LessonVersion['exercises'][number]['type'];
@@ -107,7 +110,18 @@ export default function LessonPage() {
   const { lessonId = '' } = useParams<{ lessonId: string }>();
   const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery();
-  const lessonQuery = trpc.lesson.getById.useQuery({ id: lessonId });
+  const lessonQuery = trpc.lesson.getById.useQuery(
+    { id: lessonId },
+    // While another open writes the lesson, check back until it's done
+    {
+      refetchInterval: (query) =>
+        query.state.data?.generating ? GENERATING_POLL_MS : false,
+    },
+  );
+
+  // A lesson is written the first time it's opened. The ref asks once per
+  // lesson, so a re-run effect (StrictMode) never pays for a second call.
+  const requestedFor = useRef<string | null>(null);
 
   const generate = trpc.lesson.generate.useMutation({
     onSuccess: async (data) => {
@@ -115,16 +129,21 @@ export default function LessonPage() {
       await utils.lesson.getById.cancel({ id: lessonId });
       utils.lesson.getById.setData({ id: lessonId }, data);
     },
+    onError: (error) => {
+      // Another open got there first: wait for it, and take over if it fails
+      if (error.data?.code === 'CONFLICT') {
+        requestedFor.current = null;
+        utils.lesson.getById.invalidate({ id: lessonId });
+      }
+    },
   });
   const { mutate: generateLesson } = generate;
 
   const lesson = lessonQuery.data;
   const canUseAI = Boolean(me.data?.user?.canUseAI);
-  const needsGenerating = lesson !== undefined && lesson.version === null;
+  const needsGenerating =
+    lesson !== undefined && lesson.version === null && !lesson.generating;
 
-  // A lesson is written the first time it's opened. The ref asks once per
-  // lesson, so a re-run effect (StrictMode) never pays for a second call.
-  const requestedFor = useRef<string | null>(null);
   useEffect(() => {
     if (needsGenerating && canUseAI && requestedFor.current !== lessonId) {
       requestedFor.current = lessonId;
@@ -158,8 +177,12 @@ export default function LessonPage() {
     );
   }
 
+  const waitingForOtherOpen =
+    lesson.generating ||
+    (generate.error?.data?.code === 'CONFLICT' && lessonQuery.isFetching);
+
   // Until we know whether the learner can use AI, the lesson is on its way
-  if (!canUseAI && !me.isLoading) {
+  if (!canUseAI && !me.isLoading && !waitingForOtherOpen) {
     return (
       <NotWrittenYet lesson={lesson}>
         This lesson hasn&apos;t been written yet, and writing it needs AI
@@ -168,7 +191,7 @@ export default function LessonPage() {
     );
   }
 
-  if (generate.isError) {
+  if (generate.isError && !waitingForOtherOpen) {
     // The monthly AI spending cap was reached: AI is paused, not broken
     if (generate.error?.data?.code === 'TOO_MANY_REQUESTS') {
       return (
@@ -178,11 +201,7 @@ export default function LessonPage() {
 
     return (
       <NotWrittenYet lesson={lesson}>
-        <p>
-          {generate.error?.data?.code === 'CONFLICT'
-            ? generate.error.message
-            : `We couldn't write this lesson. ${generate.error?.message}`}
-        </p>
+        <p>We couldn&apos;t write this lesson. {generate.error?.message}</p>
         <button
           type="button"
           onClick={() => generateLesson({ id: lessonId })}

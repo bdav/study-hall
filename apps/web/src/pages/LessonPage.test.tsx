@@ -8,11 +8,18 @@ import { trpc } from '@/lib/trpc';
 
 const mockSetData = vi.fn();
 const mockCancel = vi.fn();
+const mockInvalidate = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
-      lesson: { getById: { setData: mockSetData, cancel: mockCancel } },
+      lesson: {
+        getById: {
+          setData: mockSetData,
+          cancel: mockCancel,
+          invalidate: mockInvalidate,
+        },
+      },
     })),
     auth: { me: { useQuery: vi.fn() } },
     lesson: {
@@ -31,6 +38,7 @@ const lesson = {
   objectives: ['Greet someone formally'],
   firstOpenedAt: null,
   course: { id: 'course-1', title: 'Italian' },
+  generating: false,
   version: null,
 };
 
@@ -121,9 +129,10 @@ describe('LessonPage', () => {
     it('loads the lesson from the route', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
 
-      expect(trpc.lesson.getById.useQuery).toHaveBeenCalledWith({
-        id: 'lesson-1',
-      });
+      expect(trpc.lesson.getById.useQuery).toHaveBeenCalledWith(
+        { id: 'lesson-1' },
+        expect.anything(),
+      );
       expect(
         screen.getByRole('heading', { level: 1, name: 'Greetings' }),
       ).toBeInTheDocument();
@@ -251,9 +260,40 @@ describe('LessonPage', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('asks the learner to wait while another tab writes the lesson', () => {
+    it('waits for a lesson another tab is writing, without writing it again', () => {
       renderPage({
-        query: { data: lesson } as Partial<LessonQuery>,
+        query: {
+          data: { ...lesson, generating: true },
+        } as Partial<LessonQuery>,
+      });
+
+      expect(mockGenerate).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('status', { name: /writing your lesson/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('checks back every few seconds while the lesson is being written', () => {
+      renderPage({ query: { data: lesson } as Partial<LessonQuery> });
+
+      const { refetchInterval } = vi.mocked(trpc.lesson.getById.useQuery).mock
+        .calls[0][1] as {
+        refetchInterval: (query: {
+          state: { data?: { generating: boolean } };
+        }) => number | false;
+      };
+      expect(refetchInterval({ state: { data: { generating: true } } })).toBe(
+        3000,
+      );
+      expect(refetchInterval({ state: { data: { generating: false } } })).toBe(
+        false,
+      );
+    });
+
+    it('joins the wait when another tab started writing the lesson first', () => {
+      renderPage({
+        // The lesson is refetched to learn that another open is writing it
+        query: { data: lesson, isFetching: true } as Partial<LessonQuery>,
         mutation: {
           isError: true,
           error: {
@@ -263,9 +303,31 @@ describe('LessonPage', () => {
         } as unknown as Partial<GenerateMutation>,
       });
 
+      const options = vi.mocked(trpc.lesson.generate.useMutation).mock
+        .calls[0][0] as { onError: (error: unknown) => void };
+      options.onError({ data: { code: 'CONFLICT' } });
+
+      expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
       expect(
-        screen.getByText('This lesson is already being written.'),
+        screen.getByRole('status', { name: /writing your lesson/i }),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /try again/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers to try again if the other open stopped without writing it', () => {
+      renderPage({
+        query: { data: lesson, isFetching: false } as Partial<LessonQuery>,
+        mutation: {
+          isError: true,
+          error: {
+            message: 'This lesson is already being written.',
+            data: { code: 'CONFLICT' },
+          },
+        } as unknown as Partial<GenerateMutation>,
+      });
+
       expect(
         screen.getByRole('button', { name: /try again/i }),
       ).toBeInTheDocument();
