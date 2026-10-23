@@ -18,7 +18,7 @@ When picking the next ticket, work the first open issue in this list whose block
 4. Syllabus editing and tutor: #16, #23, #31, #24
 5. Rest of v2 and courses: #3, #4, #12, #10, #11, #8, #9, #17, #19
 
-New tickets join this list when they're created.
+New tickets join this list when they're created, unless labelled `needs-triage`.
 
 ## Commands
 
