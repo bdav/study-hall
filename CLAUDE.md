@@ -29,6 +29,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
 3. Learn → Review loop
    - [ ] #25 Make review cards from a lesson
    - [ ] #26 Lesson Completion and Continue
+   - [ ] #34 Start a lesson over
    - [ ] #27 Course Review section
    - [ ] #7 Full card lifecycle
 4. Syllabus editing and tutor
