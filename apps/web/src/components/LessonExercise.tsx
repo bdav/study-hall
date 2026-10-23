@@ -66,6 +66,13 @@ export function LessonExercise({
   const latest = submit.data ?? exercise.latestAttempt;
   const result = latest?.answer === answer.trim() ? latest : null;
 
+  // Answers are fetched only when the learner asks, after trying
+  const [revealed, setRevealed] = useState(false);
+  const answers = trpc.exercise.answers.useQuery(
+    { exerciseId: exercise.id },
+    { enabled: revealed },
+  );
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     submit.mutate({ exerciseId: exercise.id, answer });
@@ -133,6 +140,31 @@ export function LessonExercise({
         </p>
       ) : (
         result && <Result evaluation={result.evaluation} />
+      )}
+      {answers.data ? (
+        <div className="mt-3 text-sm text-white/70">
+          <p>Accepted answers:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {answers.data.expectedAnswers.map((expected) => (
+              <li key={expected}>{expected}</li>
+            ))}
+          </ul>
+        </div>
+      ) : answers.isError ? (
+        <p className="mt-3 text-sm text-destructive">
+          We couldn&apos;t load the answers. Please try again later.
+        </p>
+      ) : (
+        latest && (
+          <button
+            type="button"
+            onClick={() => setRevealed(true)}
+            disabled={revealed}
+            className="mt-3 text-sm text-white/60 underline underline-offset-2 hover:text-white disabled:opacity-50"
+          >
+            {revealed ? 'Loading answers…' : 'Show answers'}
+          </button>
+        )
       )}
     </li>
   );

@@ -11,13 +11,17 @@ vi.mock('@/lib/trpc', () => ({
     useUtils: vi.fn(() => ({
       lesson: { getById: { invalidate: mockInvalidate } },
     })),
-    exercise: { submitAttempt: { useMutation: vi.fn() } },
+    exercise: {
+      submitAttempt: { useMutation: vi.fn() },
+      answers: { useQuery: vi.fn() },
+    },
   },
 }));
 
 type SubmitMutation = ReturnType<
   typeof trpc.exercise.submitAttempt.useMutation
 >;
+type AnswersQuery = ReturnType<typeof trpc.exercise.answers.useQuery>;
 type Exercise = Parameters<typeof LessonExercise>[0]['exercise'];
 
 const shortAnswer: Exercise = {
@@ -46,7 +50,13 @@ const mockSubmit = vi.fn();
 function renderExercise(
   exercise: Exercise,
   mutation: Partial<SubmitMutation> = {},
+  answers: Partial<AnswersQuery> = {},
 ) {
+  vi.mocked(trpc.exercise.answers.useQuery).mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    ...answers,
+  } as AnswersQuery);
   vi.mocked(trpc.exercise.submitAttempt.useMutation).mockReturnValue({
     mutate: mockSubmit,
     isPending: false,
@@ -201,6 +211,78 @@ describe('LessonExercise', () => {
     } as unknown as Partial<SubmitMutation>);
 
     expect(screen.getByText(/couldn't check/i)).toBeInTheDocument();
+  });
+
+  describe('revealing answers', () => {
+    const attempted: Exercise = {
+      ...shortAnswer,
+      latestAttempt: {
+        exerciseId: 'exercise-1',
+        answer: 'Buonasera',
+        evaluation: 'INCORRECT',
+        createdAt: '2026-10-22T09:00:00.000Z',
+      },
+    };
+
+    it('offers no answers before the learner has tried the exercise', () => {
+      renderExercise(shortAnswer);
+
+      expect(
+        screen.queryByRole('button', { name: /show answers/i }),
+      ).not.toBeInTheDocument();
+      expect(trpc.exercise.answers.useQuery).toHaveBeenCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: false },
+      );
+    });
+
+    it('fetches the answers only when the learner asks', async () => {
+      renderExercise(attempted);
+
+      expect(trpc.exercise.answers.useQuery).toHaveBeenLastCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: false },
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: /show answers/i }));
+
+      expect(trpc.exercise.answers.useQuery).toHaveBeenLastCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: true },
+      );
+    });
+
+    it('lists the accepted answers', () => {
+      renderExercise(attempted, {}, {
+        data: { expectedAnswers: ['Buongiorno', 'Buon giorno'] },
+      } as Partial<AnswersQuery>);
+
+      expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
+      expect(screen.getByText('Buongiorno')).toBeInTheDocument();
+      expect(screen.getByText('Buon giorno')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /show answers/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("says when the answers couldn't be loaded", () => {
+    renderExercise(
+      {
+        ...shortAnswer,
+        latestAttempt: {
+          exerciseId: 'exercise-1',
+          answer: 'Buonasera',
+          evaluation: 'INCORRECT',
+          createdAt: '2026-10-22T09:00:00.000Z',
+        },
+      },
+      {},
+      { isError: true } as Partial<AnswersQuery>,
+    );
+
+    expect(screen.getByText(/couldn't load the answers/i)).toBeInTheDocument();
   });
 
   it("shows a free-form explanation that can't be answered yet", () => {

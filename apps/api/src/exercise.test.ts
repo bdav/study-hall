@@ -243,4 +243,48 @@ describe('exerciseRouter', () => {
       ]);
     });
   });
+
+  describe('answers', () => {
+    it("reveals an exercise's expected answers once the learner has tried it", async () => {
+      const { shortAnswer } = await createLesson();
+      const caller = createCaller();
+      await caller.exercise.submitAttempt({
+        exerciseId: shortAnswer.id,
+        answer: 'Buonasera',
+      });
+
+      const revealed = await caller.exercise.answers({
+        exerciseId: shortAnswer.id,
+      });
+
+      expect(revealed).toEqual({
+        expectedAnswers: ['Buongiorno', 'Buon giorno'],
+      });
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('keeps the answers hidden until the learner has tried the exercise', async () => {
+      const { shortAnswer } = await createLesson();
+
+      await expect(
+        createCaller().exercise.answers({ exerciseId: shortAnswer.id }),
+      ).rejects.toThrow(
+        expect.objectContaining({ code: 'PRECONDITION_FAILED' }),
+      );
+    });
+
+    it("reveals answers only to the course's owner", async () => {
+      const { shortAnswer } = await createLesson();
+      await createCaller().exercise.submitAttempt({
+        exerciseId: shortAnswer.id,
+        answer: 'Buonasera',
+      });
+
+      await expect(
+        createCaller(otherUserId).exercise.answers({
+          exerciseId: shortAnswer.id,
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }));
+    });
+  });
 });

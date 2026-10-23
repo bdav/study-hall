@@ -30,6 +30,7 @@ vi.mock('@/lib/trpc', () => ({
       submitAttempt: {
         useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
       },
+      answers: { useQuery: vi.fn(() => ({ data: undefined })) },
     },
   },
 }));
