@@ -48,7 +48,8 @@ For each lesson give a short title and two to five learning objectives. A learni
 
 Fit the number and size of lessons to the learner's goal, prior knowledge, available time and preferred depth. Skip material the learner already knows.`;
 
-export function buildSyllabusPrompt(setup: CourseSetup): string {
+/** The setup answers as prompt lines, for every course generation call. */
+export function formatCourseSetup(setup: CourseSetup): string[] {
   return [
     `Topic: ${setup.topic}`,
     `Goal or target level: ${setup.goal}`,
@@ -56,6 +57,12 @@ export function buildSyllabusPrompt(setup: CourseSetup): string {
     `Time per week: ${setup.timePerWeek}`,
     `Preferred depth: ${setup.depth}`,
     `Notes: ${setup.notes || 'None'}`,
+  ];
+}
+
+export function buildSyllabusPrompt(setup: CourseSetup): string {
+  return [
+    ...formatCourseSetup(setup),
     '',
     'Propose a syllabus for this learner.',
   ].join('\n');

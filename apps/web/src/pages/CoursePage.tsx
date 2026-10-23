@@ -1,11 +1,12 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 
-type LessonOutline = { title: string; objectives: string[] };
+/** A lesson of the syllabus has an id; a proposed lesson doesn't exist yet. */
+type LessonOutline = { id?: string; title: string; objectives: string[] };
 
 function LessonList({ lessons }: { lessons: LessonOutline[] }) {
   return (
@@ -18,7 +19,16 @@ function LessonList({ lessons }: { lessons: LessonOutline[] }) {
         >
           <p className="font-semibold">
             <span className="mr-2 text-white/50">{index + 1}.</span>
-            {lesson.title}
+            {lesson.id ? (
+              <Link
+                to={`/lessons/${lesson.id}`}
+                className="underline-offset-2 hover:underline"
+              >
+                {lesson.title}
+              </Link>
+            ) : (
+              lesson.title
+            )}
           </p>
           <ul className="mt-2 list-disc space-y-0.5 pl-10 text-sm text-white/70">
             {lesson.objectives.map((objective, objectiveIndex) => (

@@ -4,6 +4,7 @@ import { authRouter } from './auth.js';
 import { cardRouter } from './card.js';
 import { courseRouter } from './course.js';
 import { deckRouter } from './deck.js';
+import { lessonRouter } from './lesson.js';
 import { studyRouter } from './study.js';
 import { statsRouter } from './stats.js';
 
@@ -18,6 +19,7 @@ export const appRouter = router({
   card: cardRouter,
   course: courseRouter,
   deck: deckRouter,
+  lesson: lessonRouter,
   study: studyRouter,
   stats: statsRouter,
 });

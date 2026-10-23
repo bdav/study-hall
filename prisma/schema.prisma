@@ -55,6 +55,13 @@ enum GradingMethod {
 
 enum AiPurpose {
   SYLLABUS_GENERATION
+  LESSON_GENERATION
+}
+
+enum ExerciseType {
+  SHORT_ANSWER
+  FILL_IN_THE_BLANK
+  FREE_FORM_EXPLANATION
 }
 
 // --- Models ---
@@ -272,17 +279,56 @@ model SyllabusProposal {
 }
 
 model Lesson {
-  id         String    @id @default(cuid())
-  courseId   String
-  title      String
-  position   Int
-  objectives String[]
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  course     Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                  String          @id @default(cuid())
+  courseId            String
+  title               String
+  position            Int
+  objectives          String[]
+  // Learner state: set when the lesson is first opened with content
+  firstOpenedAt       DateTime?
+  // Set while a version is being generated, so a concurrent open waits
+  generationClaimedAt DateTime?
+  archivedAt          DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  course              Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  versions            LessonVersion[]
 
   @@index([courseId, position])
+}
+
+// One generated rendition of a lesson. It never changes once created; the
+// newest is the lesson's current version (ADR-0003).
+model LessonVersion {
+  id            String     @id @default(cuid())
+  lessonId      String
+  // Content blocks: [{ heading, paragraphs: string[] }]
+  content       Json
+  // [{ example, explanation }]
+  examples      Json
+  summary       String
+  model         String
+  promptVersion String
+  createdAt     DateTime   @default(now())
+  lesson        Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  exercises     Exercise[]
+
+  @@index([lessonId, createdAt])
+}
+
+model Exercise {
+  id              String        @id @default(cuid())
+  lessonVersionId String
+  position        Int
+  type            ExerciseType
+  prompt          String
+  // Short answers and fill-in-the-blanks
+  expectedAnswers String[]
+  // Free-form explanations
+  expectedPoints  String[]
+  lessonVersion   LessonVersion @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+
+  @@index([lessonVersionId, position])
 }
 
 model AiUsage {

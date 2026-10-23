@@ -207,6 +207,25 @@ describe('CoursePage', () => {
     });
   });
 
+  it('links each syllabus lesson to its lesson page', () => {
+    renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+    expect(screen.getByRole('link', { name: /greetings/i })).toHaveAttribute(
+      'href',
+      '/lessons/lesson-1',
+    );
+    expect(screen.getByRole('link', { name: /at the café/i })).toHaveAttribute(
+      'href',
+      '/lessons/lesson-2',
+    );
+  });
+
+  it("doesn't link proposed lessons, which don't exist until accepted", () => {
+    renderPage({ data: baseCourse } as Partial<CourseQuery>);
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('shows a loading state', () => {
     renderPage({ isLoading: true });
 

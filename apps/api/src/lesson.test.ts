@@ -1,0 +1,481 @@
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  beforeEach,
+  afterAll,
+  vi,
+} from 'vitest';
+import { type PrismaClient } from '@prisma/client';
+import { createTestPrisma } from './test-helpers.js';
+import { appRouter } from './routers/index.js';
+import { createFakeAiProvider } from './ai/fakeProvider.js';
+
+let prisma: PrismaClient;
+let cleanup: () => Promise<void>;
+
+let userId: string;
+let otherUserId: string;
+
+const ai = createFakeAiProvider();
+
+const courseForm = {
+  topic: 'Italian',
+  goal: 'A2 by summer',
+  priorKnowledge: 'Some Duolingo',
+  timePerWeek: '3 hours',
+  depth: 'Practical',
+  notes: 'I travel to Rome in June',
+};
+
+const syllabus = {
+  lessons: [
+    { title: 'Greetings', objectives: ['Greet someone formally'] },
+    { title: 'At the café', objectives: ['Order food and drinks'] },
+    { title: 'Numbers', objectives: ['Count to one hundred'] },
+  ],
+};
+
+/** A generated lesson, as the model returns it. */
+function lessonOutput(summary = 'Taught ciao and buongiorno.') {
+  return {
+    content: [
+      {
+        heading: 'Saying hello',
+        paragraphs: ['Italian has a formal and an informal hello.'],
+      },
+    ],
+    examples: [{ example: 'Ciao, Marco!', explanation: 'An informal hello.' }],
+    exercises: [
+      {
+        type: 'SHORT_ANSWER',
+        prompt: 'Translate: Good morning',
+        expectedAnswers: ['Buongiorno'],
+      },
+      {
+        type: 'FILL_IN_THE_BLANK',
+        prompt: '___, Marco!',
+        expectedAnswers: ['Ciao'],
+      },
+      {
+        type: 'FREE_FORM_EXPLANATION',
+        prompt: 'When would you say buonasera?',
+        expectedPoints: ['In the evening'],
+      },
+    ],
+    summary,
+  };
+}
+
+beforeAll(async () => {
+  const testDb = createTestPrisma();
+  prisma = testDb.prisma;
+  cleanup = testDb.cleanup;
+
+  const user = await prisma.user.create({
+    data: { email: 'lesson-test@example.com', passwordHash: 'fakehash' },
+  });
+  userId = user.id;
+
+  const otherUser = await prisma.user.create({
+    data: { email: 'other-lesson@example.com', passwordHash: 'fakehash' },
+  });
+  otherUserId = otherUser.id;
+});
+
+beforeEach(async () => {
+  await prisma.course.deleteMany({});
+  await prisma.deck.deleteMany({});
+  await prisma.aiUsage.deleteMany({});
+  ai.reset();
+  vi.stubEnv(
+    'AI_ALLOWED_EMAILS',
+    'lesson-test@example.com, other-lesson@example.com',
+  );
+  vi.stubEnv('AI_MONTHLY_CAP_USD', '100');
+});
+
+afterAll(async () => {
+  vi.unstubAllEnvs();
+  await cleanup();
+});
+
+function createCaller(overrideUserId?: string) {
+  return appRouter.createCaller({
+    prisma,
+    userId: overrideUserId ?? userId,
+    sessionToken: null,
+    ai,
+  });
+}
+
+/**
+ * Creates a course with an accepted syllabus through the router, and
+ * returns its lessons in syllabus order.
+ */
+async function createCourseWithLessons() {
+  const caller = createCaller();
+  ai.respondWith(syllabus);
+  const { id } = await caller.course.create(courseForm);
+  await caller.course.acceptProposal({ courseId: id });
+  const course = await caller.course.getById({ id });
+  ai.reset();
+  return course.lessons;
+}
+
+describe('lessonRouter', () => {
+  describe('generate', () => {
+    it('generates a Lesson Version that opening the lesson then shows', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+
+      ai.respondWith(lessonOutput());
+      await caller.lesson.generate({ id: lesson.id });
+      const opened = await caller.lesson.getById({ id: lesson.id });
+
+      expect(opened).toMatchObject({
+        id: lesson.id,
+        title: 'Greetings',
+        objectives: ['Greet someone formally'],
+      });
+      expect(opened.version).toMatchObject({
+        content: lessonOutput().content,
+        examples: lessonOutput().examples,
+        exercises: [
+          { type: 'SHORT_ANSWER', prompt: 'Translate: Good morning' },
+          { type: 'FILL_IN_THE_BLANK', prompt: '___, Marco!' },
+          {
+            type: 'FREE_FORM_EXPLANATION',
+            prompt: 'When would you say buonasera?',
+          },
+        ],
+      });
+    });
+
+    it('stores expected answers and points, and the model and prompt version', async () => {
+      const [lesson] = await createCourseWithLessons();
+
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+
+      // No procedure exposes these until exercises can be answered (#20)
+      const version = await prisma.lessonVersion.findFirstOrThrow({
+        where: { lessonId: lesson.id },
+        include: { exercises: { orderBy: { position: 'asc' } } },
+      });
+      expect(version).toMatchObject({
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'lesson-v1',
+      });
+      expect(
+        version.exercises.map(({ expectedAnswers, expectedPoints }) => ({
+          expectedAnswers,
+          expectedPoints,
+        })),
+      ).toEqual([
+        { expectedAnswers: ['Buongiorno'], expectedPoints: [] },
+        { expectedAnswers: ['Ciao'], expectedPoints: [] },
+        { expectedAnswers: [], expectedPoints: ['In the evening'] },
+      ]);
+    });
+
+    it('records when the lesson was first opened, and keeps that time', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const [lesson] = await createCourseWithLessons();
+        const caller = createCaller();
+
+        vi.setSystemTime(new Date('2026-10-20T09:00:00Z'));
+        ai.respondWith(lessonOutput());
+        await caller.lesson.generate({ id: lesson.id });
+        vi.setSystemTime(new Date('2026-10-22T09:00:00Z'));
+        await caller.lesson.generate({ id: lesson.id });
+
+        const opened = await caller.lesson.getById({ id: lesson.id });
+        expect(opened.firstOpenedAt).toEqual(new Date('2026-10-20T09:00:00Z'));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('records the AI usage of the generation', async () => {
+      const [lesson] = await createCourseWithLessons();
+
+      ai.respondWith(lessonOutput(), { inputTokens: 2400, outputTokens: 3100 });
+      await createCaller().lesson.generate({ id: lesson.id });
+
+      expect(
+        await prisma.aiUsage.findMany({
+          where: { purpose: 'LESSON_GENERATION' },
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          userId,
+          purpose: 'LESSON_GENERATION',
+          model: 'claude-sonnet-5-5',
+          inputTokens: 2400,
+          outputTokens: 3100,
+        }),
+      ]);
+    });
+
+    it('stores nothing when the output is invalid, and the learner can retry', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+
+      ai.respondWith({ ...lessonOutput(), exercises: [] });
+      await expect(caller.lesson.generate({ id: lesson.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'BAD_GATEWAY' }),
+      );
+
+      const opened = await caller.lesson.getById({ id: lesson.id });
+      expect(opened.version).toBeNull();
+      expect(opened.firstOpenedAt).toBeNull();
+
+      ai.respondWith(lessonOutput());
+      await caller.lesson.generate({ id: lesson.id });
+      expect(
+        (await caller.lesson.getById({ id: lesson.id })).version,
+      ).not.toBeNull();
+    });
+
+    it('generates once when the lesson is opened twice at the same time', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+      ai.respondWith(lessonOutput('First.'));
+      ai.respondWith(lessonOutput('Second.'));
+
+      const results = await Promise.allSettled([
+        caller.lesson.generate({ id: lesson.id }),
+        caller.lesson.generate({ id: lesson.id }),
+      ]);
+
+      expect(ai.requests).toHaveLength(1);
+      expect(
+        await prisma.lessonVersion.count({ where: { lessonId: lesson.id } }),
+      ).toBe(1);
+      // The losing call either finds the finished version or is told to wait
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          expect(result.value.version).not.toBeNull();
+        } else {
+          expect(result.reason).toMatchObject({ code: 'CONFLICT' });
+        }
+      }
+    });
+
+    it('asks the learner to wait while another open is writing the lesson', async () => {
+      const [lesson] = await createCourseWithLessons();
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date() },
+      });
+
+      await expect(
+        createCaller().lesson.generate({ id: lesson.id }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          code: 'CONFLICT',
+          message: expect.stringMatching(/already being written/),
+        }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('takes over a claim left by a request that died', async () => {
+      const [lesson] = await createCourseWithLessons();
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date(Date.now() - 16 * 60 * 1000) },
+      });
+
+      ai.respondWith(lessonOutput());
+      const opened = await createCaller().lesson.generate({ id: lesson.id });
+
+      expect(opened.version).not.toBeNull();
+    });
+
+    it('releases its claim when generation fails, so a retry can start at once', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+      ai.failWith('api-error');
+      await expect(caller.lesson.generate({ id: lesson.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'BAD_GATEWAY' }),
+      );
+
+      ai.respondWith(lessonOutput());
+      const opened = await caller.lesson.generate({ id: lesson.id });
+
+      expect(opened.version).not.toBeNull();
+    });
+
+    it("doesn't generate an archived lesson", async () => {
+      const [lesson] = await createCourseWithLessons();
+      // Archiving has no procedure yet (#17)
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { archivedAt: new Date() },
+      });
+
+      await expect(
+        createCaller().lesson.generate({ id: lesson.id }),
+      ).rejects.toThrow(
+        expect.objectContaining({ code: 'PRECONDITION_FAILED' }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('refuses a learner without AI access, without calling the model', async () => {
+      const [lesson] = await createCourseWithLessons();
+      vi.stubEnv('AI_ALLOWED_EMAILS', 'someone-else@example.com');
+
+      await expect(
+        createCaller().lesson.generate({ id: lesson.id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('is paused once the monthly AI spending cap is reached', async () => {
+      const [lesson] = await createCourseWithLessons();
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '0.0001');
+
+      await expect(
+        createCaller().lesson.generate({ id: lesson.id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }));
+      expect(ai.requests).toHaveLength(0);
+    });
+  });
+
+  describe('generation context', () => {
+    /** Generates a lesson, answering with the given summary. */
+    async function generate(lessonId: string, summary: string) {
+      ai.respondWith(lessonOutput(summary));
+      await createCaller().lesson.generate({ id: lessonId });
+      return ai.requests.at(-1)!.prompt;
+    }
+
+    it('sends the setup answers, the syllabus outline and the lesson objectives', async () => {
+      const [, cafe] = await createCourseWithLessons();
+
+      const prompt = await generate(cafe.id, 'Taught ordering.');
+
+      for (const answer of Object.values(courseForm)) {
+        expect(prompt).toContain(answer);
+      }
+      for (const { title, objectives } of syllabus.lessons) {
+        expect(prompt).toContain(title);
+        expect(prompt).toContain(objectives[0]);
+      }
+      expect(prompt).toMatch(/Write the lesson "At the café"/);
+    });
+
+    it('sends summaries of earlier generated lessons in syllabus order, never later ones', async () => {
+      const [greetings, cafe, numbers] = await createCourseWithLessons();
+
+      await generate(numbers.id, 'Taught numbers.');
+      await generate(greetings.id, 'Taught greetings.');
+      const cafePrompt = await generate(cafe.id, 'Taught ordering.');
+
+      expect(cafePrompt).toContain('Taught greetings.');
+      expect(cafePrompt).not.toContain('Taught numbers.');
+    });
+
+    it('lists earlier summaries in syllabus order, not generation order', async () => {
+      const [greetings, cafe, numbers] = await createCourseWithLessons();
+
+      await generate(cafe.id, 'Taught ordering.');
+      await generate(greetings.id, 'Taught greetings.');
+      const prompt = await generate(numbers.id, 'Taught numbers.');
+
+      expect(prompt.indexOf('Taught greetings.')).toBeLessThan(
+        prompt.indexOf('Taught ordering.'),
+      );
+    });
+
+    it('leaves archived lessons out of the outline and the summaries', async () => {
+      const [greetings, cafe, numbers] = await createCourseWithLessons();
+      await generate(greetings.id, 'Taught greetings.');
+      await generate(cafe.id, 'Taught ordering.');
+      // Archiving has no procedure yet (#17)
+      await prisma.lesson.update({
+        where: { id: greetings.id },
+        data: { archivedAt: new Date() },
+      });
+
+      const prompt = await generate(numbers.id, 'Taught numbers.');
+
+      expect(prompt).not.toContain('Greetings');
+      expect(prompt).not.toContain('Taught greetings.');
+      expect(prompt).toContain('Taught ordering.');
+    });
+  });
+
+  describe('getById', () => {
+    it('shows a lesson that has not been generated yet, without calling the model', async () => {
+      const [lesson] = await createCourseWithLessons();
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened).toMatchObject({
+        title: 'Greetings',
+        version: null,
+        firstOpenedAt: null,
+      });
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('shows the same version on reopening, with no model call and without AI access', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+      ai.respondWith(lessonOutput());
+      const first = await caller.lesson.generate({ id: lesson.id });
+      ai.reset();
+      vi.stubEnv('AI_ALLOWED_EMAILS', '');
+
+      const reopened = await caller.lesson.getById({ id: lesson.id });
+
+      expect(reopened.version).toEqual(first.version);
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('never regenerates a lesson that already has a version', async () => {
+      const [lesson] = await createCourseWithLessons();
+      const caller = createCaller();
+      ai.respondWith(lessonOutput());
+      const first = await caller.lesson.generate({ id: lesson.id });
+
+      const again = await caller.lesson.generate({ id: lesson.id });
+
+      expect(again.version?.id).toBe(first.version?.id);
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('does not show exercise answers or the Lesson Summary to the learner', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+
+      const opened = await createCaller().lesson.generate({ id: lesson.id });
+
+      expect(JSON.stringify(opened)).not.toMatch(
+        /Buongiorno|In the evening|Taught ciao/,
+      );
+    });
+  });
+
+  describe('ownership', () => {
+    it("lets only the course's owner open or generate its lessons", async () => {
+      const [lesson] = await createCourseWithLessons();
+      const other = createCaller(otherUserId);
+
+      await expect(other.lesson.getById({ id: lesson.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'NOT_FOUND' }),
+      );
+      ai.respondWith(lessonOutput());
+      await expect(other.lesson.generate({ id: lesson.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'NOT_FOUND' }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+  });
+});

@@ -29,6 +29,24 @@ vi.mock('@/lib/trpc', () => ({
         })),
       },
     },
+    lesson: {
+      getById: {
+        useQuery: vi.fn(() => ({
+          data: {
+            id: 'lesson-1',
+            title: 'Greetings',
+            objectives: [],
+            firstOpenedAt: null,
+            course: { id: 'course-1', title: 'Italian' },
+            version: null,
+          },
+          isLoading: false,
+        })),
+      },
+      generate: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: true })),
+      },
+    },
     course: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
     },
@@ -69,6 +87,14 @@ describe('routes', () => {
 
     expect(
       await screen.findByRole('heading', { name: 'AI usage' }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens a lesson at /lessons/:lessonId', async () => {
+    renderAt('/lessons/lesson-1');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Greetings' }),
     ).toBeInTheDocument();
   });
 });
