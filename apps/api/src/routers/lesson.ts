@@ -15,6 +15,7 @@ import {
   parseLessonExamples,
 } from '../ai/lesson.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
+import { toAttemptView } from '../services/exercises.js';
 
 /**
  * How long a generation claim holds. Longer than the Anthropic client's
@@ -45,7 +46,12 @@ async function findOwnedLesson(
       course: { select: { id: true, title: true } },
       versions: {
         ...currentVersion,
-        include: { exercises: { orderBy: { position: 'asc' } } },
+        include: {
+          exercises: {
+            orderBy: { position: 'asc' },
+            include: { attempts: { orderBy: { createdAt: 'desc' }, take: 1 } },
+          },
+        },
       },
     },
   });
@@ -79,11 +85,14 @@ function toLessonView(lesson: Awaited<ReturnType<typeof findOwnedLesson>>) {
           id: version.id,
           content: parseLessonContent(version.content),
           examples: parseLessonExamples(version.examples),
-          exercises: version.exercises.map(({ id, type, prompt }) => ({
-            id,
-            type,
-            prompt,
-          })),
+          exercises: version.exercises.map(
+            ({ id, type, prompt, attempts: [latest] }) => ({
+              id,
+              type,
+              prompt,
+              latestAttempt: latest ? toAttemptView(latest) : null,
+            }),
+          ),
         }
       : null,
   };

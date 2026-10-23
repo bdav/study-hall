@@ -64,6 +64,15 @@ enum ExerciseType {
   FREE_FORM_EXPLANATION
 }
 
+enum ExerciseEvaluation {
+  CORRECT
+  INCORRECT
+}
+
+enum EvaluationMethod {
+  DETERMINISTIC
+}
+
 // --- Models ---
 
 model User {
@@ -300,7 +309,7 @@ model Lesson {
 // One generated rendition of a lesson. It never changes once created; the
 // newest is the lesson's current version (ADR-0003).
 model LessonVersion {
-  id            String     @id @default(cuid())
+  id            String            @id @default(cuid())
   lessonId      String
   // Content blocks: [{ heading, paragraphs: string[] }]
   content       Json
@@ -309,15 +318,16 @@ model LessonVersion {
   summary       String
   model         String
   promptVersion String
-  createdAt     DateTime   @default(now())
-  lesson        Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  lesson        Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   exercises     Exercise[]
+  attempts      ExerciseAttempt[]
 
   @@index([lessonId, createdAt])
 }
 
 model Exercise {
-  id              String        @id @default(cuid())
+  id              String            @id @default(cuid())
   lessonVersionId String
   position        Int
   type            ExerciseType
@@ -326,9 +336,29 @@ model Exercise {
   expectedAnswers String[]
   // Free-form explanations
   expectedPoints  String[]
-  lessonVersion   LessonVersion @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+  lessonVersion   LessonVersion     @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+  attempts        ExerciseAttempt[]
 
   @@index([lessonVersionId, position])
+}
+
+// Learner state: an answer to an exercise and its evaluation, kept with the
+// Lesson Version it was made against (ADR-0003)
+model ExerciseAttempt {
+  id              String             @id @default(cuid())
+  lessonVersionId String
+  exerciseId      String
+  answer          String
+  evaluation      ExerciseEvaluation
+  method          EvaluationMethod
+  // Set by the database to the microsecond (Prisma's now() is only
+  // milliseconds), so attempts made in quick succession keep their order
+  createdAt       DateTime           @default(dbgenerated("now()")) @db.Timestamp(6)
+  lessonVersion   LessonVersion      @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+  exercise        Exercise           @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId, createdAt])
+  @@index([lessonVersionId])
 }
 
 model AiUsage {

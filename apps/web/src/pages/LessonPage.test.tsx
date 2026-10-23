@@ -26,6 +26,11 @@ vi.mock('@/lib/trpc', () => ({
       getById: { useQuery: vi.fn() },
       generate: { useMutation: vi.fn() },
     },
+    exercise: {
+      submitAttempt: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+      },
+    },
   },
 }));
 
@@ -62,12 +67,19 @@ const generatedLesson = {
         id: 'exercise-1',
         type: 'SHORT_ANSWER',
         prompt: 'Translate: Good morning',
+        latestAttempt: null,
       },
-      { id: 'exercise-2', type: 'FILL_IN_THE_BLANK', prompt: '___, Marco!' },
+      {
+        id: 'exercise-2',
+        type: 'FILL_IN_THE_BLANK',
+        prompt: '___, Marco!',
+        latestAttempt: null,
+      },
       {
         id: 'exercise-3',
         type: 'FREE_FORM_EXPLANATION',
         prompt: 'When would you say buonasera?',
+        latestAttempt: null,
       },
     ],
   },
@@ -168,7 +180,7 @@ describe('LessonPage', () => {
       expect(exercises[0]).toHaveTextContent(
         /short answer.*translate: good morning/i,
       );
-      expect(exercises[1]).toHaveTextContent(/fill in the blank.*___, marco!/i);
+      expect(exercises[1]).toHaveTextContent(/fill in the blank.*, marco!/i);
       expect(exercises[2]).toHaveTextContent(
         /explain.*when would you say buonasera\?/i,
       );

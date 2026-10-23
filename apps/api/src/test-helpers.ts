@@ -1,9 +1,10 @@
 import { config } from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { type ExerciseType, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
+import { LESSON_MODEL, LESSON_PROMPT_VERSION } from './ai/lesson.js';
 import { gradeAnswer } from './services/answerGrader.js';
 import {
   createCards,
@@ -120,4 +121,67 @@ export async function recordStudySession(
   }
 
   return session;
+}
+
+/**
+ * Creates a course with one lesson and a generated Lesson Version holding
+ * the given exercises, as lesson generation stores them. For suites that
+ * work with a generated lesson without going through AI generation.
+ */
+export async function createLessonVersion(
+  prisma: PrismaClient,
+  {
+    userId,
+    exercises,
+  }: {
+    userId: string;
+    exercises: {
+      type: ExerciseType;
+      prompt: string;
+      expectedAnswers?: string[];
+      expectedPoints?: string[];
+    }[];
+  },
+) {
+  const course = await prisma.course.create({
+    data: {
+      userId,
+      title: 'Italian',
+      topic: 'Italian',
+      goal: 'A2 by summer',
+      priorKnowledge: '',
+      timePerWeek: '3 hours',
+      depth: 'Balanced',
+      notes: '',
+      lessons: {
+        create: {
+          title: 'Greetings',
+          position: 0,
+          objectives: ['Greet someone'],
+        },
+      },
+    },
+    include: { lessons: true },
+  });
+
+  return prisma.lessonVersion.create({
+    data: {
+      lessonId: course.lessons[0].id,
+      content: [{ heading: 'Saying hello', paragraphs: ['Ciao means hi.'] }],
+      examples: [{ example: 'Ciao!', explanation: 'Hi.' }],
+      summary: 'Taught ciao.',
+      model: LESSON_MODEL,
+      promptVersion: LESSON_PROMPT_VERSION,
+      exercises: {
+        create: exercises.map((exercise, position) => ({
+          position,
+          type: exercise.type,
+          prompt: exercise.prompt,
+          expectedAnswers: exercise.expectedAnswers ?? [],
+          expectedPoints: exercise.expectedPoints ?? [],
+        })),
+      },
+    },
+    include: { exercises: { orderBy: { position: 'asc' } } },
+  });
 }

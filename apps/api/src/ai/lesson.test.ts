@@ -92,9 +92,37 @@ describe('lessonOutputSchema', () => {
         ],
       },
     ],
+    [
+      'a fill-in-the-blank prompt with two blanks',
+      {
+        ...validOutput,
+        exercises: [
+          {
+            type: 'FILL_IN_THE_BLANK',
+            prompt: '___, Marco! ___?',
+            expectedAnswers: ['Ciao'],
+          },
+        ],
+      },
+    ],
     ['a missing summary', { ...validOutput, summary: undefined }],
   ])('rejects %s', (_, output) => {
     expect(lessonOutputSchema.safeParse(output).success).toBe(false);
+  });
+
+  it('accepts a blank of more than three underscores', () => {
+    const output = {
+      ...validOutput,
+      exercises: [
+        {
+          type: 'FILL_IN_THE_BLANK',
+          prompt: 'Io ____ italiano.',
+          expectedAnswers: ['sono'],
+        },
+      ],
+    };
+
+    expect(lessonOutputSchema.safeParse(output).success).toBe(true);
   });
 
   it('trims text', () => {

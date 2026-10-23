@@ -9,8 +9,11 @@ export const LESSON_PROMPT_VERSION = 'lesson-v1';
 
 const text = z.string().trim().min(1);
 
-/** Where a fill-in-the-blank prompt leaves its gap. */
+/** How a fill-in-the-blank prompt marks its gap. */
 export const BLANK = '___';
+
+/** A gap as the page finds it: three or more underscores. */
+const GAP = /_{3,}/g;
 
 const exerciseSchema = z.discriminatedUnion('type', [
   /** A short answer or translation, matched against expected answers. */
@@ -22,8 +25,8 @@ const exerciseSchema = z.discriminatedUnion('type', [
   /** A prompt with a gap marked `___`, matched against expected answers. */
   z.object({
     type: z.literal('FILL_IN_THE_BLANK'),
-    prompt: text.refine((prompt) => prompt.includes(BLANK), {
-      message: `A fill-in-the-blank prompt marks its gap with ${BLANK}`,
+    prompt: text.refine((prompt) => prompt.match(GAP)?.length === 1, {
+      message: `A fill-in-the-blank prompt marks exactly one gap with ${BLANK}`,
     }),
     expectedAnswers: z.array(text).min(1),
   }),
@@ -129,7 +132,7 @@ A lesson has:
 - Examples that show the material in use, each with a short explanation.
 - Exercises that practise the objectives:
   - SHORT_ANSWER: a short answer or translation, with every answer you would accept.
-  - FILL_IN_THE_BLANK: a prompt with its gap marked ${BLANK}, with every answer you would accept for the gap.
+  - FILL_IN_THE_BLANK: a prompt with exactly one gap, marked ${BLANK}, with every answer you would accept for the gap.
   - FREE_FORM_EXPLANATION: a question the learner answers in their own words, with the points a good answer makes.
 - A Lesson Summary: a compact record of the rules, vocabulary and material this lesson introduced and practised, so later lessons can build on it. It records what was taught, not what the learner learned.
 

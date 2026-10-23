@@ -6,19 +6,13 @@ import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
+import { LessonExercise } from '@/components/LessonExercise';
 
 /** How often to check on a lesson another open is writing. */
 const GENERATING_POLL_MS = 3000;
 
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 type LessonVersion = NonNullable<Lesson['version']>;
-type ExerciseType = LessonVersion['exercises'][number]['type'];
-
-const EXERCISE_LABELS: Record<ExerciseType, string> = {
-  SHORT_ANSWER: 'Short answer',
-  FILL_IN_THE_BLANK: 'Fill in the blank',
-  FREE_FORM_EXPLANATION: 'Explain',
-};
 
 function LessonHeader({ lesson }: { lesson: Lesson }) {
   return (
@@ -53,7 +47,13 @@ function NotWrittenYet({
   );
 }
 
-function LessonContent({ version }: { version: LessonVersion }) {
+function LessonContent({
+  lessonId,
+  version,
+}: {
+  lessonId: string;
+  version: LessonVersion;
+}) {
   return (
     <>
       {version.content.map((block, index) => (
@@ -90,15 +90,12 @@ function LessonContent({ version }: { version: LessonVersion }) {
         </h2>
         <ol aria-labelledby="lesson-exercises" className="mt-3 space-y-3">
           {version.exercises.map((exercise, index) => (
-            <li
+            <LessonExercise
               key={exercise.id}
-              className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-            >
-              <p className="text-xs uppercase tracking-wide text-white/50">
-                {index + 1}. {EXERCISE_LABELS[exercise.type]}
-              </p>
-              <p className="mt-1">{exercise.prompt}</p>
-            </li>
+              exercise={exercise}
+              index={index}
+              lessonId={lessonId}
+            />
           ))}
         </ol>
       </section>
@@ -171,7 +168,7 @@ export default function LessonPage() {
       <CenteredPage>
         <article className="w-full max-w-2xl text-white">
           <LessonHeader lesson={lesson} />
-          <LessonContent version={lesson.version} />
+          <LessonContent lessonId={lesson.id} version={lesson.version} />
         </article>
       </CenteredPage>
     );
