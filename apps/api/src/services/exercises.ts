@@ -2,19 +2,36 @@ import { type ExerciseAttempt, type ExerciseEvaluation } from '@prisma/client';
 import { matchAnswer } from './answerGrader.js';
 
 /**
+ * An exercise answer's evaluation, and the accented expected answer it
+ * matched when it was an Accent Mismatch.
+ */
+export type ExerciseAnswerEvaluation = {
+  evaluation: ExerciseEvaluation;
+  accentCorrection: string | null;
+};
+
+/**
  * Evaluates an answer to a short-answer or fill-in-the-blank exercise
- * against its expected answers, with the same matching cards use. Accents
- * are ignored until Accent Mismatches reach exercises (#21).
+ * against its expected answers, with the same matching cards use. An
+ * Accent Mismatch counts as correct, corrected to the expected answer it
+ * matched (ADR-0002); an exact match on any expected answer needs no
+ * correction.
  */
 export function evaluateExerciseAnswer(
   answer: string,
   expectedAnswers: string[],
-): ExerciseEvaluation {
-  return expectedAnswers.some(
-    (expected) => matchAnswer(answer, expected) !== 'no-match',
-  )
-    ? 'CORRECT'
-    : 'INCORRECT';
+): ExerciseAnswerEvaluation {
+  const matches = expectedAnswers.map((expected) => ({
+    expected,
+    match: matchAnswer(answer, expected),
+  }));
+  if (matches.some(({ match }) => match === 'exact')) {
+    return { evaluation: 'CORRECT', accentCorrection: null };
+  }
+  const mismatch = matches.find(({ match }) => match === 'accent-mismatch');
+  return mismatch
+    ? { evaluation: 'CORRECT', accentCorrection: mismatch.expected }
+    : { evaluation: 'INCORRECT', accentCorrection: null };
 }
 
 /** An Exercise Attempt as the learner sees its result. */
@@ -23,6 +40,7 @@ export function toAttemptView(attempt: ExerciseAttempt) {
     exerciseId: attempt.exerciseId,
     answer: attempt.answer,
     evaluation: attempt.evaluation,
+    accentCorrection: attempt.accentCorrection,
     createdAt: attempt.createdAt,
   };
 }

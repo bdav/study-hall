@@ -83,6 +83,17 @@ async function createLesson() {
   return { version, shortAnswer, fillInTheBlank, freeForm };
 }
 
+/** A generated lesson with just the given exercise. */
+async function createLessonWith(
+  exercise: Parameters<typeof createLessonVersion>[1]['exercises'][number],
+) {
+  const version = await createLessonVersion(prisma, {
+    userId,
+    exercises: [exercise],
+  });
+  return { version, exercise: version.exercises[0] };
+}
+
 describe('exerciseRouter', () => {
   describe('submitAttempt', () => {
     it('confirms a correct short answer and stores the attempt, with no model call', async () => {
@@ -110,8 +121,6 @@ describe('exerciseRouter', () => {
       ['a different case and punctuation', 'buongiorno!'],
       ['extra whitespace', '  Buongiorno  '],
       ['any expected answer', 'buon giorno'],
-      // Accent Mismatches reach exercises in #21
-      ['wrong accents, ignored for now', 'Buòngiorno'],
     ])('accepts a short answer with %s', async (_, answer) => {
       const { shortAnswer } = await createLesson();
 
@@ -121,6 +130,33 @@ describe('exerciseRouter', () => {
       });
 
       expect(result.evaluation).toBe('CORRECT');
+    });
+
+    it('accepts a short answer wrong only in its accents as an Accent Mismatch, corrected to the accented form', async () => {
+      const { exercise } = await createLessonWith({
+        type: 'SHORT_ANSWER',
+        prompt: 'Translate: It is late',
+        expectedAnswers: ['È tardi'],
+      });
+
+      const result = await createCaller().exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'e tardi',
+      });
+
+      expect(result).toMatchObject({
+        evaluation: 'CORRECT',
+        accentCorrection: 'È tardi',
+      });
+      expect(await prisma.exerciseAttempt.findMany()).toEqual([
+        expect.objectContaining({
+          answer: 'e tardi',
+          evaluation: 'CORRECT',
+          accentCorrection: 'È tardi',
+          method: 'DETERMINISTIC',
+        }),
+      ]);
+      expect(ai.requests).toHaveLength(0);
     });
 
     it('marks a short answer that matches no expected answer incorrect', async () => {
@@ -171,6 +207,68 @@ describe('exerciseRouter', () => {
         expect(ai.requests).toHaveLength(0);
       },
     );
+
+    it('accepts a fill-in-the-blank answer wrong only in its accents as an Accent Mismatch, corrected to the accented form', async () => {
+      const { exercise } = await createLessonWith({
+        type: 'FILL_IN_THE_BLANK',
+        prompt: 'Marco ___ stanco. (is)',
+        expectedAnswers: ['è'],
+      });
+
+      const result = await createCaller().exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'e',
+      });
+
+      expect(result).toMatchObject({
+        evaluation: 'CORRECT',
+        accentCorrection: 'è',
+      });
+      expect(await prisma.exerciseAttempt.findMany()).toEqual([
+        expect.objectContaining({
+          answer: 'e',
+          evaluation: 'CORRECT',
+          accentCorrection: 'è',
+          method: 'DETERMINISTIC',
+        }),
+      ]);
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('needs no accent correction for an answer that exactly matches any expected answer', async () => {
+      const { exercise } = await createLessonWith({
+        type: 'SHORT_ANSWER',
+        prompt: 'Translate: why',
+        expectedAnswers: ['perché', 'perche'],
+      });
+
+      const result = await createCaller().exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'perche',
+      });
+
+      expect(result).toMatchObject({
+        evaluation: 'CORRECT',
+        accentCorrection: null,
+      });
+    });
+
+    it('needs no accent correction for an exact match or a wrong answer', async () => {
+      const { shortAnswer } = await createLesson();
+      const caller = createCaller();
+
+      const correct = await caller.exercise.submitAttempt({
+        exerciseId: shortAnswer.id,
+        answer: 'Buongiorno',
+      });
+      const incorrect = await caller.exercise.submitAttempt({
+        exerciseId: shortAnswer.id,
+        answer: 'Buonasera',
+      });
+
+      expect(correct.accentCorrection).toBeNull();
+      expect(incorrect.accentCorrection).toBeNull();
+    });
 
     it("doesn't take answers to free-form explanations yet", async () => {
       const { freeForm } = await createLesson();
@@ -241,6 +339,27 @@ describe('exerciseRouter', () => {
         { id: fillInTheBlank.id, latestAttempt: null },
         { id: expect.any(String), latestAttempt: null },
       ]);
+    });
+
+    it("shows an Accent Mismatch's correction when the lesson is reopened", async () => {
+      const { version, exercise } = await createLessonWith({
+        type: 'FILL_IN_THE_BLANK',
+        prompt: 'Marco ___ stanco. (is)',
+        expectedAnswers: ['è'],
+      });
+      const caller = createCaller();
+      await caller.exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'e',
+      });
+
+      const lesson = await caller.lesson.getById({ id: version.lessonId });
+
+      expect(lesson.version?.exercises[0].latestAttempt).toMatchObject({
+        answer: 'e',
+        evaluation: 'CORRECT',
+        accentCorrection: 'è',
+      });
     });
   });
 

@@ -52,10 +52,7 @@ export const exerciseRouter = router({
           lessonVersionId: exercise.lessonVersionId,
           exerciseId: exercise.id,
           answer: input.answer,
-          evaluation: evaluateExerciseAnswer(
-            input.answer,
-            exercise.expectedAnswers,
-          ),
+          ...evaluateExerciseAnswer(input.answer, exercise.expectedAnswers),
           method: 'DETERMINISTIC',
         },
       });

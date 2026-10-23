@@ -47,7 +47,7 @@ export type AnswerMatch = 'exact' | 'accent-mismatch' | 'no-match';
 
 /**
  * The one comparison between an answer and a correct answer: a Canonical
- * Answer today, and Accepted Variants (#4) and course exercises (#20, #21)
+ * Answer or an exercise's expected answer today, and Accepted Variants (#4)
  * next. Case, punctuation and extra whitespace never matter, but the spaces
  * between words do. An answer with no letters or digits never matches.
  */

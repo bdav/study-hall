@@ -26,12 +26,26 @@ const glassInputClassName =
 
 type Attempt = NonNullable<Exercise['latestAttempt']>;
 
-function Result({ evaluation }: { evaluation: Attempt['evaluation'] }) {
-  return evaluation === 'CORRECT' ? (
-    <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-300">
-      <CheckCircle2 className="size-4" />
-      Correct!
-    </p>
+/**
+ * An attempt's result. An Accent Mismatch is correct but always shows the
+ * accented form (ADR-0002).
+ */
+function Result({ attempt }: { attempt: Attempt }) {
+  return attempt.evaluation === 'CORRECT' ? (
+    <>
+      <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-300">
+        <CheckCircle2 className="size-4" />
+        Correct!
+      </p>
+      {attempt.accentCorrection && (
+        <p className="mt-1 text-sm text-white/70" data-testid="accent-note">
+          Check the accents:{' '}
+          <span className="font-semibold text-white">
+            {attempt.accentCorrection}
+          </span>
+        </p>
+      )}
+    </>
   ) : (
     <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-200">
       <XCircle className="size-4" />
@@ -139,7 +153,7 @@ export function LessonExercise({
           We couldn&apos;t check your answer. Please try again.
         </p>
       ) : (
-        result && <Result evaluation={result.evaluation} />
+        result && <Result attempt={result} />
       )}
       {answers.data ? (
         <div className="mt-3 text-sm text-white/70">

@@ -128,6 +128,7 @@ describe('LessonExercise', () => {
         exerciseId: 'exercise-1',
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
+        accentCorrection: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -139,12 +140,53 @@ describe('LessonExercise', () => {
     expect(screen.getByText(/correct/i)).toBeInTheDocument();
   });
 
+  it('shows an Accent Mismatch as correct, with the accented form and a correction note', async () => {
+    renderExercise(fillInTheBlank, {
+      data: {
+        exerciseId: 'exercise-2',
+        answer: 'e',
+        evaluation: 'CORRECT',
+        accentCorrection: 'è',
+        createdAt: '2026-10-23T09:00:00.000Z',
+      },
+    } as unknown as Partial<SubmitMutation>);
+
+    await userEvent
+      .setup()
+      .type(screen.getByLabelText(/fill in the blank/i), 'e');
+
+    expect(screen.getByText(/correct/i)).toBeInTheDocument();
+    expect(screen.getByTestId('accent-note')).toHaveTextContent(
+      /check the accents/i,
+    );
+    expect(screen.getByTestId('accent-note')).toHaveTextContent('è');
+  });
+
+  it('adds no correction note to a correct answer with the right accents', async () => {
+    renderExercise(shortAnswer, {
+      data: {
+        exerciseId: 'exercise-1',
+        answer: 'Buongiorno',
+        evaluation: 'CORRECT',
+        accentCorrection: null,
+        createdAt: '2026-10-23T09:00:00.000Z',
+      },
+    } as unknown as Partial<SubmitMutation>);
+
+    await userEvent
+      .setup()
+      .type(screen.getByLabelText(/your answer/i), 'Buongiorno');
+
+    expect(screen.queryByTestId('accent-note')).not.toBeInTheDocument();
+  });
+
   it('shows an incorrect result and lets the learner try again', async () => {
     renderExercise(shortAnswer, {
       data: {
         exerciseId: 'exercise-1',
         answer: 'Buonasera',
         evaluation: 'INCORRECT',
+        accentCorrection: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -164,6 +206,7 @@ describe('LessonExercise', () => {
         exerciseId: 'exercise-1',
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
+        accentCorrection: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     });
@@ -187,6 +230,7 @@ describe('LessonExercise', () => {
         exerciseId: 'exercise-1',
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
+        accentCorrection: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     });
@@ -220,6 +264,7 @@ describe('LessonExercise', () => {
         exerciseId: 'exercise-1',
         answer: 'Buonasera',
         evaluation: 'INCORRECT',
+        accentCorrection: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     };
@@ -275,6 +320,7 @@ describe('LessonExercise', () => {
           exerciseId: 'exercise-1',
           answer: 'Buonasera',
           evaluation: 'INCORRECT',
+          accentCorrection: null,
           createdAt: '2026-10-22T09:00:00.000Z',
         },
       },

@@ -24,7 +24,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #28 See AI usage and spend against the monthly cap
    - [x] #18 Open a Lesson, generated on first open
    - [x] #20 Answer exercises (deterministic)
-   - [ ] #21 Accent Mismatch on exercises
+   - [x] #21 Accent Mismatch on exercises
    - [ ] #22 AI-evaluated exercises
 3. Learn → Review loop
    - [ ] #25 Make review cards from a lesson
@@ -123,7 +123,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 - **Study**: Study Sessions (#5): a Standard queue of up to 25 due and NEW cards built at start, one graded answer per card (typed or "I don't know"), the card's progress updated by the scheduler after every answer, finish at the last card or early (remaining cards skipped), and a "nothing is due" state
 - **Stats**: Per-deck stats (first-try accuracy, overall accuracy, per-card avg attempts-to-correct), overall stats (aggregates + weak cards), empty/loading/error states
 - **Courses** (#14): Courses and Flashcards are peer top-level areas, with Courses as the landing page. The course form generates a Syllabus Proposal (Sonnet-class model); accepting it creates the Lessons and the Course Deck, listed in Flashcards with its course label. An unaccepted proposal can be discarded, which deletes the course (no learning history exists yet). Course creation is gated by `canUseAI`
-- **Lessons** (#18): Syllabus lessons link to their lesson page. A lesson is generated the first time it's opened, behind a loading state, and stored as an immutable Lesson Version (content blocks, examples, Exercises and a Lesson Summary); reopening shows the same version without AI. Generation builds on the summaries of generated lessons earlier in syllabus order (`assembleLessonContext`). Short-answer and fill-in-the-blank exercises are answered on the page and checked with `matchAnswer`, with no model call, and each answer is stored as an Exercise Attempt on its Lesson Version; reopening shows each exercise's latest result, and after an attempt the learner can reveal the accepted answers. Free-form explanations can't be answered until AI evaluation (#22)
+- **Lessons** (#18): Syllabus lessons link to their lesson page. A lesson is generated the first time it's opened, behind a loading state, and stored as an immutable Lesson Version (content blocks, examples, Exercises and a Lesson Summary); reopening shows the same version without AI. Generation builds on the summaries of generated lessons earlier in syllabus order (`assembleLessonContext`). Short-answer and fill-in-the-blank exercises are answered on the page and checked with `matchAnswer`, with no model call, and each answer is stored as an Exercise Attempt on its Lesson Version. An Accent Mismatch counts as correct, and the attempt records and shows the accented expected answer as a correction (ADR-0002); reopening shows each exercise's latest result, and after an attempt the learner can reveal the accepted answers. Free-form explanations can't be answered until AI evaluation (#22)
 - **AI usage** (#28): the Courses page shows this month's AI spend across all learners against the monthly cap, and whether AI is paused, to learners who can use AI. The AI usage page breaks the learner's own usage down by purpose and model for this month and totals each previous month
 - **UX Polish**: Loading skeletons, Sonner toast notifications, error boundaries (app root + per-route), seed data (4 decks, 30 cards, 3 study sessions)
 
