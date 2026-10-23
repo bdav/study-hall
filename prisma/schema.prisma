@@ -292,6 +292,9 @@ model AiUsage {
   model        String
   inputTokens  Int
   outputTokens Int
+  // The call failed with no response, so the API may still have billed it
+  // and the token counts may be a conservative estimate.
+  failed       Boolean   @default(false)
   createdAt    DateTime  @default(now())
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 

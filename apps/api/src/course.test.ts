@@ -234,6 +234,31 @@ describe('courseRouter', () => {
       expect(ai.requests).toHaveLength(0);
     });
 
+    it('counts a call that timed out toward the cap', async () => {
+      // The failed call's 16,000-token output budget alone costs $0.16 at
+      // Sonnet 5.5's rate, and its input estimate adds a little more
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '0.16');
+      ai.failWith('timeout');
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'BAD_GATEWAY' }),
+      );
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
+      );
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('does not count a call that failed with an API error toward the cap', async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '0.16');
+      ai.failWith('api-error');
+
+      await expect(createCourse()).rejects.toThrow(
+        expect.objectContaining({ code: 'BAD_GATEWAY' }),
+      );
+      await expect(createCourse()).resolves.toHaveProperty('id');
+    });
+
     it('keeps flashcards and existing courses usable while paused', async () => {
       const caller = createCaller();
       const { id } = await createCourse(caller);
@@ -323,16 +348,77 @@ describe('courseRouter', () => {
       },
     );
 
-    it('treats a failed model call as a retryable error', async () => {
-      ai.failWith(new Error('Network down'));
+    it.each(['timeout', 'connection-error', 'api-error'] as const)(
+      'treats a model call that fails with a %s as a retryable error',
+      async (failure) => {
+        ai.failWith(failure);
+
+        await expect(createCaller().course.create(courseForm)).rejects.toThrow(
+          expect.objectContaining({
+            code: 'BAD_GATEWAY',
+            message: expect.stringMatching(/try again/i),
+          }),
+        );
+        expect(await prisma.course.count()).toBe(0);
+      },
+    );
+
+    it.each(['timeout', 'connection-error'] as const)(
+      'records a call that fails with a %s as failed, with its full output budget',
+      async (failure) => {
+        ai.failWith(failure);
+
+        await expect(
+          createCaller().course.create(courseForm),
+        ).rejects.toThrow();
+
+        const usage = await prisma.aiUsage.findMany();
+        expect(usage).toEqual([
+          expect.objectContaining({
+            userId,
+            purpose: 'SYLLABUS_GENERATION',
+            model: 'claude-sonnet-5-5',
+            outputTokens: ai.requests[0].maxTokens,
+            failed: true,
+          }),
+        ]);
+      },
+    );
+
+    it('estimates the input tokens of a failed call at no less than the bytes of its prompts', async () => {
+      ai.failWith('timeout');
+
+      await expect(createCaller().course.create(courseForm)).rejects.toThrow();
+
+      // A token usually spans several bytes, so this overcounts the prompt text
+      const { system, prompt } = ai.requests[0];
+      const requestBytes = Buffer.byteLength(system + prompt, 'utf8');
+      const [usage] = await prisma.aiUsage.findMany();
+      expect(usage.inputTokens).toBeGreaterThanOrEqual(requestBytes);
+    });
+
+    it('records the token counts the provider reports for a failed call', async () => {
+      ai.failWith('connection-error', { inputTokens: 812, outputTokens: 300 });
+
+      await expect(createCaller().course.create(courseForm)).rejects.toThrow();
+
+      expect(await prisma.aiUsage.findMany()).toEqual([
+        expect.objectContaining({
+          inputTokens: 812,
+          outputTokens: 300,
+          failed: true,
+        }),
+      ]);
+    });
+
+    it('records no usage for a call that fails with an API error', async () => {
+      ai.failWith('api-error');
 
       await expect(createCaller().course.create(courseForm)).rejects.toThrow(
-        expect.objectContaining({
-          code: 'BAD_GATEWAY',
-          message: expect.stringMatching(/try again/i),
-        }),
+        expect.objectContaining({ code: 'BAD_GATEWAY' }),
       );
-      expect(await prisma.course.count()).toBe(0);
+
+      expect(await prisma.aiUsage.count()).toBe(0);
     });
 
     it('creates no Course Deck until the proposal is accepted', async () => {

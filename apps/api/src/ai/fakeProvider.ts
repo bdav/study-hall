@@ -1,8 +1,23 @@
-import { type AiProvider, type AiRequest } from './provider.js';
+import {
+  AiOutcomeUnknownError,
+  type AiProvider,
+  type AiRequest,
+  type TokenUsage,
+} from './provider.js';
+
+/**
+ * How a fake call can fail: a timeout or dropped connection leaves the
+ * outcome unknown, so the call may have been billed; an API error response
+ * was not billed.
+ */
+export type FakeFailure = 'timeout' | 'connection-error' | 'api-error';
 
 type FakeResponse =
-  | { output: unknown; inputTokens: number; outputTokens: number }
-  | { error: Error };
+  | ({ output: unknown } & TokenUsage)
+  | {
+      failure: FakeFailure;
+      usage?: TokenUsage;
+    };
 
 /**
  * A provider for tests: it answers with queued fixtures, in order, and
@@ -14,11 +29,8 @@ export function createFakeAiProvider() {
 
   const provider: AiProvider & {
     requests: AiRequest[];
-    respondWith: (
-      output: unknown,
-      usage?: { inputTokens: number; outputTokens: number },
-    ) => void;
-    failWith: (error: Error) => void;
+    respondWith: (output: unknown, usage?: TokenUsage) => void;
+    failWith: (failure: FakeFailure, usage?: TokenUsage) => void;
     reset: () => void;
   } = {
     requests,
@@ -28,9 +40,12 @@ export function createFakeAiProvider() {
       queue.push({ output, ...usage });
     },
 
-    /** Queues a provider failure, such as a network or API error. */
-    failWith(error) {
-      queue.push({ error });
+    /**
+     * Queues a failed call. A timeout or connection error can carry the
+     * token counts the provider knew when it failed.
+     */
+    failWith(failure, usage) {
+      queue.push({ failure, usage });
     },
 
     reset() {
@@ -42,7 +57,7 @@ export function createFakeAiProvider() {
       requests.push(request);
       const next = queue.shift();
       if (!next) throw new Error('The fake AI provider has no response queued');
-      if ('error' in next) throw next.error;
+      if ('failure' in next) throw fakeError(next.failure, next.usage);
 
       return {
         text:
@@ -57,6 +72,17 @@ export function createFakeAiProvider() {
   };
 
   return provider;
+}
+
+function fakeError(failure: FakeFailure, usage?: TokenUsage): Error {
+  switch (failure) {
+    case 'timeout':
+      return new AiOutcomeUnknownError('Request timed out', { usage });
+    case 'connection-error':
+      return new AiOutcomeUnknownError('Connection error', { usage });
+    case 'api-error':
+      return new Error('529 Overloaded');
+  }
 }
 
 export type FakeAiProvider = ReturnType<typeof createFakeAiProvider>;

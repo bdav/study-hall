@@ -135,7 +135,7 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 - **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer: NEW → LEARNING, mastery change by Recall Grade (0–10), and the next due date from the LEARNING interval table.
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue, applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 
-- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rate) and totals the current UTC month; the spending cap and #28's usage view both use it.
+- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rate) and totals the current UTC month; the spending cap and #28's usage view both use it.
 
 ### Data Model
 
@@ -146,7 +146,7 @@ The v2 schema (`prisma/schema.prisma`, designed in `v2-schema-proposal.md`) has 
 - **API tests** use isolated per-suite Postgres schemas via `apps/api/src/test-helpers.ts`: each test suite gets its own schema, Prisma client and tRPC caller. Docker Postgres must be running.
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
-- **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith` and inspect `requests`. Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`
+- **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith`, failures with `failWith('timeout' | 'connection-error' | 'api-error')`, and inspect `requests`. Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`
 - **Test fixtures**: build decks with `createDeckWithCards` from `test-helpers.ts`, which creates cards the way the app does
 
 ## Planning Docs
