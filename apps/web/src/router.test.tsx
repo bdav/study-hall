@@ -15,6 +15,20 @@ vi.mock('@/lib/trpc', () => ({
       },
       logout: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
+    aiUsage: {
+      summary: { useQuery: vi.fn(() => ({ data: undefined })) },
+      report: {
+        useQuery: vi.fn(() => ({
+          data: {
+            month: '2026-10',
+            totalUsd: 0,
+            breakdown: [],
+            previousMonths: [],
+          },
+          isLoading: false,
+        })),
+      },
+    },
     course: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
     },
@@ -47,6 +61,14 @@ describe('routes', () => {
 
     expect(
       await screen.findByRole('heading', { name: 'Your Decks' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows AI usage at /ai-usage', async () => {
+    renderAt('/ai-usage');
+
+    expect(
+      await screen.findByRole('heading', { name: 'AI usage' }),
     ).toBeInTheDocument();
   });
 });

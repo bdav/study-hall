@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
+import { AiSpendSummary } from '@/components/AiSpendSummary';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseListSkeleton } from '@/components/PageSkeleton';
 
@@ -34,6 +35,8 @@ export default function CoursesPage() {
             </Link>
           </Button>
         </div>
+
+        <AiSpendSummary />
 
         {courses.length === 0 ? (
           <p className="mt-6 text-white/60">

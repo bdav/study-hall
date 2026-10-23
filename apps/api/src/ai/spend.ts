@@ -56,8 +56,13 @@ export function estimateCostUsd(usage: {
 }
 
 /** AI months run in UTC, from the first of the month. */
-function startOfMonthUtc(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+export function startOfAiMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+/** The AI month a date falls in, as `YYYY-MM`. */
+export function aiMonthOf(date: Date): string {
+  return startOfAiMonth(date).toISOString().slice(0, 7);
 }
 
 /**
@@ -67,7 +72,7 @@ function startOfMonthUtc(now: Date): Date {
  */
 export async function monthlyAiSpendUsd(prisma: PrismaClient): Promise<number> {
   const usage = await prisma.aiUsage.findMany({
-    where: { createdAt: { gte: startOfMonthUtc(new Date()) } },
+    where: { createdAt: { gte: startOfAiMonth(new Date()) } },
     select: { model: true, inputTokens: true, outputTokens: true },
   });
 
@@ -83,9 +88,22 @@ export function monthlyCapUsd(): number {
   return Number.isFinite(cap) && cap > 0 ? cap : 0;
 }
 
+/**
+ * This month's spend against the cap. Reaching the cap pauses AI features.
+ */
+export async function aiSpendStatus(prisma: PrismaClient): Promise<{
+  spentUsd: number;
+  capUsd: number;
+  paused: boolean;
+}> {
+  const spentUsd = await monthlyAiSpendUsd(prisma);
+  const capUsd = monthlyCapUsd();
+  return { spentUsd, capUsd, paused: spentUsd >= capUsd };
+}
+
 /** Whether this month's spend has reached the cap, which pauses AI features. */
 export async function isAiPaused(prisma: PrismaClient): Promise<boolean> {
-  return (await monthlyAiSpendUsd(prisma)) >= monthlyCapUsd();
+  return (await aiSpendStatus(prisma)).paused;
 }
 
 export const AI_PAUSED_MESSAGE =

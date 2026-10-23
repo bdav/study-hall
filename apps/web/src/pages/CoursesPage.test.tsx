@@ -6,6 +6,8 @@ import { trpc } from '@/lib/trpc';
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
+    auth: { me: { useQuery: vi.fn() } },
+    aiUsage: { summary: { useQuery: vi.fn() } },
     course: {
       list: { useQuery: vi.fn() },
     },
@@ -13,6 +15,7 @@ vi.mock('@/lib/trpc', () => ({
 }));
 
 type ListQuery = ReturnType<typeof trpc.course.list.useQuery>;
+type SummaryQuery = ReturnType<typeof trpc.aiUsage.summary.useQuery>;
 
 const courses = [
   {
@@ -33,7 +36,19 @@ const courses = [
   },
 ];
 
-function renderPage(query: Partial<ListQuery>) {
+function renderPage(
+  query: Partial<ListQuery>,
+  {
+    canUseAI = false,
+    summary,
+  }: { canUseAI?: boolean; summary?: SummaryQuery['data'] } = {},
+) {
+  vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
+    data: { user: { id: 'user-1', email: 'me@example.com', canUseAI } },
+  } as ReturnType<typeof trpc.auth.me.useQuery>);
+  vi.mocked(trpc.aiUsage.summary.useQuery).mockReturnValue({
+    data: summary,
+  } as SummaryQuery);
   vi.mocked(trpc.course.list.useQuery).mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -95,5 +110,44 @@ describe('CoursesPage', () => {
     renderPage({ isError: true });
 
     expect(screen.getByText(/error loading courses/i)).toBeInTheDocument();
+  });
+
+  describe('AI spend summary', () => {
+    it("shows this month's AI spend against the cap, linking to the usage page", () => {
+      renderPage({ data: courses } as Partial<ListQuery>, {
+        canUseAI: true,
+        summary: { spentUsd: 1.2, capUsd: 10, paused: false },
+      });
+
+      expect(
+        screen.getByText('AI this month: $1.20 of $10.00'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /ai usage/i })).toHaveAttribute(
+        'href',
+        '/ai-usage',
+      );
+      expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
+    });
+
+    it('says when AI features are paused because the cap is reached', () => {
+      renderPage({ data: courses } as Partial<ListQuery>, {
+        canUseAI: true,
+        summary: { spentUsd: 10.3, capUsd: 10, paused: true },
+      });
+
+      expect(
+        screen.getByText('AI this month: $10.30 of $10.00'),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/ai features are paused/i)).toBeInTheDocument();
+    });
+
+    it("doesn't ask for or show AI spend to a learner who can't use AI", () => {
+      renderPage({ data: courses } as Partial<ListQuery>, { canUseAI: false });
+
+      expect(trpc.aiUsage.summary.useQuery).toHaveBeenCalledWith(undefined, {
+        enabled: false,
+      });
+      expect(screen.queryByText(/ai this month/i)).not.toBeInTheDocument();
+    });
   });
 });

@@ -6,6 +6,7 @@ import {
 import CoursesPage from './pages/CoursesPage';
 import NewCoursePage from './pages/NewCoursePage';
 import CoursePage from './pages/CoursePage';
+import AiUsagePage from './pages/AiUsagePage';
 import DeckListPage from './pages/DeckListPage';
 import StudyPage from './pages/StudyPage';
 import StatsPage from './pages/StatsPage';
@@ -52,6 +53,10 @@ export const routes: RouteObject[] = [
           {
             path: '/courses/:courseId',
             element: <CoursePage />,
+          },
+          {
+            path: '/ai-usage',
+            element: <AiUsagePage />,
           },
           {
             path: '/flashcards',

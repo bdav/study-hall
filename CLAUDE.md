@@ -93,6 +93,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 - **Study**: Study Sessions (#5): a Standard queue of up to 25 due and NEW cards built at start, one graded answer per card (typed or "I don't know"), the card's progress updated by the scheduler after every answer, finish at the last card or early (remaining cards skipped), and a "nothing is due" state
 - **Stats**: Per-deck stats (first-try accuracy, overall accuracy, per-card avg attempts-to-correct), overall stats (aggregates + weak cards), empty/loading/error states
 - **Courses** (#14): Courses and Flashcards are peer top-level areas, with Courses as the landing page. The course form generates a Syllabus Proposal (Sonnet-class model); accepting it creates the Lessons and the Course Deck, listed in Flashcards with its course label. An unaccepted proposal can be discarded, which deletes the course (no learning history exists yet). Course creation is gated by `canUseAI`
+- **AI usage** (#28): the Courses page shows this month's AI spend across all learners against the monthly cap, and whether AI is paused, to learners who can use AI. The AI usage page breaks the learner's own usage down by purpose and model for this month and totals each previous month
 - **UX Polish**: Loading skeletons, Sonner toast notifications, error boundaries (app root + per-route), seed data (4 decks, 30 cards, 3 study sessions)
 
 ### Routes
@@ -105,6 +106,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 | `/courses`             | CoursesPage                                                      | Protected |
 | `/courses/new`         | NewCoursePage                                                    | Protected |
 | `/courses/:courseId`   | CoursePage (proposal or Syllabus)                                | Protected |
+| `/ai-usage`            | AiUsagePage (the learner's AI usage and estimated cost)          | Protected |
 | `/flashcards`          | DeckListPage                                                     | Protected |
 | `/decks/:deckId`       | StudyPage                                                        | Protected |
 | `/decks/:deckId/cards` | DeckCardsPage                                                    | Protected |
@@ -113,20 +115,21 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 
 ### tRPC API
 
-All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the month's AI spend reaches the cap, before any model call. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
+All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the month's AI spend reaches the cap, before any model call. `aiAccessProcedure` is the `canUseAI` check alone, for AI information that stays readable while AI is paused. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
-| Router   | Procedure                                                         | Type     |
-| -------- | ----------------------------------------------------------------- | -------- |
-| `auth`   | `signup`, `login`, `logout`                                       | mutation |
-| `auth`   | `me`                                                              | query    |
-| `deck`   | `create`, `update`, `delete`                                      | mutation |
-| `deck`   | `getById`, `list`                                                 | query    |
-| `card`   | `create`, `update`, `delete`, `importCards`                       | mutation |
-| `card`   | `listByDeck`                                                      | query    |
-| `course` | `create` (AI, `aiProcedure`), `acceptProposal`, `discardProposal` | mutation |
-| `course` | `list`, `getById`                                                 | query    |
-| `study`  | `startSession`, `submitAnswer`, `dontKnow`, `finishSession`       | mutation |
-| `stats`  | `deckStats`, `overallStats`                                       | query    |
+| Router    | Procedure                                                         | Type     |
+| --------- | ----------------------------------------------------------------- | -------- |
+| `aiUsage` | `summary` (`aiAccessProcedure`), `report`                         | query    |
+| `auth`    | `signup`, `login`, `logout`                                       | mutation |
+| `auth`    | `me`                                                              | query    |
+| `deck`    | `create`, `update`, `delete`                                      | mutation |
+| `deck`    | `getById`, `list`                                                 | query    |
+| `card`    | `create`, `update`, `delete`, `importCards`                       | mutation |
+| `card`    | `listByDeck`                                                      | query    |
+| `course`  | `create` (AI, `aiProcedure`), `acceptProposal`, `discardProposal` | mutation |
+| `course`  | `list`, `getById`                                                 | query    |
+| `study`   | `startSession`, `submitAnswer`, `dontKnow`, `finishSession`       | mutation |
+| `stats`   | `deckStats`, `overallStats`                                       | query    |
 
 ### Key Services
 
@@ -135,7 +138,7 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 - **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer: NEW → LEARNING, mastery change by Recall Grade (0–10), and the next due date from the LEARNING interval table.
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue, applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 
-- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rate) and totals the current UTC month; the spending cap and #28's usage view both use it.
+- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rate) and defines the AI month (UTC); the spending cap (`aiSpendStatus`) and the usage report (`usageReport.ts`) both price and group calls with it.
 
 ### Data Model
 
