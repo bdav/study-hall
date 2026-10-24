@@ -1,9 +1,10 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { LessonExercise } from '@/components/LessonExercise';
@@ -17,13 +18,9 @@ type LessonVersion = NonNullable<Lesson['version']>;
 function LessonHeader({ lesson }: { lesson: Lesson }) {
   return (
     <>
-      <Link
-        to={`/courses/${lesson.course.id}`}
-        className="inline-flex items-center gap-1 text-sm text-white/60 hover:text-white"
-      >
-        <ArrowLeft className="size-4" />
+      <BackLink to={`/courses/${lesson.course.id}`}>
         {lesson.course.title}
-      </Link>
+      </BackLink>
       <h1 className="mt-2 text-2xl font-bold">{lesson.title}</h1>
     </>
   );

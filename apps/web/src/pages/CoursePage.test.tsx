@@ -207,6 +207,18 @@ describe('CoursePage', () => {
     });
   });
 
+  it.each([
+    ['a Syllabus Proposal', baseCourse],
+    ['an accepted Syllabus', acceptedCourse],
+  ])('links back to Courses from %s', (_, course) => {
+    renderPage({ data: course } as Partial<CourseQuery>);
+
+    expect(screen.getByRole('link', { name: /^courses$/i })).toHaveAttribute(
+      'href',
+      '/courses',
+    );
+  });
+
   it('links each syllabus lesson to its lesson page', () => {
     renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
 
@@ -223,7 +235,9 @@ describe('CoursePage', () => {
   it("doesn't link proposed lessons, which don't exist until accepted", () => {
     renderPage({ data: baseCourse } as Partial<CourseQuery>);
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    for (const lesson of screen.getAllByRole('listitem', { name: /lesson/i })) {
+      expect(within(lesson).queryByRole('link')).not.toBeInTheDocument();
+    }
   });
 
   it('shows a loading state', () => {

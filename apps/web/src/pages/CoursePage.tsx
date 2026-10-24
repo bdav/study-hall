@@ -1,6 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
@@ -89,7 +90,8 @@ export default function CoursePage() {
   return (
     <CenteredPage>
       <div className="w-full max-w-2xl text-white">
-        <h1 className="text-2xl font-bold">{course.title}</h1>
+        <BackLink to="/courses">Courses</BackLink>
+        <h1 className="mt-2 text-2xl font-bold">{course.title}</h1>
         <p className="mt-1 text-white/70">{course.goal}</p>
 
         {isProposal ? (

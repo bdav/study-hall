@@ -90,6 +90,21 @@ describe('AiUsagePage', () => {
     expect(screen.getByText(/only your own/i)).toBeInTheDocument();
   });
 
+  it.each([
+    ['with usage', report],
+    [
+      'before any usage',
+      { month: '2026-10', totalUsd: 0, breakdown: [], previousMonths: [] },
+    ],
+  ])('links back to Courses %s', (_, data) => {
+    renderPage({ data } as Partial<ReportQuery>);
+
+    expect(screen.getByRole('link', { name: /^courses$/i })).toHaveAttribute(
+      'href',
+      '/courses',
+    );
+  });
+
   it('shows an empty state before any AI usage', () => {
     renderPage({
       data: {

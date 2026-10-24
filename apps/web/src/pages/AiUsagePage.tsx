@@ -1,6 +1,7 @@
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StatsSkeleton } from '@/components/PageSkeleton';
 import {
@@ -60,12 +61,15 @@ export default function AiUsagePage() {
 
   if (report.breakdown.length === 0 && report.previousMonths.length === 0) {
     return (
-      <CenteredPage centered>
-        <h1 className="text-2xl font-bold text-white">AI usage</h1>
-        <p className="mt-2 text-white/60">
-          No AI usage yet. Creating a course uses AI, and its cost will show up
-          here.
-        </p>
+      <CenteredPage>
+        <div className="w-full max-w-3xl text-white">
+          <BackLink to="/courses">Courses</BackLink>
+          <h1 className="mt-2 text-2xl font-bold">AI usage</h1>
+          <p className="mt-2 text-white/60">
+            No AI usage yet. Creating a course uses AI, and its cost will show
+            up here.
+          </p>
+        </div>
       </CenteredPage>
     );
   }
@@ -75,7 +79,8 @@ export default function AiUsagePage() {
   return (
     <CenteredPage>
       <div className="w-full max-w-3xl text-white">
-        <h1 className="text-2xl font-bold">AI usage</h1>
+        <BackLink to="/courses">Courses</BackLink>
+        <h1 className="mt-2 text-2xl font-bold">AI usage</h1>
         <p className="mt-1 text-sm text-white/60">
           Estimated costs of only your own AI calls. The monthly spending cap
           counts every learner&apos;s.
