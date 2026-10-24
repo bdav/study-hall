@@ -5,7 +5,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v1';
+export const LESSON_PROMPT_VERSION = 'lesson-v2';
 
 const text = z.string().trim().min(1);
 
@@ -16,11 +16,15 @@ export const BLANK = '___';
 const GAP = /_{3,}/g;
 
 const exerciseSchema = z.discriminatedUnion('type', [
-  /** A short answer or translation, matched against expected answers. */
+  /**
+   * A short answer or translation, matched against expected answers. Open
+   * when right answers can be phrased in ways no list covers (ADR-0005).
+   */
   z.object({
     type: z.literal('SHORT_ANSWER'),
     prompt: text,
     expectedAnswers: z.array(text).min(1),
+    open: z.boolean(),
   }),
   /** A prompt with a gap marked `___`, matched against expected answers. */
   z.object({
@@ -59,16 +63,33 @@ export function parseLessonExamples(examples: unknown) {
   return lessonOutputSchema.shape.examples.parse(examples);
 }
 
-/** What an exercise is evaluated against, as stored on an Exercise. */
+/**
+ * What an exercise is evaluated against, and whether it is open, as stored
+ * on an Exercise. Fill-in-the-blanks are always closed and free-form
+ * explanations always open (ADR-0005).
+ */
 export function exerciseExpectations(
   exercise: LessonOutput['exercises'][number],
 ) {
   switch (exercise.type) {
     case 'SHORT_ANSWER':
+      return {
+        expectedAnswers: exercise.expectedAnswers,
+        expectedPoints: [],
+        open: exercise.open,
+      };
     case 'FILL_IN_THE_BLANK':
-      return { expectedAnswers: exercise.expectedAnswers, expectedPoints: [] };
+      return {
+        expectedAnswers: exercise.expectedAnswers,
+        expectedPoints: [],
+        open: false,
+      };
     case 'FREE_FORM_EXPLANATION':
-      return { expectedAnswers: [], expectedPoints: exercise.expectedPoints };
+      return {
+        expectedAnswers: [],
+        expectedPoints: exercise.expectedPoints,
+        open: true,
+      };
   }
 }
 
@@ -131,7 +152,9 @@ A lesson has:
 - Content: a few short sections, each with a heading and one or more paragraphs, that teach the lesson's learning objectives.
 - Examples that show the material in use, each with a short explanation.
 - Exercises that practise the objectives:
-  - SHORT_ANSWER: a short answer or translation, with every answer you would accept.
+  - SHORT_ANSWER: a short answer or translation, with every answer you would accept, marked closed or open:
+    - Closed (open: false) when your expected answers are the complete list of right answers, such as a capital, a date, a number or a single word. An answer that matches none of them is marked wrong.
+    - Open (open: true) when right answers can be phrased in ways no list covers, such as translating a sentence. An answer that matches none of them is judged by a reviewer.
   - FILL_IN_THE_BLANK: a prompt with exactly one gap, marked ${BLANK}, with every answer you would accept for the gap.
   - FREE_FORM_EXPLANATION: a question the learner answers in their own words, with the points a good answer makes.
 - A Lesson Summary: a compact record of the rules, vocabulary and material this lesson introduced and practised, so later lessons can build on it. It records what was taught, not what the learner learned.

@@ -19,6 +19,13 @@ const validOutput = {
       type: 'SHORT_ANSWER',
       prompt: 'Translate: Good morning',
       expectedAnswers: ['Buongiorno'],
+      open: false,
+    },
+    {
+      type: 'SHORT_ANSWER',
+      prompt: 'Translate: Good morning, Marco. How are you?',
+      expectedAnswers: ['Buongiorno, Marco. Come stai?'],
+      open: true,
     },
     {
       type: 'FILL_IN_THE_BLANK',
@@ -63,6 +70,19 @@ describe('lessonOutputSchema', () => {
         ...validOutput,
         exercises: [
           { type: 'SHORT_ANSWER', prompt: 'Say hi', expectedAnswers: [] },
+        ],
+      },
+    ],
+    [
+      'a short answer not marked closed or open',
+      {
+        ...validOutput,
+        exercises: [
+          {
+            type: 'SHORT_ANSWER',
+            prompt: 'Say hi',
+            expectedAnswers: ['Ciao'],
+          },
         ],
       },
     ],
@@ -134,6 +154,7 @@ describe('lessonOutputSchema', () => {
           type: 'SHORT_ANSWER',
           prompt: ' Translate: Hello ',
           expectedAnswers: [' Ciao '],
+          open: false,
         },
       ],
     });
@@ -143,6 +164,7 @@ describe('lessonOutputSchema', () => {
       type: 'SHORT_ANSWER',
       prompt: 'Translate: Hello',
       expectedAnswers: ['Ciao'],
+      open: false,
     });
   });
 });

@@ -56,6 +56,7 @@ enum GradingMethod {
 enum AiPurpose {
   SYLLABUS_GENERATION
   LESSON_GENERATION
+  EXERCISE_EVALUATION
 }
 
 enum ExerciseType {
@@ -71,6 +72,7 @@ enum ExerciseEvaluation {
 
 enum EvaluationMethod {
   DETERMINISTIC
+  LLM
 }
 
 // --- Models ---
@@ -336,6 +338,10 @@ model Exercise {
   expectedAnswers String[]
   // Free-form explanations
   expectedPoints  String[]
+  // An open exercise's answer that matches no expected answer is evaluated
+  // by AI; a closed one's is wrong (ADR-0005). Exercises generated before
+  // lessons were marked are closed, except free-form explanations
+  open            Boolean           @default(false)
   lessonVersion   LessonVersion     @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
   attempts        ExerciseAttempt[]
 
@@ -354,6 +360,8 @@ model ExerciseAttempt {
   // it matched, shown to the learner as the correction (ADR-0002)
   accentCorrection String?
   method           EvaluationMethod
+  // Written feedback from AI evaluation; deterministic checks give none
+  feedback         String?
   // Set by the database to the microsecond (Prisma's now() is only
   // milliseconds), so attempts made in quick succession keep their order
   createdAt        DateTime           @default(dbgenerated("now()")) @db.Timestamp(6)

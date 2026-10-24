@@ -27,16 +27,24 @@ const glassInputClassName =
 type Attempt = NonNullable<Exercise['latestAttempt']>;
 
 /**
- * An attempt's result. An Accent Mismatch is correct but always shows the
- * accented form (ADR-0002).
+ * An attempt's result, with the AI's feedback when it evaluated the answer.
+ * An Accent Mismatch is correct but always shows the accented form
+ * (ADR-0002).
  */
 function Result({ attempt }: { attempt: Attempt }) {
-  return attempt.evaluation === 'CORRECT' ? (
+  return (
     <>
-      <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-300">
-        <CheckCircle2 className="size-4" />
-        Correct!
-      </p>
+      {attempt.evaluation === 'CORRECT' ? (
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-300">
+          <CheckCircle2 className="size-4" />
+          Correct!
+        </p>
+      ) : (
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-200">
+          <XCircle className="size-4" />
+          Not quite. Try again.
+        </p>
+      )}
       {attempt.accentCorrection && (
         <p className="mt-1 text-sm text-white/70" data-testid="accent-note">
           Check the accents:{' '}
@@ -45,18 +53,24 @@ function Result({ attempt }: { attempt: Attempt }) {
           </span>
         </p>
       )}
+      {attempt.feedback && (
+        <p className="mt-1 text-sm text-white/80">{attempt.feedback}</p>
+      )}
     </>
-  ) : (
-    <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-200">
-      <XCircle className="size-4" />
-      Not quite. Try again.
-    </p>
   );
 }
 
+/** Errors from AI evaluation whose message tells the learner what to do. */
+const AI_ERROR_CODES = new Set([
+  'FORBIDDEN',
+  'TOO_MANY_REQUESTS',
+  'BAD_GATEWAY',
+]);
+
 /**
- * One exercise of a lesson. Short answers and fill-in-the-blanks are
- * checked on submit; free-form explanations need AI evaluation (#22).
+ * One exercise of a lesson, checked on submit. The API checks
+ * deterministically first and asks the AI only for answers to open
+ * exercises it can't settle (ADR-0005).
  */
 export function LessonExercise({
   exercise,
@@ -98,18 +112,6 @@ export function LessonExercise({
     </p>
   );
 
-  if (exercise.type === 'FREE_FORM_EXPLANATION') {
-    return (
-      <li className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm">
-        {label}
-        <p className="mt-1">{exercise.prompt}</p>
-        <p className="mt-2 text-sm text-white/50">
-          Answering explanations is coming soon.
-        </p>
-      </li>
-    );
-  }
-
   const canCheck = answer.trim() !== '' && !submit.isPending;
   const gap =
     exercise.type === 'FILL_IN_THE_BLANK' ? GAP.exec(exercise.prompt) : null;
@@ -129,6 +131,17 @@ export function LessonExercise({
             />
             <span>{exercise.prompt.slice(gap.index + gap[0].length)}</span>
           </p>
+        ) : exercise.type === 'FREE_FORM_EXPLANATION' ? (
+          <>
+            <p className="mt-1">{exercise.prompt}</p>
+            <textarea
+              aria-label="Your explanation"
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              rows={3}
+              className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+            />
+          </>
         ) : (
           <>
             <p className="mt-1">{exercise.prompt}</p>
@@ -150,19 +163,34 @@ export function LessonExercise({
       </form>
       {submit.isError ? (
         <p className="mt-2 text-sm text-destructive">
-          We couldn&apos;t check your answer. Please try again.
+          {submit.error?.data && AI_ERROR_CODES.has(submit.error.data.code)
+            ? submit.error.message
+            : "We couldn't check your answer. Please try again."}
         </p>
       ) : (
         result && <Result attempt={result} />
       )}
       {answers.data ? (
         <div className="mt-3 text-sm text-white/70">
-          <p>Accepted answers:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {answers.data.expectedAnswers.map((expected) => (
-              <li key={expected}>{expected}</li>
-            ))}
-          </ul>
+          {exercise.type === 'FREE_FORM_EXPLANATION' ? (
+            <>
+              <p>Points a good answer makes:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {answers.data.expectedPoints.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <p>Accepted answers:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {answers.data.expectedAnswers.map((expected) => (
+                  <li key={expected}>{expected}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       ) : answers.isError ? (
         <p className="mt-3 text-sm text-destructive">

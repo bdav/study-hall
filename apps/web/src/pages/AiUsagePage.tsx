@@ -19,6 +19,7 @@ type AiPurpose =
 const PURPOSE_LABELS: Record<AiPurpose, string> = {
   SYLLABUS_GENERATION: 'Syllabus generation',
   LESSON_GENERATION: 'Lesson generation',
+  EXERCISE_EVALUATION: 'Exercise evaluation',
 };
 
 const monthFormat = new Intl.DateTimeFormat('en-US', {

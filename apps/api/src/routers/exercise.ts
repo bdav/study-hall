@@ -1,11 +1,33 @@
 import { TRPCError } from '@trpc/server';
 import { type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { protectedProcedure, router } from './trpc.js';
 import {
-  evaluateExerciseAnswer,
+  assertAiNotPaused,
+  assertCanUseAI,
+  protectedProcedure,
+  router,
+} from './trpc.js';
+import { generateStructured } from '../ai/generate.js';
+import {
+  buildEvaluationPrompt,
+  EXERCISE_EVALUATION_MODEL,
+  EXERCISE_EVALUATION_PROMPT_VERSION,
+  EXERCISE_EVALUATION_SYSTEM_PROMPT,
+  exerciseEvaluationSchema,
+} from '../ai/exerciseEvaluation.js';
+import {
+  checkDeterministically,
   toAttemptView,
 } from '../services/exercises.js';
+
+/**
+ * The longest answer accepted. Far more than any exercise needs, and it
+ * bounds what one AI evaluation can cost against the shared cap.
+ */
+const MAX_ANSWER_LENGTH = 2000;
+
+const AI_EVALUATION_DENIED_MESSAGE =
+  "Checking this answer needs AI, and your account doesn't have access to AI features.";
 
 async function findOwnedExercise(
   prisma: PrismaClient,
@@ -25,12 +47,16 @@ async function findOwnedExercise(
 export const exerciseRouter = router({
   /**
    * Checks an answer to an exercise and stores it as an Exercise Attempt on
-   * the exercise's Lesson Version. Checks are deterministic, so they make
-   * no model call and need no AI access.
+   * the exercise's Lesson Version. The deterministic check comes first and
+   * needs no AI access; only an answer it can't settle, to an open exercise,
+   * goes to the model (ADR-0005), behind `canUseAI` and the spending cap.
    */
   submitAttempt: protectedProcedure
     .input(
-      z.object({ exerciseId: z.string(), answer: z.string().trim().min(1) }),
+      z.object({
+        exerciseId: z.string(),
+        answer: z.string().trim().min(1).max(MAX_ANSWER_LENGTH),
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const exercise = await findOwnedExercise(
@@ -39,12 +65,28 @@ export const exerciseRouter = router({
         input.exerciseId,
       );
 
-      // Free-form explanations need AI evaluation (#22)
-      if (exercise.type === 'FREE_FORM_EXPLANATION') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: "Free-form explanations can't be answered yet.",
+      const deterministic = checkDeterministically(exercise, input.answer);
+      let evaluated;
+      if (deterministic) {
+        evaluated = { ...deterministic, method: 'DETERMINISTIC' as const };
+      } else {
+        await assertCanUseAI(
+          ctx.prisma,
+          ctx.userId,
+          AI_EVALUATION_DENIED_MESSAGE,
+        );
+        await assertAiNotPaused(ctx.prisma);
+        const { output } = await generateStructured(ctx, {
+          userId: ctx.userId,
+          purpose: 'EXERCISE_EVALUATION',
+          model: EXERCISE_EVALUATION_MODEL,
+          promptVersion: EXERCISE_EVALUATION_PROMPT_VERSION,
+          system: EXERCISE_EVALUATION_SYSTEM_PROMPT,
+          prompt: buildEvaluationPrompt(exercise, input.answer),
+          outputSchema: exerciseEvaluationSchema,
+          maxTokens: 1000,
         });
+        evaluated = { ...output, method: 'LLM' as const };
       }
 
       const attempt = await ctx.prisma.exerciseAttempt.create({
@@ -52,8 +94,7 @@ export const exerciseRouter = router({
           lessonVersionId: exercise.lessonVersionId,
           exerciseId: exercise.id,
           answer: input.answer,
-          ...evaluateExerciseAnswer(input.answer, exercise.expectedAnswers),
-          method: 'DETERMINISTIC',
+          ...evaluated,
         },
       });
 
@@ -61,8 +102,9 @@ export const exerciseRouter = router({
     }),
 
   /**
-   * An exercise's expected answers, which the learner can reveal once they
-   * have tried it: never before (courses-plan.md, Tutor).
+   * An exercise's expected answers, or a free-form explanation's expected
+   * points, which the learner can reveal once they have tried it: never
+   * before (courses-plan.md, Tutor).
    */
   answers: protectedProcedure
     .input(z.object({ exerciseId: z.string() }))
@@ -83,6 +125,9 @@ export const exerciseRouter = router({
         });
       }
 
-      return { expectedAnswers: exercise.expectedAnswers };
+      return {
+        expectedAnswers: exercise.expectedAnswers,
+        expectedPoints: exercise.expectedPoints,
+      };
     }),
 });

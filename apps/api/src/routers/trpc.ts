@@ -1,4 +1,5 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { type PrismaClient } from '@prisma/client';
 import { type Context } from '../context.js';
 import { AI_ACCESS_DENIED_MESSAGE, canUseAI } from '../ai/access.js';
 import { AI_PAUSED_MESSAGE, isAiPaused } from '../ai/spend.js';
@@ -29,6 +30,35 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   });
 });
 
+/** Throws FORBIDDEN unless the user passes `canUseAI`. */
+export async function assertCanUseAI(
+  prisma: PrismaClient,
+  userId: string,
+  message = AI_ACCESS_DENIED_MESSAGE,
+) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+
+  if (!user || !canUseAI(user)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message });
+  }
+}
+
+/**
+ * Throws TOO_MANY_REQUESTS once this month's AI spend reaches the cap, so
+ * no model call is made.
+ */
+export async function assertAiNotPaused(prisma: PrismaClient) {
+  if (await isAiPaused(prisma)) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: AI_PAUSED_MESSAGE,
+    });
+  }
+}
+
 /**
  * Procedure for users who pass `canUseAI`; throws FORBIDDEN otherwise. For
  * AI information, such as spend against the cap, that stays readable while
@@ -36,18 +66,7 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
  */
 export const aiAccessProcedure = protectedProcedure.use(
   async ({ ctx, next }) => {
-    const user = await ctx.prisma.user.findUnique({
-      where: { id: ctx.userId },
-      select: { email: true },
-    });
-
-    if (!user || !canUseAI(user)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: AI_ACCESS_DENIED_MESSAGE,
-      });
-    }
-
+    await assertCanUseAI(ctx.prisma, ctx.userId);
     return next();
   },
 );
@@ -58,12 +77,6 @@ export const aiAccessProcedure = protectedProcedure.use(
  * spend reaches the cap it throws TOO_MANY_REQUESTS before any model call.
  */
 export const aiProcedure = aiAccessProcedure.use(async ({ ctx, next }) => {
-  if (await isAiPaused(ctx.prisma)) {
-    throw new TRPCError({
-      code: 'TOO_MANY_REQUESTS',
-      message: AI_PAUSED_MESSAGE,
-    });
-  }
-
+  await assertAiNotPaused(ctx.prisma);
   return next();
 });

@@ -140,6 +140,8 @@ export async function createLessonVersion(
       prompt: string;
       expectedAnswers?: string[];
       expectedPoints?: string[];
+      /** Short answers only; the other types' marking is fixed (ADR-0005). */
+      open?: boolean;
     }[];
   },
 ) {
@@ -179,6 +181,9 @@ export async function createLessonVersion(
           prompt: exercise.prompt,
           expectedAnswers: exercise.expectedAnswers ?? [],
           expectedPoints: exercise.expectedPoints ?? [],
+          open:
+            exercise.type === 'FREE_FORM_EXPLANATION' ||
+            (exercise.type === 'SHORT_ANSWER' && (exercise.open ?? false)),
         })),
       },
     },

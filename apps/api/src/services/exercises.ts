@@ -1,4 +1,8 @@
-import { type ExerciseAttempt, type ExerciseEvaluation } from '@prisma/client';
+import {
+  type Exercise,
+  type ExerciseAttempt,
+  type ExerciseEvaluation,
+} from '@prisma/client';
 import { matchAnswer } from './answerGrader.js';
 
 /**
@@ -34,6 +38,22 @@ export function evaluateExerciseAnswer(
     : { evaluation: 'INCORRECT', accentCorrection: null };
 }
 
+/**
+ * The deterministic check of an answer, or null when it can't settle it and
+ * the model must (ADR-0005): a free-form explanation, or an answer to an
+ * open exercise that matches no expected answer. A closed exercise's answer
+ * is always settled here, right or wrong.
+ */
+export function checkDeterministically(
+  exercise: Pick<Exercise, 'type' | 'open' | 'expectedAnswers'>,
+  answer: string,
+): ExerciseAnswerEvaluation | null {
+  if (exercise.type === 'FREE_FORM_EXPLANATION') return null;
+
+  const checked = evaluateExerciseAnswer(answer, exercise.expectedAnswers);
+  return checked.evaluation === 'INCORRECT' && exercise.open ? null : checked;
+}
+
 /** An Exercise Attempt as the learner sees its result. */
 export function toAttemptView(attempt: ExerciseAttempt) {
   return {
@@ -41,6 +61,7 @@ export function toAttemptView(attempt: ExerciseAttempt) {
     answer: attempt.answer,
     evaluation: attempt.evaluation,
     accentCorrection: attempt.accentCorrection,
+    feedback: attempt.feedback,
     createdAt: attempt.createdAt,
   };
 }

@@ -129,6 +129,7 @@ describe('LessonExercise', () => {
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -147,6 +148,7 @@ describe('LessonExercise', () => {
         answer: 'e',
         evaluation: 'CORRECT',
         accentCorrection: 'è',
+        feedback: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -169,6 +171,7 @@ describe('LessonExercise', () => {
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -187,6 +190,7 @@ describe('LessonExercise', () => {
         answer: 'Buonasera',
         evaluation: 'INCORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-23T09:00:00.000Z',
       },
     } as unknown as Partial<SubmitMutation>);
@@ -207,6 +211,7 @@ describe('LessonExercise', () => {
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     });
@@ -231,6 +236,7 @@ describe('LessonExercise', () => {
         answer: 'Buongiorno',
         evaluation: 'CORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     });
@@ -265,6 +271,7 @@ describe('LessonExercise', () => {
         answer: 'Buonasera',
         evaluation: 'INCORRECT',
         accentCorrection: null,
+        feedback: null,
         createdAt: '2026-10-22T09:00:00.000Z',
       },
     };
@@ -300,7 +307,10 @@ describe('LessonExercise', () => {
 
     it('lists the accepted answers', () => {
       renderExercise(attempted, {}, {
-        data: { expectedAnswers: ['Buongiorno', 'Buon giorno'] },
+        data: {
+          expectedAnswers: ['Buongiorno', 'Buon giorno'],
+          expectedPoints: [],
+        },
       } as Partial<AnswersQuery>);
 
       expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
@@ -312,6 +322,33 @@ describe('LessonExercise', () => {
     });
   });
 
+  it('lists the points a good free-form explanation makes', () => {
+    renderExercise(
+      {
+        ...freeForm,
+        latestAttempt: {
+          exerciseId: 'exercise-3',
+          answer: 'To say goodbye',
+          evaluation: 'INCORRECT',
+          accentCorrection: null,
+          feedback: 'Think about when.',
+          createdAt: '2026-10-22T09:00:00.000Z',
+        },
+      },
+      {},
+      {
+        data: {
+          expectedAnswers: [],
+          expectedPoints: ['In the evening', 'As a greeting'],
+        },
+      } as Partial<AnswersQuery>,
+    );
+
+    expect(screen.getByText(/points a good answer makes/i)).toBeInTheDocument();
+    expect(screen.getByText('In the evening')).toBeInTheDocument();
+    expect(screen.getByText('As a greeting')).toBeInTheDocument();
+  });
+
   it("says when the answers couldn't be loaded", () => {
     renderExercise(
       {
@@ -321,6 +358,7 @@ describe('LessonExercise', () => {
           answer: 'Buonasera',
           evaluation: 'INCORRECT',
           accentCorrection: null,
+          feedback: null,
           createdAt: '2026-10-22T09:00:00.000Z',
         },
       },
@@ -331,14 +369,63 @@ describe('LessonExercise', () => {
     expect(screen.getByText(/couldn't load the answers/i)).toBeInTheDocument();
   });
 
-  it("shows a free-form explanation that can't be answered yet", () => {
+  it('submits a free-form explanation', async () => {
     renderExercise(freeForm);
+    const user = userEvent.setup();
+
+    await user.type(
+      screen.getByLabelText(/your explanation/i),
+      'In the evening',
+    );
+    await user.click(screen.getByRole('button', { name: /check/i }));
 
     expect(
       screen.getByText('When would you say buonasera?'),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(mockSubmit).toHaveBeenCalledWith({
+      exerciseId: 'exercise-3',
+      answer: 'In the evening',
+    });
   });
+
+  it("shows the AI's feedback with the result", async () => {
+    renderExercise(freeForm, {
+      data: {
+        exerciseId: 'exercise-3',
+        answer: 'To say goodbye',
+        evaluation: 'INCORRECT',
+        accentCorrection: null,
+        feedback: 'Buonasera is a greeting. Think about when you use it.',
+        createdAt: '2026-10-23T09:00:00.000Z',
+      },
+    } as unknown as Partial<SubmitMutation>);
+
+    await userEvent
+      .setup()
+      .type(screen.getByLabelText(/your explanation/i), 'To say goodbye');
+
+    expect(screen.getByText(/not quite/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Buonasera is a greeting. Think about when you use it.'),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'FORBIDDEN',
+      "Checking this answer needs AI, and your account doesn't have access to AI features.",
+    ],
+    ['TOO_MANY_REQUESTS', 'AI features are paused until next month.'],
+    ['BAD_GATEWAY', "The AI didn't produce a usable answer. Please try again."],
+  ])(
+    'says why an answer that needs AI could not be checked (%s)',
+    (code, message) => {
+      renderExercise(freeForm, {
+        isError: true,
+        error: { message, data: { code } },
+      } as unknown as Partial<SubmitMutation>);
+
+      expect(screen.getByText(message)).toBeInTheDocument();
+    },
+  );
 });

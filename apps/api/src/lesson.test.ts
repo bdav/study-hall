@@ -52,6 +52,13 @@ function lessonOutput(summary = 'Taught ciao and buongiorno.') {
         type: 'SHORT_ANSWER',
         prompt: 'Translate: Good morning',
         expectedAnswers: ['Buongiorno'],
+        open: false,
+      },
+      {
+        type: 'SHORT_ANSWER',
+        prompt: 'Translate: Good morning, how are you?',
+        expectedAnswers: ['Buongiorno, come stai?'],
+        open: true,
       },
       {
         type: 'FILL_IN_THE_BLANK',
@@ -144,6 +151,10 @@ describe('lessonRouter', () => {
         examples: lessonOutput().examples,
         exercises: [
           { type: 'SHORT_ANSWER', prompt: 'Translate: Good morning' },
+          {
+            type: 'SHORT_ANSWER',
+            prompt: 'Translate: Good morning, how are you?',
+          },
           { type: 'FILL_IN_THE_BLANK', prompt: '___, Marco!' },
           {
             type: 'FREE_FORM_EXPLANATION',
@@ -153,30 +164,36 @@ describe('lessonRouter', () => {
       });
     });
 
-    it('stores expected answers and points, and the model and prompt version', async () => {
+    it('stores expected answers and points, whether each exercise is open, and the model and prompt version', async () => {
       const [lesson] = await createCourseWithLessons();
 
       ai.respondWith(lessonOutput());
       await createCaller().lesson.generate({ id: lesson.id });
 
-      // No procedure exposes these until exercises can be answered (#20)
+      // Exposed only through checking answers and revealing them
       const version = await prisma.lessonVersion.findFirstOrThrow({
         where: { lessonId: lesson.id },
         include: { exercises: { orderBy: { position: 'asc' } } },
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v1',
+        promptVersion: 'lesson-v2',
       });
       expect(
-        version.exercises.map(({ expectedAnswers, expectedPoints }) => ({
+        version.exercises.map(({ expectedAnswers, expectedPoints, open }) => ({
           expectedAnswers,
           expectedPoints,
+          open,
         })),
       ).toEqual([
-        { expectedAnswers: ['Buongiorno'], expectedPoints: [] },
-        { expectedAnswers: ['Ciao'], expectedPoints: [] },
-        { expectedAnswers: [], expectedPoints: ['In the evening'] },
+        { expectedAnswers: ['Buongiorno'], expectedPoints: [], open: false },
+        {
+          expectedAnswers: ['Buongiorno, come stai?'],
+          expectedPoints: [],
+          open: true,
+        },
+        { expectedAnswers: ['Ciao'], expectedPoints: [], open: false },
+        { expectedAnswers: [], expectedPoints: ['In the evening'], open: true },
       ]);
     });
 
