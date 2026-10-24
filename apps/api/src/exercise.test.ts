@@ -81,8 +81,13 @@ async function createLesson() {
       },
       {
         type: 'FREE_FORM_EXPLANATION',
-        prompt: 'When would you say buonasera?',
-        expectedPoints: ['In the evening'],
+        prompt:
+          'When would you say buonasera, and how is it different from buonanotte?',
+        essentialPoints: [
+          'Buonasera greets someone in the evening',
+          'Buonanotte is for parting at night, not for greeting',
+        ],
+        supplementaryPoints: ['Buonasera can also be used when leaving'],
       },
     ],
   });
@@ -317,43 +322,147 @@ describe('exerciseRouter', () => {
   });
 
   describe('AI evaluation', () => {
-    it('evaluates a free-form explanation with the model against its expected points, and stores the feedback', async () => {
+    /** The judge's assessment of the explanation in `createLesson`. */
+    function assessment(
+      greeting: 'DEMONSTRATED' | 'MISSING' | 'WRONG',
+      parting: 'DEMONSTRATED' | 'MISSING' | 'WRONG',
+      misconceptions: string[] = [],
+    ) {
+      return {
+        points: [
+          {
+            point: 'Buonasera greets someone in the evening',
+            evidence: 'What the answer says about buonasera',
+            status: greeting,
+          },
+          {
+            point: 'Buonanotte is for parting at night, not for greeting',
+            evidence: 'What the answer says about buonanotte',
+            status: parting,
+          },
+        ],
+        misconceptions,
+        feedback: 'You explain buonasera well.',
+      };
+    }
+
+    it('assesses a free-form explanation on its essential points with the model, and stores the assessment and feedback', async () => {
       allowAI();
       const { version, freeForm } = await createLesson();
-      ai.respondWith({
-        evaluation: 'CORRECT',
-        feedback: 'Yes: buonasera is an evening greeting.',
-      });
+      ai.respondWith(assessment('DEMONSTRATED', 'DEMONSTRATED'));
 
       const result = await createCaller().exercise.submitAttempt({
         exerciseId: freeForm.id,
-        answer: 'When you meet someone in the evening',
+        answer: 'Buonasera says hello in the evening; buonanotte says goodbye',
       });
 
       expect(result).toMatchObject({
         evaluation: 'CORRECT',
-        feedback: 'Yes: buonasera is an evening greeting.',
+        feedback: 'You explain buonasera well.',
         accentCorrection: null,
       });
       expect(ai.requests).toEqual([
         expect.objectContaining({
           model: 'claude-haiku-5-5',
-          prompt: expect.stringContaining('- In the evening'),
+          prompt: expect.stringContaining(
+            '1. Buonasera greets someone in the evening',
+          ),
         }),
       ]);
       expect(ai.requests[0].prompt).toContain(
-        'When you meet someone in the evening',
+        '- Buonasera can also be used when leaving',
       );
       expect(await prisma.exerciseAttempt.findMany()).toEqual([
         expect.objectContaining({
           lessonVersionId: version.id,
           exerciseId: freeForm.id,
-          answer: 'When you meet someone in the evening',
           evaluation: 'CORRECT',
           method: 'LLM',
-          feedback: 'Yes: buonasera is an evening greeting.',
+          feedback: 'You explain buonasera well.',
+          assessment: {
+            points: assessment('DEMONSTRATED', 'DEMONSTRATED').points,
+            misconceptions: [],
+          },
         }),
       ]);
+    });
+
+    it.each([
+      [
+        'partially correct',
+        assessment('DEMONSTRATED', 'MISSING'),
+        'PARTIALLY_CORRECT',
+      ],
+      [
+        'partially correct, despite every point, with a misconception',
+        assessment('DEMONSTRATED', 'DEMONSTRATED', [
+          'Says buonasera is only for strangers',
+        ]),
+        'PARTIALLY_CORRECT',
+      ],
+      ['incorrect', assessment('MISSING', 'WRONG'), 'INCORRECT'],
+    ])(
+      "marks an explanation %s from the judge's assessment",
+      async (_, judged, evaluation) => {
+        allowAI();
+        const { freeForm } = await createLesson();
+        ai.respondWith(judged);
+
+        const result = await createCaller().exercise.submitAttempt({
+          exerciseId: freeForm.id,
+          answer: 'Buonasera is for the evening',
+        });
+
+        expect(result.evaluation).toBe(evaluation);
+        expect(await prisma.exerciseAttempt.findMany()).toEqual([
+          expect.objectContaining({ evaluation }),
+        ]);
+      },
+    );
+
+    it('refuses an assessment that skips an essential point, storing no attempt', async () => {
+      allowAI();
+      const { freeForm } = await createLesson();
+      const judged = assessment('DEMONSTRATED', 'DEMONSTRATED');
+      ai.respondWith({ ...judged, points: judged.points.slice(0, 1) });
+
+      await expect(
+        createCaller().exercise.submitAttempt({
+          exerciseId: freeForm.id,
+          answer: 'Buonasera is for the evening',
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_GATEWAY' }));
+      expect(await prisma.exerciseAttempt.count()).toBe(0);
+    });
+
+    it("sends an older explanation's flat points as reference only, and takes the points the judge finds its question asks for", async () => {
+      allowAI();
+      const { exercise } = await createLessonWith({
+        type: 'FREE_FORM_EXPLANATION',
+        prompt: 'When would you say buonasera?',
+        expectedPoints: ['In the evening', 'Buonanotte is for parting'],
+      });
+      ai.respondWith({
+        points: [
+          {
+            point: 'It greets in the evening',
+            evidence: 'Says you meet someone in the evening',
+            status: 'DEMONSTRATED',
+          },
+        ],
+        misconceptions: [],
+        feedback: 'Right.',
+      });
+
+      const result = await createCaller().exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'When you meet someone in the evening',
+      });
+
+      expect(result.evaluation).toBe('CORRECT');
+      expect(ai.requests[0].prompt).toMatch(
+        /Reference points[^\n]*not all required[^\n]*:\n- In the evening\n- Buonanotte is for parting/,
+      );
     });
 
     /** A lesson with one open short answer, as generation marks it. */
@@ -480,7 +589,7 @@ describe('exerciseRouter', () => {
         expect.objectContaining({
           method: 'LLM',
           model: 'claude-haiku-5-5',
-          promptVersion: 'exercise-evaluation-v1',
+          promptVersion: 'exercise-evaluation-v2',
         }),
         expect.objectContaining({
           method: 'DETERMINISTIC',
@@ -668,16 +777,33 @@ describe('exerciseRouter', () => {
 
       expect(revealed).toEqual({
         expectedAnswers: ['Buongiorno', 'Buon giorno'],
+        essentialPoints: [],
+        supplementaryPoints: [],
         expectedPoints: [],
       });
       expect(ai.requests).toHaveLength(0);
     });
 
-    it("reveals a free-form explanation's expected points once the learner has tried it", async () => {
+    it("reveals a free-form explanation's essential and supplementary points once the learner has tried it", async () => {
       allowAI();
       const { freeForm } = await createLesson();
       const caller = createCaller();
-      ai.respondWith({ evaluation: 'INCORRECT', feedback: 'Think of when.' });
+      ai.respondWith({
+        points: [
+          {
+            point: 'Greets in the evening',
+            evidence: 'Not mentioned',
+            status: 'MISSING',
+          },
+          {
+            point: 'Buonanotte parts at night',
+            evidence: 'Says it is for goodbyes in the evening',
+            status: 'WRONG',
+          },
+        ],
+        misconceptions: [],
+        feedback: 'Think of when.',
+      });
       await caller.exercise.submitAttempt({
         exerciseId: freeForm.id,
         answer: 'To say goodbye',
@@ -689,7 +815,12 @@ describe('exerciseRouter', () => {
 
       expect(revealed).toEqual({
         expectedAnswers: [],
-        expectedPoints: ['In the evening'],
+        essentialPoints: [
+          'Buonasera greets someone in the evening',
+          'Buonanotte is for parting at night, not for greeting',
+        ],
+        supplementaryPoints: ['Buonasera can also be used when leaving'],
+        expectedPoints: [],
       });
     });
 

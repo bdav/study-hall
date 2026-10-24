@@ -35,7 +35,8 @@ const validOutput = {
     {
       type: 'FREE_FORM_EXPLANATION',
       prompt: 'When would you say "buonasera"?',
-      expectedPoints: ['In the evening', 'As a greeting, not a goodbye'],
+      essentialPoints: ['It greets someone in the afternoon or evening'],
+      supplementaryPoints: ['"Buonanotte" is for parting at night'],
     },
   ],
   summary: 'Introduced ciao, buongiorno and buonasera, and when each fits.',
@@ -100,14 +101,42 @@ describe('lessonOutputSchema', () => {
       },
     ],
     [
-      'a free-form explanation without expected points',
+      'a free-form explanation without essential points',
       {
         ...validOutput,
         exercises: [
           {
             type: 'FREE_FORM_EXPLANATION',
             prompt: 'Explain buonasera',
-            expectedPoints: [],
+            essentialPoints: [],
+            supplementaryPoints: ['Buonanotte is for night'],
+          },
+        ],
+      },
+    ],
+    [
+      'a free-form explanation with more than three essential points',
+      {
+        ...validOutput,
+        exercises: [
+          {
+            type: 'FREE_FORM_EXPLANATION',
+            prompt: 'Explain the Italian greetings',
+            essentialPoints: ['Ciao', 'Buongiorno', 'Buonasera', 'Salve'],
+            supplementaryPoints: [],
+          },
+        ],
+      },
+    ],
+    [
+      'a free-form explanation with only a flat list of points',
+      {
+        ...validOutput,
+        exercises: [
+          {
+            type: 'FREE_FORM_EXPLANATION',
+            prompt: 'Explain buonasera',
+            expectedPoints: ['In the evening'],
           },
         ],
       },
@@ -138,6 +167,22 @@ describe('lessonOutputSchema', () => {
           type: 'FILL_IN_THE_BLANK',
           prompt: 'Io ____ italiano.',
           expectedAnswers: ['sono'],
+        },
+      ],
+    };
+
+    expect(lessonOutputSchema.safeParse(output).success).toBe(true);
+  });
+
+  it('accepts a free-form explanation with no supplementary points', () => {
+    const output = {
+      ...validOutput,
+      exercises: [
+        {
+          type: 'FREE_FORM_EXPLANATION',
+          prompt: 'When would you say "buonasera"?',
+          essentialPoints: ['It greets someone in the afternoon or evening'],
+          supplementaryPoints: [],
         },
       ],
     };

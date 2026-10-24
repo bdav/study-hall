@@ -112,9 +112,21 @@ _Avoid_: Exact exercise, deterministic exercise
 An exercise whose right answers can be phrased in ways no list covers, so an answer that matches no expected answer is evaluated by AI. Free-form explanations are always open; short answers can be either.
 _Avoid_: Fuzzy exercise, AI exercise
 
+**Essential Point**:
+An idea a free-form explanation must show because its question explicitly asks for it. An explanation is judged on its essential points, in whatever words the learner uses.
+_Avoid_: Required point, key point, expected point
+
+**Supplementary Point**:
+A related detail worth knowing that a free-form explanation's question doesn't ask for. Leaving it out never counts against an answer.
+_Avoid_: Bonus point, extra credit
+
 **Exercise Attempt**:
 The learner's answer to an exercise and its evaluation, with written feedback when the exercise type calls for it.
 _Avoid_: Submission, response
+
+**Exercise Evaluation**:
+The judgement of one exercise attempt: Correct, Partially Correct or Incorrect. Partially Correct applies only to free-form explanations that show some of their essential points, or all of them alongside a misconception.
+_Avoid_: Score, grade (grades are for cards)
 
 **Tutor**:
 The AI assistant available alongside a lesson that answers questions, gives hints and checks understanding. What it knows can extend beyond the current lesson to the learner's state across the course.

@@ -29,6 +29,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`
 - `docs/adr/0003-curriculum-is-editable-learning-history-is-durable.md`
 - `docs/adr/0005-only-open-exercises-fall-back-to-ai-evaluation.md`
+- `docs/adr/0006-explanations-are-judged-against-what-the-question-asks.md`
 - `updated-plan.md` and `v2-implementation-plan.md`: the v2 flashcard and scheduler plan this builds on. Sections superseded by this plan carry dated notes.
 
 **Status:** Design agreed 2026-10-21. Not started.
@@ -130,9 +131,9 @@ Rules:
 - **Exercises (v1 types):**
   - Short answer / translation: deterministic match against expected answers first. Lesson generation marks each one closed or open (ADR-0005): an answer to an Open Exercise that matches no expected answer goes to LLM evaluation, while a Closed Exercise (a capital, a date, a single word) is settled by the deterministic check alone.
   - Fill-in-the-blank: deterministic (always closed).
-  - Free-form explanation: LLM evaluation against expected points (always open).
+  - Free-form explanation: LLM evaluation (always open) against a rubric of one to three Essential Points, each something the question explicitly asks for, and optional Supplementary Points that never decide the evaluation (ADR-0006). If a detail matters enough to require, the question asks for it. The judge assesses each essential point as demonstrated, missing or wrong, in any wording, and lists misconceptions; code derives Correct, Partially Correct or Incorrect from that.
 
-  Every attempt stores its evaluation. Written feedback is optional: deterministically correct answers make no model call, while LLM-evaluated answers generally get useful feedback. Accent mismatches count as correct, with a correction note (ADR-0002). Multiple choice is deferred.
+  Every attempt stores its evaluation: Correct or Incorrect, or for an explanation also Partially Correct. Written feedback is optional: deterministically correct answers make no model call, while LLM-evaluated answers generally get useful feedback. Accent mismatches count as correct, with a correction note (ADR-0002). Multiple choice is deferred.
 
 - **Tutor:**
   - One persistent Tutor Thread per Lesson Version, restored when the lesson is reopened. Regenerating the lesson starts a fresh thread. The old thread stays with the old version, and a summary handed over from it can be added later if continuity proves valuable.
@@ -149,14 +150,14 @@ Rules:
 
 ## AI Operations
 
-| Operation                  | Trigger                                                        | Inputs                                                                                                | Output (Zod-validated)                                                 | Stored as                                  |
-| -------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
-| Syllabus generation        | Course form submitted; regenerate with feedback                | Setup answers, optional feedback, previous proposal                                                   | Ordered lessons with titles and objectives                             | Syllabus Proposal (+ model/prompt version) |
-| Lesson generation          | First open of a lesson; explicit regenerate                    | Setup answers, syllabus outline, earlier generated Lesson Summaries, lesson objectives                | Content blocks, exercises with expected answers/points, Lesson Summary | Lesson Version (+ model/prompt version)    |
-| Exercise evaluation        | Open Exercise attempt not settled deterministically (ADR-0005) | Exercise, expected answers/points, learner answer                                                     | Evaluation + feedback                                                  | Exercise Attempt                           |
-| Tutoring                   | Learner message in the tutor panel                             | Tutor context (above)                                                                                 | Streamed text                                                          | Tutor Thread messages                      |
-| Card proposal              | "Make review cards"                                            | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards | List of card proposals typed by card type                              | Nothing until confirmed; then Cards        |
-| Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                             | Recall Grade                                                           | CardAttempt grading metadata               |
+| Operation                  | Trigger                                                        | Inputs                                                                                                | Output (Zod-validated)                                                                                                                    | Stored as                                  |
+| -------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Syllabus generation        | Course form submitted; regenerate with feedback                | Setup answers, optional feedback, previous proposal                                                   | Ordered lessons with titles and objectives                                                                                                | Syllabus Proposal (+ model/prompt version) |
+| Lesson generation          | First open of a lesson; explicit regenerate                    | Setup answers, syllabus outline, earlier generated Lesson Summaries, lesson objectives                | Content blocks, exercises with expected answers or essential/supplementary points, Lesson Summary                                         | Lesson Version (+ model/prompt version)    |
+| Exercise evaluation        | Open Exercise attempt not settled deterministically (ADR-0005) | Exercise, expected answers or essential/supplementary points, learner answer                          | Short answer: evaluation + feedback; explanation: per-point assessment + misconceptions + feedback, evaluation derived in code (ADR-0006) | Exercise Attempt                           |
+| Tutoring                   | Learner message in the tutor panel                             | Tutor context (above)                                                                                 | Streamed text                                                                                                                             | Tutor Thread messages                      |
+| Card proposal              | "Make review cards"                                            | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards | List of card proposals typed by card type                                                                                                 | Nothing until confirmed; then Cards        |
+| Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                             | Recall Grade                                                                                                                              | CardAttempt grading metadata               |
 
 Every row writes an AI usage record and goes through `canUseAI`.
 
@@ -209,7 +210,8 @@ Tests: ownership, proposal edit operations, the accept transaction, archive filt
 
 - Exercise Attempt model attached to a Lesson Version.
 - Deterministic evaluation reusing `normalizeAnswer`, with accent-mismatch detection.
-- LLM evaluation for Open Exercises only: free-form explanations, and open short answers that match no expected answer (ADR-0005).
+- LLM evaluation for Open Exercises only: free-form explanations, and open short answers that match no expected answer (ADR-0005). Explanations are judged on their Essential Points (ADR-0006).
+- A judge evaluation script (`pnpm judge-eval:op`) runs fixed cases from several subjects against real models, to check the evaluation prompts and choose the model.
 - Feedback is optional per evaluation path.
 
 Tests: TDD for each exercise type's deterministic path, accent mismatch, and the decision of when to call the LLM.

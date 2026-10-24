@@ -65,8 +65,10 @@ enum ExerciseType {
   FREE_FORM_EXPLANATION
 }
 
+// PARTIALLY_CORRECT is for free-form explanations only (ADR-0006)
 enum ExerciseEvaluation {
   CORRECT
+  PARTIALLY_CORRECT
   INCORRECT
 }
 
@@ -329,21 +331,26 @@ model LessonVersion {
 }
 
 model Exercise {
-  id              String            @id @default(cuid())
-  lessonVersionId String
-  position        Int
-  type            ExerciseType
-  prompt          String
+  id                  String            @id @default(cuid())
+  lessonVersionId     String
+  position            Int
+  type                ExerciseType
+  prompt              String
   // Short answers and fill-in-the-blanks
-  expectedAnswers String[]
-  // Free-form explanations
-  expectedPoints  String[]
+  expectedAnswers     String[]
+  // Free-form explanations: what the question asks for, and related
+  // details that never decide the evaluation (ADR-0006)
+  essentialPoints     String[]
+  supplementaryPoints String[]
+  // Free-form explanations generated before that split: a reference list,
+  // not requirements (ADR-0006)
+  expectedPoints      String[]
   // An open exercise's answer that matches no expected answer is evaluated
   // by AI; a closed one's is wrong (ADR-0005). Exercises generated before
   // lessons were marked are closed, except free-form explanations
-  open            Boolean           @default(false)
-  lessonVersion   LessonVersion     @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
-  attempts        ExerciseAttempt[]
+  open                Boolean           @default(false)
+  lessonVersion       LessonVersion     @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+  attempts            ExerciseAttempt[]
 
   @@index([lessonVersionId, position])
 }
@@ -366,6 +373,9 @@ model ExerciseAttempt {
   // attempt can be traced to what graded it
   model            String?
   promptVersion    String?
+  // A free-form explanation's per-point assessment from the judge, which
+  // the evaluation is derived from (ADR-0006)
+  assessment       Json?
   // Set by the database to the microsecond (Prisma's now() is only
   // milliseconds), so attempts made in quick succession keep their order.
   // clock_timestamp(), not now(): Prisma reads a now() default back as its

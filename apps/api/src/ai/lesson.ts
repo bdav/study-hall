@@ -5,7 +5,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v2';
+export const LESSON_PROMPT_VERSION = 'lesson-v3';
 
 const text = z.string().trim().min(1);
 
@@ -34,11 +34,15 @@ const exerciseSchema = z.discriminatedUnion('type', [
     }),
     expectedAnswers: z.array(text).min(1),
   }),
-  /** A free-form explanation, evaluated against the points it should make. */
+  /**
+   * A free-form explanation, judged on the Essential Points its question
+   * asks for; Supplementary Points never decide it (ADR-0006).
+   */
   z.object({
     type: z.literal('FREE_FORM_EXPLANATION'),
     prompt: text,
-    expectedPoints: z.array(text).min(1),
+    essentialPoints: z.array(text).min(1).max(3),
+    supplementaryPoints: z.array(text),
   }),
 ]);
 
@@ -63,6 +67,15 @@ export function parseLessonExamples(examples: unknown) {
   return lessonOutputSchema.shape.examples.parse(examples);
 }
 
+/** Every list an Exercise stores, empty, so no row leaves one unset. */
+const NO_EXPECTATIONS = {
+  expectedAnswers: [],
+  essentialPoints: [],
+  supplementaryPoints: [],
+  // Only explanations generated before essential points (ADR-0006)
+  expectedPoints: [],
+};
+
 /**
  * What an exercise is evaluated against, and whether it is open, as stored
  * on an Exercise. Fill-in-the-blanks are always closed and free-form
@@ -74,20 +87,21 @@ export function exerciseExpectations(
   switch (exercise.type) {
     case 'SHORT_ANSWER':
       return {
+        ...NO_EXPECTATIONS,
         expectedAnswers: exercise.expectedAnswers,
-        expectedPoints: [],
         open: exercise.open,
       };
     case 'FILL_IN_THE_BLANK':
       return {
+        ...NO_EXPECTATIONS,
         expectedAnswers: exercise.expectedAnswers,
-        expectedPoints: [],
         open: false,
       };
     case 'FREE_FORM_EXPLANATION':
       return {
-        expectedAnswers: [],
-        expectedPoints: exercise.expectedPoints,
+        ...NO_EXPECTATIONS,
+        essentialPoints: exercise.essentialPoints,
+        supplementaryPoints: exercise.supplementaryPoints,
         open: true,
       };
   }
@@ -156,7 +170,11 @@ A lesson has:
     - Closed (open: false) when your expected answers are the complete list of right answers, such as a capital, a date, a number or a single word. An answer that matches none of them is marked wrong.
     - Open (open: true) when right answers can be phrased in ways no list covers, such as translating a sentence. An answer that matches none of them is judged by a reviewer.
   - FILL_IN_THE_BLANK: a prompt with exactly one gap, marked ${BLANK}, with every answer you would accept for the gap.
-  - FREE_FORM_EXPLANATION: a question the learner answers in their own words, with the points a good answer makes.
+  - FREE_FORM_EXPLANATION: a question the learner answers in their own words, with a rubric:
+    - Essential points (one to three): what the question explicitly asks for, so an answer without one hasn't answered the question. Each must follow from the question's wording; if a detail matters enough to require, ask for it in the question. Describe each as an idea, not a phrasing the learner must reproduce.
+    - Supplementary points (none or more): related details worth knowing that the question doesn't ask for. They never make an answer wrong.
+    For example, "What does a hash table give up compared with a sorted array?" has the essential point "Keys have no order, so it can't list or search ranges in order", and might have the supplementary point "Lookups slow down when many keys collide". "Why did the printing press speed up the Reformation?" has the essential point "Printed pamphlets spread reformers' arguments faster and further than the Church could answer them", and might have the supplementary point "Luther wrote in German, so ordinary readers could follow".
+    Include only points you're sure are accurate, with their conditions. Leave a supplementary point out rather than state an oversimplified rule.
 - A Lesson Summary: a compact record of the rules, vocabulary and material this lesson introduced and practised, so later lessons can build on it. It records what was taught, not what the learner learned.
 
 Teach only this lesson's objectives. Build on what earlier lessons taught, as their summaries describe, and leave material for later lessons in the syllabus to them. Fit the depth and tone to the learner's goal, prior knowledge and preferred depth.`;

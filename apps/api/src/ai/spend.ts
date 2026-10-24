@@ -33,6 +33,10 @@ const MODEL_PRICES = {
  */
 export type PricedModel = keyof typeof MODEL_PRICES;
 
+export function isPricedModel(model: string): model is PricedModel {
+  return Object.hasOwn(MODEL_PRICES, model);
+}
+
 /**
  * A server-side fallback can answer with a model missing from the table, so
  * unknown models get the highest rate and the cap never undercounts.

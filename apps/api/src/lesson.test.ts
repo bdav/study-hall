@@ -68,7 +68,8 @@ function lessonOutput(summary = 'Taught ciao and buongiorno.') {
       {
         type: 'FREE_FORM_EXPLANATION',
         prompt: 'When would you say buonasera?',
-        expectedPoints: ['In the evening'],
+        essentialPoints: ['It greets someone in the evening'],
+        supplementaryPoints: ['Buonanotte is for parting at night'],
       },
     ],
     summary,
@@ -164,7 +165,7 @@ describe('lessonRouter', () => {
       });
     });
 
-    it('stores expected answers and points, whether each exercise is open, and the model and prompt version', async () => {
+    it('stores expected answers, essential and supplementary points, whether each exercise is open, and the model and prompt version', async () => {
       const [lesson] = await createCourseWithLessons();
 
       ai.respondWith(lessonOutput());
@@ -177,23 +178,54 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v2',
+        promptVersion: 'lesson-v3',
       });
       expect(
-        version.exercises.map(({ expectedAnswers, expectedPoints, open }) => ({
-          expectedAnswers,
-          expectedPoints,
-          open,
-        })),
+        version.exercises.map(
+          ({
+            expectedAnswers,
+            essentialPoints,
+            supplementaryPoints,
+            expectedPoints,
+            open,
+          }) => ({
+            expectedAnswers,
+            essentialPoints,
+            supplementaryPoints,
+            expectedPoints,
+            open,
+          }),
+        ),
       ).toEqual([
-        { expectedAnswers: ['Buongiorno'], expectedPoints: [], open: false },
+        {
+          expectedAnswers: ['Buongiorno'],
+          essentialPoints: [],
+          supplementaryPoints: [],
+          expectedPoints: [],
+          open: false,
+        },
         {
           expectedAnswers: ['Buongiorno, come stai?'],
+          essentialPoints: [],
+          supplementaryPoints: [],
           expectedPoints: [],
           open: true,
         },
-        { expectedAnswers: ['Ciao'], expectedPoints: [], open: false },
-        { expectedAnswers: [], expectedPoints: ['In the evening'], open: true },
+        {
+          expectedAnswers: ['Ciao'],
+          essentialPoints: [],
+          supplementaryPoints: [],
+          expectedPoints: [],
+          open: false,
+        },
+        {
+          expectedAnswers: [],
+          essentialPoints: ['It greets someone in the evening'],
+          supplementaryPoints: ['Buonanotte is for parting at night'],
+          // Only explanations generated before the split have these
+          expectedPoints: [],
+          open: true,
+        },
       ]);
     });
 
@@ -541,7 +573,7 @@ describe('lessonRouter', () => {
       const opened = await createCaller().lesson.generate({ id: lesson.id });
 
       expect(JSON.stringify(opened)).not.toMatch(
-        /Buongiorno|In the evening|Taught ciao/,
+        /Buongiorno|It greets someone|Buonanotte|Taught ciao/,
       );
     });
   });

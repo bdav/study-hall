@@ -309,6 +309,8 @@ describe('LessonExercise', () => {
       renderExercise(attempted, {}, {
         data: {
           expectedAnswers: ['Buongiorno', 'Buon giorno'],
+          essentialPoints: [],
+          supplementaryPoints: [],
           expectedPoints: [],
         },
       } as Partial<AnswersQuery>);
@@ -322,7 +324,7 @@ describe('LessonExercise', () => {
     });
   });
 
-  it('lists the points a good free-form explanation makes', () => {
+  it('lists the points an older free-form explanation was written with', () => {
     renderExercise(
       {
         ...freeForm,
@@ -339,6 +341,8 @@ describe('LessonExercise', () => {
       {
         data: {
           expectedAnswers: [],
+          essentialPoints: [],
+          supplementaryPoints: [],
           expectedPoints: ['In the evening', 'As a greeting'],
         },
       } as Partial<AnswersQuery>,
@@ -347,6 +351,41 @@ describe('LessonExercise', () => {
     expect(screen.getByText(/points a good answer makes/i)).toBeInTheDocument();
     expect(screen.getByText('In the evening')).toBeInTheDocument();
     expect(screen.getByText('As a greeting')).toBeInTheDocument();
+  });
+
+  it("separates a free-form explanation's essential points from the optional ones", () => {
+    renderExercise(
+      {
+        ...freeForm,
+        latestAttempt: {
+          exerciseId: 'exercise-3',
+          answer: 'To say goodbye',
+          evaluation: 'INCORRECT',
+          accentCorrection: null,
+          feedback: 'Think about when.',
+          createdAt: '2026-10-22T09:00:00.000Z',
+        },
+      },
+      {},
+      {
+        data: {
+          expectedAnswers: [],
+          essentialPoints: ['Buonasera greets someone in the evening'],
+          supplementaryPoints: ['Buonanotte is for parting at night'],
+          expectedPoints: [],
+        },
+      } as Partial<AnswersQuery>,
+    );
+
+    const covers = screen.getByRole('list', {
+      name: /a correct answer covers/i,
+    });
+    expect(covers).toHaveTextContent('Buonasera greets someone in the evening');
+    const further = screen.getByRole('list', { name: /to go further/i });
+    expect(further).toHaveTextContent('Buonanotte is for parting at night');
+    expect(
+      screen.queryByText(/points a good answer makes/i),
+    ).not.toBeInTheDocument();
   });
 
   it("says when the answers couldn't be loaded", () => {
@@ -407,6 +446,29 @@ describe('LessonExercise', () => {
     expect(screen.getByText(/not quite/i)).toBeInTheDocument();
     expect(
       screen.getByText('Buonasera is a greeting. Think about when you use it.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a partially correct explanation as partly right, with the feedback', async () => {
+    renderExercise(freeForm, {
+      data: {
+        exerciseId: 'exercise-3',
+        answer: 'In the evening',
+        evaluation: 'PARTIALLY_CORRECT',
+        accentCorrection: null,
+        feedback: 'Right about buonasera. What about buonanotte?',
+        createdAt: '2026-10-23T09:00:00.000Z',
+      },
+    } as unknown as Partial<SubmitMutation>);
+
+    await userEvent
+      .setup()
+      .type(screen.getByLabelText(/your explanation/i), 'In the evening');
+
+    expect(screen.getByText(/partly right/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^correct!/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Right about buonasera. What about buonanotte?'),
     ).toBeInTheDocument();
   });
 

@@ -139,6 +139,9 @@ export async function createLessonVersion(
       type: ExerciseType;
       prompt: string;
       expectedAnswers?: string[];
+      essentialPoints?: string[];
+      supplementaryPoints?: string[];
+      /** Free-form explanations generated before the split (ADR-0006). */
       expectedPoints?: string[];
       /** Short answers only; the other types' marking is fixed (ADR-0005). */
       open?: boolean;
@@ -180,6 +183,8 @@ export async function createLessonVersion(
           type: exercise.type,
           prompt: exercise.prompt,
           expectedAnswers: exercise.expectedAnswers ?? [],
+          essentialPoints: exercise.essentialPoints ?? [],
+          supplementaryPoints: exercise.supplementaryPoints ?? [],
           expectedPoints: exercise.expectedPoints ?? [],
           open:
             exercise.type === 'FREE_FORM_EXPLANATION' ||

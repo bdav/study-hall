@@ -7,14 +7,7 @@ import {
   protectedProcedure,
   router,
 } from './trpc.js';
-import { generateStructured } from '../ai/generate.js';
-import {
-  buildEvaluationPrompt,
-  EXERCISE_EVALUATION_MODEL,
-  EXERCISE_EVALUATION_PROMPT_VERSION,
-  EXERCISE_EVALUATION_SYSTEM_PROMPT,
-  exerciseEvaluationSchema,
-} from '../ai/exerciseEvaluation.js';
+import { judgeAnswer } from '../ai/exerciseEvaluation.js';
 import {
   checkDeterministically,
   toAttemptView,
@@ -76,21 +69,9 @@ export const exerciseRouter = router({
           AI_EVALUATION_DENIED_MESSAGE,
         );
         await assertAiNotPaused(ctx.prisma);
-        const { output, model, promptVersion } = await generateStructured(ctx, {
-          userId: ctx.userId,
-          purpose: 'EXERCISE_EVALUATION',
-          model: EXERCISE_EVALUATION_MODEL,
-          promptVersion: EXERCISE_EVALUATION_PROMPT_VERSION,
-          system: EXERCISE_EVALUATION_SYSTEM_PROMPT,
-          prompt: buildEvaluationPrompt(exercise, input.answer),
-          outputSchema: exerciseEvaluationSchema,
-          maxTokens: 1000,
-        });
         evaluated = {
-          ...output,
+          ...(await judgeAnswer(ctx, exercise, input.answer)),
           method: 'LLM' as const,
-          model,
-          promptVersion,
         };
       }
 
@@ -107,9 +88,9 @@ export const exerciseRouter = router({
     }),
 
   /**
-   * An exercise's expected answers, or a free-form explanation's expected
-   * points, which the learner can reveal once they have tried it: never
-   * before (courses-plan.md, Tutor).
+   * An exercise's expected answers, or a free-form explanation's essential
+   * and supplementary points, which the learner can reveal once they have
+   * tried it: never before (courses-plan.md, Tutor).
    */
   answers: protectedProcedure
     .input(z.object({ exerciseId: z.string() }))
@@ -132,6 +113,9 @@ export const exerciseRouter = router({
 
       return {
         expectedAnswers: exercise.expectedAnswers,
+        essentialPoints: exercise.essentialPoints,
+        supplementaryPoints: exercise.supplementaryPoints,
+        // Explanations generated before the split (ADR-0006)
         expectedPoints: exercise.expectedPoints,
       };
     }),
