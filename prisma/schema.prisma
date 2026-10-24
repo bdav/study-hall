@@ -57,6 +57,7 @@ enum AiPurpose {
   SYLLABUS_GENERATION
   LESSON_GENERATION
   EXERCISE_EVALUATION
+  CARD_PROPOSAL
 }
 
 enum ExerciseType {
@@ -122,20 +123,27 @@ model Deck {
 }
 
 model Card {
-  id               String             @id @default(cuid())
-  deckId           String
-  front            String
-  position         Int                @default(0)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  deck             Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  canonicalAnswers CanonicalAnswer[]
-  attempts         CardAttempt[]
-  progress         CardProgress[]
-  sessionItems     StudySessionItem[]
+  id                  String             @id @default(cuid())
+  deckId              String
+  front               String
+  position            Int                @default(0)
+  // Set on a card made from a lesson: the Lesson, not the version, and the
+  // model and prompt version that proposed it
+  sourceLessonId      String?
+  sourceModel         String?
+  sourcePromptVersion String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deck                Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  sourceLesson        Lesson?            @relation(fields: [sourceLessonId], references: [id], onDelete: SetNull)
+  canonicalAnswers    CanonicalAnswer[]
+  attempts            CardAttempt[]
+  progress            CardProgress[]
+  sessionItems        StudySessionItem[]
 
   @@index([deckId])
   @@index([deckId, position])
+  @@index([sourceLessonId])
 }
 
 model CanonicalAnswer {
@@ -306,6 +314,7 @@ model Lesson {
   updatedAt           DateTime        @updatedAt
   course              Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   versions            LessonVersion[]
+  cards               Card[]
 
   @@index([courseId, position])
 }

@@ -29,6 +29,13 @@ export interface NewCard {
   canonicalAnswer: string;
 }
 
+/** Where cards made from a lesson came from: its Source Lesson and proposal. */
+export interface CardSource {
+  lessonId: string;
+  model: string;
+  promptVersion: string;
+}
+
 /**
  * Creates cards at the end of a deck, each with one primary canonical answer
  * and card progress in NEW state for the deck owner.
@@ -39,7 +46,8 @@ export async function createCards(
     deckId,
     userId,
     cards,
-  }: { deckId: string; userId: string; cards: NewCard[] },
+    source,
+  }: { deckId: string; userId: string; cards: NewCard[]; source?: CardSource },
 ) {
   const last = await db.card.aggregate({
     where: { deckId },
@@ -55,6 +63,9 @@ export async function createCards(
           deckId,
           front: card.front,
           position: firstPosition + i,
+          sourceLessonId: source?.lessonId,
+          sourceModel: source?.model,
+          sourcePromptVersion: source?.promptVersion,
           canonicalAnswers: {
             create: {
               text: card.canonicalAnswer,

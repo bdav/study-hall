@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
@@ -8,6 +9,7 @@ import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { LessonExercise } from '@/components/LessonExercise';
+import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
 
 /** How often to check on a lesson another open is writing. */
 const GENERATING_POLL_MS = 3000;
@@ -44,12 +46,79 @@ function NotWrittenYet({
   );
 }
 
+/**
+ * Proposes review cards from the lesson, weighted toward the exercises the
+ * learner got wrong, and opens them in the preview. Only the cards the
+ * learner confirms join the Course Deck (ADR-0001).
+ */
+function MakeReviewCards({ lessonId }: { lessonId: string }) {
+  const utils = trpc.useUtils();
+  const propose = trpc.lesson.proposeReviewCards.useMutation();
+  const create = trpc.lesson.createReviewCards.useMutation({
+    onSuccess: ({ deckId, createdCount }) => {
+      propose.reset();
+      utils.card.listByDeck.invalidate({ deckId });
+      utils.deck.list.invalidate();
+      toast.success(
+        `Added ${createdCount} review ${createdCount === 1 ? 'card' : 'cards'} to the course deck`,
+      );
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+  const proposal = propose.data;
+
+  return (
+    <section className="mt-8">
+      <h2 className="text-lg font-semibold">Review</h2>
+      <p className="mt-2 text-white/70">
+        Turn this lesson into flashcards for spaced review, with extra cards on
+        the exercises you got wrong. You choose which ones to keep.
+      </p>
+      <button
+        type="button"
+        onClick={() => propose.mutate({ id: lessonId })}
+        disabled={propose.isPending}
+        className="mt-3 flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60"
+      >
+        {propose.isPending && <Loader2 className="size-4 animate-spin" />}
+        {propose.isPending ? 'Proposing cards…' : 'Make review cards'}
+      </button>
+      {propose.isError && (
+        <p className="mt-2 text-sm text-destructive">{propose.error.message}</p>
+      )}
+
+      {proposal && (
+        <ReviewCardsDialog
+          open
+          onClose={() => propose.reset()}
+          onConfirm={(cards) =>
+            create.mutate({
+              id: lessonId,
+              model: proposal.model,
+              promptVersion: proposal.promptVersion,
+              // Typed Recall is the only card type the preview edits
+              cards: cards.map((card) => ({ type: 'TYPED_RECALL', ...card })),
+            })
+          }
+          isPending={create.isPending}
+          proposals={proposal.cards}
+          existingCards={proposal.existingCards}
+        />
+      )}
+    </section>
+  );
+}
+
 function LessonContent({
   lessonId,
   version,
+  canUseAI,
 }: {
   lessonId: string;
   version: LessonVersion;
+  canUseAI: boolean;
 }) {
   return (
     <>
@@ -107,6 +176,9 @@ function LessonContent({
           </p>
         )}
       </section>
+
+      {/* Proposing cards is an AI call */}
+      {canUseAI && <MakeReviewCards lessonId={lessonId} />}
     </>
   );
 }
@@ -176,7 +248,11 @@ export default function LessonPage() {
       <CenteredPage>
         <article className="w-full max-w-2xl text-white">
           <LessonHeader lesson={lesson} />
-          <LessonContent lessonId={lesson.id} version={lesson.version} />
+          <LessonContent
+            lessonId={lesson.id}
+            version={lesson.version}
+            canUseAI={canUseAI}
+          />
         </article>
       </CenteredPage>
     );

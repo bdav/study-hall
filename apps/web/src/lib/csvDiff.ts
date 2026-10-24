@@ -31,6 +31,16 @@ export interface ExistingCard {
 }
 
 /**
+ * Looks up the existing card a new card's front duplicates: the same front,
+ * ignoring case and surrounding spaces.
+ */
+export function duplicateFinder(existingCards: ExistingCard[]) {
+  const key = (front: string) => front.trim().toLowerCase();
+  const existingByFront = new Map(existingCards.map((c) => [key(c.front), c]));
+  return (front: string) => existingByFront.get(key(front));
+}
+
+/**
  * Compares parsed CSV rows against existing cards in a deck.
  * Categorizes into: new (no front match), update (front match, back differs
  * from the canonical answer), duplicate (exact match), error (from parser).
@@ -40,16 +50,14 @@ export function diffCsvRows(
   existingCards: ExistingCard[],
   errorRows: CsvErrorRow[],
 ): CsvDiffResult {
-  const existingByFront = new Map(
-    existingCards.map((c) => [c.front.toLowerCase(), c]),
-  );
+  const findDuplicate = duplicateFinder(existingCards);
 
   const newCards: NewCard[] = [];
   const updateCards: UpdateCard[] = [];
   const skippedRows: SkippedRow[] = [];
 
   for (const row of validRows) {
-    const existing = existingByFront.get(row.front.toLowerCase());
+    const existing = findDuplicate(row.front);
 
     if (!existing) {
       newCards.push({ front: row.front, back: row.back });

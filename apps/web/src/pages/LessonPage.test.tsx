@@ -3,12 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { toast } from 'sonner';
 import LessonPage from './LessonPage';
 import { trpc } from '@/lib/trpc';
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const mockSetData = vi.fn();
 const mockCancel = vi.fn();
 const mockInvalidate = vi.fn();
+const mockInvalidateCards = vi.fn();
+const mockInvalidateDecks = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -20,11 +25,15 @@ vi.mock('@/lib/trpc', () => ({
           invalidate: mockInvalidate,
         },
       },
+      card: { listByDeck: { invalidate: mockInvalidateCards } },
+      deck: { list: { invalidate: mockInvalidateDecks } },
     })),
     auth: { me: { useQuery: vi.fn() } },
     lesson: {
       getById: { useQuery: vi.fn() },
       generate: { useMutation: vi.fn() },
+      proposeReviewCards: { useMutation: vi.fn() },
+      createReviewCards: { useMutation: vi.fn() },
     },
     exercise: {
       submitAttempt: {
@@ -37,6 +46,15 @@ vi.mock('@/lib/trpc', () => ({
 
 type LessonQuery = ReturnType<typeof trpc.lesson.getById.useQuery>;
 type GenerateMutation = ReturnType<typeof trpc.lesson.generate.useMutation>;
+type ProposeMutation = ReturnType<
+  typeof trpc.lesson.proposeReviewCards.useMutation
+>;
+type CreateMutation = ReturnType<
+  typeof trpc.lesson.createReviewCards.useMutation
+>;
+type CreateOptions = Parameters<
+  typeof trpc.lesson.createReviewCards.useMutation
+>[0];
 
 const lesson = {
   id: 'lesson-1',
@@ -88,6 +106,9 @@ const generatedLesson = {
 };
 
 const mockGenerate = vi.fn();
+const mockPropose = vi.fn();
+const mockResetProposal = vi.fn();
+const mockCreate = vi.fn();
 
 function renderPage({
   query = {},
@@ -95,12 +116,16 @@ function renderPage({
   canUseAI = true,
   meLoading = false,
   strict = false,
+  propose = {},
+  create = {},
 }: {
   query?: Partial<LessonQuery>;
   mutation?: Partial<GenerateMutation>;
   canUseAI?: boolean;
   meLoading?: boolean;
   strict?: boolean;
+  propose?: Partial<ProposeMutation>;
+  create?: Partial<CreateMutation>;
 } = {}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue(
     (meLoading
@@ -123,6 +148,20 @@ function renderPage({
     error: null,
     ...mutation,
   } as unknown as GenerateMutation);
+  vi.mocked(trpc.lesson.proposeReviewCards.useMutation).mockReturnValue({
+    mutate: mockPropose,
+    reset: mockResetProposal,
+    data: undefined,
+    isPending: false,
+    isError: false,
+    error: null,
+    ...propose,
+  } as unknown as ProposeMutation);
+  vi.mocked(trpc.lesson.createReviewCards.useMutation).mockReturnValue({
+    mutate: mockCreate,
+    isPending: false,
+    ...create,
+  } as unknown as CreateMutation);
 
   const page = (
     <MemoryRouter initialEntries={['/lessons/lesson-1']}>
@@ -215,6 +254,136 @@ describe('LessonPage', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
 
       expect(mockGenerate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('making review cards', () => {
+    const proposal = {
+      cards: [
+        {
+          type: 'TYPED_RECALL' as const,
+          front: 'Translate: Good morning',
+          canonicalAnswer: 'Buongiorno',
+        },
+        {
+          type: 'TYPED_RECALL' as const,
+          front: 'Translate: Good evening',
+          canonicalAnswer: 'Buonasera',
+        },
+      ],
+      model: 'claude-sonnet-5-5',
+      promptVersion: 'card-proposal-v1',
+      existingCards: [
+        {
+          id: 'card-1',
+          front: 'Translate: Good evening',
+          canonicalAnswer: 'Buonasera',
+        },
+      ],
+    };
+    const written = { data: generatedLesson } as Partial<LessonQuery>;
+
+    it('proposes review cards for the lesson', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await user.click(
+        screen.getByRole('button', { name: 'Make review cards' }),
+      );
+
+      expect(mockPropose).toHaveBeenCalledWith({ id: 'lesson-1' });
+    });
+
+    it('is offered only to learners who can use AI', () => {
+      renderPage({ query: written, canUseAI: false });
+
+      expect(
+        screen.queryByRole('button', { name: 'Make review cards' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows that cards are being proposed', () => {
+      renderPage({ query: written, propose: { isPending: true } });
+
+      expect(
+        screen.getByRole('button', { name: /proposing cards/i }),
+      ).toBeDisabled();
+    });
+
+    it('says why proposing failed', () => {
+      renderPage({
+        query: written,
+        propose: {
+          isError: true,
+          error: { message: 'AI features are paused until next month.' },
+        } as unknown as Partial<ProposeMutation>,
+      });
+
+      expect(
+        screen.getByText('AI features are paused until next month.'),
+      ).toBeInTheDocument();
+    });
+
+    it('opens the proposed cards in the preview, with Course Deck duplicates flagged', () => {
+      renderPage({ query: written, propose: { data: proposal } });
+
+      expect(screen.getByLabelText('Card 1 front')).toHaveValue(
+        'Translate: Good morning',
+      );
+      expect(screen.getByLabelText('Include card 2')).not.toBeChecked();
+      expect(
+        screen.getByText(/already in the course deck/i),
+      ).toBeInTheDocument();
+    });
+
+    it('adds the confirmed cards to the Course Deck as Typed Recall cards from this proposal', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written, propose: { data: proposal } });
+
+      await user.click(screen.getByRole('button', { name: 'Add 1 card' }));
+
+      expect(mockCreate).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'card-proposal-v1',
+        cards: [
+          {
+            type: 'TYPED_RECALL',
+            front: 'Translate: Good morning',
+            canonicalAnswer: 'Buongiorno',
+          },
+        ],
+      });
+    });
+
+    it('closes the preview, refreshes the deck and confirms once the cards are added', () => {
+      renderPage({ query: written, propose: { data: proposal } });
+      const [options] = vi.mocked(trpc.lesson.createReviewCards.useMutation)
+        .mock.calls[0] as [CreateOptions];
+
+      options?.onSuccess?.(
+        { deckId: 'deck-1', createdCount: 1 },
+        {} as never,
+        undefined,
+        {} as never,
+      );
+
+      expect(mockResetProposal).toHaveBeenCalled();
+      expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
+      expect(mockInvalidateDecks).toHaveBeenCalled();
+      expect(toast.success).toHaveBeenCalledWith(
+        'Added 1 review card to the course deck',
+      );
+    });
+
+    it('closes the preview without adding anything on cancel', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written, propose: { data: proposal } });
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(mockResetProposal).toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
     });
   });
 

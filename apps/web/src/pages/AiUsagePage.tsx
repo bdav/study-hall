@@ -21,6 +21,7 @@ const PURPOSE_LABELS: Record<AiPurpose, string> = {
   SYLLABUS_GENERATION: 'Syllabus generation',
   LESSON_GENERATION: 'Lesson generation',
   EXERCISE_EVALUATION: 'Exercise evaluation',
+  CARD_PROPOSAL: 'Review card proposals',
 };
 
 const monthFormat = new Intl.DateTimeFormat('en-US', {
