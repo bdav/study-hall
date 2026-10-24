@@ -26,6 +26,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #20 Answer exercises (deterministic)
    - [x] #21 Accent Mismatch on exercises
    - [ ] #22 AI-evaluated exercises
+   - [ ] #35 Back links from a course and from AI usage to Courses
 3. Learn → Review loop
    - [ ] #25 Make review cards from a lesson
    - [ ] #26 Lesson Completion and Continue
