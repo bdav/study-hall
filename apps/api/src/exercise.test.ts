@@ -457,6 +457,39 @@ describe('exerciseRouter', () => {
       expect(await prisma.aiUsage.count()).toBe(0);
     });
 
+    it('records the model and prompt version that judged an attempt', async () => {
+      allowAI();
+      const { exercise } = await createOpenShortAnswer();
+      ai.respondWith({ evaluation: 'CORRECT', feedback: 'Right.' });
+      const caller = createCaller();
+
+      await caller.exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'Come va?',
+      });
+      await caller.exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'Come stai?',
+      });
+
+      expect(
+        await prisma.exerciseAttempt.findMany({
+          orderBy: { createdAt: 'asc' },
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          method: 'LLM',
+          model: 'claude-haiku-5-5',
+          promptVersion: 'exercise-evaluation-v1',
+        }),
+        expect.objectContaining({
+          method: 'DETERMINISTIC',
+          model: null,
+          promptVersion: null,
+        }),
+      ]);
+    });
+
     it('records the AI usage of an evaluation', async () => {
       allowAI();
       const { exercise } = await createOpenShortAnswer();

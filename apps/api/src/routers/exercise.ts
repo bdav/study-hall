@@ -76,7 +76,7 @@ export const exerciseRouter = router({
           AI_EVALUATION_DENIED_MESSAGE,
         );
         await assertAiNotPaused(ctx.prisma);
-        const { output } = await generateStructured(ctx, {
+        const { output, model, promptVersion } = await generateStructured(ctx, {
           userId: ctx.userId,
           purpose: 'EXERCISE_EVALUATION',
           model: EXERCISE_EVALUATION_MODEL,
@@ -86,7 +86,12 @@ export const exerciseRouter = router({
           outputSchema: exerciseEvaluationSchema,
           maxTokens: 1000,
         });
-        evaluated = { ...output, method: 'LLM' as const };
+        evaluated = {
+          ...output,
+          method: 'LLM' as const,
+          model,
+          promptVersion,
+        };
       }
 
       const attempt = await ctx.prisma.exerciseAttempt.create({

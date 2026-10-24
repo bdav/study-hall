@@ -362,6 +362,10 @@ model ExerciseAttempt {
   method           EvaluationMethod
   // Written feedback from AI evaluation; deterministic checks give none
   feedback         String?
+  // The model and prompt version that judged an AI evaluation, so an
+  // attempt can be traced to what graded it
+  model            String?
+  promptVersion    String?
   // Set by the database to the microsecond (Prisma's now() is only
   // milliseconds), so attempts made in quick succession keep their order.
   // clock_timestamp(), not now(): Prisma reads a now() default back as its
