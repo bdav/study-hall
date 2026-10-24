@@ -363,8 +363,10 @@ model ExerciseAttempt {
   // Written feedback from AI evaluation; deterministic checks give none
   feedback         String?
   // Set by the database to the microsecond (Prisma's now() is only
-  // milliseconds), so attempts made in quick succession keep their order
-  createdAt        DateTime           @default(dbgenerated("now()")) @db.Timestamp(6)
+  // milliseconds), so attempts made in quick succession keep their order.
+  // clock_timestamp(), not now(): Prisma reads a now() default back as its
+  // own @default(now()) and would see a change in every migration
+  createdAt        DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamp(6)
   lessonVersion    LessonVersion      @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
   exercise         Exercise           @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 
