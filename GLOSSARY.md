@@ -104,6 +104,14 @@ _Avoid_: Mastery, passed, finished
 A one-off activity inside a lesson version, such as a translation or a free-form explanation. Exercises do not take part in spaced-repetition review.
 _Avoid_: Question, activity, flashcard
 
+**Closed Exercise**:
+An exercise whose expected answers are the complete list of right answers, so an answer that matches none of them is wrong, without AI evaluation. Fill-in-the-blanks are always closed.
+_Avoid_: Exact exercise, deterministic exercise
+
+**Open Exercise**:
+An exercise whose right answers can be phrased in ways no list covers, so an answer that matches no expected answer is evaluated by AI. Free-form explanations are always open; short answers can be either.
+_Avoid_: Fuzzy exercise, AI exercise
+
 **Exercise Attempt**:
 The learner's answer to an exercise and its evaluation, with written feedback when the exercise type calls for it.
 _Avoid_: Submission, response

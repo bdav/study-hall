@@ -28,6 +28,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`
 - `docs/adr/0002-accent-mismatches-are-accepted-but-never-perfect.md`
 - `docs/adr/0003-curriculum-is-editable-learning-history-is-durable.md`
+- `docs/adr/0005-only-open-exercises-fall-back-to-ai-evaluation.md`
 - `updated-plan.md` and `v2-implementation-plan.md`: the v2 flashcard and scheduler plan this builds on. Sections superseded by this plan carry dated notes.
 
 **Status:** Design agreed 2026-10-21. Not started.
@@ -127,9 +128,9 @@ Rules:
 
 - **Lesson Summary:** produced by the same lesson-generation call as part of its structured output, so it needs no extra model call.
 - **Exercises (v1 types):**
-  - Short answer / translation: deterministic match against expected answers first, then LLM evaluation for ambiguous answers.
-  - Fill-in-the-blank: deterministic.
-  - Free-form explanation: LLM evaluation against expected points.
+  - Short answer / translation: deterministic match against expected answers first. Lesson generation marks each one closed or open (ADR-0005): an answer to an Open Exercise that matches no expected answer goes to LLM evaluation, while a Closed Exercise (a capital, a date, a single word) is settled by the deterministic check alone.
+  - Fill-in-the-blank: deterministic (always closed).
+  - Free-form explanation: LLM evaluation against expected points (always open).
 
   Every attempt stores its evaluation. Written feedback is optional: deterministically correct answers make no model call, while LLM-evaluated answers generally get useful feedback. Accent mismatches count as correct, with a correction note (ADR-0002). Multiple choice is deferred.
 
@@ -148,14 +149,14 @@ Rules:
 
 ## AI Operations
 
-| Operation                  | Trigger                                                         | Inputs                                                                                                | Output (Zod-validated)                                                 | Stored as                                  |
-| -------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
-| Syllabus generation        | Course form submitted; regenerate with feedback                 | Setup answers, optional feedback, previous proposal                                                   | Ordered lessons with titles and objectives                             | Syllabus Proposal (+ model/prompt version) |
-| Lesson generation          | First open of a lesson; explicit regenerate                     | Setup answers, syllabus outline, earlier generated Lesson Summaries, lesson objectives                | Content blocks, exercises with expected answers/points, Lesson Summary | Lesson Version (+ model/prompt version)    |
-| Exercise evaluation        | Attempt not settled deterministically, or free-form explanation | Exercise, expected answers/points, learner answer                                                     | Evaluation + feedback                                                  | Exercise Attempt                           |
-| Tutoring                   | Learner message in the tutor panel                              | Tutor context (above)                                                                                 | Streamed text                                                          | Tutor Thread messages                      |
-| Card proposal              | "Make review cards"                                             | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards | List of card proposals typed by card type                              | Nothing until confirmed; then Cards        |
-| Card grading fallback (v2) | Ambiguous typed-recall answer                                   | Per `updated-plan.md` §17                                                                             | Recall Grade                                                           | CardAttempt grading metadata               |
+| Operation                  | Trigger                                                        | Inputs                                                                                                | Output (Zod-validated)                                                 | Stored as                                  |
+| -------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| Syllabus generation        | Course form submitted; regenerate with feedback                | Setup answers, optional feedback, previous proposal                                                   | Ordered lessons with titles and objectives                             | Syllabus Proposal (+ model/prompt version) |
+| Lesson generation          | First open of a lesson; explicit regenerate                    | Setup answers, syllabus outline, earlier generated Lesson Summaries, lesson objectives                | Content blocks, exercises with expected answers/points, Lesson Summary | Lesson Version (+ model/prompt version)    |
+| Exercise evaluation        | Open Exercise attempt not settled deterministically (ADR-0005) | Exercise, expected answers/points, learner answer                                                     | Evaluation + feedback                                                  | Exercise Attempt                           |
+| Tutoring                   | Learner message in the tutor panel                             | Tutor context (above)                                                                                 | Streamed text                                                          | Tutor Thread messages                      |
+| Card proposal              | "Make review cards"                                            | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards | List of card proposals typed by card type                              | Nothing until confirmed; then Cards        |
+| Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                             | Recall Grade                                                           | CardAttempt grading metadata               |
 
 Every row writes an AI usage record and goes through `canUseAI`.
 
@@ -208,7 +209,7 @@ Tests: ownership, proposal edit operations, the accept transaction, archive filt
 
 - Exercise Attempt model attached to a Lesson Version.
 - Deterministic evaluation reusing `normalizeAnswer`, with accent-mismatch detection.
-- LLM evaluation for free-form explanations and ambiguous translations.
+- LLM evaluation for Open Exercises only: free-form explanations, and open short answers that match no expected answer (ADR-0005).
 - Feedback is optional per evaluation path.
 
 Tests: TDD for each exercise type's deterministic path, accent mismatch, and the decision of when to call the LLM.
