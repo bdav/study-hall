@@ -83,6 +83,7 @@ const generatedLesson = {
         latestAttempt: null,
       },
     ],
+    hiddenExerciseCount: 0,
   },
 };
 
@@ -185,6 +186,29 @@ describe('LessonPage', () => {
       expect(exercises[2]).toHaveTextContent(
         /explain.*when would you say buonasera\?/i,
       );
+    });
+
+    it('says how many exercises are hidden because they need AI access', () => {
+      renderPage({
+        query: {
+          data: {
+            ...generatedLesson,
+            version: {
+              ...generatedLesson.version,
+              exercises: generatedLesson.version.exercises.slice(0, 2),
+              hiddenExerciseCount: 1,
+            },
+          },
+        } as Partial<LessonQuery>,
+      });
+
+      expect(screen.getByText(/1 more exercise needs AI/i)).toBeInTheDocument();
+    });
+
+    it('mentions no hidden exercises when none are hidden', () => {
+      renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
+
+      expect(screen.queryByText(/needs? AI/i)).not.toBeInTheDocument();
     });
 
     it('never generates a lesson that already has a version', () => {

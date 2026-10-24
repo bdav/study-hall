@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { type PrismaClient } from '@prisma/client';
 import { type Context } from '../context.js';
-import { AI_ACCESS_DENIED_MESSAGE, canUseAI } from '../ai/access.js';
+import { AI_ACCESS_DENIED_MESSAGE, userCanUseAI } from '../ai/access.js';
 import { AI_PAUSED_MESSAGE, isAiPaused } from '../ai/spend.js';
 
 const t = initTRPC.context<Context>().create();
@@ -36,12 +36,7 @@ export async function assertCanUseAI(
   userId: string,
   message = AI_ACCESS_DENIED_MESSAGE,
 ) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true },
-  });
-
-  if (!user || !canUseAI(user)) {
+  if (!(await userCanUseAI(prisma, userId))) {
     throw new TRPCError({ code: 'FORBIDDEN', message });
   }
 }

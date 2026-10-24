@@ -15,6 +15,7 @@ import {
   parseLessonExamples,
 } from '../ai/lesson.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
+import { userCanUseAI } from '../ai/access.js';
 import { toAttemptView } from '../services/exercises.js';
 
 /**
@@ -65,9 +66,17 @@ async function findOwnedLesson(
 /**
  * A lesson as the learner sees it. Exercises leave out their expected
  * answers and points, which the learner must not see before attempting.
+ * Open Exercises can need AI evaluation (ADR-0005), so a learner without
+ * AI access doesn't see them, only how many are hidden.
  */
-function toLessonView(lesson: Awaited<ReturnType<typeof findOwnedLesson>>) {
+function toLessonView(
+  lesson: Awaited<ReturnType<typeof findOwnedLesson>>,
+  { canUseAI }: { canUseAI: boolean },
+) {
   const [version] = lesson.versions;
+  const shown = (version?.exercises ?? []).filter(
+    (exercise) => canUseAI || !exercise.open,
+  );
   const { generationClaimedAt } = lesson;
   return {
     id: lesson.id,
@@ -85,14 +94,13 @@ function toLessonView(lesson: Awaited<ReturnType<typeof findOwnedLesson>>) {
           id: version.id,
           content: parseLessonContent(version.content),
           examples: parseLessonExamples(version.examples),
-          exercises: version.exercises.map(
-            ({ id, type, prompt, attempts: [latest] }) => ({
-              id,
-              type,
-              prompt,
-              latestAttempt: latest ? toAttemptView(latest) : null,
-            }),
-          ),
+          exercises: shown.map(({ id, type, prompt, attempts: [latest] }) => ({
+            id,
+            type,
+            prompt,
+            latestAttempt: latest ? toAttemptView(latest) : null,
+          })),
+          hiddenExerciseCount: version.exercises.length - shown.length,
         }
       : null,
   };
@@ -103,7 +111,9 @@ export const lessonRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) =>
-      toLessonView(await findOwnedLesson(ctx.prisma, ctx.userId, input.id)),
+      toLessonView(await findOwnedLesson(ctx.prisma, ctx.userId, input.id), {
+        canUseAI: await userCanUseAI(ctx.prisma, ctx.userId),
+      }),
     ),
 
   /**
@@ -114,8 +124,10 @@ export const lessonRouter = router({
   generate: aiProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      // aiProcedure: only learners with AI access get here
+      const access = { canUseAI: true };
       const lesson = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
-      if (lesson.versions.length > 0) return toLessonView(lesson);
+      if (lesson.versions.length > 0) return toLessonView(lesson, access);
 
       if (lesson.archivedAt) {
         throw new TRPCError({
@@ -143,7 +155,7 @@ export const lessonRouter = router({
 
       if (claimed.count === 0) {
         const latest = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
-        if (latest.versions.length > 0) return toLessonView(latest);
+        if (latest.versions.length > 0) return toLessonView(latest, access);
         throw new TRPCError({
           code: 'CONFLICT',
           message:
@@ -220,6 +232,7 @@ export const lessonRouter = router({
 
       return toLessonView(
         await findOwnedLesson(ctx.prisma, ctx.userId, input.id),
+        access,
       );
     }),
 });

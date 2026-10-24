@@ -14,4 +14,5 @@ status: accepted
 ## Consequences
 
 - A right answer that a closed exercise doesn't list is marked incorrect, with no model to rescue it. Generation is asked to list every answer it would accept, and the learner can reveal the accepted answers after trying. A learner override like "My answer was correct" (#12, for cards) may follow for exercises if this proves common.
+- A learner without AI access can't have an Open Exercise checked, so the lesson hides Open Exercises from them and says how many are hidden, instead of offering exercises they can only get stuck on.
 - Lesson Versions never change (ADR-0003), so short answers generated before this decision stay as they were generated and are treated as closed, which is how they have been checked so far. Free-form explanations were always open, so the migration that adds the marking records them as open; it changes no exercise's meaning.

@@ -566,6 +566,7 @@ describe('exerciseRouter', () => {
 
   describe('latest results on the lesson', () => {
     it("shows each exercise's latest attempt when the lesson is reopened", async () => {
+      allowAI();
       const { version, shortAnswer, fillInTheBlank } = await createLesson();
       const caller = createCaller();
       await caller.exercise.submitAttempt({

@@ -487,7 +487,12 @@ describe('lessonRouter', () => {
 
       const reopened = await caller.lesson.getById({ id: lesson.id });
 
-      expect(reopened.version).toEqual(first.version);
+      // Open Exercises are hidden without AI access, which is tested below
+      expect(reopened.version).toMatchObject({
+        id: first.version?.id,
+        content: first.version?.content,
+        examples: first.version?.examples,
+      });
       expect(ai.requests).toHaveLength(0);
     });
 
@@ -501,6 +506,32 @@ describe('lessonRouter', () => {
 
       expect(again.version?.id).toBe(first.version?.id);
       expect(ai.requests).toHaveLength(1);
+    });
+
+    it('hides Open Exercises from a learner without AI access, and says how many', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+      vi.stubEnv('AI_ALLOWED_EMAILS', '');
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened.version?.exercises).toEqual([
+        expect.objectContaining({ prompt: 'Translate: Good morning' }),
+        expect.objectContaining({ prompt: '___, Marco!' }),
+      ]);
+      expect(opened.version?.hiddenExerciseCount).toBe(2);
+    });
+
+    it('shows every exercise to a learner with AI access', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened.version?.exercises).toHaveLength(4);
+      expect(opened.version?.hiddenExerciseCount).toBe(0);
     });
 
     it('does not show exercise answers or the Lesson Summary to the learner', async () => {

@@ -98,6 +98,17 @@ function LessonContent({
             />
           ))}
         </ol>
+        {/* Open Exercises can need AI to check, so the API hides them from
+            learners without AI access (ADR-0005) */}
+        {version.hiddenExerciseCount > 0 && (
+          <p className="mt-3 text-sm text-white/50">
+            {version.hiddenExerciseCount === 1
+              ? '1 more exercise needs'
+              : `${version.hiddenExerciseCount} more exercises need`}{' '}
+            AI to check your answers, and your account doesn&apos;t have access
+            to AI features.
+          </p>
+        )}
       </section>
     </>
   );
