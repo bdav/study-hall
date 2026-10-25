@@ -13,6 +13,7 @@ const mockSetData = vi.fn();
 const mockCancel = vi.fn();
 const mockInvalidate = vi.fn();
 const mockInvalidateCards = vi.fn();
+const mockInvalidateCourse = vi.fn();
 const mockInvalidateDecks = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
@@ -25,6 +26,7 @@ vi.mock('@/lib/trpc', () => ({
           invalidate: mockInvalidate,
         },
       },
+      course: { getById: { invalidate: mockInvalidateCourse } },
       card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: mockInvalidateDecks } },
     })),
@@ -34,6 +36,7 @@ vi.mock('@/lib/trpc', () => ({
       generate: { useMutation: vi.fn() },
       proposeReviewCards: { useMutation: vi.fn() },
       createReviewCards: { useMutation: vi.fn() },
+      setCompleted: { useMutation: vi.fn() },
     },
     exercise: {
       submitAttempt: {
@@ -52,6 +55,12 @@ type ProposeMutation = ReturnType<
 type CreateMutation = ReturnType<
   typeof trpc.lesson.createReviewCards.useMutation
 >;
+type SetCompletedMutation = ReturnType<
+  typeof trpc.lesson.setCompleted.useMutation
+>;
+type SetCompletedOptions = Parameters<
+  typeof trpc.lesson.setCompleted.useMutation
+>[0];
 type CreateOptions = Parameters<
   typeof trpc.lesson.createReviewCards.useMutation
 >[0];
@@ -62,6 +71,7 @@ const lesson = {
   objectives: ['Greet someone formally'],
   firstOpenedAt: null,
   course: { id: 'course-1', title: 'Italian' },
+  completedAt: null,
   generating: false,
   version: null,
 };
@@ -109,6 +119,7 @@ const mockGenerate = vi.fn();
 const mockPropose = vi.fn();
 const mockResetProposal = vi.fn();
 const mockCreate = vi.fn();
+const mockSetCompleted = vi.fn();
 
 function renderPage({
   query = {},
@@ -118,6 +129,7 @@ function renderPage({
   strict = false,
   propose = {},
   create = {},
+  setCompleted = {},
 }: {
   query?: Partial<LessonQuery>;
   mutation?: Partial<GenerateMutation>;
@@ -126,6 +138,7 @@ function renderPage({
   strict?: boolean;
   propose?: Partial<ProposeMutation>;
   create?: Partial<CreateMutation>;
+  setCompleted?: Partial<SetCompletedMutation>;
 } = {}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue(
     (meLoading
@@ -162,6 +175,11 @@ function renderPage({
     isPending: false,
     ...create,
   } as unknown as CreateMutation);
+  vi.mocked(trpc.lesson.setCompleted.useMutation).mockReturnValue({
+    mutate: mockSetCompleted,
+    isPending: false,
+    ...setCompleted,
+  } as unknown as SetCompletedMutation);
 
   const page = (
     <MemoryRouter initialEntries={['/lessons/lesson-1']}>
@@ -254,6 +272,88 @@ describe('LessonPage', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
 
       expect(mockGenerate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Lesson Completion', () => {
+    const written = { data: generatedLesson } as Partial<LessonQuery>;
+    const completed = {
+      data: { ...generatedLesson, completedAt: '2026-10-24T09:00:00.000Z' },
+    } as Partial<LessonQuery>;
+
+    it('marks the lesson complete', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await user.click(
+        screen.getByRole('button', { name: 'Mark lesson complete' }),
+      );
+
+      expect(mockSetCompleted).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        completed: true,
+      });
+    });
+
+    it('shows a complete lesson as complete, and undoes it', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: completed });
+
+      expect(
+        screen.getByText(/you marked this lesson complete/i),
+      ).toBeInTheDocument();
+      await user.click(
+        screen.getByRole('button', { name: 'Mark as not complete' }),
+      );
+
+      expect(mockSetCompleted).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        completed: false,
+      });
+    });
+
+    it('needs no AI access', () => {
+      renderPage({ query: written, canUseAI: false });
+
+      expect(
+        screen.getByRole('button', { name: 'Mark lesson complete' }),
+      ).toBeInTheDocument();
+    });
+
+    it("can be set on a lesson that hasn't been written, so none is locked", () => {
+      renderPage({
+        query: { data: lesson } as Partial<LessonQuery>,
+        canUseAI: false,
+      });
+
+      expect(screen.getByText(/hasn't been written yet/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Mark lesson complete' }),
+      ).toBeInTheDocument();
+    });
+
+    it('waits while the change is saved', () => {
+      renderPage({ query: written, setCompleted: { isPending: true } });
+
+      expect(
+        screen.getByRole('button', { name: 'Mark lesson complete' }),
+      ).toBeDisabled();
+    });
+
+    it('refreshes the lesson and its course once saved', () => {
+      renderPage({ query: written });
+      const [options] = vi.mocked(trpc.lesson.setCompleted.useMutation).mock
+        .calls[0] as [SetCompletedOptions];
+
+      options?.onSuccess?.(
+        { id: 'lesson-1', completedAt: new Date() } as never,
+        { id: 'lesson-1', completed: true },
+        undefined,
+        {} as never,
+      );
+
+      expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
+      expect(mockInvalidateCourse).toHaveBeenCalledWith({ id: 'course-1' });
     });
   });
 

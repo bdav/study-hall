@@ -41,8 +41,52 @@ function NotWrittenYet({
       <div className="w-full max-w-2xl text-white">
         <LessonHeader lesson={lesson} />
         <div className="mt-8 text-white/70">{children}</div>
+        {/* Completion needs no AI, so an unwritten lesson is never locked */}
+        <LessonCompletion lesson={lesson} />
       </div>
     </CenteredPage>
+  );
+}
+
+/**
+ * Lesson Completion: the learner's own mark that they're done with the
+ * lesson, set and undone in any order. It records where they are in the
+ * syllabus, never how well they know the material.
+ */
+function LessonCompletion({ lesson }: { lesson: Lesson }) {
+  const utils = trpc.useUtils();
+  const setCompleted = trpc.lesson.setCompleted.useMutation({
+    onSuccess: () => {
+      utils.lesson.getById.invalidate({ id: lesson.id });
+      // The syllabus shows the lesson's status and where to continue
+      utils.course.getById.invalidate({ id: lesson.course.id });
+    },
+    onError: () => {
+      toast.error("Couldn't save the lesson's completion");
+    },
+  });
+  const complete = lesson.completedAt !== null;
+
+  return (
+    <section className="mt-8 flex flex-wrap items-center gap-3 border-t border-white/20 pt-6">
+      {complete && (
+        <p className="text-white/80">You marked this lesson complete.</p>
+      )}
+      <button
+        type="button"
+        onClick={() =>
+          setCompleted.mutate({ id: lesson.id, completed: !complete })
+        }
+        disabled={setCompleted.isPending}
+        className={
+          complete
+            ? 'rounded-lg px-3 py-2 text-sm text-white/60 hover:text-white disabled:opacity-60'
+            : 'rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60'
+        }
+      >
+        {complete ? 'Mark as not complete' : 'Mark lesson complete'}
+      </button>
+    </section>
   );
 }
 
@@ -253,6 +297,7 @@ export default function LessonPage() {
             version={lesson.version}
             canUseAI={canUseAI}
           />
+          <LessonCompletion lesson={lesson} />
         </article>
       </CenteredPage>
     );

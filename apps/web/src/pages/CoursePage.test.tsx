@@ -48,6 +48,7 @@ const baseCourse = {
   goal: 'A2 by summer',
   deckId: 'deck-1',
   lessons: [],
+  continueLesson: null,
   proposal: {
     lessons: proposedLessons,
     model: 'claude-sonnet-5-5',
@@ -65,14 +66,17 @@ const acceptedCourse = {
       title: 'Greetings',
       position: 0,
       objectives: ['Greet someone formally and informally', 'Say your name'],
+      status: 'OPENED',
     },
     {
       id: 'lesson-2',
       title: 'At the café',
       position: 1,
       objectives: ['Order food and drinks'],
+      status: 'NOT_STARTED',
     },
   ],
+  continueLesson: { id: 'lesson-1', title: 'Greetings' },
 };
 
 const mockAccept = vi.fn();
@@ -207,6 +211,70 @@ describe('CoursePage', () => {
     });
   });
 
+  describe('Lesson Completion', () => {
+    const inProgress = {
+      ...acceptedCourse,
+      lessons: [
+        { ...acceptedCourse.lessons[0], status: 'COMPLETE' },
+        { ...acceptedCourse.lessons[1], status: 'OPENED' },
+        {
+          id: 'lesson-3',
+          title: 'Numbers',
+          position: 2,
+          objectives: ['Count to one hundred'],
+          status: 'NOT_STARTED',
+        },
+      ],
+      continueLesson: { id: 'lesson-2', title: 'At the café' },
+    };
+
+    it('shows each lesson as not started, opened or complete', () => {
+      renderPage({ data: inProgress } as Partial<CourseQuery>);
+
+      const lessons = screen.getAllByRole('listitem', { name: /lesson/i });
+      expect(within(lessons[0]).getByText('Complete')).toBeInTheDocument();
+      expect(within(lessons[1]).getByText('Opened')).toBeInTheDocument();
+      expect(within(lessons[2]).getByText('Not started')).toBeInTheDocument();
+    });
+
+    it('continues at the lesson the course says is next', () => {
+      renderPage({ data: inProgress } as Partial<CourseQuery>);
+
+      const link = screen.getByRole('link', { name: /^continue/i });
+      expect(link).toHaveAttribute('href', '/lessons/lesson-2');
+      expect(link).toHaveTextContent('At the café');
+    });
+
+    it('says when every lesson is complete, with nowhere to continue', () => {
+      renderPage({
+        data: {
+          ...inProgress,
+          lessons: inProgress.lessons.map((lesson) => ({
+            ...lesson,
+            status: 'COMPLETE',
+          })),
+          continueLesson: null,
+        },
+      } as Partial<CourseQuery>);
+
+      expect(
+        screen.queryByRole('link', { name: /^continue/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/you've completed every lesson/i),
+      ).toBeInTheDocument();
+    });
+
+    it('shows no progress while the syllabus is a proposal', () => {
+      renderPage({ data: baseCourse } as Partial<CourseQuery>);
+
+      expect(
+        screen.queryByRole('link', { name: /^continue/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Not started')).not.toBeInTheDocument();
+    });
+  });
+
   it.each([
     ['a Syllabus Proposal', baseCourse],
     ['an accepted Syllabus', acceptedCourse],
@@ -221,15 +289,15 @@ describe('CoursePage', () => {
 
   it('links each syllabus lesson to its lesson page', () => {
     renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+    const syllabus = within(screen.getByRole('list', { name: /^syllabus$/i }));
 
-    expect(screen.getByRole('link', { name: /greetings/i })).toHaveAttribute(
+    expect(syllabus.getByRole('link', { name: /greetings/i })).toHaveAttribute(
       'href',
       '/lessons/lesson-1',
     );
-    expect(screen.getByRole('link', { name: /at the café/i })).toHaveAttribute(
-      'href',
-      '/lessons/lesson-2',
-    );
+    expect(
+      syllabus.getByRole('link', { name: /at the café/i }),
+    ).toHaveAttribute('href', '/lessons/lesson-2');
   });
 
   it("doesn't link proposed lessons, which don't exist until accepted", () => {

@@ -115,6 +115,7 @@ function toLessonView(
     title: lesson.title,
     objectives: lesson.objectives,
     firstOpenedAt: lesson.firstOpenedAt,
+    completedAt: lesson.completedAt,
     course: lesson.course,
     // Another open is writing the lesson; the page waits for it to finish
     generating:
@@ -367,5 +368,31 @@ export const lessonRouter = router({
       );
 
       return { deckId: deck.id, createdCount: cards.length };
+    }),
+
+  /**
+   * Sets or undoes Lesson Completion, in any order: no lesson is locked.
+   * Completing an already complete lesson keeps when it was completed.
+   */
+  setCompleted: protectedProcedure
+    .input(z.object({ id: z.string(), completed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const lesson = await ctx.prisma.lesson.findFirst({
+        where: { id: input.id, course: { userId: ctx.userId } },
+        select: { completedAt: true },
+      });
+      if (!lesson) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
+      }
+
+      return ctx.prisma.lesson.update({
+        where: { id: input.id },
+        data: {
+          completedAt: input.completed
+            ? (lesson.completedAt ?? new Date())
+            : null,
+        },
+        select: { id: true, completedAt: true },
+      });
     }),
 });

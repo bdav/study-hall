@@ -594,3 +594,160 @@ describe('lessonRouter', () => {
     });
   });
 });
+
+describe('Lesson Completion', () => {
+  /** The course's syllabus as the course page gets it. */
+  async function syllabusOf(lessonId: string, caller = createCaller()) {
+    const lesson = await prisma.lesson.findUniqueOrThrow({
+      where: { id: lessonId },
+    });
+    return caller.course.getById({ id: lesson.courseId });
+  }
+
+  it('shows each lesson in the Syllabus as not started, opened or complete', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    const caller = createCaller();
+    ai.respondWith(lessonOutput());
+    await caller.lesson.generate({ id: greetings.id });
+    await caller.lesson.setCompleted({ id: numbers.id, completed: true });
+
+    const course = await syllabusOf(cafe.id);
+
+    expect(
+      course.lessons.map(({ title, status }) => ({ title, status })),
+    ).toEqual([
+      { title: 'Greetings', status: 'OPENED' },
+      { title: 'At the café', status: 'NOT_STARTED' },
+      { title: 'Numbers', status: 'COMPLETE' },
+    ]);
+  });
+
+  it('continues at the first incomplete lesson in syllabus order, whatever order lessons were completed in', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    const caller = createCaller();
+
+    await caller.lesson.setCompleted({ id: greetings.id, completed: true });
+    await caller.lesson.setCompleted({ id: numbers.id, completed: true });
+    expect((await syllabusOf(greetings.id)).continueLesson).toEqual({
+      id: cafe.id,
+      title: 'At the café',
+    });
+
+    await caller.lesson.setCompleted({ id: greetings.id, completed: false });
+    expect((await syllabusOf(greetings.id)).continueLesson).toEqual({
+      id: greetings.id,
+      title: 'Greetings',
+    });
+  });
+
+  it('continues at the first lesson of a course nothing has been done in', async () => {
+    const [greetings] = await createCourseWithLessons();
+
+    expect((await syllabusOf(greetings.id)).continueLesson).toEqual({
+      id: greetings.id,
+      title: 'Greetings',
+    });
+  });
+
+  it('skips archived lessons when continuing', async () => {
+    const [greetings, cafe] = await createCourseWithLessons();
+    await prisma.lesson.update({
+      where: { id: greetings.id },
+      data: { archivedAt: new Date() },
+    });
+
+    expect((await syllabusOf(cafe.id)).continueLesson).toEqual({
+      id: cafe.id,
+      title: 'At the café',
+    });
+  });
+
+  it('has nowhere to continue once every lesson is complete', async () => {
+    const lessons = await createCourseWithLessons();
+    const caller = createCaller();
+    for (const { id } of lessons) {
+      await caller.lesson.setCompleted({ id, completed: true });
+    }
+
+    expect((await syllabusOf(lessons[0].id)).continueLesson).toBeNull();
+  });
+
+  it('undoes completion, back to opened or not started', async () => {
+    const [greetings, cafe] = await createCourseWithLessons();
+    const caller = createCaller();
+    ai.respondWith(lessonOutput());
+    await caller.lesson.generate({ id: greetings.id });
+    for (const { id } of [greetings, cafe]) {
+      await caller.lesson.setCompleted({ id, completed: true });
+      await caller.lesson.setCompleted({ id, completed: false });
+    }
+
+    const course = await syllabusOf(greetings.id);
+
+    expect(course.lessons.map(({ status }) => status)).toEqual([
+      'OPENED',
+      'NOT_STARTED',
+      'NOT_STARTED',
+    ]);
+  });
+
+  it('keeps when a lesson was completed if it is marked complete again', async () => {
+    const [greetings] = await createCourseWithLessons();
+    const caller = createCaller();
+
+    const first = await caller.lesson.setCompleted({
+      id: greetings.id,
+      completed: true,
+    });
+    const again = await caller.lesson.setCompleted({
+      id: greetings.id,
+      completed: true,
+    });
+
+    expect(first.completedAt).toBeInstanceOf(Date);
+    expect(again.completedAt).toEqual(first.completedAt);
+  });
+
+  it('needs no AI access', async () => {
+    const [greetings] = await createCourseWithLessons();
+    vi.stubEnv('AI_ALLOWED_EMAILS', '');
+
+    await createCaller().lesson.setCompleted({
+      id: greetings.id,
+      completed: true,
+    });
+
+    const course = await syllabusOf(greetings.id);
+    expect(course.lessons[0].status).toBe('COMPLETE');
+  });
+
+  it("can't be set on another learner's lesson", async () => {
+    const [greetings] = await createCourseWithLessons();
+
+    await expect(
+      createCaller(otherUserId).lesson.setCompleted({
+        id: greetings.id,
+        completed: true,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect((await syllabusOf(greetings.id)).lessons[0].status).toBe(
+      'NOT_STARTED',
+    );
+  });
+
+  it('shows on the lesson whether it is complete', async () => {
+    const [greetings] = await createCourseWithLessons();
+    const caller = createCaller();
+
+    expect(
+      (await caller.lesson.getById({ id: greetings.id })).completedAt,
+    ).toBeNull();
+    const { completedAt } = await caller.lesson.setCompleted({
+      id: greetings.id,
+      completed: true,
+    });
+    expect(
+      (await caller.lesson.getById({ id: greetings.id })).completedAt,
+    ).toEqual(completedAt);
+  });
+});

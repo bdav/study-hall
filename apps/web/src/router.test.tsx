@@ -37,6 +37,7 @@ vi.mock('@/lib/trpc', () => ({
             title: 'Greetings',
             objectives: [],
             firstOpenedAt: null,
+            completedAt: null,
             course: { id: 'course-1', title: 'Italian' },
             version: null,
           },
@@ -45,6 +46,9 @@ vi.mock('@/lib/trpc', () => ({
       },
       generate: {
         useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: true })),
+      },
+      setCompleted: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
       },
     },
     course: {

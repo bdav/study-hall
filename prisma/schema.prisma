@@ -307,6 +307,9 @@ model Lesson {
   objectives          String[]
   // Learner state: set when the lesson is first opened with content
   firstOpenedAt       DateTime?
+  // Learner state: Lesson Completion, set and undone by the learner in any
+  // order. Progress through the syllabus, never evidence of mastery
+  completedAt         DateTime?
   // Set while a version is being generated, so a concurrent open waits
   generationClaimedAt DateTime?
   archivedAt          DateTime?

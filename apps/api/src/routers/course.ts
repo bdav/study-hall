@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
+import { lessonToContinue, lessonStatus } from '../services/syllabus.js';
 import { generateStructured } from '../ai/generate.js';
 import {
   buildSyllabusPrompt,
@@ -79,9 +80,15 @@ export const courseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
       }
 
-      const { deck, proposal, ...rest } = course;
+      const { deck, proposal, lessons, ...rest } = course;
+      const next = lessonToContinue(lessons);
       return {
         ...rest,
+        continueLesson: next && { id: next.id, title: next.title },
+        lessons: lessons.map((lesson) => ({
+          ...lesson,
+          status: lessonStatus(lesson),
+        })),
         deckId: deck?.id ?? null,
         proposal: proposal && {
           ...proposal,
