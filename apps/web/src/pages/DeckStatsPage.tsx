@@ -27,6 +27,7 @@ export default function DeckStatsPage() {
   );
 
   const deckName = deckQuery.data?.name ?? 'Deck';
+  const course = deckQuery.data?.course;
 
   if (statsQuery.isLoading || deckQuery.isLoading) {
     return <StatsSkeleton />;
@@ -49,6 +50,7 @@ export default function DeckStatsPage() {
           deckName={deckName}
           deckId={deckId ?? ''}
           activeTab="stats"
+          course={course}
         />
         <p className="mt-6 text-center text-white/60">
           No study data yet. Study this deck to see stats here.
@@ -59,7 +61,12 @@ export default function DeckStatsPage() {
 
   return (
     <CenteredPage>
-      <DeckHeader deckName={deckName} deckId={deckId ?? ''} activeTab="stats" />
+      <DeckHeader
+        deckName={deckName}
+        deckId={deckId ?? ''}
+        activeTab="stats"
+        course={course}
+      />
       <div className="w-full max-w-4xl text-white">
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard

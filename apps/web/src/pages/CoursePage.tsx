@@ -80,6 +80,55 @@ function LessonList({
   );
 }
 
+function cardWord(count: number) {
+  return count === 1 ? 'card' : 'cards';
+}
+
+/**
+ * The Course Deck as part of the course: how many cards are waiting, and a
+ * way into the study flow every deck uses.
+ */
+function Review({
+  deckId,
+  dueCount,
+  newCount,
+}: {
+  deckId: string;
+  dueCount: number;
+  newCount: number;
+}) {
+  return (
+    <section
+      aria-labelledby="review-heading"
+      className="mt-8 rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
+    >
+      <h2 id="review-heading" className="text-lg font-semibold">
+        Review
+      </h2>
+      {dueCount + newCount > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-white/80">
+            <span>{`${dueCount} ${cardWord(dueCount)} due`}</span>
+            <span className="mx-2 text-white/40">·</span>
+            <span>{`${newCount} new ${cardWord(newCount)}`}</span>
+          </p>
+          <Link
+            to={`/decks/${deckId}`}
+            className="rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
+          >
+            Study now
+          </Link>
+        </div>
+      ) : (
+        <p className="mt-2 text-white/70">
+          Nothing to review right now. Make review cards from a lesson, or come
+          back when cards are due.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function CoursePage() {
   const { courseId = '' } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
@@ -189,6 +238,7 @@ export default function CoursePage() {
                 </p>
               )
             )}
+            {course.review && <Review {...course.review} />}
             <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
               Syllabus
             </h2>

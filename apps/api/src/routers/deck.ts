@@ -15,6 +15,8 @@ export const deckRouter = router({
             orderBy: deckOrder,
             include: withCanonicalAnswers,
           },
+          // Set on a Course Deck
+          course: { select: { id: true, title: true } },
         },
       });
 

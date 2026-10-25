@@ -42,4 +42,28 @@ describe('DeckHeader', () => {
       'false',
     );
   });
+
+  it('links a Course Deck back to its course', () => {
+    render(
+      <MemoryRouter>
+        <DeckHeader
+          deckName="Italian"
+          deckId="deck-1"
+          activeTab="study"
+          course={{ id: 'course-1', title: 'Italian' }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: /^italian$/i })).toHaveAttribute(
+      'href',
+      '/courses/course-1',
+    );
+  });
+
+  it('has no back link on a standalone deck', () => {
+    renderDeckHeader('World Capitals', 'deck-1', 'study');
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
 });

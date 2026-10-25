@@ -256,6 +256,7 @@ export default function StudyPage() {
           deckName={deck.name}
           deckId={deckId ?? ''}
           activeTab="study"
+          course={deck.course}
         />
         <p className="mt-6 text-center text-white/60">
           This deck has no cards.
@@ -277,6 +278,7 @@ export default function StudyPage() {
           deckName={deck.name}
           deckId={deckId ?? ''}
           activeTab="study"
+          course={deck.course}
         />
         <div className="flex w-full flex-1 flex-col items-center justify-center">
           <div className="w-full max-w-md pt-3">
@@ -305,6 +307,7 @@ export default function StudyPage() {
           deckName={deck.name}
           deckId={deckId ?? ''}
           activeTab="study"
+          course={deck.course}
         />
         <div className="flex w-full flex-1 flex-col items-center justify-center">
           <div className="relative w-full max-w-md pt-3">
@@ -383,6 +386,7 @@ export default function StudyPage() {
         deckName={deck.name}
         deckId={deckId ?? ''}
         activeTab="study"
+        course={deck.course}
       />
 
       {error && <p className="mb-4 text-destructive">{error}</p>}

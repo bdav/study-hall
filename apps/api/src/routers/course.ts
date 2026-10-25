@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { lessonToContinue, lessonStatus } from '../services/syllabus.js';
+import { countDueAndNewCards } from '../services/studySessions.js';
 import { generateStructured } from '../ai/generate.js';
 import {
   buildSyllabusPrompt,
@@ -90,6 +91,17 @@ export const courseRouter = router({
           status: lessonStatus(lesson),
         })),
         deckId: deck?.id ?? null,
+        // The course page's review section: its Course Deck's due and NEW
+        // cards
+        review: deck
+          ? {
+              deckId: deck.id,
+              ...(await countDueAndNewCards(ctx.prisma, {
+                userId: ctx.userId,
+                deckId: deck.id,
+              })),
+            }
+          : null,
         proposal: proposal && {
           ...proposal,
           lessons: parseProposalLessons(proposal.lessons),

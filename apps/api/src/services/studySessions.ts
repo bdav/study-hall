@@ -1,4 +1,4 @@
-import { type PrismaClient } from '@prisma/client';
+import { type Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { gradeAnswer, type Grading } from './answerGrader.js';
 import { deckOrder, primaryAnswerText, withCanonicalAnswers } from './cards.js';
@@ -15,6 +15,46 @@ const withItems = {
 /** The most cards a Standard session holds (`updated-plan.md` §12.1). */
 const STANDARD_SESSION_SIZE = 25;
 
+/** A learner's cards in one deck. */
+type LearnerDeck = { userId: string; deckId: string };
+
+/** A deck's cards in review whose due time has come. */
+function dueCardsWhere({
+  userId,
+  deckId,
+}: LearnerDeck): Prisma.CardProgressWhereInput {
+  return {
+    userId,
+    deckId,
+    lifecycleState: { in: ['LEARNING', 'STABLE'] },
+    dueAt: { lte: new Date() },
+  };
+}
+
+/** A deck's cards that have never been studied. */
+function newCardsWhere({
+  userId,
+  deckId,
+}: LearnerDeck): Prisma.CardProgressWhereInput {
+  return { userId, deckId, lifecycleState: 'NEW' };
+}
+
+/**
+ * How many of a deck's cards are due and how many are NEW, by the rules a
+ * Study Session's queue uses. A Standard session takes at most
+ * STANDARD_SESSION_SIZE of them.
+ */
+export async function countDueAndNewCards(
+  prisma: PrismaClient,
+  deck: LearnerDeck,
+) {
+  const [dueCount, newCount] = await Promise.all([
+    prisma.cardProgress.count({ where: dueCardsWhere(deck) }),
+    prisma.cardProgress.count({ where: newCardsWhere(deck) }),
+  ]);
+  return { dueCount, newCount };
+}
+
 /**
  * Starts a Standard Study Session on a deck. The queue is the deck's due
  * cards, earliest due first, then its NEW cards in deck order. Bucket shares
@@ -23,21 +63,16 @@ const STANDARD_SESSION_SIZE = 25;
  */
 export async function startStudySession(
   prisma: PrismaClient,
-  { userId, deckId }: { userId: string; deckId: string },
+  { userId, deckId }: LearnerDeck,
 ) {
   const dueCards = await prisma.cardProgress.findMany({
-    where: {
-      userId,
-      deckId,
-      lifecycleState: { in: ['LEARNING', 'STABLE'] },
-      dueAt: { lte: new Date() },
-    },
+    where: dueCardsWhere({ userId, deckId }),
     orderBy: { dueAt: 'asc' },
     select: { cardId: true },
     take: STANDARD_SESSION_SIZE,
   });
   const newCards = await prisma.cardProgress.findMany({
-    where: { userId, deckId, lifecycleState: 'NEW' },
+    where: newCardsWhere({ userId, deckId }),
     orderBy: deckOrder.map((order) => ({ card: order })),
     select: { cardId: true },
     take: STANDARD_SESSION_SIZE - dueCards.length,

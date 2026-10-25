@@ -49,6 +49,7 @@ const baseCourse = {
   deckId: 'deck-1',
   lessons: [],
   continueLesson: null,
+  review: null,
   proposal: {
     lessons: proposedLessons,
     model: 'claude-sonnet-5-5',
@@ -77,6 +78,7 @@ const acceptedCourse = {
     },
   ],
   continueLesson: { id: 'lesson-1', title: 'Greetings' },
+  review: { deckId: 'deck-1', dueCount: 0, newCount: 0 },
 };
 
 const mockAccept = vi.fn();
@@ -207,6 +209,48 @@ describe('CoursePage', () => {
       ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: /discard proposal/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Review', () => {
+    function renderReview(review: { dueCount: number; newCount: number }) {
+      renderPage({
+        data: { ...acceptedCourse, review: { deckId: 'deck-1', ...review } },
+      } as Partial<CourseQuery>);
+      return within(screen.getByRole('region', { name: /^review$/i }));
+    }
+
+    it('shows how many Course Deck cards are due and new', () => {
+      const review = renderReview({ dueCount: 3, newCount: 1 });
+
+      expect(review.getByText('3 cards due')).toBeInTheDocument();
+      expect(review.getByText('1 new card')).toBeInTheDocument();
+    });
+
+    it('starts a Study Session on the Course Deck in the study flow', () => {
+      const review = renderReview({ dueCount: 1, newCount: 0 });
+
+      expect(review.getByRole('link', { name: 'Study now' })).toHaveAttribute(
+        'href',
+        '/decks/deck-1',
+      );
+    });
+
+    it('says when there is nothing to review', () => {
+      const review = renderReview({ dueCount: 0, newCount: 0 });
+
+      expect(review.getByText(/nothing to review/i)).toBeInTheDocument();
+      expect(
+        review.queryByRole('link', { name: 'Study now' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("isn't shown while the syllabus is a proposal", () => {
+      renderPage({ data: baseCourse } as Partial<CourseQuery>);
+
+      expect(
+        screen.queryByRole('region', { name: /^review$/i }),
       ).not.toBeInTheDocument();
     });
   });

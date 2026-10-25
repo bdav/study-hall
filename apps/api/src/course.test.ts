@@ -619,3 +619,88 @@ describe('courseRouter', () => {
     });
   });
 });
+
+describe('course review', () => {
+  /** A course with an accepted syllabus and these cards in its Course Deck. */
+  async function courseWithCards(fronts: string[]) {
+    const caller = createCaller();
+    const { id } = await createCourse(caller);
+    await caller.course.acceptProposal({ courseId: id });
+    const { deckId } = await caller.course.getById({ id });
+    const cards = [];
+    for (const front of fronts) {
+      cards.push(
+        await caller.card.create({
+          deckId: deckId!,
+          front,
+          canonicalAnswer: 'Ciao',
+        }),
+      );
+    }
+    return { id, deckId: deckId!, cards: cards.map((card) => card!) };
+  }
+
+  /** Puts a card into review, due at the given time. */
+  async function scheduleCard(cardId: string, dueAt: Date) {
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId } },
+      data: { lifecycleState: 'LEARNING', dueAt },
+    });
+  }
+
+  it('counts the Course Deck cards that are due and the new ones', async () => {
+    const { id, deckId, cards } = await courseWithCards(['A', 'B', 'C', 'D']);
+    const hour = 60 * 60 * 1000;
+    await scheduleCard(cards[0].id, new Date(Date.now() - hour));
+    await scheduleCard(cards[1].id, new Date(Date.now() + 24 * hour));
+
+    const course = await createCaller().course.getById({ id });
+
+    expect(course.review).toEqual({ deckId, dueCount: 1, newCount: 2 });
+  });
+
+  it('leaves out retired cards', async () => {
+    const { id, cards } = await courseWithCards(['A']);
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId: cards[0].id } },
+      data: { lifecycleState: 'RETIRED', dueAt: new Date(0) },
+    });
+
+    const course = await createCaller().course.getById({ id });
+
+    expect(course.review).toMatchObject({ dueCount: 0, newCount: 0 });
+  });
+
+  it('has nothing to review before the syllabus is accepted', async () => {
+    const { id } = await createCourse();
+
+    const course = await createCaller().course.getById({ id });
+
+    expect(course.review).toBeNull();
+  });
+
+  it('needs no AI access', async () => {
+    const { id } = await courseWithCards(['A']);
+    vi.stubEnv('AI_ALLOWED_EMAILS', '');
+
+    const course = await createCaller().course.getById({ id });
+
+    expect(course.review).toMatchObject({ dueCount: 0, newCount: 1 });
+  });
+
+  it("isn't shown to another learner", async () => {
+    const { id } = await courseWithCards(['A']);
+
+    await expect(
+      createCaller(otherUserId).course.getById({ id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('names the course on its Course Deck, so studying can link back to it', async () => {
+    const { id, deckId } = await courseWithCards(['A']);
+
+    const deck = await createCaller().deck.getById({ id: deckId });
+
+    expect(deck.course).toEqual({ id, title: 'Italian' });
+  });
+});
