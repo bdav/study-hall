@@ -310,6 +310,12 @@ model Lesson {
   // Learner state: Lesson Completion, set and undone by the learner in any
   // order. Progress through the syllabus, never evidence of mastery
   completedAt         DateTime?
+  // Learner state: when the learner last started the lesson over. Only
+  // Exercise Attempts since then show on the lesson; earlier ones are kept
+  // (ADR-0003). Set from the database clock rounded up to the next
+  // millisecond, so it falls after every earlier attempt's microsecond
+  // createdAt (nextResetTime)
+  resetAt             DateTime?
   // Set while a version is being generated, so a concurrent open waits
   generationClaimedAt DateTime?
   archivedAt          DateTime?

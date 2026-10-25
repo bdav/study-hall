@@ -2,6 +2,8 @@ import {
   type Exercise,
   type ExerciseAttempt,
   type ExerciseEvaluation,
+  type Prisma,
+  type PrismaClient,
 } from '@prisma/client';
 import { matchAnswer } from './answerGrader.js';
 
@@ -52,6 +54,31 @@ export function checkDeterministically(
 
   const checked = evaluateExerciseAnswer(answer, exercise.expectedAnswers);
   return checked.evaluation === 'INCORRECT' && exercise.open ? null : checked;
+}
+
+/**
+ * The Exercise Attempts a lesson shows: those since the learner last
+ * started it over, or all of them if they never have. Earlier attempts are
+ * kept (ADR-0003).
+ */
+export function attemptsSinceReset(
+  resetAt: Date | null,
+): Prisma.ExerciseAttemptWhereInput {
+  return resetAt ? { createdAt: { gte: resetAt } } : {};
+}
+
+/**
+ * A reset time after every Exercise Attempt made so far. Attempts are
+ * timed by the database clock to the microsecond, and a Date holds only
+ * milliseconds, so this is the database's time rounded up to the next
+ * millisecond: a time from the app's clock could fall before an attempt
+ * made just earlier.
+ */
+export async function nextResetTime(prisma: PrismaClient): Promise<Date> {
+  const [{ resetAt }] = await prisma.$queryRaw<[{ resetAt: Date }]>`
+    SELECT date_trunc('milliseconds', clock_timestamp()::timestamp)
+      + interval '1 millisecond' AS "resetAt"`;
+  return resetAt;
 }
 
 /** An Exercise Attempt as the learner sees its result. */

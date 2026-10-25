@@ -14,6 +14,7 @@ const mockCancel = vi.fn();
 const mockInvalidate = vi.fn();
 const mockInvalidateCards = vi.fn();
 const mockInvalidateCourse = vi.fn();
+const mockResetAnswers = vi.fn();
 const mockInvalidateDecks = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
@@ -27,6 +28,7 @@ vi.mock('@/lib/trpc', () => ({
         },
       },
       course: { getById: { invalidate: mockInvalidateCourse } },
+      exercise: { answers: { reset: mockResetAnswers } },
       card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: mockInvalidateDecks } },
     })),
@@ -37,6 +39,7 @@ vi.mock('@/lib/trpc', () => ({
       proposeReviewCards: { useMutation: vi.fn() },
       createReviewCards: { useMutation: vi.fn() },
       setCompleted: { useMutation: vi.fn() },
+      startOver: { useMutation: vi.fn() },
     },
     exercise: {
       submitAttempt: {
@@ -61,6 +64,8 @@ type SetCompletedMutation = ReturnType<
 type SetCompletedOptions = Parameters<
   typeof trpc.lesson.setCompleted.useMutation
 >[0];
+type StartOverMutation = ReturnType<typeof trpc.lesson.startOver.useMutation>;
+type StartOverOptions = Parameters<typeof trpc.lesson.startOver.useMutation>[0];
 type CreateOptions = Parameters<
   typeof trpc.lesson.createReviewCards.useMutation
 >[0];
@@ -72,6 +77,7 @@ const lesson = {
   firstOpenedAt: null,
   course: { id: 'course-1', title: 'Italian' },
   completedAt: null,
+  resetAt: null,
   generating: false,
   version: null,
 };
@@ -120,6 +126,7 @@ const mockPropose = vi.fn();
 const mockResetProposal = vi.fn();
 const mockCreate = vi.fn();
 const mockSetCompleted = vi.fn();
+const mockStartOver = vi.fn();
 
 function renderPage({
   query = {},
@@ -130,6 +137,7 @@ function renderPage({
   propose = {},
   create = {},
   setCompleted = {},
+  startOver = {},
 }: {
   query?: Partial<LessonQuery>;
   mutation?: Partial<GenerateMutation>;
@@ -139,6 +147,7 @@ function renderPage({
   propose?: Partial<ProposeMutation>;
   create?: Partial<CreateMutation>;
   setCompleted?: Partial<SetCompletedMutation>;
+  startOver?: Partial<StartOverMutation>;
 } = {}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue(
     (meLoading
@@ -180,6 +189,11 @@ function renderPage({
     isPending: false,
     ...setCompleted,
   } as unknown as SetCompletedMutation);
+  vi.mocked(trpc.lesson.startOver.useMutation).mockReturnValue({
+    mutate: mockStartOver,
+    isPending: false,
+    ...startOver,
+  } as unknown as StartOverMutation);
 
   const page = (
     <MemoryRouter initialEntries={['/lessons/lesson-1']}>
@@ -354,6 +368,103 @@ describe('LessonPage', () => {
 
       expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
       expect(mockInvalidateCourse).toHaveBeenCalledWith({ id: 'course-1' });
+    });
+  });
+
+  describe('starting a lesson over', () => {
+    const answered = {
+      ...generatedLesson,
+      version: {
+        ...generatedLesson.version,
+        exercises: generatedLesson.version.exercises.map((exercise, index) =>
+          index === 0
+            ? {
+                ...exercise,
+                latestAttempt: {
+                  exerciseId: exercise.id,
+                  answer: 'Buonasera',
+                  evaluation: 'INCORRECT',
+                  accentCorrection: null,
+                  feedback: null,
+                  createdAt: '2026-10-24T09:00:00.000Z',
+                },
+              }
+            : exercise,
+        ),
+      },
+    };
+
+    it('starts the lesson over once the learner confirms', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: { data: answered } as Partial<LessonQuery> });
+
+      await user.click(screen.getByRole('button', { name: 'Start over' }));
+      const dialog = screen.getByRole('alertdialog');
+      expect(dialog).toHaveTextContent(/earlier answers are still saved/i);
+      expect(mockStartOver).not.toHaveBeenCalled();
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Start over' }),
+      );
+
+      expect(mockStartOver).toHaveBeenCalledWith({ id: 'lesson-1' });
+    });
+
+    it('refreshes the lesson and its course, then forgets revealed answers', async () => {
+      // Until the lesson has refetched, a revealed exercise is still
+      // mounted and would refetch its answers, which now fails
+      let lessonRefetched: () => void = () => {};
+      mockInvalidate.mockReturnValueOnce(
+        new Promise<void>((resolve) => (lessonRefetched = resolve)),
+      );
+      renderPage({ query: { data: answered } as Partial<LessonQuery> });
+      const [options] = vi.mocked(trpc.lesson.startOver.useMutation).mock
+        .calls[0] as [StartOverOptions];
+
+      const done = options?.onSuccess?.(
+        { id: 'lesson-1', resetAt: new Date() } as never,
+        { id: 'lesson-1' },
+        undefined,
+        {} as never,
+      );
+
+      expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
+      expect(mockInvalidateCourse).toHaveBeenCalledWith({ id: 'course-1' });
+      expect(mockResetAnswers).not.toHaveBeenCalled();
+      lessonRefetched();
+      await done;
+      expect(mockResetAnswers).toHaveBeenCalled();
+    });
+
+    it('shows every exercise empty once the lesson has started over', () => {
+      const { rerender } = renderPage({
+        query: { data: answered } as Partial<LessonQuery>,
+      });
+      expect(screen.getAllByLabelText('Your answer')[0]).toHaveValue(
+        'Buonasera',
+      );
+
+      vi.mocked(trpc.lesson.getById.useQuery).mockReturnValue({
+        data: { ...generatedLesson, resetAt: '2026-10-25T09:00:00.000Z' },
+        isLoading: false,
+        isError: false,
+      } as unknown as LessonQuery);
+      rerender(
+        <MemoryRouter initialEntries={['/lessons/lesson-1']}>
+          <Routes>
+            <Route path="/lessons/:lessonId" element={<LessonPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      expect(screen.getAllByLabelText('Your answer')[0]).toHaveValue('');
+    });
+
+    it("isn't offered before the lesson is written", () => {
+      renderPage({ query: { data: lesson } as Partial<LessonQuery> });
+
+      expect(
+        screen.queryByRole('button', { name: 'Start over' }),
+      ).not.toBeInTheDocument();
     });
   });
 

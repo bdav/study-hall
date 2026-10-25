@@ -7,6 +7,7 @@ import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { LessonExercise } from '@/components/LessonExercise';
 import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
@@ -17,14 +18,64 @@ const GENERATING_POLL_MS = 3000;
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 type LessonVersion = NonNullable<Lesson['version']>;
 
-function LessonHeader({ lesson }: { lesson: Lesson }) {
+function LessonHeader({
+  lesson,
+  actions,
+}: {
+  lesson: Lesson;
+  actions?: ReactNode;
+}) {
   return (
     <>
-      <BackLink to={`/courses/${lesson.course.id}`}>
-        {lesson.course.title}
-      </BackLink>
+      <div className="flex items-center justify-between gap-3">
+        <BackLink to={`/courses/${lesson.course.id}`}>
+          {lesson.course.title}
+        </BackLink>
+        {actions}
+      </div>
       <h1 className="mt-2 text-2xl font-bold">{lesson.title}</h1>
     </>
+  );
+}
+
+/**
+ * Starts the lesson over, so its exercises can be practised from scratch.
+ * The lesson then shows only answers given from now on; earlier ones are
+ * still saved.
+ */
+function StartOver({ lesson }: { lesson: Lesson }) {
+  const utils = trpc.useUtils();
+  const startOver = trpc.lesson.startOver.useMutation({
+    onSuccess: async () => {
+      // Starting over clears Lesson Completion
+      utils.course.getById.invalidate({ id: lesson.course.id });
+      // The refetched lesson remounts every exercise. Only then forget the
+      // revealed answers, which now need a new attempt: a revealed exercise
+      // still mounted would refetch them and fail
+      await utils.lesson.getById.invalidate({ id: lesson.id });
+      utils.exercise.answers.reset();
+    },
+    onError: () => {
+      toast.error("Couldn't start the lesson over");
+    },
+  });
+
+  return (
+    <ConfirmDialog
+      title="Start this lesson over?"
+      description="Your answers are cleared from the lesson so you can practise its exercises from scratch, and it's no longer marked complete. Your earlier answers are still saved."
+      confirmLabel="Start over"
+      onConfirm={() => startOver.mutate({ id: lesson.id })}
+      trigger={
+        <button
+          type="button"
+          disabled={startOver.isPending}
+          className="text-sm text-white/60 hover:text-white disabled:opacity-50"
+        >
+          Start over
+        </button>
+      }
+    />
   );
 }
 
@@ -158,10 +209,12 @@ function MakeReviewCards({ lessonId }: { lessonId: string }) {
 function LessonContent({
   lessonId,
   version,
+  resetAt,
   canUseAI,
 }: {
   lessonId: string;
   version: LessonVersion;
+  resetAt: Lesson['resetAt'];
   canUseAI: boolean;
 }) {
   return (
@@ -201,7 +254,8 @@ function LessonContent({
         <ol aria-labelledby="lesson-exercises" className="mt-3 space-y-3">
           {version.exercises.map((exercise, index) => (
             <LessonExercise
-              key={exercise.id}
+              // Starting over gives every exercise a fresh start
+              key={`${exercise.id}:${resetAt ?? ''}`}
               exercise={exercise}
               index={index}
               lessonId={lessonId}
@@ -291,10 +345,14 @@ export default function LessonPage() {
     return (
       <CenteredPage>
         <article className="w-full max-w-2xl text-white">
-          <LessonHeader lesson={lesson} />
+          <LessonHeader
+            lesson={lesson}
+            actions={<StartOver lesson={lesson} />}
+          />
           <LessonContent
             lessonId={lesson.id}
             version={lesson.version}
+            resetAt={lesson.resetAt}
             canUseAI={canUseAI}
           />
           <LessonCompletion lesson={lesson} />

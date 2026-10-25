@@ -30,7 +30,11 @@ import {
   primaryAnswerText,
   withCanonicalAnswers,
 } from '../services/cards.js';
-import { toAttemptView } from '../services/exercises.js';
+import {
+  attemptsSinceReset,
+  nextResetTime,
+  toAttemptView,
+} from '../services/exercises.js';
 
 /**
  * How long a generation claim holds. Longer than the Anthropic client's
@@ -50,13 +54,38 @@ const currentVersion = {
   take: 1,
 } satisfies Prisma.Lesson$versionsArgs;
 
-async function findOwnedLesson(
+/**
+ * The learner state of a lesson in the user's course; throws NOT_FOUND for
+ * anyone else's.
+ */
+async function findOwnedLessonState(
   prisma: PrismaClient,
   userId: string,
   id: string,
 ) {
   const lesson = await prisma.lesson.findFirst({
     where: { id, course: { userId } },
+    select: { completedAt: true, resetAt: true },
+  });
+
+  if (!lesson) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
+  }
+  return lesson;
+}
+
+/**
+ * A lesson with its current version, and each exercise's latest attempt
+ * since the learner last started the lesson over.
+ */
+async function findOwnedLesson(
+  prisma: PrismaClient,
+  userId: string,
+  id: string,
+) {
+  const { resetAt } = await findOwnedLessonState(prisma, userId, id);
+  return prisma.lesson.findUniqueOrThrow({
+    where: { id },
     include: {
       course: { select: { id: true, title: true } },
       versions: {
@@ -64,17 +93,18 @@ async function findOwnedLesson(
         include: {
           exercises: {
             orderBy: { position: 'asc' },
-            include: { attempts: { orderBy: { createdAt: 'desc' }, take: 1 } },
+            include: {
+              attempts: {
+                where: attemptsSinceReset(resetAt),
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+              },
+            },
           },
         },
       },
     },
   });
-
-  if (!lesson) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
-  }
-  return lesson;
 }
 
 /** The Course Deck a lesson's review cards join. */
@@ -116,6 +146,8 @@ function toLessonView(
     objectives: lesson.objectives,
     firstOpenedAt: lesson.firstOpenedAt,
     completedAt: lesson.completedAt,
+    // Exercises start afresh when it changes
+    resetAt: lesson.resetAt,
     course: lesson.course,
     // Another open is writing the lesson; the page waits for it to finish
     generating:
@@ -377,13 +409,11 @@ export const lessonRouter = router({
   setCompleted: protectedProcedure
     .input(z.object({ id: z.string(), completed: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const lesson = await ctx.prisma.lesson.findFirst({
-        where: { id: input.id, course: { userId: ctx.userId } },
-        select: { completedAt: true },
-      });
-      if (!lesson) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
-      }
+      const lesson = await findOwnedLessonState(
+        ctx.prisma,
+        ctx.userId,
+        input.id,
+      );
 
       return ctx.prisma.lesson.update({
         where: { id: input.id },
@@ -393,6 +423,25 @@ export const lessonRouter = router({
             : null,
         },
         select: { id: true, completedAt: true },
+      });
+    }),
+
+  /**
+   * Starts the lesson over, so its exercises can be practised from
+   * scratch: the lesson then shows only attempts made from now on, while
+   * every earlier attempt is kept (ADR-0003). Clears Lesson Completion and
+   * keeps the first-opened time. It applies to the lesson, so it carries
+   * across Lesson Versions.
+   */
+  startOver: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await findOwnedLessonState(ctx.prisma, ctx.userId, input.id);
+
+      return ctx.prisma.lesson.update({
+        where: { id: input.id },
+        data: { resetAt: await nextResetTime(ctx.prisma), completedAt: null },
+        select: { id: true, resetAt: true },
       });
     }),
 });

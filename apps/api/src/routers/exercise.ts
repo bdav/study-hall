@@ -9,6 +9,7 @@ import {
 } from './trpc.js';
 import { judgeAnswer } from '../ai/exerciseEvaluation.js';
 import {
+  attemptsSinceReset,
   checkDeterministically,
   toAttemptView,
 } from '../services/exercises.js';
@@ -29,6 +30,9 @@ async function findOwnedExercise(
 ) {
   const exercise = await prisma.exercise.findFirst({
     where: { id, lessonVersion: { lesson: { course: { userId } } } },
+    include: {
+      lessonVersion: { select: { lesson: { select: { resetAt: true } } } },
+    },
   });
 
   if (!exercise) {
@@ -90,7 +94,8 @@ export const exerciseRouter = router({
   /**
    * An exercise's expected answers, or a free-form explanation's essential
    * and supplementary points, which the learner can reveal once they have
-   * tried it: never before (courses-plan.md, Tutor).
+   * tried it since they last started the lesson over: never before
+   * (courses-plan.md, Tutor).
    */
   answers: protectedProcedure
     .input(z.object({ exerciseId: z.string() }))
@@ -102,7 +107,10 @@ export const exerciseRouter = router({
       );
 
       const attempted = await ctx.prisma.exerciseAttempt.count({
-        where: { exerciseId: exercise.id },
+        where: {
+          exerciseId: exercise.id,
+          ...attemptsSinceReset(exercise.lessonVersion.lesson.resetAt),
+        },
       });
       if (attempted === 0) {
         throw new TRPCError({

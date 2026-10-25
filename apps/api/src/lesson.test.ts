@@ -751,3 +751,119 @@ describe('Lesson Completion', () => {
     ).toEqual(completedAt);
   });
 });
+
+describe('Starting a lesson over', () => {
+  /** Opens the first lesson and answers its first exercise. */
+  async function openAndAnswer(answer: string) {
+    const [lesson] = await createCourseWithLessons();
+    const caller = createCaller();
+    ai.respondWith(lessonOutput());
+    const opened = await caller.lesson.generate({ id: lesson.id });
+    const exercise = opened.version!.exercises[0];
+    await caller.exercise.submitAttempt({ exerciseId: exercise.id, answer });
+    return { lessonId: lesson.id, courseId: opened.course.id, exercise };
+  }
+
+  it('shows every exercise unattempted, then only attempts made since', async () => {
+    const { lessonId, exercise } = await openAndAnswer('Buonasera');
+    const caller = createCaller();
+    const beforeReset = await caller.lesson.getById({ id: lessonId });
+    expect(beforeReset.version!.exercises[0].latestAttempt).toMatchObject({
+      answer: 'Buonasera',
+      evaluation: 'INCORRECT',
+    });
+
+    await caller.lesson.startOver({ id: lessonId });
+    const afterReset = await caller.lesson.getById({ id: lessonId });
+    expect(
+      afterReset.version!.exercises.map(({ latestAttempt }) => latestAttempt),
+    ).toEqual([null, null, null, null]);
+
+    await caller.exercise.submitAttempt({
+      exerciseId: exercise.id,
+      answer: 'Buongiorno',
+    });
+    const reopened = await caller.lesson.getById({ id: lessonId });
+    expect(reopened.version!.exercises[0].latestAttempt).toMatchObject({
+      answer: 'Buongiorno',
+      evaluation: 'CORRECT',
+    });
+  });
+
+  it('keeps earlier attempts, which card proposals still use', async () => {
+    const { lessonId } = await openAndAnswer('Buonasera');
+    const caller = createCaller();
+
+    await caller.lesson.startOver({ id: lessonId });
+    ai.respondWith({
+      cards: [
+        {
+          type: 'TYPED_RECALL',
+          front: 'Translate: Good morning',
+          canonicalAnswer: 'Buongiorno',
+        },
+      ],
+    });
+    await caller.lesson.proposeReviewCards({ id: lessonId });
+
+    expect(ai.requests.at(-1)!.prompt).toContain(
+      'The learner answered (INCORRECT): Buonasera',
+    );
+  });
+
+  it('needs an attempt since starting over to reveal answers again', async () => {
+    const { lessonId, exercise } = await openAndAnswer('Buonasera');
+    const caller = createCaller();
+    await expect(
+      caller.exercise.answers({ exerciseId: exercise.id }),
+    ).resolves.toMatchObject({ expectedAnswers: ['Buongiorno'] });
+
+    await caller.lesson.startOver({ id: lessonId });
+    await expect(
+      caller.exercise.answers({ exerciseId: exercise.id }),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+
+    await caller.exercise.submitAttempt({
+      exerciseId: exercise.id,
+      answer: 'Buonasera',
+    });
+    await expect(
+      caller.exercise.answers({ exerciseId: exercise.id }),
+    ).resolves.toMatchObject({ expectedAnswers: ['Buongiorno'] });
+  });
+
+  it('clears Lesson Completion and keeps the first-opened time', async () => {
+    const { lessonId, courseId } = await openAndAnswer('Buongiorno');
+    const caller = createCaller();
+    await caller.lesson.setCompleted({ id: lessonId, completed: true });
+    const before = await caller.lesson.getById({ id: lessonId });
+
+    await caller.lesson.startOver({ id: lessonId });
+
+    const after = await caller.lesson.getById({ id: lessonId });
+    expect(after.completedAt).toBeNull();
+    expect(after.firstOpenedAt).toEqual(before.firstOpenedAt);
+    const course = await caller.course.getById({ id: courseId });
+    expect(course.lessons[0].status).toBe('OPENED');
+  });
+
+  it('needs no AI access', async () => {
+    const { lessonId } = await openAndAnswer('Buonasera');
+    vi.stubEnv('AI_ALLOWED_EMAILS', '');
+
+    await createCaller().lesson.startOver({ id: lessonId });
+
+    const lesson = await createCaller().lesson.getById({ id: lessonId });
+    expect(lesson.version!.exercises[0].latestAttempt).toBeNull();
+  });
+
+  it("can't start another learner's lesson over", async () => {
+    const { lessonId } = await openAndAnswer('Buonasera');
+
+    await expect(
+      createCaller(otherUserId).lesson.startOver({ id: lessonId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const lesson = await createCaller().lesson.getById({ id: lessonId });
+    expect(lesson.version!.exercises[0].latestAttempt).not.toBeNull();
+  });
+});
