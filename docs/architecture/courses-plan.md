@@ -15,6 +15,8 @@
 > | C1  | #25           |
 > | C2  | #25           |
 > | C3  | #26, #27      |
+>
+> The lesson page layout (**Lesson layout** below, decided 2026-10-25) is tracked as #37–#42, also sub-issues of #1.
 
 ## Overview
 
@@ -118,7 +120,7 @@ Rules:
   - One generation call then produces a **Syllabus Proposal**.
   - While it's a proposal, the learner can rename, reorder, add and remove lessons, edit learning objectives, and regenerate with written feedback.
   - Accepting it creates the Syllabus and Lessons. After that, edits are by hand only; AI-suggested syllabus changes come later.
-- **Lessons are lesson-driven:** stored, structured content the learner works through, with the tutor in a side panel. A lesson is generated the first time it's opened. Revisiting it never regenerates.
+- **Lessons are lesson-driven:** stored, structured content the learner works through in steps, with the tutor in a side panel (**Lesson layout** below). A lesson is generated the first time it's opened. Revisiting it never regenerates.
 - **Lesson generation context:**
   - The course setup answers.
   - The full syllabus outline with every lesson's learning objectives.
@@ -145,6 +147,24 @@ Rules:
   - Proposals open in the existing import preview flow (`ImportPreviewDialog`, `csvDiff`), where the learner edits, deselects and gets duplicate detection against the course deck.
   - Confirmed cards are created in the course deck with `sourceLessonId` set.
   - Tutor-initiated card suggestions are deferred.
+
+### Lesson layout
+
+The lesson page is an interactive textbook: neither one long document nor a slide deck.
+
+- **Steps:** one per content section, then Examples, Practice and Wrap up. Previous/Next and the arrow keys move between them (never while the learner is typing an answer), and a long step scrolls. The current step is in the URL, so going back, reloading and links such as Continue land on it.
+- **Frame:**
+  - A lesson outline on the left lists the steps and progress, and jumps to a step when clicked. It can be collapsed, and on mobile it's a drawer.
+  - The step is in the centre, with a comfortable reading width for prose.
+  - A region on the right holds the tutor. It takes no space while empty, and with the tutor open on a narrower desktop the outline collapses to icons. The tutor's state lives in the frame, so moving between steps never resets it.
+  - A pinned header holds the title, the link back to the course, the Lesson Completion toggle and a ⋯ menu for rarely used actions such as starting the lesson over.
+- **Reading views:** By section (the default) shows one section at a time; Full lesson shows the sections and Examples as one page, so the browser's find works across the lesson. There are no separate reading or practice modes: the outline covers jumping to any part.
+- **Practice:**
+  - One at a time (the default) or All exercises. In One at a time, the exercise on screen is the tutor's current exercise.
+  - Show my answers shows or hides the learner's latest answers and results, so exercises can be retaken.
+  - Show answer key shows expected answers or points for attempted exercises only: an exercise's answers are never shown before an attempt.
+- **Wrap up:** the learner's results, with links to missed exercises, then Make review cards, Lesson Completion and Continue to the next lesson. Completion is suggested once every exercise has been tried, never set automatically.
+- **Content and presentation stay separate:** steps and views render straight from the Lesson Version, so a new view needs no data change. Later, generation can tie concept checks and examples to sections, and produce typed content blocks with their own components. Older versions keep their lesson-level examples, exercises and prose (ADR-0003).
 
 ---
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and courses (spec #1) as #14–#27. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
+**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and courses (spec #1) as #14–#27 and #37–#42. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Implementation Order
 
@@ -34,12 +34,17 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #34 Start a lesson over
    - [ ] #27 Course Review section
    - [ ] #7 Full card lifecycle
-4. Syllabus editing and tutor
+4. Lesson layout
+   - [ ] #37 Lesson steps and outline
+   - [ ] #38 By section / Full lesson view
+   - [ ] #39 Wrap up: finish a lesson
+   - [ ] #40 Practice: one at a time or all exercises
+5. Syllabus editing and tutor
    - [ ] #16 Edit and regenerate a Syllabus Proposal
    - [ ] #23 Ask the Tutor about a lesson
    - [ ] #31 Price prompt-cache tokens in the AI cost estimate
    - [ ] #24 Tutor knows the current exercise and my attempts
-5. Rest of v2 and courses
+6. Rest of v2 and courses
    - [ ] #3 Cards with multiple Canonical Answers
    - [ ] #4 Accepted Variants
    - [ ] #12 "My answer was correct" during study
@@ -198,15 +203,15 @@ The v2 schema (`prisma/schema.prisma`, designed in `v2-schema-proposal.md`) has 
 
 All planning documents live in `docs/architecture/`. They hold the design and decisions. Work and its status are tracked in GitHub issues, so point to the issues instead of copying their status into these docs.
 
-| Doc                               | Purpose                                                                                                           |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `updated-plan.md`                 | **Canonical v2 plan** — consolidated handoff with locked constraints, open questions, and implementation order    |
-| `learning-model-and-scheduler.md` | Scheduler philosophy, lifecycle model, interval tables, session/queue design                                      |
-| `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                            |
-| `v2-implementation-plan.md`       | **v2 design by milestone** (PRs 1–11); work is tracked as issues #2–#12, mapped at the top of the doc             |
-| `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                            |
-| `courses-plan.md`                 | **Courses plan** — AI courses, lessons, exercises and tutor on top of v2; slices A–C, tracked as #14–#27; spec #1 |
-| `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                                |
+| Doc                               | Purpose                                                                                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `updated-plan.md`                 | **Canonical v2 plan** — consolidated handoff with locked constraints, open questions, and implementation order                                      |
+| `learning-model-and-scheduler.md` | Scheduler philosophy, lifecycle model, interval tables, session/queue design                                                                        |
+| `planning.md`                     | Infra & tech stack decisions, deployment topology, data model concepts                                                                              |
+| `v2-implementation-plan.md`       | **v2 design by milestone** (PRs 1–11); work is tracked as issues #2–#12, mapped at the top of the doc                                               |
+| `v2-schema-proposal.md`           | Finalized Phase 1 Prisma schema for v2                                                                                                              |
+| `courses-plan.md`                 | **Courses plan** — AI courses, lessons, exercises and tutor on top of v2; slices A–C and the lesson layout, tracked as #14–#27 and #37–#42; spec #1 |
+| `implementation-plan.md`          | Original MVP plan (PRs 1–19, all delivered) — historical reference                                                                                  |
 
 ### v2 Direction
 
