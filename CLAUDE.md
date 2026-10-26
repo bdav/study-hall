@@ -10,7 +10,7 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ## Implementation Order
 
-When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then finishes the tutor and the rest of v2.
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, then Study Sessions.
 
 1. Core study loop
    - [x] #13 Spacing differences don't make an answer wrong
@@ -35,31 +35,33 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #27 Course Review section
    - [x] #43 Better review card proposals
    - [x] #44 Edit or delete a card while studying
+4. Cards and scheduling
    - [ ] #4 Accepted Variants
    - [ ] #12 "My answer was correct" during study
+   - [ ] #3 Cards with multiple Canonical Answers
    - [ ] #47 Card versions: record what each attempt answered
    - [ ] #48 Card history below the card while studying
    - [ ] #45 Revise a deck's cards with an instruction
    - [ ] #7 Full card lifecycle
    - [ ] #46 Mark cards as known, one at a time or in bulk
-4. Lesson layout
+5. Lesson layout
    - [ ] #37 Lesson steps and outline
    - [ ] #38 By section / Full lesson view
    - [ ] #39 Wrap up: finish a lesson
    - [ ] #40 Practice: one at a time or all exercises
-5. Syllabus editing and tutor
-   - [ ] #16 Edit and regenerate a Syllabus Proposal
+6. Tutor
    - [ ] #23 Ask the Tutor about a lesson
    - [ ] #31 Price prompt-cache tokens in the AI cost estimate
    - [ ] #24 Tutor knows the current exercise and my attempts
-6. Rest of v2 and courses
-   - [ ] #3 Cards with multiple Canonical Answers
-   - [ ] #10 Resume and abandon Study Sessions
-   - [ ] #11 Missed cards come back in the same Study Session
-   - [ ] #8 Queue buckets and session types
-   - [ ] #9 Study modes: Drill Weakest and Cram
+7. Curriculum editing
+   - [ ] #16 Edit and regenerate a Syllabus Proposal
    - [ ] #17 Edit the Syllabus; archive lessons and courses
    - [ ] #19 Regenerate a Lesson
+8. Study sessions
+   - [ ] #11 Missed cards come back in the same Study Session
+   - [ ] #10 Resume and abandon Study Sessions
+   - [ ] #8 Queue buckets and session types
+   - [ ] #9 Study modes: Drill Weakest and Cram
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
