@@ -50,6 +50,40 @@ export function applyAnswer(
   };
 }
 
+/** A card's progress before its first answer, and after a reset. */
+export const NEW_PROGRESS: {
+  lifecycleState: CardLifecycleState;
+  masteryScore: number;
+  dueAt: Date | null;
+  lastReviewedAt: Date | null;
+  lastIntervalDays: number | null;
+  lapseCount: number;
+} = {
+  lifecycleState: 'NEW',
+  masteryScore: MIN_MASTERY,
+  dueAt: null,
+  lastReviewedAt: null,
+  lastIntervalDays: null,
+  lapseCount: 0,
+};
+
+/**
+ * A card's progress rebuilt from its answers, oldest first, starting from
+ * NEW (`updated-plan.md` §11.2): the progress `applyAnswer` would have left
+ * had each been graded as it is now.
+ */
+export function replayAnswers(
+  answers: { recallGrade: RecallGrade; answeredAt: Date }[],
+) {
+  return answers.reduce(
+    (progress, { recallGrade, answeredAt }) => ({
+      ...progress,
+      ...applyAnswer(progress, recallGrade, answeredAt),
+    }),
+    NEW_PROGRESS,
+  );
+}
+
 function masteryChange(mastery: number, recallGrade: RecallGrade): number {
   switch (recallGrade) {
     case 'MISSED':

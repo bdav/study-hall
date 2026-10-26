@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
 import {
+  acceptAnswer,
   answerItem,
   finishStudySession,
   startStudySession,
@@ -56,5 +57,17 @@ export const studyRouter = router({
         userId: ctx.userId,
         id: input.id,
       });
+    }),
+
+  acceptAnswer: protectedProcedure
+    .input(
+      z.object({
+        attemptId: z.string(),
+        // The primary Canonical Answer when absent
+        canonicalAnswerId: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return acceptAnswer(ctx.prisma, { userId: ctx.userId, ...input });
     }),
 });

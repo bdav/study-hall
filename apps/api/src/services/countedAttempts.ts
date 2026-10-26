@@ -14,6 +14,14 @@ export function isCorrect(grade: RecallGrade) {
 }
 
 /**
+ * Whether an attempt counts toward stats and scheduling: it was made since
+ * its card's latest progress reset (ADR-0004).
+ */
+export function countsSinceReset(createdAt: Date, resetAt: Date) {
+  return createdAt >= resetAt;
+}
+
+/**
  * Finds a user's attempts that count toward stats: those made since each
  * card's latest progress reset (ADR-0004). Earlier attempts are kept as
  * history but answered what was effectively a different card.
@@ -48,7 +56,7 @@ export async function findCountedAttempts(
   return attempts
     .filter((a) => {
       const resetAt = a.card.progress[0]?.resetAt;
-      return !resetAt || a.createdAt >= resetAt;
+      return !resetAt || countsSinceReset(a.createdAt, resetAt);
     })
     .map((a) => ({
       studySessionId: a.studySessionId,

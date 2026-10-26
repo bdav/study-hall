@@ -79,13 +79,25 @@ function CardBack({
   result,
   editedAfterAnswer = false,
   onFlip,
+  onAcceptAnswer,
+  isAcceptingAnswer = false,
 }: {
   card: CardSnapshot['card'];
   result: NonNullable<CardSnapshot['result']>;
   /** The card was edited after this answer, so the grade is for the old card. */
   editedAfterAnswer?: boolean;
   onFlip?: () => void;
+  /** "My answer was correct", for the card in play or one reviewed. */
+  onAcceptAnswer?: () => void;
+  isAcceptingAnswer?: boolean;
 }) {
+  // A typed answer graded MISSED, still graded against the card as it is
+  const canAccept =
+    onAcceptAnswer &&
+    result.recallGrade === 'MISSED' &&
+    result.userAnswer !== null &&
+    !editedAfterAnswer;
+
   return (
     <div className="text-center text-white" data-testid="correct-answer">
       <p className="text-sm uppercase tracking-wide text-white/50">
@@ -100,6 +112,19 @@ function CardBack({
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
+      {canAccept && (
+        <button
+          type="button"
+          disabled={isAcceptingAnswer}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAcceptAnswer();
+          }}
+          className="mt-3 block w-full text-sm text-white/70 underline hover:text-white disabled:opacity-50"
+        >
+          My answer was correct
+        </button>
+      )}
       {result.matchedVariant && (
         <p className="mt-2 text-sm text-white/70" data-testid="variant-note">
           Matched the accepted variant “{result.matchedVariant}”.
@@ -162,6 +187,8 @@ export default function StudyPage() {
     handleStart,
     handleSubmitAnswer,
     handleDontKnow,
+    handleAcceptAnswer,
+    isAcceptingAnswer,
     handleFinish,
     replaceCard,
     showVariantsChange,
@@ -188,12 +215,16 @@ export default function StudyPage() {
       ? reviewEntry
       : studyState.phase === 'result'
         ? {
+            attemptId: studyState.attemptId,
             recallGrade: studyState.recallGrade,
             accentMismatch: studyState.accentMismatch,
             matchedVariant: studyState.matchedVariant,
             userAnswer: studyState.userAnswer,
           }
         : null;
+  const acceptDisplayedAnswer = displayResult
+    ? () => handleAcceptAnswer(displayResult.attemptId)
+    : undefined;
   const progress = isReviewing
     ? undefined
     : `Card ${position + 1} of ${sessionSize}`;
@@ -394,6 +425,7 @@ export default function StudyPage() {
     cardProgress: string | undefined,
     onFlip?: () => void,
     gradedBeforeEdit = false,
+    onAcceptAnswer?: () => void,
   ) => (
     <CardStack
       queueLength={queueLength}
@@ -406,6 +438,8 @@ export default function StudyPage() {
             result={result}
             editedAfterAnswer={gradedBeforeEdit}
             onFlip={onFlip}
+            onAcceptAnswer={onAcceptAnswer}
+            isAcceptingAnswer={isAcceptingAnswer}
           />
         ) : undefined
       }
@@ -468,6 +502,7 @@ export default function StudyPage() {
                         progress,
                         toggleFlip,
                         editedAfterAnswer.has(displayCard.id),
+                        acceptDisplayedAnswer,
                       )
                     ) : (
                       <CardStack queueLength={cards.length}>
@@ -493,6 +528,7 @@ export default function StudyPage() {
                 progress,
                 toggleFlip,
                 editedAfterAnswer.has(displayCard.id),
+                acceptDisplayedAnswer,
               )}
             </div>
           ) : isAtTitle ? (

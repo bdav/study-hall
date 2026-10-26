@@ -32,6 +32,7 @@ vi.mock('@/lib/trpc', () => ({
       submitAnswer: { useMutation: vi.fn() },
       dontKnow: { useMutation: vi.fn() },
       finishSession: { useMutation: vi.fn() },
+      acceptAnswer: { useMutation: vi.fn() },
     },
   },
 }));
@@ -280,9 +281,27 @@ function mockCardMutations() {
   })) as unknown as typeof trpc.card.removeVariant.useMutation);
 }
 
+const mockAcceptAnswer = vi.fn();
+
+/** "My answer was correct" succeeding, regraded through a new variant. */
+function mockAcceptAnswerMutation() {
+  vi.mocked(trpc.study.acceptAnswer.useMutation).mockReturnValue({
+    mutateAsync: mockAcceptAnswer.mockImplementation(() =>
+      Promise.resolve({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: 'four',
+        card: cardOneWithVariants([{ id: 'variant-four', text: 'four' }]),
+      }),
+    ),
+    isPending: false,
+  } as unknown as ReturnType<typeof trpc.study.acceptAnswer.useMutation>);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
+  mockAcceptAnswerMutation();
 });
 
 describe('StudyPage', () => {
@@ -725,6 +744,98 @@ describe('StudyPage', () => {
     expect(
       screen.getByRole('status', { name: /loading/i }),
     ).toBeInTheDocument();
+  });
+
+  describe('"My answer was correct"', () => {
+    async function answerFirstCard(
+      answer: string,
+      grade: 'correct' | 'incorrect' = 'incorrect',
+    ) {
+      setupMocksWithStartSession(grade);
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
+      await screen.findByTestId('result');
+      return user;
+    }
+
+    const myAnswerWasCorrect = { name: 'My answer was correct' };
+
+    it('accepts a missed answer and shows it graded again', async () => {
+      const user = await answerFirstCard('four');
+      expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
+
+      await user.click(screen.getByRole('button', myAnswerWasCorrect));
+
+      expect(mockAcceptAnswer).toHaveBeenCalledWith({ attemptId: 'attempt-1' });
+      await waitFor(() => {
+        expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
+      });
+      expect(screen.getByTestId('variant-note')).toHaveTextContent('four');
+      expect(
+        screen.queryByRole('button', myAnswerWasCorrect),
+      ).not.toBeInTheDocument();
+    });
+
+    it('counts the accepted answer in the session summary', async () => {
+      const user = await answerFirstCard('four');
+      await user.click(screen.getByRole('button', myAnswerWasCorrect));
+      await waitFor(() => {
+        expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
+      });
+
+      await user.click(screen.getByRole('button', { name: /finish session/i }));
+
+      expect(await screen.findByText('1 Nailed it')).toBeInTheDocument();
+      expect(screen.queryByText(/needs review/i)).not.toBeInTheDocument();
+    });
+
+    it('is not offered after "I don\'t know"', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.click(screen.getByRole('button', { name: "I don't know" }));
+      await screen.findByTestId('result');
+
+      expect(
+        screen.queryByRole('button', myAnswerWasCorrect),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is not offered after an answer graded right', async () => {
+      await answerFirstCard('4', 'correct');
+
+      expect(
+        screen.queryByRole('button', myAnswerWasCorrect),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is not offered once the card was edited after the answer', async () => {
+      const user = await answerFirstCard('four');
+      await user.click(screen.getByRole('button', { name: 'Card options' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+      await user.type(screen.getByLabelText('Front'), ' exactly{Enter}');
+
+      expect(
+        screen.queryByRole('button', myAnswerWasCorrect),
+      ).not.toBeInTheDocument();
+    });
+
+    it('says so when accepting fails, keeping the miss', async () => {
+      const user = await answerFirstCard('four');
+      mockAcceptAnswer.mockImplementation(() =>
+        Promise.reject(new Error('Network error')),
+      );
+
+      await user.click(screen.getByRole('button', myAnswerWasCorrect));
+
+      expect(
+        await screen.findByText(/couldn't accept your answer/i),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
+    });
   });
 
   describe('editing and deleting cards', () => {

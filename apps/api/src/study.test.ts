@@ -338,6 +338,261 @@ describe('studyRouter', () => {
     });
   });
 
+  describe('acceptAnswer ("My answer was correct")', () => {
+    /** A session on one card whose answer was just graded MISSED. */
+    async function missedAnswer(userAnswer = 'NYC') {
+      const { items } = await startedSession([
+        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+      ]);
+      const [item] = items;
+      const attempt = await createCaller().study.submitAnswer({
+        itemId: item.id,
+        userAnswer,
+      });
+      expect(attempt.recallGrade).toBe('MISSED');
+      return { item, attempt };
+    }
+
+    it('adds the answer as an Accepted Variant and grades it again', async () => {
+      const { attempt } = await missedAnswer();
+
+      const accepted = await createCaller().study.acceptAnswer({
+        attemptId: attempt.id,
+      });
+
+      expect(accepted).toMatchObject({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: 'NYC',
+      });
+      expect(
+        accepted.card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['NYC']);
+    });
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    it("corrects the card's progress as if the answer had been graded NAILED", async () => {
+      const { item, attempt } = await missedAnswer();
+
+      await createCaller().study.acceptAnswer({ attemptId: attempt.id });
+
+      // NAILED on a NEW card: LEARNING, mastery 2, due in 2 days
+      const progress = await progressOf(item.cardId);
+      expect(progress).toMatchObject({
+        lifecycleState: 'LEARNING',
+        masteryScore: 2,
+        lastIntervalDays: 2,
+        lastReviewedAt: attempt.createdAt,
+      });
+      expect(progress.dueAt).toEqual(
+        new Date(attempt.createdAt.getTime() + 2 * DAY_MS),
+      );
+    });
+
+    /** Answers the card of a one-card deck in a new session, due or not. */
+    async function answerAgain(
+      cardId: string,
+      deckId: string,
+      userAnswer: string,
+    ) {
+      await scheduleCard(cardId, new Date(Date.now() - 60 * 1000));
+      const caller = createCaller();
+      const session = await caller.study.startSession({ deckId });
+      return caller.study.submitAnswer({
+        itemId: session!.items[0].id,
+        userAnswer,
+      });
+    }
+
+    it("replays the card's earlier answers with the corrected one", async () => {
+      const deck = await deckWith([
+        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+      ]);
+      const cardId = deck.cards[0].id;
+      await answerAgain(cardId, deck.id, 'New York City');
+      const missed = await answerAgain(cardId, deck.id, 'NYC');
+
+      await createCaller().study.acceptAnswer({ attemptId: missed.id });
+
+      // NAILED twice: mastery 0 → 2 → 4, due 2 days after the second
+      const progress = await progressOf(cardId);
+      expect(progress.masteryScore).toBe(4);
+      expect(progress.dueAt).toEqual(
+        new Date(missed.createdAt.getTime() + 2 * DAY_MS),
+      );
+    });
+
+    it('leaves out answers given before the card was last edited', async () => {
+      const deck = await deckWith([
+        { front: 'Largest US city', canonicalAnswer: 'New York' },
+      ]);
+      const cardId = deck.cards[0].id;
+      await answerAgain(cardId, deck.id, 'New York');
+      await createCaller().card.update({
+        cardId,
+        canonicalAnswer: 'New York City',
+      });
+      const missed = await answerAgain(cardId, deck.id, 'NYC');
+
+      await createCaller().study.acceptAnswer({ attemptId: missed.id });
+
+      // Only the accepted answer counts since the edit: mastery 0 → 2
+      expect((await progressOf(cardId)).masteryScore).toBe(2);
+    });
+
+    it('grades again without a duplicate when the answer was accepted since', async () => {
+      const { item, attempt } = await missedAnswer();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: item.card.canonicalAnswers[0].id,
+        text: 'nyc',
+      });
+
+      const accepted = await caller.study.acceptAnswer({
+        attemptId: attempt.id,
+      });
+
+      expect(accepted).toMatchObject({
+        recallGrade: 'NAILED',
+        matchedVariant: 'nyc',
+      });
+      expect(
+        accepted.card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['nyc']);
+    });
+
+    it('adds the answer to the Canonical Answer the learner picks', async () => {
+      const { item, attempt } = await missedAnswer();
+      // Cards get more than one Canonical Answer with #3
+      const second = await prisma.canonicalAnswer.create({
+        data: { cardId: item.cardId, text: 'New York' },
+      });
+
+      const accepted = await createCaller().study.acceptAnswer({
+        attemptId: attempt.id,
+        canonicalAnswerId: second.id,
+      });
+
+      expect(accepted).toMatchObject({
+        recallGrade: 'NAILED',
+        matchedVariant: 'NYC',
+      });
+      const variants = await prisma.acceptedVariant.findMany({
+        where: { canonicalAnswer: { cardId: item.cardId } },
+        select: { text: true, canonicalAnswerId: true },
+      });
+      expect(variants).toEqual([{ text: 'NYC', canonicalAnswerId: second.id }]);
+    });
+
+    it('refuses a Canonical Answer of another card', async () => {
+      const { attempt } = await missedAnswer();
+      const other = await deckWith([{ front: 'Q', canonicalAnswer: 'A' }]);
+
+      await expect(
+        createCaller().study.acceptAnswer({
+          attemptId: attempt.id,
+          canonicalAnswerId: other.cards[0].canonicalAnswers[0].id,
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it.each([
+      ['an answer graded right', 'New York City'],
+      ['"I don\'t know"', null],
+    ])('refuses %s', async (_, userAnswer) => {
+      const { items } = await startedSession([
+        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+      ]);
+      const caller = createCaller();
+      const attempt =
+        userAnswer === null
+          ? await caller.study.dontKnow({ itemId: items[0].id })
+          : await caller.study.submitAnswer({
+              itemId: items[0].id,
+              userAnswer,
+            });
+
+      await expect(
+        caller.study.acceptAnswer({ attemptId: attempt.id }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('refuses an answer already accepted', async () => {
+      const { attempt } = await missedAnswer();
+      const caller = createCaller();
+      await caller.study.acceptAnswer({ attemptId: attempt.id });
+
+      await expect(
+        caller.study.acceptAnswer({ attemptId: attempt.id }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('refuses an answer to the card before it was last edited, changing nothing', async () => {
+      const { item, attempt } = await missedAnswer();
+      const caller = createCaller();
+      await caller.card.update({
+        cardId: item.cardId,
+        front: 'Biggest US city',
+      });
+
+      await expect(
+        caller.study.acceptAnswer({ attemptId: attempt.id }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      const [card] = await caller.card.listByDeck({ deckId: item.card.deckId });
+      expect(card.canonicalAnswers[0].acceptedVariants).toEqual([]);
+    });
+
+    it('refuses an answer grading could never accept, changing nothing', async () => {
+      const { item, attempt } = await missedAnswer('?');
+
+      await expect(
+        createCaller().study.acceptAnswer({ attemptId: attempt.id }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      const [card] = await createCaller().card.listByDeck({
+        deckId: item.card.deckId,
+      });
+      expect(card.canonicalAnswers[0].acceptedVariants).toEqual([]);
+    });
+
+    it("refuses another user's answer, changing nothing", async () => {
+      const { item, attempt } = await missedAnswer();
+      const other = await prisma.user.create({
+        data: { email: `accept-${Date.now()}@example.com`, passwordHash: 'x' },
+      });
+      const otherCaller = appRouter.createCaller({
+        prisma,
+        userId: other.id,
+        sessionToken: null,
+        ai: createFakeAiProvider(),
+      });
+
+      await expect(
+        otherCaller.study.acceptAnswer({ attemptId: attempt.id }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect((await progressOf(item.cardId)).masteryScore).toBe(0);
+    });
+
+    it('keeps one attempt, now final, recording the grade it first had', async () => {
+      const { attempt } = await missedAnswer();
+
+      await createCaller().study.acceptAnswer({ attemptId: attempt.id });
+
+      const attempts = await prisma.cardAttempt.findMany({
+        where: { studySessionId: attempt.studySessionId },
+      });
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({
+        id: attempt.id,
+        userAnswer: 'NYC',
+        recallGrade: 'NAILED',
+        initialSuggestedGrade: 'MISSED',
+        refinementApplied: true,
+        gradingMethod: 'REFINED_VARIANT',
+      });
+    });
+  });
+
   describe("another user's session", () => {
     async function otherUserCaller() {
       const other = await prisma.user.create({

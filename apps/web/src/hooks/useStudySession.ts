@@ -67,6 +67,7 @@ export function useStudySession(deckId: string | undefined) {
   const submitAnswer = trpc.study.submitAnswer.useMutation();
   const dontKnow = trpc.study.dontKnow.useMutation();
   const finishSession = trpc.study.finishSession.useMutation();
+  const acceptAnswer = trpc.study.acceptAnswer.useMutation();
 
   const items = studySession?.items ?? [];
   const currentItem = items[position] ?? null;
@@ -85,18 +86,30 @@ export function useStudySession(deckId: string | undefined) {
     try {
       setError(null);
       const { itemId, card } = currentItem;
-      const { recallGrade, accentMismatch, matchedVariant } =
-        userAnswer === null
-          ? await dontKnow.mutateAsync({ itemId })
-          : await submitAnswer.mutateAsync({ itemId, userAnswer });
+      const {
+        id: attemptId,
+        recallGrade,
+        accentMismatch,
+        matchedVariant,
+      } = userAnswer === null
+        ? await dontKnow.mutateAsync({ itemId })
+        : await submitAnswer.mutateAsync({ itemId, userAnswer });
 
       setHistory((prev) => [
         ...prev,
-        { card, recallGrade, accentMismatch, matchedVariant, userAnswer },
+        {
+          card,
+          attemptId,
+          recallGrade,
+          accentMismatch,
+          matchedVariant,
+          userAnswer,
+        },
       ]);
 
       setStudyState({
         phase: 'result',
+        attemptId,
         recallGrade,
         accentMismatch,
         matchedVariant,
@@ -161,6 +174,33 @@ export function useStudySession(deckId: string | undefined) {
       ),
     );
   }, []);
+
+  /**
+   * "My answer was correct": the answer becomes an Accepted Variant and is
+   * graded again, here and in the session's summary.
+   */
+  async function handleAcceptAnswer(attemptId: string) {
+    try {
+      setError(null);
+      const { card, recallGrade, accentMismatch, matchedVariant } =
+        await acceptAnswer.mutateAsync({ attemptId });
+      const grade = { recallGrade, accentMismatch, matchedVariant };
+      setHistory((prev) =>
+        prev.map((entry) =>
+          entry.attemptId === attemptId ? { ...entry, ...grade } : entry,
+        ),
+      );
+      setStudyState((prev) =>
+        prev.phase === 'result' && prev.attemptId === attemptId
+          ? { ...prev, ...grade }
+          : prev,
+      );
+      // A new variant isn't an edit of the card
+      showCard(toFlashcard(card));
+    } catch {
+      setError("Couldn't accept your answer. Please try again.");
+    }
+  }
 
   /**
    * Shows an edit to a card of the session, the one in play or one answered
@@ -329,6 +369,8 @@ export function useStudySession(deckId: string | undefined) {
     handleStart,
     handleSubmitAnswer,
     handleDontKnow,
+    handleAcceptAnswer,
+    isAcceptingAnswer: acceptAnswer.isPending,
     handleFinish: finish,
     replaceCard,
     // Accepted Variants don't change what a card asks, so a card whose

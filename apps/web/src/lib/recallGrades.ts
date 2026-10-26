@@ -3,6 +3,8 @@ export type RecallGrade = 'MISSED' | 'PARTIALLY_CORRECT' | 'GOOD' | 'NAILED';
 
 /** One graded answer, as the study screen shows it. */
 export type GradedAnswer = {
+  // The Card Attempt that recorded it
+  attemptId: string;
   recallGrade: RecallGrade;
   // Right except for the accents: shown with the accented form (ADR-0002)
   accentMismatch: boolean;

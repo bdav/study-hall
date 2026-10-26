@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
+import { NEW_PROGRESS } from './progressUpdater.js';
 import {
   gradeAnswer,
   matchAnswer,
@@ -42,8 +43,9 @@ export function primaryAnswerText(card: {
 }
 
 /**
- * Grades an answer to a card, loaded with `withCanonicalAnswers`, against its
- * primary canonical answer and that answer's Accepted Variants.
+ * Grades an answer to a card, loaded with `withCanonicalAnswers`, against
+ * each of its canonical answers and their Accepted Variants. The best grade
+ * wins, the primary answer first among equals.
  */
 export function gradeCardAnswer(
   userAnswer: string,
@@ -51,11 +53,20 @@ export function gradeCardAnswer(
     canonicalAnswers: { text: string; acceptedVariants: { text: string }[] }[];
   },
 ): Grading {
-  const [primary] = card.canonicalAnswers;
-  return gradeAnswer(
-    userAnswer,
-    primary?.text ?? '',
-    primary?.acceptedVariants.map((variant) => variant.text) ?? [],
+  const gradings = card.canonicalAnswers.map((answer) =>
+    gradeAnswer(
+      userAnswer,
+      answer.text,
+      answer.acceptedVariants.map((variant) => variant.text),
+    ),
+  );
+  return (
+    gradings.find((g) => g.recallGrade === 'NAILED') ??
+    gradings.find((g) => g.recallGrade === 'GOOD') ?? {
+      recallGrade: 'MISSED',
+      accentMismatch: false,
+      matchedVariant: null,
+    }
   );
 }
 
@@ -183,15 +194,7 @@ export async function editCard(
   if (frontChanged || answerChanged) {
     await db.cardProgress.updateMany({
       where: { cardId },
-      data: {
-        lifecycleState: 'NEW',
-        masteryScore: 0,
-        dueAt: null,
-        lastReviewedAt: null,
-        lastIntervalDays: null,
-        lapseCount: 0,
-        resetAt: new Date(),
-      },
+      data: { ...NEW_PROGRESS, resetAt: new Date() },
     });
   }
 
@@ -220,10 +223,7 @@ export async function addAcceptedVariant(
       acceptedVariants: { select: { text: true } },
     },
   });
-  const accepted = [answer.text, ...answer.acceptedVariants.map((v) => v.text)];
-  if (accepted.some((existing) => matchAnswer(text, existing) === 'exact')) {
-    throw alreadyAccepted();
-  }
+  if (alreadyAccepts(answer, text)) throw alreadyAccepted();
 
   try {
     await db.acceptedVariant.create({
@@ -240,6 +240,19 @@ export async function addAcceptedVariant(
     throw error;
   }
   return cardWithAnswers(db, answer.cardId);
+}
+
+/**
+ * Whether grading can't tell `text` apart from a Canonical Answer or one of
+ * its Accepted Variants.
+ */
+export function alreadyAccepts(
+  answer: { text: string; acceptedVariants: { text: string }[] },
+  text: string,
+) {
+  return [answer.text, ...answer.acceptedVariants.map((v) => v.text)].some(
+    (accepted) => matchAnswer(text, accepted) === 'exact',
+  );
 }
 
 function alreadyAccepted() {

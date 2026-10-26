@@ -10,7 +10,7 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ## Implementation Order
 
-**Completed: 21/42 planned issues**
+**Completed: 22/42 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, then Study Sessions.
 
@@ -39,7 +39,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #44 Edit or delete a card while studying
 4. Cards and scheduling
    - [x] #4 Accepted Variants
-   - [ ] #12 "My answer was correct" during study
+   - [x] #12 "My answer was correct" during study
    - [ ] #3 Cards with multiple Canonical Answers
    - [ ] #47 Card versions: record what each attempt answered
    - [ ] #48 Card history below the card while studying
@@ -141,6 +141,7 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 - **Study**: Study Sessions (#5): a Standard queue of up to 25 due and NEW cards built at start, one graded answer per card (typed or "I don't know"), the card's progress updated by the scheduler after every answer, finish at the last card or early (remaining cards skipped), and a "nothing is due" state
 - **Editing cards while studying** (#44): the menu on the study screen's card, the one in play or one reviewed with Back, edits its front and answer or, after a confirmation, deletes it, as the Cards tab does (an edit resets progress and keeps attempts, ADR-0004). The session goes on with the edited card, or moves past a deleted one and leaves it out of the summary; deleting a card removes its Study Session item, so a session whose cards are all deleted finishes
 - **Accepted Variants** (#4): the deck owner adds and removes a card's Accepted Variants, alternative phrasings of its Canonical Answer, from the Cards tab (a tile's "Variants" button) and the study screen's Edit dialog. Each change saves straight away and never resets progress or touches attempts (ADR-0004). Changing a card's answer asks which of its variants still fit, all ticked to start (`KeepVariantsDialog`; on the Cards tab, an answer with variants saves when you leave it rather than as you type), and removes the unticked ones with the edit (`keepVariantIds` on `card.update`); a variant the new answer has become can't be kept. A CSV import or a new card with the same front that replaces an answer clears its variants, and the import preview says so. A variant that `matchAnswer` finds exactly equal to the answer or another of its variants is a duplicate (`CONFLICT`); one differing only in accents isn't, so it can accept an unaccented form as exact. Studying grades an answer against the primary Canonical Answer and its variants (`gradeCardAnswer` in `services/cards.ts`): a variant grades as the answer would, an exact match beats an Accent Mismatch, and the result names the variant that matched
+- **"My answer was correct"** (#12): after a typed answer graded MISSED, the study screen, on the card in play or one reviewed with Back, offers "My answer was correct" (`study.acceptAnswer`), unless the card was edited since. The answer becomes an Accepted Variant of the primary Canonical Answer (or one the caller names; there's no picker until cards have several, #3), unless grading already accepts it, and is graded again. The attempt becomes the final one, keeping MISSED as its `initialSuggestedGrade` with `refinementApplied` and `REFINED_VARIANT`, and the card's progress is rebuilt by replaying its counted attempts from NEW (`replayAnswers` in `progressUpdater.ts`), so it reflects the new grade instead of the miss. Grading takes the best match across a card's canonical answers (`gradeCardAnswer`)
 - **Stats**: Per-deck stats (first-try accuracy, overall accuracy, per-card avg attempts-to-correct), overall stats (aggregates + weak cards), empty/loading/error states
 - **Courses** (#14): Courses and Flashcards are peer top-level areas, with Courses as the landing page. The course form generates a Syllabus Proposal (Sonnet-class model); accepting it creates the Lessons and the Course Deck, listed in Flashcards with its course label. An unaccepted proposal can be discarded, which deletes the course (no learning history exists yet). Course creation is gated by `canUseAI`
 - **Lessons** (#18): Syllabus lessons link to their lesson page. A lesson is generated the first time it's opened, behind a loading state, and stored as an immutable Lesson Version (content blocks, examples, Exercises and a Lesson Summary); reopening shows the same version without AI. Generation builds on the summaries of generated lessons earlier in syllabus order (`assembleLessonContext`). Every exercise is answered on the page and stored as an Exercise Attempt on its Lesson Version. Short answers and fill-in-the-blanks are checked with `matchAnswer` first, with no model call; an Accent Mismatch counts as correct, and the attempt records and shows the accented expected answer as a correction (ADR-0002). Generation marks each exercise closed or open (ADR-0005): only a free-form explanation, or an open short answer that matches no expected answer, goes to a Haiku-class model (`ai/exerciseEvaluation.ts`), which returns feedback the page shows, and the attempt records the model and prompt version that judged it; a closed exercise's answer never makes a model call. A short answer is judged Correct or Incorrect. An explanation is judged against what its question asks (ADR-0006): generation gives it one to three Essential Points and optional Supplementary Points, the judge assesses each essential point as demonstrated, missing or wrong and lists misconceptions, and `evaluateExplanation` derives Correct, Partially Correct or Incorrect; the attempt stores that assessment. Explanations generated before the split keep a flat `expectedPoints` list, which the judge treats as reference only. A learner without AI access doesn't see Open Exercises, only how many are hidden. Reopening shows each exercise's latest result, and after an attempt the learner can reveal the accepted answers, or an explanation's essential and supplementary points
@@ -173,24 +174,24 @@ The full MVP from `implementation-plan.md` is implemented, plus PR 19 (Import Pr
 
 All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the month's AI spend reaches the cap, before any model call. `aiAccessProcedure` is the `canUseAI` check alone, for AI information that stays readable while AI is paused. A procedure that needs AI only sometimes, like `exercise.submitAttempt`, stays a `protectedProcedure` and calls `assertCanUseAI` and `assertAiNotPaused` before its model call. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
-| Router     | Procedure                                                                  | Type     |
-| ---------- | -------------------------------------------------------------------------- | -------- |
-| `aiUsage`  | `summary` (`aiAccessProcedure`), `report`                                  | query    |
-| `auth`     | `signup`, `login`, `logout`                                                | mutation |
-| `auth`     | `me`                                                                       | query    |
-| `deck`     | `create`, `update`, `delete`                                               | mutation |
-| `deck`     | `getById`, `list`                                                          | query    |
-| `card`     | `create`, `update`, `delete`, `importCards`, `addVariant`, `removeVariant` | mutation |
-| `card`     | `listByDeck`                                                               | query    |
-| `course`   | `create` (AI, `aiProcedure`), `acceptProposal`, `discardProposal`          | mutation |
-| `course`   | `list`, `getById`                                                          | query    |
-| `exercise` | `submitAttempt` (AI only for open answers it can't settle)                 | mutation |
-| `exercise` | `answers` (once the exercise has an attempt)                               | query    |
-| `lesson`   | `generate`, `proposeReviewCards` (AI, `aiProcedure`)                       | mutation |
-| `lesson`   | `createReviewCards`, `setCompleted`, `startOver`                           | mutation |
-| `lesson`   | `getById`                                                                  | query    |
-| `study`    | `startSession`, `submitAnswer`, `dontKnow`, `finishSession`                | mutation |
-| `stats`    | `deckStats`, `overallStats`                                                | query    |
+| Router     | Procedure                                                                   | Type     |
+| ---------- | --------------------------------------------------------------------------- | -------- |
+| `aiUsage`  | `summary` (`aiAccessProcedure`), `report`                                   | query    |
+| `auth`     | `signup`, `login`, `logout`                                                 | mutation |
+| `auth`     | `me`                                                                        | query    |
+| `deck`     | `create`, `update`, `delete`                                                | mutation |
+| `deck`     | `getById`, `list`                                                           | query    |
+| `card`     | `create`, `update`, `delete`, `importCards`, `addVariant`, `removeVariant`  | mutation |
+| `card`     | `listByDeck`                                                                | query    |
+| `course`   | `create` (AI, `aiProcedure`), `acceptProposal`, `discardProposal`           | mutation |
+| `course`   | `list`, `getById`                                                           | query    |
+| `exercise` | `submitAttempt` (AI only for open answers it can't settle)                  | mutation |
+| `exercise` | `answers` (once the exercise has an attempt)                                | query    |
+| `lesson`   | `generate`, `proposeReviewCards` (AI, `aiProcedure`)                        | mutation |
+| `lesson`   | `createReviewCards`, `setCompleted`, `startOver`                            | mutation |
+| `lesson`   | `getById`                                                                   | query    |
+| `study`    | `startSession`, `submitAnswer`, `dontKnow`, `finishSession`, `acceptAnswer` | mutation |
+| `stats`    | `deckStats`, `overallStats`                                                 | query    |
 
 ### Key Services
 

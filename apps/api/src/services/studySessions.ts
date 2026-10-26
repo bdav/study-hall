@@ -1,8 +1,15 @@
 import { type Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { type Grading } from './answerGrader.js';
-import { deckOrder, gradeCardAnswer, withCanonicalAnswers } from './cards.js';
-import { applyAnswer } from './progressUpdater.js';
+import {
+  addAcceptedVariant,
+  alreadyAccepts,
+  deckOrder,
+  gradeCardAnswer,
+  withCanonicalAnswers,
+} from './cards.js';
+import { applyAnswer, replayAnswers } from './progressUpdater.js';
+import { countsSinceReset } from './countedAttempts.js';
 
 /** Include for returning a Study Session with its items in queue order. */
 const withItems = {
@@ -169,6 +176,120 @@ export async function answerItem(
     });
 
     return { ...attempt, accentMismatch, matchedVariant };
+  });
+}
+
+/**
+ * "My answer was correct": accepts a typed answer graded MISSED. The answer
+ * becomes an Accepted Variant of the card's primary Canonical Answer, or of
+ * the one given, unless grading already accepts it, and is graded again.
+ * The attempt becomes the final one, recording the MISSED it first had
+ * (`updated-plan.md` §11.1), and the card's progress is rebuilt from its
+ * counted attempts as if it had been graded so from the start. Returns the
+ * new grade and the card.
+ */
+export async function acceptAnswer(
+  prisma: PrismaClient,
+  {
+    userId,
+    attemptId,
+    canonicalAnswerId,
+  }: { userId: string; attemptId: string; canonicalAnswerId?: string },
+) {
+  const attempt = await prisma.cardAttempt.findFirst({
+    where: {
+      id: attemptId,
+      studySession: { userId },
+      card: { deck: { userId } },
+    },
+    include: { card: { include: withCanonicalAnswers } },
+  });
+  if (!attempt) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Attempt not found' });
+  }
+  const { userAnswer } = attempt;
+  if (attempt.recallGrade !== 'MISSED' || userAnswer === null) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Only a missed typed answer can be accepted',
+    });
+  }
+  const progressKey = { userId_cardId: { userId, cardId: attempt.cardId } };
+  const { resetAt } = await prisma.cardProgress.findUniqueOrThrow({
+    where: progressKey,
+  });
+  // It answered what was effectively a different card
+  if (!countsSinceReset(attempt.createdAt, resetAt)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Answered before the card was edited',
+    });
+  }
+  const answer = canonicalAnswerId
+    ? attempt.card.canonicalAnswers.find((a) => a.id === canonicalAnswerId)
+    : attempt.card.canonicalAnswers[0];
+  if (!answer) {
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'Canonical answer not found',
+    });
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const card = alreadyAccepts(answer, userAnswer)
+      ? attempt.card
+      : await addAcceptedVariant(tx, {
+          canonicalAnswerId: answer.id,
+          text: userAnswer,
+        });
+    const grading = gradeCardAnswer(userAnswer, card);
+    // An answer with no letters or digits never matches, even itself
+    if (grading.recallGrade === 'MISSED') {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: "That answer can't be accepted",
+      });
+    }
+
+    // Finalizing only a MISSED attempt keeps two concurrent acceptances from
+    // both applying
+    const finalized = await tx.cardAttempt.updateMany({
+      where: { id: attempt.id, recallGrade: 'MISSED' },
+      data: {
+        recallGrade: grading.recallGrade,
+        initialSuggestedGrade: 'MISSED',
+        refinementApplied: true,
+        gradingMethod: 'REFINED_VARIANT',
+      },
+    });
+    if (finalized.count === 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Answer already accepted',
+      });
+    }
+
+    // The attempts that count: `countsSinceReset`, as a query
+    const counted = await tx.cardAttempt.findMany({
+      where: {
+        cardId: attempt.cardId,
+        studySession: { userId },
+        createdAt: { gte: resetAt },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { recallGrade: true, createdAt: true },
+    });
+    await tx.cardProgress.update({
+      where: progressKey,
+      data: replayAnswers(
+        counted.map((a) => ({
+          recallGrade: a.recallGrade,
+          answeredAt: a.createdAt,
+        })),
+      ),
+    });
+
+    return { ...grading, card };
   });
 }
 
