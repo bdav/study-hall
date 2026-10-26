@@ -199,7 +199,7 @@ describe('lesson.proposeReviewCards', () => {
 
     expect(proposed).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'card-proposal-v1',
+      promptVersion: 'card-proposal-v2',
       existingCards: [
         {
           id: existing!.id,
@@ -315,7 +315,7 @@ describe('lesson.createReviewCards', () => {
     return caller.lesson.createReviewCards({
       id: lessonId,
       model: 'claude-sonnet-5-5',
-      promptVersion: 'card-proposal-v1',
+      promptVersion: 'card-proposal-v2',
       cards: cards.map((card) => ({ type: 'TYPED_RECALL' as const, ...card })),
     });
   }
@@ -343,12 +343,43 @@ describe('lesson.createReviewCards', () => {
         canonicalAnswers: [{ text: 'Buongiorno', isPrimary: true }],
         sourceLessonId: lessonId,
         sourceModel: 'claude-sonnet-5-5',
-        sourcePromptVersion: 'card-proposal-v1',
+        sourcePromptVersion: 'card-proposal-v2',
       },
       {
         front: 'Translate: Good evening',
         canonicalAnswers: [{ text: 'Buonasera', isPrimary: true }],
         sourceLessonId: lessonId,
+      },
+    ]);
+  });
+
+  it('records the model and prompt version of the proposal the cards came from', async () => {
+    const { lessonId, deckId } = await openLesson();
+    const caller = createCaller();
+    ai.respondWith(proposal);
+    const proposed = await caller.lesson.proposeReviewCards({ id: lessonId });
+
+    await caller.lesson.createReviewCards({
+      id: lessonId,
+      model: proposed.model,
+      promptVersion: proposed.promptVersion,
+      cards: proposed.cards,
+    });
+
+    const cards = await caller.card.listByDeck({ deckId });
+    expect(
+      cards.map(({ sourceModel, sourcePromptVersion }) => ({
+        sourceModel,
+        sourcePromptVersion,
+      })),
+    ).toEqual([
+      {
+        sourceModel: 'claude-sonnet-5-5',
+        sourcePromptVersion: 'card-proposal-v2',
+      },
+      {
+        sourceModel: 'claude-sonnet-5-5',
+        sourcePromptVersion: 'card-proposal-v2',
       },
     ]);
   });

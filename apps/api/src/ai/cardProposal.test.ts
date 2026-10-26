@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { cardProposalOutputSchema } from './cardProposal.js';
+import {
+  CARD_PROPOSAL_SYSTEM_PROMPT,
+  CARD_WRITING_RULES,
+  cardProposalOutputSchema,
+} from './cardProposal.js';
 
 const validOutput = {
   cards: [
@@ -63,5 +67,32 @@ describe('cardProposalOutputSchema', () => {
       front: 'Hello',
       canonicalAnswer: 'Ciao',
     });
+  });
+});
+
+describe('card-writing rules', () => {
+  it('are what the card proposal prompt follows', () => {
+    expect(CARD_PROPOSAL_SYSTEM_PROMPT).toContain(CARD_WRITING_RULES);
+  });
+
+  it.each([
+    [
+      'cards test the subject, not the lesson',
+      /never the lesson's own study advice/i,
+    ],
+    ['one fact per card', /tests one fact/i],
+    [
+      'no hints at spelling or length',
+      /never hints at what the answer looks like/i,
+    ],
+    ['no contrast with a similar-looking word', /similar-looking word/i],
+    [
+      'context, not a named form, settles the form',
+      /let the context settle it/i,
+    ],
+    ['unambiguous through meaning or context', /meaning or context/i],
+    ['quantities in digits', /quantity .* in digits/i],
+  ])('say %s', (_, rule) => {
+    expect(CARD_WRITING_RULES).toMatch(rule);
   });
 });

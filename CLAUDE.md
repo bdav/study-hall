@@ -33,7 +33,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #26 Lesson Completion and Continue
    - [x] #34 Start a lesson over
    - [x] #27 Course Review section
-   - [ ] #43 Better review card proposals
+   - [x] #43 Better review card proposals
    - [ ] #44 Edit or delete a card while studying
    - [ ] #45 Revise a deck's cards with an instruction
    - [ ] #7 Full card lifecycle
