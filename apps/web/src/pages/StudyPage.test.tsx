@@ -847,7 +847,9 @@ describe('StudyPage', () => {
 
       expect(screen.getByTestId('correct-answer')).toHaveTextContent('four');
       expect(
-        screen.getByText(/your answer was graded before you edited this card/i),
+        screen.getByText(
+          "Graded before you edited this card. It doesn't count toward the card's progress.",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -945,6 +947,28 @@ describe('StudyPage', () => {
         keepVariantIds: [],
       });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('unticks a variant the new answer has become', async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.clear(screen.getByLabelText('Answer'));
+      await user.type(screen.getByLabelText('Answer'), 'Four{Enter}');
+
+      const dialog = screen.getByRole('dialog');
+      const four = within(dialog).getByRole('checkbox', { name: /four/ });
+      expect(four).not.toBeChecked();
+      expect(four).toBeDisabled();
+      expect(dialog).toHaveTextContent(/same as the new answer/i);
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2?',
+        canonicalAnswer: 'Four',
+        keepVariantIds: [],
+      });
     });
 
     it('keeps the ticked variants of a changed answer', async () => {
@@ -1058,7 +1082,9 @@ describe('StudyPage', () => {
         'What is 2+2? exactly',
       );
       expect(
-        screen.getByText(/your answer was graded before you edited this card/i),
+        screen.getByText(
+          "Graded before you edited this card. It doesn't count toward the card's progress.",
+        ),
       ).toBeInTheDocument();
     });
 

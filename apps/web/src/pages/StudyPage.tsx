@@ -114,7 +114,8 @@ function CardBack({
       )}
       {editedAfterAnswer && (
         <p className="mt-2 text-sm text-white/70">
-          Your answer was graded before you edited this card.
+          Graded before you edited this card. It doesn't count toward the card's
+          progress.
         </p>
       )}
       {onFlip && (

@@ -122,6 +122,7 @@ export async function createCards(
  * either resets the card's progress to NEW but keeps its attempts (ADR-0004).
  * A new answer keeps only the Accepted Variants in `keepVariantIds`, since
  * the old answer's variants may not fit it; none are kept when it's absent.
+ * A variant the new answer has become is dropped, as adding it would be.
  */
 export async function editCard(
   db: Db,
@@ -161,8 +162,16 @@ export async function editCard(
         where: { id: primary.id },
         data: answerData,
       });
+      const kept = primary.acceptedVariants.filter(
+        (variant) =>
+          keepVariantIds.includes(variant.id) &&
+          matchAnswer(variant.text, canonicalAnswer) !== 'exact',
+      );
       await db.acceptedVariant.deleteMany({
-        where: { canonicalAnswerId: primary.id, id: { notIn: keepVariantIds } },
+        where: {
+          canonicalAnswerId: primary.id,
+          id: { notIn: kept.map((variant) => variant.id) },
+        },
       });
     } else {
       await db.canonicalAnswer.create({

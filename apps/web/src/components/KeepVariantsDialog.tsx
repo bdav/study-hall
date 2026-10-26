@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { type AcceptedVariant } from '@/lib/cards';
+import { isSameAnswer, type AcceptedVariant } from '@/lib/cards';
 import { glassDialogClassName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +15,8 @@ import {
  * Asks which Accepted Variants still fit a card's changed answer, since a
  * rewrite can leave the old answer's variants accepting wrong answers. All
  * start ticked, so a typo fix keeps them in one click; the unticked ones are
- * removed with the edit.
+ * removed with the edit. A variant the new answer has become can't be kept,
+ * as the API drops it.
  */
 export function KeepVariantsDialog({
   oldAnswer,
@@ -34,8 +35,15 @@ export function KeepVariantsDialog({
   onSave: (keepVariantIds: string[]) => void;
   onCancel: () => void;
 }) {
+  const isNewAnswer = (variant: AcceptedVariant) =>
+    isSameAnswer(variant.text, newAnswer);
   const [kept, setKept] = useState<ReadonlySet<string>>(
-    () => new Set(variants.map((variant) => variant.id)),
+    () =>
+      new Set(
+        variants
+          .filter((variant) => !isNewAnswer(variant))
+          .map((variant) => variant.id),
+      ),
   );
 
   function toggle(id: string, keep: boolean) {
@@ -72,10 +80,16 @@ export function KeepVariantsDialog({
                   <input
                     type="checkbox"
                     checked={kept.has(variant.id)}
+                    disabled={isNewAnswer(variant)}
                     onChange={(e) => toggle(variant.id, e.target.checked)}
                     className="size-4 accent-white"
                   />
                   {variant.text}
+                  {isNewAnswer(variant) && (
+                    <span className="text-xs text-white/50">
+                      same as the new answer
+                    </span>
+                  )}
                 </label>
               </li>
             ))}

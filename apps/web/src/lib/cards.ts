@@ -34,3 +34,19 @@ export function toFlashcard(card: {
     acceptedVariants: primary?.acceptedVariants ?? [],
   };
 }
+
+/**
+ * Whether two answers grade as the same, the way `matchAnswer` on the API
+ * finds an exact match: case, punctuation and extra whitespace never matter,
+ * accents and the spaces between words do. The API has the final say.
+ */
+export function isSameAnswer(a: string, b: string) {
+  const form = (answer: string) =>
+    answer
+      .normalize('NFC')
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  return form(a) !== '' && form(a) === form(b);
+}

@@ -1071,6 +1071,18 @@ describe('cardRouter', () => {
         expect(variantTexts(updated)).toEqual(['colour (UK)']);
       });
 
+      it('drops a variant the new answer has become, even one marked to keep', async () => {
+        const { card, color, uk } = await cardWithVariants();
+
+        const updated = await createCaller().card.update({
+          cardId: card.id,
+          canonicalAnswer: 'Color',
+          keepVariantIds: [color.id, uk.id],
+        });
+
+        expect(variantTexts(updated)).toEqual(['colour (UK)']);
+      });
+
       it('clears the variants when the edit names none to keep', async () => {
         const { card } = await cardWithVariants();
 
