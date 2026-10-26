@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard } from '@/lib/cards';
+import { answersWithPrimary, splitAnswers, toFlashcard } from '@/lib/cards';
 import { parseCsv } from '@/lib/csvParser';
 import { diffCsvRows } from '@/lib/csvDiff';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
@@ -438,7 +438,7 @@ export default function DeckCardsPage() {
                             createCard.mutate({
                               deckId,
                               front: newFront.trim(),
-                              canonicalAnswer: newBack.trim(),
+                              canonicalAnswers: splitAnswers(newBack),
                             });
                           }}
                         >
@@ -597,7 +597,7 @@ export default function DeckCardsPage() {
                     updateCard.mutate({
                       cardId: card.id,
                       front,
-                      canonicalAnswer: back,
+                      canonicalAnswers: answersWithPrimary(card, back),
                       ...(keepVariantIds && { keepVariantIds }),
                     })
                   }

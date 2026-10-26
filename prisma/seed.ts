@@ -64,31 +64,34 @@ async function main() {
     'World Capitals',
     'Test your knowledge of world capitals',
     [
-      { front: 'What is the capital of France?', canonicalAnswer: 'Paris' },
-      { front: 'What is the capital of Japan?', canonicalAnswer: 'Tokyo' },
+      { front: 'What is the capital of France?', canonicalAnswers: ['Paris'] },
+      { front: 'What is the capital of Japan?', canonicalAnswers: ['Tokyo'] },
       {
         front: 'What is the capital of Brazil?',
-        canonicalAnswer: 'Brasília',
+        canonicalAnswers: ['Brasília'],
       },
       {
         front: 'What is the capital of Australia?',
-        canonicalAnswer: 'Canberra',
+        canonicalAnswers: ['Canberra'],
       },
-      { front: 'What is the capital of Canada?', canonicalAnswer: 'Ottawa' },
-      { front: 'What is the capital of Egypt?', canonicalAnswer: 'Cairo' },
+      { front: 'What is the capital of Canada?', canonicalAnswers: ['Ottawa'] },
+      { front: 'What is the capital of Egypt?', canonicalAnswers: ['Cairo'] },
       {
         front: 'What is the capital of South Korea?',
-        canonicalAnswer: 'Seoul',
+        canonicalAnswers: ['Seoul'],
       },
       {
         front: 'What is the capital of Argentina?',
-        canonicalAnswer: 'Buenos Aires',
+        canonicalAnswers: ['Buenos Aires'],
       },
       {
         front: 'What is the capital of South Africa (executive)?',
-        canonicalAnswer: 'Pretoria',
+        canonicalAnswers: ['Pretoria'],
       },
-      { front: 'What is the capital of Thailand?', canonicalAnswer: 'Bangkok' },
+      {
+        front: 'What is the capital of Thailand?',
+        canonicalAnswers: ['Bangkok'],
+      },
     ],
   );
 
@@ -99,13 +102,13 @@ async function main() {
     'Basic Math',
     'Arithmetic and simple math facts',
     [
-      { front: '7 × 8', canonicalAnswer: '56' },
-      { front: '144 ÷ 12', canonicalAnswer: '12' },
-      { front: '√81', canonicalAnswer: '9' },
-      { front: '15² (15 squared)', canonicalAnswer: '225' },
-      { front: '2⁸ (2 to the 8th power)', canonicalAnswer: '256' },
-      { front: 'What is 17 + 38?', canonicalAnswer: '55' },
-      { front: 'What is 1000 - 387?', canonicalAnswer: '613' },
+      { front: '7 × 8', canonicalAnswers: ['56'] },
+      { front: '144 ÷ 12', canonicalAnswers: ['12'] },
+      { front: '√81', canonicalAnswers: ['9'] },
+      { front: '15² (15 squared)', canonicalAnswers: ['225'] },
+      { front: '2⁸ (2 to the 8th power)', canonicalAnswers: ['256'] },
+      { front: 'What is 17 + 38?', canonicalAnswers: ['55'] },
+      { front: 'What is 1000 - 387?', canonicalAnswers: ['613'] },
     ],
   );
 
@@ -116,16 +119,16 @@ async function main() {
     'Spanish Vocabulary',
     'Common Spanish words and phrases',
     [
-      { front: 'Hello', canonicalAnswer: 'Hola' },
-      { front: 'Thank you', canonicalAnswer: 'Gracias' },
-      { front: 'Goodbye', canonicalAnswer: 'Adiós' },
-      { front: 'Please', canonicalAnswer: 'Por favor' },
-      { front: 'How are you?', canonicalAnswer: '¿Cómo estás?' },
-      { front: 'Good morning', canonicalAnswer: 'Buenos días' },
-      { front: "I don't understand", canonicalAnswer: 'No entiendo' },
+      { front: 'Hello', canonicalAnswers: ['Hola'] },
+      { front: 'Thank you', canonicalAnswers: ['Gracias'] },
+      { front: 'Goodbye', canonicalAnswers: ['Adiós'] },
+      { front: 'Please', canonicalAnswers: ['Por favor'] },
+      { front: 'How are you?', canonicalAnswers: ['¿Cómo estás?'] },
+      { front: 'Good morning', canonicalAnswers: ['Buenos días'] },
+      { front: "I don't understand", canonicalAnswers: ['No entiendo'] },
       {
         front: 'Where is the bathroom?',
-        canonicalAnswer: '¿Dónde está el baño?',
+        canonicalAnswers: ['¿Dónde está el baño?'],
       },
     ],
   );
@@ -139,24 +142,25 @@ async function main() {
     [
       {
         front: 'What does HTTP stand for?',
-        canonicalAnswer: 'HyperText Transfer Protocol',
+        canonicalAnswers: ['HyperText Transfer Protocol'],
       },
       {
         front: 'What is the time complexity of binary search?',
-        canonicalAnswer: 'O(log n)',
+        canonicalAnswers: ['O(log n)'],
       },
       {
         front: 'What does SQL stand for?',
-        canonicalAnswer: 'Structured Query Language',
+        canonicalAnswers: ['Structured Query Language'],
       },
       {
         front: 'What is a closure?',
-        canonicalAnswer:
+        canonicalAnswers: [
           'A function that captures variables from its enclosing scope',
+        ],
       },
       {
         front: 'What does REST stand for?',
-        canonicalAnswer: 'Representational State Transfer',
+        canonicalAnswers: ['Representational State Transfer'],
       },
     ],
   );

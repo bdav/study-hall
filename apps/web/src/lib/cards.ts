@@ -1,18 +1,30 @@
 /** An alternative phrasing accepted as equivalent to a Canonical Answer. */
 export type AcceptedVariant = { id: string; text: string };
 
+/** One of a card's Canonical Answers, with its Accepted Variants. */
+export type CardAnswer = {
+  id: string;
+  text: string;
+  acceptedVariants: AcceptedVariant[];
+};
+
 /**
- * A card as the flashcard UI shows it, with its primary canonical answer and
- * that answer's Accepted Variants.
+ * A card as the flashcard UI shows it: its Canonical Answers, primary
+ * first, and, for the places that show one answer, the primary's text, id
+ * and Accepted Variants.
  */
 export type Flashcard = {
   id: string;
   front: string;
+  answers: CardAnswer[];
   canonicalAnswer: string;
   // null only for a card with no canonical answer
   canonicalAnswerId: string | null;
   acceptedVariants: AcceptedVariant[];
 };
+
+/** One of a card's Canonical Answers in an edit, as `card.update` takes it. */
+export type AnswerEdit = { id?: string; text: string };
 
 export function toFlashcard(card: {
   id: string;
@@ -26,9 +38,13 @@ export function toFlashcard(card: {
 }): Flashcard {
   const primary =
     card.canonicalAnswers.find((a) => a.isPrimary) ?? card.canonicalAnswers[0];
+  const others = card.canonicalAnswers.filter((a) => a !== primary);
   return {
     id: card.id,
     front: card.front,
+    answers: (primary ? [primary, ...others] : others).map(
+      ({ id, text, acceptedVariants }) => ({ id, text, acceptedVariants }),
+    ),
     canonicalAnswer: primary?.text ?? '',
     canonicalAnswerId: primary?.id ?? null,
     acceptedVariants: primary?.acceptedVariants ?? [],
@@ -49,4 +65,40 @@ export function isSameAnswer(a: string, b: string) {
       .trim()
       .toLowerCase();
   return form(a) !== '' && form(a) === form(b);
+}
+
+/**
+ * The answers typed into one answer field: "a || b" is two, as in a CSV's
+ * answer column. Each is trimmed; empty ones and repeats are dropped.
+ */
+export function splitAnswers(text: string): string[] {
+  const answers: string[] = [];
+  for (const part of text.split('||').map((p) => p.trim())) {
+    if (part && !answers.some((answer) => isSameAnswer(answer, part))) {
+      answers.push(part);
+    }
+  }
+  return answers;
+}
+
+/**
+ * A card's answers, as `card.update` takes them, with the primary retyped.
+ * Typing "a || b" makes a the primary and b another answer, unless the
+ * card already has it.
+ */
+export function answersWithPrimary(card: Flashcard, text: string) {
+  const [primary, ...others] = card.answers;
+  const [first = text.trim(), ...added] = splitAnswers(text);
+  const edits: AnswerEdit[] = [{ id: primary?.id, text: first }];
+  for (const answer of added) {
+    if (!others.some((other) => isSameAnswer(other.text, answer))) {
+      edits.push({ text: answer });
+    }
+  }
+  return [
+    ...edits,
+    ...others
+      .filter((other) => !isSameAnswer(other.text, first))
+      .map(({ id, text }) => ({ id, text })),
+  ];
 }

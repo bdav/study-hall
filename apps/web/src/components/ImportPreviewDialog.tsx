@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
+import { splitAnswers } from '@/lib/cards';
 import { glassInputClassName } from '@/lib/utils';
 
 function TruncatedCell({
@@ -68,8 +69,8 @@ interface ImportPreviewDialogProps {
   open: boolean;
   onClose: () => void;
   onImport: (data: {
-    new: { front: string; canonicalAnswer: string }[];
-    update: { cardId: string; canonicalAnswer: string }[];
+    new: { front: string; canonicalAnswers: string[] }[];
+    update: { cardId: string; canonicalAnswers: string[] }[];
   }) => void;
   isPending: boolean;
   initialNewCards: NewCard[];
@@ -93,10 +94,13 @@ export function ImportPreviewDialog({
 
   function handleImport() {
     onImport({
-      new: newCards.map((c) => ({ front: c.front, canonicalAnswer: c.back })),
+      new: newCards.map((c) => ({
+        front: c.front,
+        canonicalAnswers: splitAnswers(c.back),
+      })),
       update: updateCards.map((c) => ({
         cardId: c.cardId,
-        canonicalAnswer: c.newBack,
+        canonicalAnswers: splitAnswers(c.newBack),
       })),
     });
   }

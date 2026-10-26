@@ -6,18 +6,19 @@ import {
   createCards,
   deckOrder,
   editCard,
-  primaryAnswerText,
   removeAcceptedVariant,
   withCanonicalAnswers,
 } from '../services/cards.js';
 
 const front = z.string().trim().min(1);
-const canonicalAnswer = z.string().trim().min(1);
+const answerText = z.string().trim().min(1);
+// A card's Canonical Answers, primary first
+const canonicalAnswers = z.array(answerText).min(1);
 const variantText = z.string().trim().min(1);
 
 export const cardRouter = router({
   create: protectedProcedure
-    .input(z.object({ deckId: z.string(), front, canonicalAnswer }))
+    .input(z.object({ deckId: z.string(), front, canonicalAnswers }))
     .mutation(async ({ ctx, input }) => {
       const deck = await ctx.prisma.deck.findUnique({
         where: { id: input.deckId, userId: ctx.userId },
@@ -40,13 +41,17 @@ export const cardRouter = router({
 
       return ctx.prisma.$transaction(async (tx) => {
         if (duplicate) {
-          const answer = primaryAnswerText(duplicate);
-          if (answer.toLowerCase() === input.canonicalAnswer.toLowerCase()) {
+          const sameAnswers = (answers: string[]) =>
+            answers.map((answer) => answer.toLowerCase()).join('\n');
+          if (
+            sameAnswers(duplicate.canonicalAnswers.map((a) => a.text)) ===
+            sameAnswers(input.canonicalAnswers)
+          ) {
             return duplicate;
           }
           return editCard(tx, {
             cardId: duplicate.id,
-            canonicalAnswer: input.canonicalAnswer,
+            canonicalAnswers: input.canonicalAnswers.map((text) => ({ text })),
           });
         }
 
@@ -65,15 +70,19 @@ export const cardRouter = router({
         .object({
           cardId: z.string(),
           front: front.optional(),
-          canonicalAnswer: canonicalAnswer.optional(),
+          // In full, primary first; an existing answer by its id
+          canonicalAnswers: z
+            .array(z.object({ id: z.string().optional(), text: answerText }))
+            .min(1)
+            .optional(),
           // The Accepted Variants a new answer keeps; none when absent
           keepVariantIds: z.array(z.string()).optional(),
         })
         .refine(
-          (d) => d.front !== undefined || d.canonicalAnswer !== undefined,
+          (d) => d.front !== undefined || d.canonicalAnswers !== undefined,
           {
             message:
-              'At least one of front or canonical answer must be provided',
+              'At least one of front or canonical answers must be provided',
           },
         ),
     )
@@ -140,8 +149,8 @@ export const cardRouter = router({
     .input(
       z.object({
         deckId: z.string(),
-        new: z.array(z.object({ front, canonicalAnswer })),
-        update: z.array(z.object({ cardId: z.string(), canonicalAnswer })),
+        new: z.array(z.object({ front, canonicalAnswers })),
+        update: z.array(z.object({ cardId: z.string(), canonicalAnswers })),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -185,7 +194,10 @@ export const cardRouter = router({
         });
 
         for (const card of input.update) {
-          await editCard(tx, card);
+          await editCard(tx, {
+            cardId: card.cardId,
+            canonicalAnswers: card.canonicalAnswers.map((text) => ({ text })),
+          });
         }
 
         return {

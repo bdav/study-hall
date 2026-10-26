@@ -1,6 +1,6 @@
 import { type Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
-import { type Grading } from './answerGrader.js';
+import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
   addAcceptedVariant,
   alreadyAccepts,
@@ -162,10 +162,13 @@ export async function answerItem(
     });
   }
 
-  const { recallGrade, accentMismatch, matchedVariant }: Grading =
-    userAnswer === null
-      ? { recallGrade: 'MISSED', accentMismatch: false, matchedVariant: null }
-      : gradeCardAnswer(userAnswer, item.card);
+  const {
+    recallGrade,
+    accentMismatch,
+    matchedAnswer,
+    matchedVariant,
+  }: Grading =
+    userAnswer === null ? NO_MATCH : gradeCardAnswer(userAnswer, item.card);
   const progressKey = { userId_cardId: { userId, cardId: item.cardId } };
 
   return prisma.$transaction(async (tx) => {
@@ -201,7 +204,7 @@ export async function answerItem(
       data: applyAnswer(progress, recallGrade, attempt.createdAt),
     });
 
-    return { ...attempt, accentMismatch, matchedVariant };
+    return { ...attempt, accentMismatch, matchedAnswer, matchedVariant };
   });
 }
 

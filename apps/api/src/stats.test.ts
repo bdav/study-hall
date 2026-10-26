@@ -34,9 +34,9 @@ beforeAll(async () => {
     userId: user.id,
     name: 'Stats Deck 1',
     cards: [
-      { front: 'Capital of France', canonicalAnswer: 'Paris' },
-      { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
-      { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+      { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+      { front: 'Capital of Japan', canonicalAnswers: ['Tokyo'] },
+      { front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] },
     ],
   });
   deckId = deck.id;
@@ -46,8 +46,8 @@ beforeAll(async () => {
     userId: user.id,
     name: 'Stats Deck 2',
     cards: [
-      { front: '2+2', canonicalAnswer: '4' },
-      { front: '3+3', canonicalAnswer: '6' },
+      { front: '2+2', canonicalAnswers: ['4'] },
+      { front: '3+3', canonicalAnswers: ['6'] },
     ],
   });
   deck2Id = deck2.id;
@@ -198,8 +198,8 @@ describe('statsRouter', () => {
         userId,
         name: 'Edited Deck',
         cards: [
-          { front: 'Capital of Australia', canonicalAnswer: 'Sydney' },
-          { front: 'Capital of Canada', canonicalAnswer: 'Ottawa' },
+          { front: 'Capital of Australia', canonicalAnswers: ['Sydney'] },
+          { front: 'Capital of Canada', canonicalAnswers: ['Ottawa'] },
         ],
       });
       const [australia, canada] = editedDeck.cards;
@@ -218,7 +218,7 @@ describe('statsRouter', () => {
 
       await caller.card.update({
         cardId: australia.id,
-        canonicalAnswer: 'Canberra',
+        canonicalAnswers: [{ text: 'Canberra' }],
       });
 
       // After the edit: Australia right first time
@@ -246,7 +246,7 @@ describe('statsRouter', () => {
       const emptyDeck = await createDeckWithCards(prisma, {
         userId,
         name: 'Empty Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -334,7 +334,7 @@ describe('statsRouter', () => {
       const editedDeck = await createDeckWithCards(prisma, {
         userId,
         name: 'Weak Deck',
-        cards: [{ front: '5+5', canonicalAnswer: '11' }],
+        cards: [{ front: '5+5', canonicalAnswers: ['11'] }],
       });
       const cardId = editedDeck.cards[0].id;
       const caller = createCaller();
@@ -351,7 +351,7 @@ describe('statsRouter', () => {
       const before = await caller.stats.overallStats();
       expect(before.weakCards.map((c) => c.cardId)).toContain(cardId);
 
-      await caller.card.update({ cardId, canonicalAnswer: '10' });
+      await caller.card.update({ cardId, canonicalAnswers: [{ text: '10' }] });
 
       const after = await caller.stats.overallStats();
       expect(after.totalAttempts).toBe(0);

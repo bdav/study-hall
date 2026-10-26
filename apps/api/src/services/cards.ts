@@ -4,6 +4,7 @@ import { NEW_PROGRESS } from './progressUpdater.js';
 import {
   gradeAnswer,
   matchAnswer,
+  NO_MATCH,
   normalizeAnswer,
   type Grading,
 } from './answerGrader.js';
@@ -25,7 +26,7 @@ export const withCanonicalAnswers = {
         orderBy: { createdAt: 'asc' },
       },
     },
-    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }, { createdAt: 'asc' }],
   },
 } satisfies Prisma.CardInclude;
 
@@ -62,17 +63,48 @@ export function gradeCardAnswer(
   );
   return (
     gradings.find((g) => g.recallGrade === 'NAILED') ??
-    gradings.find((g) => g.recallGrade === 'GOOD') ?? {
-      recallGrade: 'MISSED',
-      accentMismatch: false,
-      matchedVariant: null,
-    }
+    gradings.find((g) => g.recallGrade === 'GOOD') ??
+    NO_MATCH
   );
 }
 
+/** A card to create: its front and its Canonical Answers, primary first. */
 export interface NewCard {
   front: string;
-  canonicalAnswer: string;
+  canonicalAnswers: string[];
+}
+
+/**
+ * One of a card's Canonical Answers in an edit: an existing answer, by id,
+ * possibly retyped, or a new one. An answer without an id that has an
+ * existing answer's exact text is that answer, so its variants stay.
+ */
+export interface AnswerEdit {
+  id?: string;
+  text: string;
+}
+
+/** Refuses answers that grading couldn't tell apart, so each is distinct. */
+function assertDistinctAnswers(texts: string[]) {
+  const duplicate = texts.some((text, i) =>
+    texts.slice(0, i).some((earlier) => matchAnswer(text, earlier) === 'exact'),
+  );
+  if (duplicate) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'A card can’t have the same answer twice',
+    });
+  }
+}
+
+/** The data for a card's Canonical Answer at a place in its list. */
+function answerData(text: string, position: number) {
+  return {
+    text,
+    normalizedText: normalizeAnswer(text),
+    isPrimary: position === 0,
+    position,
+  };
 }
 
 /** Where cards made from a lesson came from: its Source Lesson and proposal. */
@@ -83,8 +115,9 @@ export interface CardSource {
 }
 
 /**
- * Creates cards at the end of a deck, each with one primary canonical answer
- * and card progress in NEW state for the deck owner.
+ * Creates cards at the end of a deck, in the order given, each with its
+ * Canonical Answers, the first primary, and card progress in NEW state for
+ * the deck owner.
  */
 export async function createCards(
   db: Db,
@@ -101,6 +134,8 @@ export async function createCards(
   });
   const firstPosition = (last._max.position ?? -1) + 1;
 
+  for (const card of cards) assertDistinctAnswers(card.canonicalAnswers);
+
   const created = [];
   for (const [i, card] of cards.entries()) {
     created.push(
@@ -113,11 +148,7 @@ export async function createCards(
           sourceModel: source?.model,
           sourcePromptVersion: source?.promptVersion,
           canonicalAnswers: {
-            create: {
-              text: card.canonicalAnswer,
-              normalizedText: normalizeAnswer(card.canonicalAnswer),
-              isPrimary: true,
-            },
+            create: card.canonicalAnswers.map(answerData),
           },
           progress: { create: { userId, deckId } },
         },
@@ -129,23 +160,26 @@ export async function createCards(
 }
 
 /**
- * Edits a card's front and/or its primary canonical answer. A change to
- * either resets the card's progress to NEW but keeps its attempts (ADR-0004).
- * A new answer keeps only the Accepted Variants in `keepVariantIds`, since
- * the old answer's variants may not fit it; none are kept when it's absent.
- * A variant the new answer has become is dropped, as adding it would be.
+ * Edits a card's front and/or its Canonical Answers, given in full, the
+ * first primary. A change to the front or to the answers' texts resets the
+ * card's progress to NEW but keeps its attempts (ADR-0004); choosing another
+ * primary alone doesn't, as every answer is equally correct. A retyped
+ * answer keeps only the Accepted Variants in `keepVariantIds`, since the old
+ * text's variants may not fit it; none are kept when it's absent. A removed
+ * answer's variants go with it, and a variant that is now one of the card's
+ * answers is dropped, as adding it would be.
  */
 export async function editCard(
   db: Db,
   {
     cardId,
     front,
-    canonicalAnswer,
+    canonicalAnswers,
     keepVariantIds = [],
   }: {
     cardId: string;
     front?: string;
-    canonicalAnswer?: string;
+    canonicalAnswers?: AnswerEdit[];
     keepVariantIds?: string[];
   },
 ) {
@@ -153,55 +187,108 @@ export async function editCard(
     where: { id: cardId },
     include: withCanonicalAnswers,
   });
-  const primary = card.canonicalAnswers[0];
 
   const frontChanged = front !== undefined && front !== card.front;
-  const answerChanged =
-    canonicalAnswer !== undefined && canonicalAnswer !== primary?.text;
-
   if (frontChanged) {
     await db.card.update({ where: { id: cardId }, data: { front } });
   }
 
-  if (answerChanged) {
-    const answerData = {
-      text: canonicalAnswer,
-      normalizedText: normalizeAnswer(canonicalAnswer),
-    };
-    if (primary) {
-      await db.canonicalAnswer.update({
-        where: { id: primary.id },
-        data: answerData,
-      });
-      const kept = primary.acceptedVariants.filter(
-        (variant) =>
-          keepVariantIds.includes(variant.id) &&
-          matchAnswer(variant.text, canonicalAnswer) !== 'exact',
-      );
-      await db.acceptedVariant.deleteMany({
-        where: {
-          canonicalAnswerId: primary.id,
-          id: { notIn: kept.map((variant) => variant.id) },
-        },
-      });
-    } else {
-      await db.canonicalAnswer.create({
-        data: { cardId, isPrimary: true, ...answerData },
-      });
-    }
-  }
+  const answersChanged =
+    canonicalAnswers !== undefined &&
+    (await replaceAnswers(db, {
+      cardId,
+      existing: card.canonicalAnswers,
+      answers: canonicalAnswers,
+      keepVariantIds,
+    }));
 
-  if (frontChanged || answerChanged) {
+  if (frontChanged || answersChanged) {
     await db.cardProgress.updateMany({
       where: { cardId },
       data: { ...NEW_PROGRESS, resetAt: new Date() },
     });
   }
 
-  return db.card.findUniqueOrThrow({
-    where: { id: cardId },
-    include: withCanonicalAnswers,
+  return cardWithAnswers(db, cardId);
+}
+
+/**
+ * Makes a card's Canonical Answers the given ones, in order. Returns whether
+ * their texts changed, not just their order.
+ */
+async function replaceAnswers(
+  db: Db,
+  {
+    cardId,
+    existing,
+    answers,
+    keepVariantIds,
+  }: {
+    cardId: string;
+    existing: {
+      id: string;
+      text: string;
+      acceptedVariants: { id: string; text: string }[];
+    }[];
+    answers: AnswerEdit[];
+    keepVariantIds: string[];
+  },
+) {
+  const texts = answers.map((answer) => answer.text);
+  assertDistinctAnswers(texts);
+
+  // Each answer's existing row: by id, else by its unchanged text
+  const claimed = new Set<string>();
+  const rows = answers.map((answer) => {
+    const row = answer.id
+      ? existing.find((r) => r.id === answer.id)
+      : existing.find((r) => !claimed.has(r.id) && r.text === answer.text);
+    if (answer.id && !row) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Canonical answer not found',
+      });
+    }
+    if (row) claimed.add(row.id);
+    return row;
   });
+
+  await db.canonicalAnswer.deleteMany({
+    where: { cardId, id: { notIn: [...claimed] } },
+  });
+  for (const [position, answer] of answers.entries()) {
+    const row = rows[position];
+    if (!row) {
+      await db.canonicalAnswer.create({
+        data: { cardId, ...answerData(answer.text, position) },
+      });
+      continue;
+    }
+    await db.canonicalAnswer.update({
+      where: { id: row.id },
+      data: answerData(answer.text, position),
+    });
+    if (row.text !== answer.text) {
+      await db.acceptedVariant.deleteMany({
+        where: { canonicalAnswerId: row.id, id: { notIn: keepVariantIds } },
+      });
+    }
+  }
+
+  // A variant that is now one of the card's answers adds nothing
+  const variants = await db.acceptedVariant.findMany({
+    where: { canonicalAnswer: { cardId } },
+    select: { id: true, text: true },
+  });
+  const nowAnswers = variants.filter((variant) =>
+    texts.some((text) => matchAnswer(variant.text, text) === 'exact'),
+  );
+  await db.acceptedVariant.deleteMany({
+    where: { id: { in: nowAnswers.map((variant) => variant.id) } },
+  });
+
+  const sorted = (list: string[]) => [...list].sort().join('\n');
+  return sorted(texts) !== sorted(existing.map((row) => row.text));
 }
 
 /**

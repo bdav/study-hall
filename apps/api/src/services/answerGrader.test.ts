@@ -111,6 +111,7 @@ describe('gradeAnswer', () => {
       recallGrade: 'GOOD',
       accentMismatch: true,
       matchedVariant: null,
+      matchedAnswer: 'Brasília',
     });
   });
 
@@ -140,6 +141,7 @@ describe('gradeAnswer', () => {
         recallGrade: 'NAILED',
         accentMismatch: false,
         matchedVariant: 'color',
+        matchedAnswer: 'colour',
       });
     });
 
@@ -148,6 +150,7 @@ describe('gradeAnswer', () => {
         recallGrade: 'GOOD',
         accentMismatch: true,
         matchedVariant: 'São Paulo',
+        matchedAnswer: 'São Paulo, SP',
       });
     });
 
@@ -156,6 +159,7 @@ describe('gradeAnswer', () => {
         recallGrade: 'NAILED',
         accentMismatch: false,
         matchedVariant: 'Brasilia',
+        matchedAnswer: 'Brasília',
       });
     });
 
@@ -164,6 +168,7 @@ describe('gradeAnswer', () => {
         recallGrade: 'NAILED',
         accentMismatch: false,
         matchedVariant: null,
+        matchedAnswer: 'colour',
       });
     });
 
@@ -178,6 +183,7 @@ describe('gradeAnswer', () => {
         recallGrade: 'MISSED',
         accentMismatch: false,
         matchedVariant: null,
+        matchedAnswer: null,
       });
     });
   });

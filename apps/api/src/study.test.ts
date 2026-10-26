@@ -30,9 +30,9 @@ beforeAll(async () => {
     userId: user.id,
     name: 'Test Study Deck',
     cards: [
-      { front: 'Capital of France', canonicalAnswer: 'Paris' },
-      { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
-      { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+      { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+      { front: 'Capital of Japan', canonicalAnswers: ['Tokyo'] },
+      { front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] },
     ],
   });
   deckId = deck.id;
@@ -90,9 +90,9 @@ function deckWith(cards: NewCard[]) {
 }
 
 const capitals: NewCard[] = [
-  { front: 'Capital of France', canonicalAnswer: 'Paris' },
-  { front: 'Capital of Japan', canonicalAnswer: 'Tokyo' },
-  { front: 'Capital of Brazil', canonicalAnswer: 'Brasília' },
+  { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+  { front: 'Capital of Japan', canonicalAnswers: ['Tokyo'] },
+  { front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] },
 ];
 
 describe('studyRouter', () => {
@@ -119,10 +119,10 @@ describe('studyRouter', () => {
 
     it('puts due cards first, earliest due first, and leaves out cards not yet due', async () => {
       const deck = await deckWith([
-        { front: 'Due an hour ago', canonicalAnswer: 'A' },
-        { front: 'Due tomorrow', canonicalAnswer: 'B' },
-        { front: 'New', canonicalAnswer: 'C' },
-        { front: 'Due two hours ago', canonicalAnswer: 'D' },
+        { front: 'Due an hour ago', canonicalAnswers: ['A'] },
+        { front: 'Due tomorrow', canonicalAnswers: ['B'] },
+        { front: 'New', canonicalAnswers: ['C'] },
+        { front: 'Due two hours ago', canonicalAnswers: ['D'] },
       ]);
       const hour = 60 * 60 * 1000;
       await scheduleCard(deck.cards[0].id, new Date(Date.now() - hour));
@@ -144,7 +144,7 @@ describe('studyRouter', () => {
       const deck = await deckWith(
         Array.from({ length: 30 }, (_, i) => ({
           front: `Q${i}`,
-          canonicalAnswer: `A${i}`,
+          canonicalAnswers: [`A${i}`],
         })),
       );
       const lastCard = deck.cards[29];
@@ -160,7 +160,7 @@ describe('studyRouter', () => {
     });
 
     it('starts no session when nothing is due and nothing is NEW', async () => {
-      const deck = await deckWith([{ front: 'Q', canonicalAnswer: 'A' }]);
+      const deck = await deckWith([{ front: 'Q', canonicalAnswers: ['A'] }]);
       await scheduleCard(deck.cards[0].id, new Date(Date.now() + 60 * 1000));
 
       const session = await createCaller().study.startSession({
@@ -174,9 +174,9 @@ describe('studyRouter', () => {
   describe('queuePreview', () => {
     it('counts the cards a session would hold: due ones, then NEW ones', async () => {
       const deck = await deckWith([
-        { front: 'Due', canonicalAnswer: 'A' },
-        { front: 'Later', canonicalAnswer: 'B' },
-        { front: 'New', canonicalAnswer: 'C' },
+        { front: 'Due', canonicalAnswers: ['A'] },
+        { front: 'Later', canonicalAnswers: ['B'] },
+        { front: 'New', canonicalAnswers: ['C'] },
       ]);
       const later = new Date(Date.now() + 60 * 60 * 1000);
       await scheduleCard(deck.cards[0].id, new Date(Date.now() - 60 * 1000));
@@ -198,7 +198,7 @@ describe('studyRouter', () => {
       const deck = await deckWith(
         Array.from({ length: 30 }, (_, i) => ({
           front: `Q${i}`,
-          canonicalAnswer: `A${i}`,
+          canonicalAnswers: [`A${i}`],
         })),
       );
 
@@ -211,8 +211,8 @@ describe('studyRouter', () => {
 
     it('says when the next card is due when nothing is due now', async () => {
       const deck = await deckWith([
-        { front: 'Q1', canonicalAnswer: 'A1' },
-        { front: 'Q2', canonicalAnswer: 'A2' },
+        { front: 'Q1', canonicalAnswers: ['A1'] },
+        { front: 'Q2', canonicalAnswers: ['A2'] },
       ]);
       const soon = new Date(Date.now() + 60 * 60 * 1000);
       await scheduleCard(deck.cards[0].id, soon);
@@ -295,7 +295,7 @@ describe('studyRouter', () => {
 
     it('accepts an answer matching an Accepted Variant as it would the Canonical Answer, and says the variant matched', async () => {
       const { items } = await startedSession([
-        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+        { front: 'Largest US city', canonicalAnswers: ['New York City'] },
       ]);
       const [item] = items;
       const caller = createCaller();
@@ -317,6 +317,27 @@ describe('studyRouter', () => {
       });
       // Scheduled as NAILED: mastery 2
       expect((await progressOf(item.cardId)).masteryScore).toBe(2);
+    });
+
+    it("accepts any of the card's Canonical Answers and says which matched", async () => {
+      const { items } = await startedSession([
+        { front: 'A prime between 10 and 20', canonicalAnswers: ['11'] },
+      ]);
+      const [item] = items;
+      await prisma.canonicalAnswer.create({
+        data: { cardId: item.cardId, text: '13' },
+      });
+
+      const attempt = await createCaller().study.submitAnswer({
+        itemId: item.id,
+        userAnswer: '13',
+      });
+
+      expect(attempt).toMatchObject({
+        recallGrade: 'NAILED',
+        matchedAnswer: '13',
+        matchedVariant: null,
+      });
     });
 
     it("updates the card's progress: NEW to LEARNING, mastery and next due date", async () => {
@@ -419,7 +440,7 @@ describe('studyRouter', () => {
     /** A session on one card whose answer was just graded MISSED. */
     async function missedAnswer(userAnswer = 'NYC') {
       const { items } = await startedSession([
-        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+        { front: 'Largest US city', canonicalAnswers: ['New York City'] },
       ]);
       const [item] = items;
       const attempt = await createCaller().study.submitAnswer({
@@ -484,7 +505,7 @@ describe('studyRouter', () => {
 
     it("replays the card's earlier answers with the corrected one", async () => {
       const deck = await deckWith([
-        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+        { front: 'Largest US city', canonicalAnswers: ['New York City'] },
       ]);
       const cardId = deck.cards[0].id;
       await answerAgain(cardId, deck.id, 'New York City');
@@ -502,13 +523,13 @@ describe('studyRouter', () => {
 
     it('leaves out answers given before the card was last edited', async () => {
       const deck = await deckWith([
-        { front: 'Largest US city', canonicalAnswer: 'New York' },
+        { front: 'Largest US city', canonicalAnswers: ['New York'] },
       ]);
       const cardId = deck.cards[0].id;
       await answerAgain(cardId, deck.id, 'New York');
       await createCaller().card.update({
         cardId,
-        canonicalAnswer: 'New York City',
+        canonicalAnswers: [{ text: 'New York City' }],
       });
       const missed = await answerAgain(cardId, deck.id, 'NYC');
 
@@ -564,7 +585,7 @@ describe('studyRouter', () => {
 
     it('refuses a Canonical Answer of another card', async () => {
       const { attempt } = await missedAnswer();
-      const other = await deckWith([{ front: 'Q', canonicalAnswer: 'A' }]);
+      const other = await deckWith([{ front: 'Q', canonicalAnswers: ['A'] }]);
 
       await expect(
         createCaller().study.acceptAnswer({
@@ -579,7 +600,7 @@ describe('studyRouter', () => {
       ['"I don\'t know"', null],
     ])('refuses %s', async (_, userAnswer) => {
       const { items } = await startedSession([
-        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+        { front: 'Largest US city', canonicalAnswers: ['New York City'] },
       ]);
       const caller = createCaller();
       const attempt =
@@ -762,7 +783,7 @@ describe('cards changed during a Study Session', () => {
     await caller.card.update({
       cardId: items[0].card.id,
       front: 'Capital of Italy',
-      canonicalAnswer: 'Rome',
+      canonicalAnswers: [{ text: 'Rome' }],
     });
 
     const answered = await caller.study.submitAnswer({

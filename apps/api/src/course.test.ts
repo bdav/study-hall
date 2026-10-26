@@ -136,7 +136,7 @@ describe('courseRouter', () => {
       await caller.card.create({
         deckId: deck.id,
         front: 'France',
-        canonicalAnswer: 'Paris',
+        canonicalAnswers: ['Paris'],
       });
       const session = await caller.study.startSession({ deckId: deck.id });
 
@@ -272,7 +272,7 @@ describe('courseRouter', () => {
       await caller.card.create({
         deckId: deck.id,
         front: 'France',
-        canonicalAnswer: 'Paris',
+        canonicalAnswers: ['Paris'],
       });
       const session = await caller.study.startSession({ deckId: deck.id });
 
@@ -633,7 +633,7 @@ describe('course review', () => {
         await caller.card.create({
           deckId: deckId!,
           front,
-          canonicalAnswer: 'Ciao',
+          canonicalAnswers: ['Ciao'],
         }),
       );
     }

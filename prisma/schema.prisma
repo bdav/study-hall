@@ -152,6 +152,8 @@ model CanonicalAnswer {
   text             String
   normalizedText   String?
   isPrimary        Boolean           @default(false)
+  // Order among the card's answers, as the author gave them; the primary first
+  position         Int               @default(0)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   card             Card              @relation(fields: [cardId], references: [id], onDelete: Cascade)

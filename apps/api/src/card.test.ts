@@ -88,8 +88,8 @@ describe('cardRouter', () => {
         userId: userId,
         name: 'Test Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
 
@@ -141,13 +141,54 @@ describe('cardRouter', () => {
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        canonicalAnswer: '4',
+        canonicalAnswers: ['4'],
       });
 
       expect(card.front).toBe('What is 2+2?');
       expect(primaryAnswer(card)).toBe('4');
       expect(card.deckId).toBe(deck.id);
       expect(card.id).toBeDefined();
+    });
+
+    it('creates a card with several Canonical Answers, the first primary', async () => {
+      const deck = await prisma.deck.create({
+        data: { name: 'Primes', userId },
+      });
+
+      await createCaller().card.create({
+        deckId: deck.id,
+        front: 'A prime between 10 and 20',
+        canonicalAnswers: ['11', '13', '17'],
+      });
+
+      const [card] = await createCaller().card.listByDeck({ deckId: deck.id });
+      expect(
+        card.canonicalAnswers.map(({ text, isPrimary }) => ({
+          text,
+          isPrimary,
+        })),
+      ).toEqual([
+        { text: '11', isPrimary: true },
+        { text: '13', isPrimary: false },
+        { text: '17', isPrimary: false },
+      ]);
+    });
+
+    it.each([
+      ['no Canonical Answer', []],
+      ['two answers grading would accept alike', ['11', '11.']],
+    ])('rejects a card with %s', async (_, canonicalAnswers) => {
+      const deck = await prisma.deck.create({
+        data: { name: 'Primes', userId },
+      });
+
+      await expect(
+        createCaller().card.create({
+          deckId: deck.id,
+          front: 'A prime between 10 and 20',
+          canonicalAnswers,
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
     it('creates card progress in NEW state with mastery 0', async () => {
@@ -159,7 +200,7 @@ describe('cardRouter', () => {
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'Q1',
-        canonicalAnswer: 'A1',
+        canonicalAnswers: ['A1'],
       });
 
       expect(await progressOf(card.id)).toMatchObject({
@@ -178,7 +219,7 @@ describe('cardRouter', () => {
       await caller.card.create({
         deckId: deck.id,
         front: 'Q1',
-        canonicalAnswer: 'A1',
+        canonicalAnswers: ['A1'],
       });
 
       const cards = await caller.card.listByDeck({ deckId: deck.id });
@@ -196,7 +237,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: otherDeck.id,
           front: 'Q',
-          canonicalAnswer: 'A',
+          canonicalAnswers: ['A'],
         }),
       ).rejects.toThrow(/not found/i);
     });
@@ -207,7 +248,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: 'nonexistent',
           front: 'Q',
-          canonicalAnswer: 'A',
+          canonicalAnswers: ['A'],
         }),
       ).rejects.toThrow(/not found/i);
     });
@@ -222,7 +263,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: deck.id,
           front: '',
-          canonicalAnswer: 'A',
+          canonicalAnswers: ['A'],
         }),
       ).rejects.toThrow();
     });
@@ -237,7 +278,7 @@ describe('cardRouter', () => {
         caller.card.create({
           deckId: deck.id,
           front: 'Q',
-          canonicalAnswer: '',
+          canonicalAnswers: [''],
         }),
       ).rejects.toThrow();
     });
@@ -251,7 +292,7 @@ describe('cardRouter', () => {
       const card = await caller.card.create({
         deckId: deck.id,
         front: '  What is 2+2?  ',
-        canonicalAnswer: '  4  ',
+        canonicalAnswers: ['  4  '],
       });
 
       expect(card.front).toBe('What is 2+2?');
@@ -262,14 +303,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'What is 2+2?', canonicalAnswer: '4' }],
+        cards: [{ front: 'What is 2+2?', canonicalAnswers: ['4'] }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        canonicalAnswer: '4',
+        canonicalAnswers: ['4'],
       });
 
       expect(card.id).toBe(deck.cards[0].id);
@@ -283,14 +324,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'What is 2+2?', canonicalAnswer: '5' }],
+        cards: [{ front: 'What is 2+2?', canonicalAnswers: ['5'] }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'What is 2+2?',
-        canonicalAnswer: '4',
+        canonicalAnswers: ['4'],
       });
 
       expect(card.id).toBe(deck.cards[0].id);
@@ -305,14 +346,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Hello', canonicalAnswer: 'World' }],
+        cards: [{ front: 'Hello', canonicalAnswers: ['World'] }],
       });
 
       const caller = createCaller();
       const card = await caller.card.create({
         deckId: deck.id,
         front: 'hello',
-        canonicalAnswer: 'world',
+        canonicalAnswers: ['world'],
       });
 
       expect(card.id).toBe(deck.cards[0].id);
@@ -327,14 +368,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
+        cards: [{ front: 'Old Q', canonicalAnswers: ['Old A'] }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
         front: 'New Q',
-        canonicalAnswer: 'New A',
+        canonicalAnswers: [{ text: 'New A' }],
       });
 
       expect(updated.front).toBe('New Q');
@@ -345,7 +386,7 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
+        cards: [{ front: 'Old Q', canonicalAnswers: ['Old A'] }],
       });
 
       const caller = createCaller();
@@ -362,13 +403,13 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Old Q', canonicalAnswer: 'Old A' }],
+        cards: [{ front: 'Old Q', canonicalAnswers: ['Old A'] }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
-        canonicalAnswer: 'New A',
+        canonicalAnswers: [{ text: 'New A' }],
       });
 
       expect(updated.front).toBe('Old Q');
@@ -379,7 +420,7 @@ describe('cardRouter', () => {
       const otherDeck = await createDeckWithCards(prisma, {
         userId: otherUserId,
         name: 'Other Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -405,7 +446,7 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -421,14 +462,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
       await expect(
         caller.card.update({
           cardId: deck.cards[0].id,
-          canonicalAnswer: '',
+          canonicalAnswers: [{ text: '' }],
         }),
       ).rejects.toThrow();
     });
@@ -437,14 +478,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
       const updated = await caller.card.update({
         cardId: deck.cards[0].id,
         front: '  New Q  ',
-        canonicalAnswer: '  New A  ',
+        canonicalAnswers: [{ text: '  New A  ' }],
       });
 
       expect(updated.front).toBe('New Q');
@@ -455,7 +496,7 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -467,7 +508,7 @@ describe('cardRouter', () => {
     it('resets card progress to NEW when the front changes', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
       await makeProgressAdvanced(deck.cards[0].id);
 
@@ -480,14 +521,14 @@ describe('cardRouter', () => {
     it('resets card progress to NEW when the canonical answer changes', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
       await makeProgressAdvanced(deck.cards[0].id);
 
       const caller = createCaller();
       await caller.card.update({
         cardId: deck.cards[0].id,
-        canonicalAnswer: 'New A',
+        canonicalAnswers: [{ text: 'New A' }],
       });
 
       expect(await progressOf(deck.cards[0].id)).toMatchObject(NEW_PROGRESS);
@@ -496,7 +537,7 @@ describe('cardRouter', () => {
     it('does not reset progress when nothing actually changes', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
       await makeProgressAdvanced(deck.cards[0].id);
 
@@ -504,7 +545,7 @@ describe('cardRouter', () => {
       await caller.card.update({
         cardId: deck.cards[0].id,
         front: 'Q',
-        canonicalAnswer: 'A',
+        canonicalAnswers: [{ text: 'A' }],
       });
 
       expect(await progressOf(deck.cards[0].id)).toMatchObject({
@@ -517,8 +558,8 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
       await makeProgressAdvanced(deck.cards[1].id);
@@ -526,7 +567,7 @@ describe('cardRouter', () => {
       const caller = createCaller();
       await caller.card.update({
         cardId: deck.cards[0].id,
-        canonicalAnswer: 'New A1',
+        canonicalAnswers: [{ text: 'New A1' }],
       });
 
       expect(await progressOf(deck.cards[1].id)).toMatchObject({
@@ -537,7 +578,7 @@ describe('cardRouter', () => {
     it('keeps the card attempts when the card is edited', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
-        cards: [{ front: 'Q', canonicalAnswer: 'Wrong A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['Wrong A'] }],
       });
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId: deck.id });
@@ -548,7 +589,7 @@ describe('cardRouter', () => {
 
       await caller.card.update({
         cardId: deck.cards[0].id,
-        canonicalAnswer: 'Correct A',
+        canonicalAnswers: [{ text: 'Correct A' }],
       });
 
       const attempts = await attemptsIn(session!.id);
@@ -562,7 +603,7 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Test Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -576,7 +617,7 @@ describe('cardRouter', () => {
       const otherDeck = await createDeckWithCards(prisma, {
         userId: otherUserId,
         name: 'Other Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -597,8 +638,8 @@ describe('cardRouter', () => {
         userId: userId,
         name: 'Test Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
 
@@ -621,8 +662,8 @@ describe('cardRouter', () => {
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [
-          { front: 'Capital of France', canonicalAnswer: 'Paris' },
-          { front: '2 + 2', canonicalAnswer: '4' },
+          { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+          { front: '2 + 2', canonicalAnswers: ['4'] },
         ],
         update: [],
       });
@@ -642,14 +683,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Import Deck',
-        cards: [{ front: 'Capital of France', canonicalAnswer: 'Lyon' }],
+        cards: [{ front: 'Capital of France', canonicalAnswers: ['Lyon'] }],
       });
 
       const caller = createCaller();
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [],
-        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'Paris' }],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswers: ['Paris'] }],
       });
 
       expect(result.createdCount).toBe(0);
@@ -664,14 +705,14 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Import Deck',
-        cards: [{ front: 'Existing Q', canonicalAnswer: 'Old A' }],
+        cards: [{ front: 'Existing Q', canonicalAnswers: ['Old A'] }],
       });
 
       const caller = createCaller();
       const result = await caller.card.importCards({
         deckId: deck.id,
-        new: [{ front: 'New Q', canonicalAnswer: 'New A' }],
-        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'Updated A' }],
+        new: [{ front: 'New Q', canonicalAnswers: ['New A'] }],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswers: ['Updated A'] }],
       });
 
       expect(result.createdCount).toBe(1);
@@ -688,7 +729,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: 'nonexistent',
-          new: [{ front: 'Q', canonicalAnswer: 'A' }],
+          new: [{ front: 'Q', canonicalAnswers: ['A'] }],
           update: [],
         }),
       ).rejects.toThrow(/not found/i);
@@ -703,7 +744,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: otherDeck.id,
-          new: [{ front: 'Q', canonicalAnswer: 'A' }],
+          new: [{ front: 'Q', canonicalAnswers: ['A'] }],
           update: [],
         }),
       ).rejects.toThrow(/not found/i);
@@ -716,7 +757,7 @@ describe('cardRouter', () => {
       const otherDeck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Other Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -725,7 +766,7 @@ describe('cardRouter', () => {
           deckId: deck.id,
           new: [],
           update: [
-            { cardId: otherDeck.cards[0].id, canonicalAnswer: 'Hacked' },
+            { cardId: otherDeck.cards[0].id, canonicalAnswers: ['Hacked'] },
           ],
         }),
       ).rejects.toThrow(/card.*does not belong|not found/i);
@@ -740,7 +781,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: deck.id,
-          new: [{ front: '', canonicalAnswer: 'A' }],
+          new: [{ front: '', canonicalAnswers: ['A'] }],
           update: [],
         }),
       ).rejects.toThrow();
@@ -755,7 +796,7 @@ describe('cardRouter', () => {
       await expect(
         caller.card.importCards({
           deckId: deck.id,
-          new: [{ front: 'Q', canonicalAnswer: '' }],
+          new: [{ front: 'Q', canonicalAnswers: [''] }],
           update: [],
         }),
       ).rejects.toThrow();
@@ -765,7 +806,7 @@ describe('cardRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId: userId,
         name: 'Import Deck',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
 
       const caller = createCaller();
@@ -773,7 +814,7 @@ describe('cardRouter', () => {
         caller.card.importCards({
           deckId: deck.id,
           new: [],
-          update: [{ cardId: deck.cards[0].id, canonicalAnswer: '' }],
+          update: [{ cardId: deck.cards[0].id, canonicalAnswers: [''] }],
         }),
       ).rejects.toThrow();
     });
@@ -783,8 +824,8 @@ describe('cardRouter', () => {
         userId: userId,
         name: 'Import Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'Old A1' },
-          { front: 'Q2', canonicalAnswer: 'Old A2' },
+          { front: 'Q1', canonicalAnswers: ['Old A1'] },
+          { front: 'Q2', canonicalAnswers: ['Old A2'] },
         ],
       });
 
@@ -792,13 +833,13 @@ describe('cardRouter', () => {
       const result = await caller.card.importCards({
         deckId: deck.id,
         new: [
-          { front: 'Q3', canonicalAnswer: 'A3' },
-          { front: 'Q4', canonicalAnswer: 'A4' },
-          { front: 'Q5', canonicalAnswer: 'A5' },
+          { front: 'Q3', canonicalAnswers: ['A3'] },
+          { front: 'Q4', canonicalAnswers: ['A4'] },
+          { front: 'Q5', canonicalAnswers: ['A5'] },
         ],
         update: [
-          { cardId: deck.cards[0].id, canonicalAnswer: 'New A1' },
-          { cardId: deck.cards[1].id, canonicalAnswer: 'New A2' },
+          { cardId: deck.cards[0].id, canonicalAnswers: ['New A1'] },
+          { cardId: deck.cards[1].id, canonicalAnswers: ['New A2'] },
         ],
       });
 
@@ -815,8 +856,8 @@ describe('cardRouter', () => {
       await caller.card.importCards({
         deckId: deck.id,
         new: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
         update: [],
       });
@@ -832,8 +873,8 @@ describe('cardRouter', () => {
         userId,
         name: 'Import Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'Old A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['Old A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
       const caller = createCaller();
@@ -848,7 +889,7 @@ describe('cardRouter', () => {
       await caller.card.importCards({
         deckId: deck.id,
         new: [],
-        update: [{ cardId: deck.cards[0].id, canonicalAnswer: 'New A1' }],
+        update: [{ cardId: deck.cards[0].id, canonicalAnswers: ['New A1'] }],
       });
 
       expect(await progressOf(deck.cards[0].id)).toMatchObject(NEW_PROGRESS);
@@ -863,7 +904,12 @@ describe('cardRouter', () => {
     async function cardWithAnswer(canonicalAnswer = 'colour') {
       const deck = await createDeckWithCards(prisma, {
         userId,
-        cards: [{ front: 'Colour in American English', canonicalAnswer }],
+        cards: [
+          {
+            front: 'Colour in American English',
+            canonicalAnswers: [canonicalAnswer],
+          },
+        ],
       });
       const card = deck.cards[0];
       return { deck, card, answerId: card.canonicalAnswers[0].id };
@@ -1050,7 +1096,7 @@ describe('cardRouter', () => {
           text: 'colour (UK)',
         });
         const [color, uk] = withVariants.canonicalAnswers[0].acceptedVariants;
-        return { deck, card, color, uk };
+        return { deck, card, answerId, color, uk };
       }
 
       function variantTexts(card: {
@@ -1060,11 +1106,11 @@ describe('cardRouter', () => {
       }
 
       it('keeps only the variants the edit says to keep', async () => {
-        const { card, uk } = await cardWithVariants();
+        const { card, answerId, uk } = await cardWithVariants();
 
         const updated = await createCaller().card.update({
           cardId: card.id,
-          canonicalAnswer: 'colour, UK spelling',
+          canonicalAnswers: [{ id: answerId, text: 'colour, UK spelling' }],
           keepVariantIds: [uk.id],
         });
 
@@ -1072,11 +1118,11 @@ describe('cardRouter', () => {
       });
 
       it('drops a variant the new answer has become, even one marked to keep', async () => {
-        const { card, color, uk } = await cardWithVariants();
+        const { card, answerId, color, uk } = await cardWithVariants();
 
         const updated = await createCaller().card.update({
           cardId: card.id,
-          canonicalAnswer: 'Color',
+          canonicalAnswers: [{ id: answerId, text: 'Color' }],
           keepVariantIds: [color.id, uk.id],
         });
 
@@ -1088,7 +1134,7 @@ describe('cardRouter', () => {
 
         const updated = await createCaller().card.update({
           cardId: card.id,
-          canonicalAnswer: 'red',
+          canonicalAnswers: [{ text: 'red' }],
         });
 
         expect(variantTexts(updated)).toEqual([]);
@@ -1113,7 +1159,7 @@ describe('cardRouter', () => {
         await caller.card.importCards({
           deckId: deck.id,
           new: [],
-          update: [{ cardId: card.id, canonicalAnswer: 'red' }],
+          update: [{ cardId: card.id, canonicalAnswers: ['red'] }],
         });
 
         const [listed] = await caller.card.listByDeck({ deckId: deck.id });
@@ -1126,11 +1172,187 @@ describe('cardRouter', () => {
         const replaced = await createCaller().card.create({
           deckId: deck.id,
           front: 'Colour in American English',
-          canonicalAnswer: 'red',
+          canonicalAnswers: ['red'],
         });
 
         expect(variantTexts(replaced)).toEqual([]);
       });
+    });
+  });
+
+  describe('several Canonical Answers', () => {
+    async function primeCard() {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [
+          {
+            front: 'A prime between 10 and 20',
+            canonicalAnswers: ['11', '13'],
+          },
+        ],
+      });
+      const card = deck.cards[0];
+      const [eleven, thirteen] = card.canonicalAnswers;
+      return { deck, card, eleven, thirteen };
+    }
+
+    function answersOf(card: {
+      canonicalAnswers: {
+        text: string;
+        isPrimary: boolean;
+        acceptedVariants: { text: string }[];
+      }[];
+    }) {
+      return card.canonicalAnswers.map((a) => ({
+        text: a.text,
+        isPrimary: a.isPrimary,
+        variants: a.acceptedVariants.map((v) => v.text),
+      }));
+    }
+
+    it('switches the primary answer without resetting progress', async () => {
+      const { card, eleven, thirteen } = await primeCard();
+      await makeProgressAdvanced(card.id);
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [thirteen, eleven],
+      });
+
+      expect(answersOf(updated)).toEqual([
+        { text: '13', isPrimary: true, variants: [] },
+        { text: '11', isPrimary: false, variants: [] },
+      ]);
+      expect(await progressOf(card.id)).toMatchObject({
+        lifecycleState: 'LEARNING',
+        masteryScore: 5,
+      });
+    });
+
+    it("adds an answer, resetting progress and keeping the others' variants", async () => {
+      const { card, eleven, thirteen } = await primeCard();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: eleven.id,
+        text: 'eleven',
+      });
+      await makeProgressAdvanced(card.id);
+
+      const updated = await caller.card.update({
+        cardId: card.id,
+        canonicalAnswers: [eleven, thirteen, { text: '17' }],
+      });
+
+      expect(answersOf(updated)).toEqual([
+        { text: '11', isPrimary: true, variants: ['eleven'] },
+        { text: '13', isPrimary: false, variants: [] },
+        { text: '17', isPrimary: false, variants: [] },
+      ]);
+      expect(await progressOf(card.id)).toMatchObject(NEW_PROGRESS);
+    });
+
+    it('removes an answer with its variants, resetting progress', async () => {
+      const { card, eleven, thirteen } = await primeCard();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: thirteen.id,
+        text: 'thirteen',
+      });
+      await makeProgressAdvanced(card.id);
+
+      const updated = await caller.card.update({
+        cardId: card.id,
+        canonicalAnswers: [eleven],
+      });
+
+      expect(answersOf(updated)).toEqual([
+        { text: '11', isPrimary: true, variants: [] },
+      ]);
+      expect(await progressOf(card.id)).toMatchObject(NEW_PROGRESS);
+    });
+
+    it("drops a variant that becomes one of the card's answers", async () => {
+      const { card, eleven, thirteen } = await primeCard();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: eleven.id,
+        text: 'XI',
+      });
+
+      const updated = await caller.card.update({
+        cardId: card.id,
+        canonicalAnswers: [eleven, thirteen, { text: 'xi' }],
+      });
+
+      expect(answersOf(updated)[0].variants).toEqual([]);
+    });
+
+    it.each([
+      [
+        'two answers grading would accept alike',
+        [{ text: '11' }, { text: '11!' }],
+      ],
+      ["another card's answer", [{ id: 'not-this-cards-answer', text: '11' }]],
+    ])('refuses an edit with %s', async (_, canonicalAnswers) => {
+      const { card } = await primeCard();
+
+      await expect(
+        createCaller().card.update({ cardId: card.id, canonicalAnswers }),
+      ).rejects.toMatchObject({
+        code: expect.stringMatching(/BAD_REQUEST|NOT_FOUND/),
+      });
+    });
+
+    it('imports cards with several answers, the first primary, in import order', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Existing', canonicalAnswers: ['A'] }],
+      });
+      const caller = createCaller();
+
+      await caller.card.importCards({
+        deckId: deck.id,
+        new: [
+          {
+            front: 'A prime between 10 and 20',
+            canonicalAnswers: ['11', '13'],
+          },
+          { front: 'An even prime', canonicalAnswers: ['2'] },
+        ],
+        update: [],
+      });
+
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
+      expect(cards.map((c) => [c.front, c.position])).toEqual([
+        ['Existing', 0],
+        ['A prime between 10 and 20', 1],
+        ['An even prime', 2],
+      ]);
+      expect(answersOf(cards[1])).toEqual([
+        { text: '11', isPrimary: true, variants: [] },
+        { text: '13', isPrimary: false, variants: [] },
+      ]);
+    });
+
+    it("keeps an imported update's unchanged answer and its variants", async () => {
+      const { deck, card, eleven } = await primeCard();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: eleven.id,
+        text: 'eleven',
+      });
+
+      await caller.card.importCards({
+        deckId: deck.id,
+        new: [],
+        update: [{ cardId: card.id, canonicalAnswers: ['11', '17'] }],
+      });
+
+      const [listed] = await caller.card.listByDeck({ deckId: deck.id });
+      expect(answersOf(listed)).toEqual([
+        { text: '11', isPrimary: true, variants: ['eleven'] },
+        { text: '17', isPrimary: false, variants: [] },
+      ]);
     });
   });
 });

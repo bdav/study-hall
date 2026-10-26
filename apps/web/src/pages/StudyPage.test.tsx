@@ -215,19 +215,21 @@ function mockCardMutations() {
     opts?: UpdateOptions,
   ) => ({
     mutate: mockUpdateCard.mockImplementation(
-      (input: { cardId: string; front: string; canonicalAnswer: string }) =>
+      (input: {
+        cardId: string;
+        front: string;
+        canonicalAnswers: { id?: string; text: string }[];
+      }) =>
         opts?.onSuccess?.(
           {
             id: input.cardId,
             front: input.front,
-            canonicalAnswers: [
-              {
-                id: 'answer-new',
-                text: input.canonicalAnswer,
-                isPrimary: true,
-                acceptedVariants: [],
-              },
-            ],
+            canonicalAnswers: input.canonicalAnswers.map((answer, i) => ({
+              id: answer.id ?? `answer-new-${i}`,
+              text: answer.text,
+              isPrimary: i === 0,
+              acceptedVariants: [],
+            })),
           } as never,
           input as never,
           undefined,
@@ -979,7 +981,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+3?',
-        canonicalAnswer: '5',
+        canonicalAnswers: [{ id: 'answer-4', text: '5' }],
       });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.getByText('What is 2+3?')).toBeInTheDocument();
@@ -1007,7 +1009,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
-        canonicalAnswer: '4',
+        canonicalAnswers: [{ id: 'answer-4', text: '4' }],
       });
       // Still on the answered card, not the next one
       expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
@@ -1125,7 +1127,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2?',
-        canonicalAnswer: 'IV',
+        canonicalAnswers: [{ id: 'answer-4', text: 'IV' }],
         keepVariantIds: [],
       });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -1148,7 +1150,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2?',
-        canonicalAnswer: 'Four',
+        canonicalAnswers: [{ id: 'answer-4', text: 'Four' }],
         keepVariantIds: [],
       });
     });
@@ -1167,7 +1169,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2?',
-        canonicalAnswer: '4 exactly',
+        canonicalAnswers: [{ id: 'answer-4', text: '4 exactly' }],
         keepVariantIds: ['variant-four'],
       });
     });
@@ -1192,7 +1194,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
-        canonicalAnswer: '4',
+        canonicalAnswers: [{ id: 'answer-4', text: '4' }],
       });
     });
 
@@ -1258,7 +1260,7 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
-        canonicalAnswer: '4',
+        canonicalAnswers: [{ id: 'answer-4', text: '4' }],
       });
       expect(screen.getByTestId('correct-answer')).toHaveTextContent(
         'What is 2+2? exactly',

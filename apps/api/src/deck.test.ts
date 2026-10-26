@@ -114,8 +114,8 @@ describe('deckRouter', () => {
         userId,
         name: 'Deck With Cards',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
 
@@ -130,8 +130,8 @@ describe('deckRouter', () => {
         userId,
         name: 'Stats Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
       await study(deck.id, [
@@ -152,8 +152,8 @@ describe('deckRouter', () => {
         userId,
         name: 'Edited Deck',
         cards: [
-          { front: 'Q1', canonicalAnswer: 'A1' },
-          { front: 'Q2', canonicalAnswer: 'A2' },
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
         ],
       });
       await study(deck.id, [
@@ -299,7 +299,7 @@ describe('deckRouter', () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
         name: 'To Delete',
-        cards: [{ front: 'Q', canonicalAnswer: 'A' }],
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
       const cardId = deck.cards[0].id;
 

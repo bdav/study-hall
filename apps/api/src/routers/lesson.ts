@@ -384,7 +384,7 @@ export const lessonRouter = router({
       // Typed Recall is the only card type, and the cards the app makes
       const cards = input.cards.map(({ front, canonicalAnswer }) => ({
         front,
-        canonicalAnswer,
+        canonicalAnswers: [canonicalAnswer],
       }));
       await ctx.prisma.$transaction((tx) =>
         createCards(tx, {

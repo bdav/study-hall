@@ -16,14 +16,23 @@ export function normalizeAnswer(answer: string): string {
 }
 
 /**
- * A deterministic grade, whether it was lowered for wrong accents, and the
- * Accepted Variant the answer matched, if it matched one rather than the
- * Canonical Answer.
+ * A deterministic grade, whether it was lowered for wrong accents, the
+ * Canonical Answer the answer matched, itself or through one of its
+ * Accepted Variants, and that variant, if it matched one.
  */
 export type Grading = {
   recallGrade: Extract<RecallGrade, 'NAILED' | 'GOOD' | 'MISSED'>;
   accentMismatch: boolean;
+  matchedAnswer: string | null;
   matchedVariant: string | null;
+};
+
+/** The grading of an answer that matches nothing. */
+export const NO_MATCH: Grading = {
+  recallGrade: 'MISSED',
+  accentMismatch: false,
+  matchedAnswer: null,
+  matchedVariant: null,
 };
 
 /**
@@ -51,6 +60,7 @@ export function gradeAnswer(
     return {
       recallGrade: 'NAILED',
       accentMismatch: false,
+      matchedAnswer: canonicalAnswer,
       matchedVariant: exact.variant,
     };
   }
@@ -59,10 +69,11 @@ export function gradeAnswer(
     return {
       recallGrade: 'GOOD',
       accentMismatch: true,
+      matchedAnswer: canonicalAnswer,
       matchedVariant: accentMismatch.variant,
     };
   }
-  return { recallGrade: 'MISSED', accentMismatch: false, matchedVariant: null };
+  return NO_MATCH;
 }
 
 /**

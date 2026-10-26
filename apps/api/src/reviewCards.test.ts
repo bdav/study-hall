@@ -159,7 +159,7 @@ describe('lesson.proposeReviewCards', () => {
     await caller.card.create({
       deckId,
       front: 'Italian for thank you',
-      canonicalAnswer: 'Grazie',
+      canonicalAnswers: ['Grazie'],
     });
 
     ai.respondWith(proposal);
@@ -191,7 +191,7 @@ describe('lesson.proposeReviewCards', () => {
     const existing = await caller.card.create({
       deckId,
       front: 'Translate: Good morning',
-      canonicalAnswer: 'Buongiorno',
+      canonicalAnswers: ['Buongiorno'],
     });
 
     ai.respondWith(proposal);
@@ -326,7 +326,7 @@ describe('lesson.createReviewCards', () => {
     await caller.card.create({
       deckId,
       front: 'Italian for thank you',
-      canonicalAnswer: 'Grazie',
+      canonicalAnswers: ['Grazie'],
     });
 
     const result = await confirm(lessonId, [

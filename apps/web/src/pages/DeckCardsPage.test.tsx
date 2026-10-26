@@ -262,7 +262,34 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).toHaveBeenCalledWith({
       deckId: 'deck-1',
       front: 'Capital of Spain',
-      canonicalAnswer: 'Madrid',
+      canonicalAnswers: ['Madrid'],
+    });
+  });
+
+  it('makes separate Canonical Answers of "a || b" in a new card\'s back', async () => {
+    setupMocks({ cards: [] });
+    const mockMutate = vi.fn();
+    vi.mocked(trpc.card.create.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate: mockMutate,
+    } as unknown as ReturnType<typeof trpc.card.create.useMutation>);
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByText('New Card'));
+    await user.type(
+      screen.getByRole('textbox', { name: /front/i }),
+      'A prime between 10 and 20{Enter}',
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: /back/i }),
+      '11 || 13 ||  || 13{Enter}',
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      deckId: 'deck-1',
+      front: 'A prime between 10 and 20',
+      canonicalAnswers: ['11', '13'],
     });
   });
 
@@ -365,7 +392,7 @@ describe('DeckCardsPage', () => {
 
     expect(mockMutate).toHaveBeenCalledWith({
       deckId: 'deck-1',
-      new: [{ front: 'Capital of Spain', canonicalAnswer: 'Madrid' }],
+      new: [{ front: 'Capital of Spain', canonicalAnswers: ['Madrid'] }],
       update: [],
     });
   });
@@ -498,9 +525,34 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).toHaveBeenCalledWith({
       cardId: 'card-1',
       front: 'Capital of Italy',
-      canonicalAnswer: 'Paris',
+      canonicalAnswers: [{ id: 'answer-Paris', text: 'Paris' }],
     });
 
+    vi.useRealTimers();
+  });
+
+  it('adds the answers after "||" in a tile\'s back to the card', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setupMocks();
+    const mockMutate = vi.fn();
+    vi.mocked(trpc.card.update.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate: mockMutate,
+    } as unknown as ReturnType<typeof trpc.card.update.useMutation>);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderDeckCardsPage();
+
+    await user.type(screen.getByDisplayValue('Berlin'), ' || Bonn');
+    vi.advanceTimersByTime(900);
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      cardId: 'card-2',
+      front: 'Capital of Germany',
+      canonicalAnswers: [
+        { id: 'answer-Berlin', text: 'Berlin' },
+        { text: 'Bonn' },
+      ],
+    });
     vi.useRealTimers();
   });
 
@@ -811,7 +863,7 @@ describe('DeckCardsPage', () => {
         expect(mockMutate).toHaveBeenCalledWith({
           cardId: 'card-1',
           front: 'Capital of France',
-          canonicalAnswer: 'Lutetia',
+          canonicalAnswers: [{ id: 'answer-Paris', text: 'Lutetia' }],
           keepVariantIds: ['variant-paree'],
         });
       });
@@ -850,7 +902,7 @@ describe('DeckCardsPage', () => {
         expect(mockMutate).toHaveBeenCalledWith({
           cardId: 'card-2',
           front: 'Capital of Germany',
-          canonicalAnswer: 'Bonn',
+          canonicalAnswers: [{ id: 'answer-Berlin', text: 'Bonn' }],
         });
       });
     });

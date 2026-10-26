@@ -3,7 +3,7 @@ import { DropdownMenu } from 'radix-ui';
 import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { answersWithPrimary, toFlashcard, type Flashcard } from '@/lib/cards';
 import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,10 +86,11 @@ export function StudyCardMenu({
     !hasVariantDraft &&
     !update.isPending;
 
+  const newAnswer = answer.trim();
   const edit = {
     cardId: card.id,
     front: front.trim(),
-    canonicalAnswer: answer.trim(),
+    canonicalAnswers: answersWithPrimary(card, newAnswer),
   };
 
   function handleSave(e: FormEvent) {
@@ -97,15 +98,12 @@ export function StudyCardMenu({
     if (!canSave) return;
     // Nothing to save: variant changes are already saved, and an unchanged
     // card isn't an edit
-    if (
-      edit.front === card.front &&
-      edit.canonicalAnswer === card.canonicalAnswer
-    ) {
+    if (edit.front === card.front && newAnswer === card.canonicalAnswer) {
       setDialog(null);
       return;
     }
     if (
-      edit.canonicalAnswer !== card.canonicalAnswer &&
+      newAnswer !== card.canonicalAnswer &&
       card.acceptedVariants.length > 0
     ) {
       setDialog('keep-variants');
@@ -217,7 +215,7 @@ export function StudyCardMenu({
       {dialog === 'keep-variants' && (
         <KeepVariantsDialog
           oldAnswer={card.canonicalAnswer}
-          newAnswer={edit.canonicalAnswer}
+          newAnswer={newAnswer}
           variants={card.acceptedVariants}
           cancelLabel="Back"
           isSaving={update.isPending}
