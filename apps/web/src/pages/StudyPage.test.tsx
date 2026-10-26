@@ -880,6 +880,9 @@ describe('StudyPage', () => {
 
     it('is not offered once the card was edited after the answer', async () => {
       const user = await answerFirstCard('four');
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
       await user.type(
         screen.getByRole('textbox', { name: 'Front' }),
@@ -911,6 +914,10 @@ describe('StudyPage', () => {
       const user = await startStudyingWithVariants();
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
       await screen.findByTestId('result');
+      // Once the card has slid in, so it can be edited
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       return user;
     }
 
@@ -920,7 +927,15 @@ describe('StudyPage', () => {
       await answerWithVariants('4');
 
       expect(screen.getByRole('button', answersOfCard)).toHaveTextContent(
-        '4Variants: four',
+        /4Variants: four$/,
+      );
+    });
+
+    it('is captioned as the accepted answers, to edit', async () => {
+      await answerWithVariants('4');
+
+      expect(screen.getByRole('button', answersOfCard)).toHaveTextContent(
+        /^Accepted answers4Variants: four$/,
       );
     });
 
@@ -997,7 +1012,7 @@ describe('StudyPage', () => {
       expect(screen.queryByLabelText('Answer 1')).not.toBeInTheDocument();
       expect(screen.getByText(/graded before you edited/i)).toBeInTheDocument();
       expect(screen.getByRole('button', answersOfCard)).toHaveTextContent(
-        '4 · also IV',
+        '4, IV',
       );
     });
   });
@@ -1063,7 +1078,7 @@ describe('StudyPage', () => {
       );
       expect(
         screen.getByRole('button', { name: 'Answers of What is 2+2?' }),
-      ).toHaveTextContent('4 · also IV');
+      ).toHaveTextContent('4, IV');
       expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
     });
 
@@ -1136,6 +1151,9 @@ describe('StudyPage', () => {
     it('edits the front and answer on the card and goes on studying the edited card', async () => {
       const user = await startStudying();
 
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
       expect(screen.getByRole('button', { name: 'Edit card' })).toHaveAttribute(
         'aria-pressed',
@@ -1166,9 +1184,22 @@ describe('StudyPage', () => {
       expect(mockInvalidateDeck).toHaveBeenCalledWith({ id: 'deck-1' });
     });
 
+    /** Turns on edit mode, once the card has slid in. */
     async function startEditing(user: ReturnType<typeof userEvent.setup>) {
-      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+      const toggle = screen.getByRole('button', { name: 'Edit card' });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
     }
+
+    it('holds off edit mode until the card has slid in', async () => {
+      await startStudying();
+
+      // The first card is still sliding in
+      expect(screen.getByRole('button', { name: 'Edit card' })).toBeDisabled();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
+    });
 
     /** Turns on edit mode and shows the card's back, its answers. */
     async function editAnswers(user: ReturnType<typeof userEvent.setup>) {
@@ -1251,6 +1282,9 @@ describe('StudyPage', () => {
       const user = await startStudying();
       await answerCard(user);
 
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       screen.getByRole('button', { name: 'Edit card' }).focus();
       await user.keyboard('{Enter}');
 

@@ -387,7 +387,12 @@ export default function StudyPage() {
     : () =>
         setEditing((prev) => prev && { ...prev, showsBack: !prev.showsBack });
 
+  // While a card slides in it's drawn in the slide, then again once it
+  // settles, so an editor opened mid-slide would lose its edits
+  const canEdit = !exitingCard;
+
   function startEditing(cardId: string, onBack = false) {
+    if (!canEdit) return;
     setEditing({ cardId, slideKey, showsBack: onBack });
     if (onBack && displayResult && !isFlipped) toggleFlip();
   }
@@ -696,6 +701,7 @@ export default function StudyPage() {
                 type="button"
                 aria-label="Edit card"
                 aria-pressed={isEditing}
+                disabled={!canEdit}
                 title={isEditing ? 'Stop editing' : 'Edit card'}
                 onClick={() =>
                   isEditing ? setEditing(null) : startEditing(displayCard.id)
@@ -796,6 +802,7 @@ export default function StudyPage() {
                   <CardAnswersSummary
                     card={displayCard}
                     onOpen={() => startEditing(displayCard.id, true)}
+                    caption="Accepted answers"
                     className="mx-auto max-w-md text-center"
                   />
                 </>

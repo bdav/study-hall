@@ -1088,7 +1088,7 @@ describe('DeckCardsPage', () => {
         screen.getByRole('button', {
           name: 'Answers of A prime between 10 and 20',
         }),
-      ).toHaveTextContent('11 · also 13');
+      ).toHaveTextContent('11, 13');
     });
 
     it("opens one card's answers at a time", async () => {

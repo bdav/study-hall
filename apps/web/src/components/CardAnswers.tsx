@@ -1,3 +1,4 @@
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
@@ -48,24 +49,30 @@ export function CardAnswers({
   }
 
   return (
-    <CardAnswersSummary card={card} onOpen={onOpen} className={className} />
+    <CardAnswersSummary
+      card={card}
+      onOpen={onOpen}
+      className={`text-left ${className}`}
+    />
   );
 }
 
 /**
  * The summary of a card's Canonical Answers and Accepted Variants, read
- * only; choosing it opens where they're edited.
+ * only; choosing it opens where they're edited. `caption`, when given,
+ * heads it, saying what it is.
  */
 export function CardAnswersSummary({
   card,
   onOpen,
+  caption,
   className = '',
 }: {
   card: Flashcard;
   onOpen: () => void;
+  caption?: string;
   className?: string;
 }) {
-  const [primary, ...others] = card.answers;
   const variants = card.answers.flatMap((answer) =>
     answer.acceptedVariants.map((variant) => variant.text),
   );
@@ -75,12 +82,16 @@ export function CardAnswersSummary({
       aria-label={`Answers of ${card.front}`}
       data-card-answers
       onClick={onOpen}
-      className={`mt-2 block w-full rounded px-1 text-left text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white ${className}`}
+      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white ${className}`}
     >
+      {caption && (
+        <p className="text-xs uppercase tracking-wide text-white/50">
+          {caption}
+          <Pencil aria-hidden className="ml-1 inline h-3 w-3" />
+        </p>
+      )}
       <p className="truncate">
-        {primary?.text}
-        {others.length > 0 &&
-          ` · also ${others.map((answer) => answer.text).join(', ')}`}
+        {card.answers.map((answer) => answer.text).join(', ')}
       </p>
       {variants.length > 0 && (
         <p className="truncate text-xs text-white/50">
