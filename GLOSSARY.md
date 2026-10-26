@@ -46,6 +46,10 @@ _Avoid_: Back, solution
 An alternative phrasing accepted as equivalent to a canonical answer, without changing what the card asks for.
 _Avoid_: Alias, synonym
 
+**Card Version**:
+What a card asked at one time: its front and canonical answers. A card gets a new version whenever an edit changes what it asks, which also resets its progress; changing accepted variants doesn't. Each card attempt records the version it answered.
+_Avoid_: Revision, edition
+
 **Recall Grade**:
 The system's judgement of one answer to a card: Missed, Partially Correct, Good or Nailed. The learner never assigns it.
 _Avoid_: Score, result, rating

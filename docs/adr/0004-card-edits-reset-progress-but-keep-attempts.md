@@ -15,4 +15,4 @@ Editing a card's front or a Canonical Answer changes what the card asks for, so 
 ## Consequences
 
 - Any rule that judges how well a card is known must ignore attempts made before the card's latest progress reset. Queries that show history should include them.
-- Known limitation: an attempt doesn't record the card content it answered, so after an edit, earlier attempts can't be shown with the prompt and answers they were judged against. Card versioning would fix this if that view is ever needed.
+- Known limitation: an attempt doesn't record the card content it answered, so after an edit, earlier attempts can't be shown with the prompt and answers they were judged against. Card versioning would fix this if that view is ever needed. ADR-0008 adds it.

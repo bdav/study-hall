@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#46, and courses (spec #1) as #14–#27 and #37–#43. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
+**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#48, and courses (spec #1) as #14–#27 and #37–#43. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Implementation Order
 
@@ -37,6 +37,8 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #44 Edit or delete a card while studying
    - [ ] #4 Accepted Variants
    - [ ] #12 "My answer was correct" during study
+   - [ ] #47 Card versions: record what each attempt answered
+   - [ ] #48 Card history below the card while studying
    - [ ] #45 Revise a deck's cards with an instruction
    - [ ] #7 Full card lifecycle
    - [ ] #46 Mark cards as known, one at a time or in bulk
