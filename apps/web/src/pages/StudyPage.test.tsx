@@ -33,6 +33,7 @@ vi.mock('@/lib/trpc', () => ({
       dontKnow: { useMutation: vi.fn() },
       finishSession: { useMutation: vi.fn() },
       acceptAnswer: { useMutation: vi.fn() },
+      queuePreview: { useQuery: vi.fn() },
     },
   },
 }));
@@ -298,10 +299,32 @@ function mockAcceptAnswerMutation() {
   } as unknown as ReturnType<typeof trpc.study.acceptAnswer.useMutation>);
 }
 
+type QueuePreview = {
+  sessionSize: number;
+  dueCount: number;
+  newCount: number;
+  nextDueAt: string | null;
+};
+
+/** What a session started now would hold; both cards, NEW, by default. */
+function mockQueuePreview(
+  preview: QueuePreview = {
+    sessionSize: 2,
+    dueCount: 0,
+    newCount: 2,
+    nextDueAt: null,
+  },
+) {
+  vi.mocked(trpc.study.queuePreview.useQuery).mockReturnValue({
+    data: preview,
+  } as unknown as ReturnType<typeof trpc.study.queuePreview.useQuery>);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
   mockAcceptAnswerMutation();
+  mockQueuePreview();
 });
 
 describe('StudyPage', () => {
@@ -314,6 +337,54 @@ describe('StudyPage', () => {
     expect(
       screen.getByRole('button', { name: /test deck/i }),
     ).toBeInTheDocument();
+  });
+
+  it('says how many cards a session would hold before it starts', () => {
+    setupBasicMocks();
+    mockQueuePreview({
+      sessionSize: 1,
+      dueCount: 1,
+      newCount: 0,
+      nextDueAt: null,
+    });
+    renderStudyPage();
+
+    expect(
+      screen.getByRole('button', { name: /test deck/i }),
+    ).toHaveTextContent('1 to study · 2 in deck');
+  });
+
+  it('says when nothing is due, and when the next card is', () => {
+    setupBasicMocks();
+    mockQueuePreview({
+      sessionSize: 0,
+      dueCount: 0,
+      newCount: 0,
+      nextDueAt: '2026-10-28T17:30:00.000Z',
+    });
+    renderStudyPage();
+
+    const title = screen.getByRole('button', { name: /test deck/i });
+    expect(title).toHaveTextContent('Nothing due · 2 in deck');
+    expect(title).toHaveTextContent(/next card due .*oct 28/i);
+  });
+
+  it("shows the session's size on the title card once it has started", async () => {
+    setupMocksWithStartSession();
+    const oneCardSession = { ...mockSession, items: [mockSession.items[0]] };
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+      onSuccess?: (data: typeof oneCardSession) => void;
+    }) => ({
+      mutate: vi.fn(() => opts?.onSuccess?.(oneCardSession)),
+      mutateAsync: vi.fn(),
+    })) as unknown as typeof trpc.study.startSession.useMutation);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+
+    expect(await screen.findByText('1 card')).toBeInTheDocument();
   });
 
   it('shows card front and answer input after starting', async () => {

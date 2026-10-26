@@ -160,10 +160,64 @@ function CardBack({
   );
 }
 
+function cardCount(count: number) {
+  return `${count} ${count === 1 ? 'card' : 'cards'}`;
+}
+
+const nextDueFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+/**
+ * The title card's count: before a session, how many cards one would hold
+ * and how many the deck has, or that nothing is due and when the next card
+ * is; during a session, its size.
+ */
+function TitleCardDetails({
+  deckSize,
+  sessionSize,
+  preview,
+}: {
+  deckSize: number;
+  sessionSize: number | null;
+  preview: { sessionSize: number; nextDueAt: string | null } | undefined;
+}) {
+  const className = 'mt-4 text-sm text-white/50';
+  if (sessionSize !== null) {
+    return <p className={className}>{cardCount(sessionSize)}</p>;
+  }
+  if (!preview) return <p className={className}>{deckSize} in deck</p>;
+  if (preview.sessionSize > 0) {
+    return (
+      <p className={className}>
+        {preview.sessionSize} to study · {deckSize} in deck
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className={className}>Nothing due · {deckSize} in deck</p>
+      {preview.nextDueAt && (
+        <p className="mt-1 text-xs text-white/40">
+          Next card due {nextDueFormat.format(new Date(preview.nextDueAt))}
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const yourAnswerId = useId();
 
+  const queuePreviewQuery = trpc.study.queuePreview.useQuery(
+    { deckId: deckId ?? '' },
+    { enabled: !!deckId },
+  );
   const deckQuery = trpc.deck.getById.useQuery(
     { id: deckId ?? '' },
     { enabled: !!deckId },
@@ -204,6 +258,18 @@ export default function StudyPage() {
   const isReviewing = studyState.phase === 'reviewing';
   const isIdle = studyState.phase === 'idle';
   const isAtTitle = isIdle || (isReviewing && !reviewEntry);
+  // Before a session, what one would hold; during one, its size
+  const preview = queuePreviewQuery.data;
+  const titleQueueLength = isIdle
+    ? (preview?.sessionSize ?? cards.length)
+    : sessionSize;
+  const titleDetails = (
+    <TitleCardDetails
+      deckSize={cards.length}
+      sessionSize={isIdle ? null : sessionSize}
+      preview={preview}
+    />
+  );
 
   const displayCard = isAtTitle
     ? undefined
@@ -505,13 +571,11 @@ export default function StudyPage() {
                         acceptDisplayedAnswer,
                       )
                     ) : (
-                      <CardStack queueLength={cards.length}>
+                      <CardStack queueLength={titleQueueLength}>
                         <p className="text-3xl font-bold text-white">
                           {deck.name}
                         </p>
-                        <p className="mt-4 text-sm text-white/50">
-                          {cards.length} cards
-                        </p>
+                        {titleDetails}
                       </CardStack>
                     )}
                   </div>
@@ -534,16 +598,14 @@ export default function StudyPage() {
           ) : isAtTitle ? (
             <div key={slideKey}>
               <CardStack
-                queueLength={cards.length}
+                queueLength={titleQueueLength}
                 className={
                   isIdle ? 'animate-pulse-halo-border cursor-pointer' : ''
                 }
                 onClick={isIdle ? slideToNext : undefined}
               >
                 <p className="text-3xl font-bold text-white">{deck.name}</p>
-                <p className="mt-4 text-sm text-white/50">
-                  {cards.length} cards
-                </p>
+                {titleDetails}
               </CardStack>
             </div>
           ) : null}

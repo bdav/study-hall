@@ -63,6 +63,32 @@ export async function countDueAndNewCards(
 }
 
 /**
+ * What a Standard Study Session started now would hold: its size, from the
+ * deck's due and NEW cards, and, for when it would hold nothing, when the
+ * next card in review comes due.
+ */
+export async function previewQueue(prisma: PrismaClient, deck: LearnerDeck) {
+  const [{ dueCount, newCount }, next] = await Promise.all([
+    countDueAndNewCards(prisma, deck),
+    prisma.cardProgress.findFirst({
+      where: {
+        ...deck,
+        lifecycleState: { in: ['LEARNING', 'STABLE'] },
+        dueAt: { gt: new Date() },
+      },
+      orderBy: { dueAt: 'asc' },
+      select: { dueAt: true },
+    }),
+  ]);
+  return {
+    sessionSize: Math.min(STANDARD_SESSION_SIZE, dueCount + newCount),
+    dueCount,
+    newCount,
+    nextDueAt: next?.dueAt ?? null,
+  };
+}
+
+/**
  * Starts a Standard Study Session on a deck. The queue is the deck's due
  * cards, earliest due first, then its NEW cards in deck order. Bucket shares
  * and interleaving come with the queue generator (#8). Returns null, and

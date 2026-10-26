@@ -5,10 +5,31 @@ import {
   acceptAnswer,
   answerItem,
   finishStudySession,
+  previewQueue,
   startStudySession,
 } from '../services/studySessions.js';
 
 export const studyRouter = router({
+  queuePreview: protectedProcedure
+    .input(z.object({ deckId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const deck = await ctx.prisma.deck.findUnique({
+        where: { id: input.deckId, userId: ctx.userId },
+      });
+
+      if (!deck) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Deck not found',
+        });
+      }
+
+      return previewQueue(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
+      });
+    }),
+
   startSession: protectedProcedure
     .input(z.object({ deckId: z.string() }))
     .mutation(async ({ ctx, input }) => {

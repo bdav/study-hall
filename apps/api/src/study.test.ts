@@ -171,6 +171,83 @@ describe('studyRouter', () => {
     });
   });
 
+  describe('queuePreview', () => {
+    it('counts the cards a session would hold: due ones, then NEW ones', async () => {
+      const deck = await deckWith([
+        { front: 'Due', canonicalAnswer: 'A' },
+        { front: 'Later', canonicalAnswer: 'B' },
+        { front: 'New', canonicalAnswer: 'C' },
+      ]);
+      const later = new Date(Date.now() + 60 * 60 * 1000);
+      await scheduleCard(deck.cards[0].id, new Date(Date.now() - 60 * 1000));
+      await scheduleCard(deck.cards[1].id, later);
+
+      const preview = await createCaller().study.queuePreview({
+        deckId: deck.id,
+      });
+
+      expect(preview).toEqual({
+        sessionSize: 2,
+        dueCount: 1,
+        newCount: 1,
+        nextDueAt: later,
+      });
+    });
+
+    it('holds at most 25, the Standard size', async () => {
+      const deck = await deckWith(
+        Array.from({ length: 30 }, (_, i) => ({
+          front: `Q${i}`,
+          canonicalAnswer: `A${i}`,
+        })),
+      );
+
+      const preview = await createCaller().study.queuePreview({
+        deckId: deck.id,
+      });
+
+      expect(preview).toMatchObject({ sessionSize: 25, newCount: 30 });
+    });
+
+    it('says when the next card is due when nothing is due now', async () => {
+      const deck = await deckWith([
+        { front: 'Q1', canonicalAnswer: 'A1' },
+        { front: 'Q2', canonicalAnswer: 'A2' },
+      ]);
+      const soon = new Date(Date.now() + 60 * 60 * 1000);
+      await scheduleCard(deck.cards[0].id, soon);
+      await scheduleCard(deck.cards[1].id, new Date(soon.getTime() + 1000));
+
+      const preview = await createCaller().study.queuePreview({
+        deckId: deck.id,
+      });
+
+      expect(preview).toEqual({
+        sessionSize: 0,
+        dueCount: 0,
+        newCount: 0,
+        nextDueAt: soon,
+      });
+    });
+
+    it("refuses another user's deck", async () => {
+      const deck = await deckWith(capitals);
+      const other = await prisma.user.create({
+        data: { email: `preview-${Date.now()}@example.com`, passwordHash: 'x' },
+      });
+      const otherCaller = appRouter.createCaller({
+        prisma,
+        userId: other.id,
+        sessionToken: null,
+        ai: createFakeAiProvider(),
+      });
+
+      await expect(
+        otherCaller.study.queuePreview({ deckId: deck.id }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+  });
+
   describe('submitAnswer', () => {
     it('grades the answer and saves it as a deterministically graded attempt', async () => {
       const { items } = await startedSession(capitals);
