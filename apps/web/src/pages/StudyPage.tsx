@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard } from '@/lib/cards';
@@ -136,6 +136,7 @@ function CardBack({
 
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
+  const yourAnswerId = useId();
 
   const deckQuery = trpc.deck.getById.useQuery(
     { id: deckId ?? '' },
@@ -593,11 +594,27 @@ export default function StudyPage() {
           )}
 
           {(studyState.phase === 'result' || isReviewing) && displayResult ? (
-            <p className="py-2 text-center text-3xl font-bold uppercase tracking-wide text-white">
-              {displayResult.userAnswer ?? "I don't know"}
-            </p>
+            <div
+              role="group"
+              aria-labelledby={yourAnswerId}
+              className="py-2 text-center"
+            >
+              <p
+                id={yourAnswerId}
+                className="text-xs uppercase tracking-wide text-white/50"
+              >
+                Your answer
+              </p>
+              <p className="text-3xl font-bold uppercase tracking-wide text-white">
+                {displayResult.userAnswer ?? "I don't know"}
+              </p>
+            </div>
           ) : studyState.phase !== 'answering' ? (
-            <div className="py-2 text-3xl">&nbsp;</div>
+            // Holds the answer's place, label included
+            <div className="py-2 text-center" aria-hidden>
+              <p className="text-xs">&nbsp;</p>
+              <p className="text-3xl">&nbsp;</p>
+            </div>
           ) : null}
 
           {(studyState.phase === 'answering' ||

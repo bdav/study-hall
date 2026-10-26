@@ -556,6 +556,19 @@ describe('StudyPage', () => {
     expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
   });
 
+  it('labels your answer below the graded card', async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), 'Four{Enter}');
+
+    expect(
+      await screen.findByRole('group', { name: 'Your answer' }),
+    ).toHaveTextContent('Four');
+  });
+
   it('says when the answer matched an Accepted Variant', async () => {
     setupMocksWithStartSession();
     vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
@@ -891,6 +904,22 @@ describe('StudyPage', () => {
       expect(mockUpdateCard).not.toHaveBeenCalled();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
+    });
+
+    it("won't save the card while a typed variant hasn't been added", async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('New accepted variant'), 'IV');
+
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+      expect(screen.getByRole('dialog')).toHaveTextContent(/not added yet/i);
+
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+      expect(screen.getByRole('dialog')).not.toHaveTextContent(
+        /not added yet/i,
+      );
     });
 
     it('asks which variants still fit when the answer changes, all kept unless unticked', async () => {

@@ -11,21 +11,29 @@ import { Input } from '@/components/ui/input';
  * Lists a card's Accepted Variants and adds and removes them, each change
  * saved straight away. Variants don't change what the card asks, so they
  * never reset its progress (ADR-0004). Not a form of its own, so it can sit
- * inside the card's edit form.
+ * inside the card's edit form. `onDraftChange` says whether a typed variant
+ * is waiting to be added, so the surrounding dialog can hold off closing.
  */
 export function AcceptedVariantsEditor({
   deckId,
   card,
   onChanged,
+  onDraftChange,
 }: {
   deckId: string;
   card: Flashcard;
   onChanged?: (card: Flashcard) => void;
+  onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const utils = trpc.useUtils();
   const [text, setText] = useState('');
   const headingId = useId();
   const inputId = useId();
+
+  function changeText(value: string) {
+    setText(value);
+    onDraftChange?.(value.trim() !== '');
+  }
 
   function handleChanged(updated: Parameters<typeof toFlashcard>[0]) {
     onChanged?.(toFlashcard(updated));
@@ -35,7 +43,7 @@ export function AcceptedVariantsEditor({
 
   const add = trpc.card.addVariant.useMutation({
     onSuccess: (updated) => {
-      setText('');
+      changeText('');
       handleChanged(updated);
     },
     onError: (error) =>
@@ -100,7 +108,7 @@ export function AcceptedVariantsEditor({
           id={inputId}
           value={text}
           placeholder="Add a variant"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => changeText(e.target.value)}
           onKeyDown={(e) => {
             // Enter adds the variant rather than submitting a surrounding form
             if (e.key === 'Enter') {
@@ -120,6 +128,11 @@ export function AcceptedVariantsEditor({
           Add
         </Button>
       </div>
+      {text.trim() !== '' && (
+        <p className="mt-1 text-xs text-amber-200/90">
+          Not added yet. Press Add or Enter.
+        </p>
+      )}
     </div>
   );
 }

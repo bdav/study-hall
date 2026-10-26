@@ -697,6 +697,26 @@ describe('DeckCardsPage', () => {
       expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
     });
 
+    it("won't close while a typed variant hasn't been added", async () => {
+      setupMocks();
+
+      const { user, dialog } = await openVariants('Capital of France');
+      await user.type(
+        within(dialog).getByLabelText('New accepted variant'),
+        'Lutetia',
+      );
+
+      expect(
+        within(dialog).getByRole('button', { name: 'Done' }),
+      ).toBeDisabled();
+      expect(dialog).toHaveTextContent(/not added yet/i);
+
+      await user.clear(within(dialog).getByLabelText('New accepted variant'));
+      expect(
+        within(dialog).getByRole('button', { name: 'Done' }),
+      ).toBeEnabled();
+    });
+
     it('removes an Accepted Variant', async () => {
       setupMocks();
       const mockRemove = vi.fn();

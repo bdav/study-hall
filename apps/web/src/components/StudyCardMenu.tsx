@@ -46,6 +46,8 @@ export function StudyCardMenu({
   >(null);
   const [front, setFront] = useState(card.front);
   const [answer, setAnswer] = useState(card.canonicalAnswer);
+  // A variant typed but not added, which Save would otherwise lose
+  const [hasVariantDraft, setHasVariantDraft] = useState(false);
   const frontId = useId();
   const answerId = useId();
 
@@ -74,11 +76,15 @@ export function StudyCardMenu({
   function openEdit() {
     setFront(card.front);
     setAnswer(card.canonicalAnswer);
+    setHasVariantDraft(false);
     setDialog('edit');
   }
 
   const canSave =
-    front.trim() !== '' && answer.trim() !== '' && !update.isPending;
+    front.trim() !== '' &&
+    answer.trim() !== '' &&
+    !hasVariantDraft &&
+    !update.isPending;
 
   const edit = {
     cardId: card.id,
@@ -183,6 +189,7 @@ export function StudyCardMenu({
                   deckId={deckId}
                   card={card}
                   onChanged={onVariantsChanged}
+                  onDraftChange={setHasVariantDraft}
                 />
               </div>
             </div>
