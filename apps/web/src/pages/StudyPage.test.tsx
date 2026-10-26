@@ -217,13 +217,16 @@ function mockCardMutations() {
     mutate: mockUpdateCard.mockImplementation(
       (input: {
         cardId: string;
-        front: string;
+        front?: string;
         canonicalAnswers: { id?: string; text: string }[];
       }) =>
         opts?.onSuccess?.(
           {
             id: input.cardId,
-            front: input.front,
+            // An update without a front keeps the card's
+            front:
+              input.front ??
+              mockDeck.cards.find((card) => card.id === input.cardId)?.front,
             canonicalAnswers: input.canonicalAnswers.map((answer, i) => ({
               id: answer.id ?? `answer-new-${i}`,
               text: answer.text,
@@ -320,6 +323,31 @@ function mockQueuePreview(
   vi.mocked(trpc.study.queuePreview.useQuery).mockReturnValue({
     data: preview,
   } as unknown as ReturnType<typeof trpc.study.queuePreview.useQuery>);
+}
+
+/** Starts studying with card-1's answer, "4", accepting "four". */
+async function startStudyingWithVariants() {
+  setupMocksWithStartSession();
+  const session = {
+    ...mockSession,
+    items: [
+      {
+        id: 'item-1',
+        card: cardOneWithVariants([{ id: 'variant-four', text: 'four' }]),
+      },
+      mockSession.items[1],
+    ],
+  };
+  vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+    onSuccess?: (data: typeof session) => void;
+  }) => ({
+    mutate: vi.fn(() => opts?.onSuccess?.(session)),
+    mutateAsync: vi.fn(),
+  })) as unknown as typeof trpc.study.startSession.useMutation);
+  const user = userEvent.setup();
+  renderStudyPage();
+  await user.click(screen.getByRole('button', { name: /test deck/i }));
+  return user;
 }
 
 beforeEach(() => {
@@ -911,6 +939,74 @@ describe('StudyPage', () => {
     });
   });
 
+  describe("a card's answers below yours", () => {
+    async function answerWithVariants(answer: string) {
+      const user = await startStudyingWithVariants();
+      await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
+      await screen.findByTestId('result');
+      return user;
+    }
+
+    const answersOfCard = { name: 'Answers of What is 2+2?' };
+
+    it('sums up the answers and variants once the card is graded', async () => {
+      await answerWithVariants('4');
+
+      expect(screen.getByRole('button', answersOfCard)).toHaveTextContent(
+        '4Variants: four',
+      );
+    });
+
+    it("isn't there before you answer", async () => {
+      await startStudyingWithVariants();
+
+      expect(
+        screen.queryByRole('button', answersOfCard),
+      ).not.toBeInTheDocument();
+    });
+
+    it('adds a variant in place without calling the card edited or moving on', async () => {
+      const user = await answerWithVariants('IV');
+
+      await user.click(screen.getByRole('button', answersOfCard));
+      const panel = screen.getByRole('region', answersOfCard);
+      await user.type(
+        within(panel).getByLabelText('New accepted variant of 4'),
+        'IV{Enter}',
+      );
+
+      expect(mockAddVariant).toHaveBeenCalledWith({
+        canonicalAnswerId: 'answer-4',
+        text: 'IV',
+      });
+      // Still on the graded card, not the next one
+      expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
+      expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
+    });
+
+    it('saves retyped answers in place, saying the answer was graded before', async () => {
+      const user = await answerWithVariants('IV');
+
+      await user.click(screen.getByRole('button', answersOfCard));
+      const panel = screen.getByRole('region', answersOfCard);
+      await user.type(within(panel).getByLabelText('Answer 1'), ' || IV');
+      await user.click(within(panel).getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [{ id: 'answer-4', text: '4' }, { text: 'IV' }],
+        keepVariantIds: [],
+      });
+      expect(
+        screen.queryByRole('region', answersOfCard),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/graded before you edited/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', answersOfCard)).toHaveTextContent(
+        '4 · also IV',
+      );
+    });
+  });
+
   describe('cards with several Canonical Answers', () => {
     /** Starts studying with card-1 accepting "4" (primary) and "IV". */
     async function startWithTwoAnswers(grade: {
@@ -970,7 +1066,9 @@ describe('StudyPage', () => {
       expect(notes).toHaveTextContent(
         'Matched “IV”, one of the card’s answers.',
       );
-      expect(notes).toHaveTextContent('Also accepted: IV');
+      expect(
+        screen.getByRole('button', { name: 'Answers of What is 2+2?' }),
+      ).toHaveTextContent('4 · also IV');
       expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
     });
 
@@ -982,8 +1080,8 @@ describe('StudyPage', () => {
 
       await user.type(screen.getByRole('textbox'), '4{Enter}');
 
-      const notes = await screen.findByTestId('answer-notes');
-      expect(notes).not.toHaveTextContent(/matched/i);
+      await screen.findByTestId('result');
+      expect(screen.queryByText(/matched/i)).not.toBeInTheDocument();
     });
 
     it('asks which answer "My answer was correct" makes a variant of', async () => {
@@ -1034,31 +1132,6 @@ describe('StudyPage', () => {
   describe('editing and deleting cards', () => {
     async function startStudying() {
       setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      return user;
-    }
-
-    /** Starts studying with card-1's answer, "4", accepting "four". */
-    async function startStudyingWithVariants() {
-      setupMocksWithStartSession();
-      const session = {
-        ...mockSession,
-        items: [
-          {
-            id: 'item-1',
-            card: cardOneWithVariants([{ id: 'variant-four', text: 'four' }]),
-          },
-          mockSession.items[1],
-        ],
-      };
-      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
-        ((opts?: { onSuccess?: (data: typeof session) => void }) => ({
-          mutate: vi.fn(() => opts?.onSuccess?.(session)),
-          mutateAsync: vi.fn(),
-        })) as unknown as typeof trpc.study.startSession.useMutation,
-      );
       const user = userEvent.setup();
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));

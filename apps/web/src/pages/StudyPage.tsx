@@ -27,6 +27,7 @@ import {
 } from '@/hooks/useSlideAnimation';
 import { DeckHeader } from '@/components/DeckHeader';
 import { StudyCardMenu } from '@/components/StudyCardMenu';
+import { CardAnswers } from '@/components/CardAnswers';
 import {
   gradeOf,
   recallGradeColors,
@@ -49,10 +50,13 @@ const navButtonClasses =
   'absolute top-1/2 h-16 w-16 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 focus-visible:border-transparent focus-visible:ring-0';
 
 /** Whether a key press happened in a dialog, which has its own Enter. */
+/** Whether a key belongs to a dialog or the card's answers form, not the page. */
 function isInDialog(target: EventTarget | null) {
   return (
     target instanceof Element &&
-    target.closest('[role="dialog"], [role="alertdialog"]') !== null
+    target.closest(
+      '[role="dialog"], [role="alertdialog"], [data-card-answers]',
+    ) !== null
   );
 }
 
@@ -219,9 +223,8 @@ function TitleCardDetails({
 }
 
 /**
- * Below the learner's answer to a card with several Canonical Answers: the
- * ones besides the primary shown on the card, and which one the answer
- * matched, when it wasn't the primary.
+ * Below the learner's answer: which of the card's Canonical Answers it
+ * matched, when that wasn't the primary shown on the card.
  */
 function AnswerNotes({
   card,
@@ -230,17 +233,14 @@ function AnswerNotes({
   card: Flashcard;
   result: { matchedAnswer: string | null };
 }) {
-  const [primary, ...others] = card.answers;
-  if (others.length === 0) return null;
-  const matchedOther =
-    result.matchedAnswer !== null && result.matchedAnswer !== primary?.text;
+  const primary = card.answers[0]?.text;
+  if (result.matchedAnswer === null || result.matchedAnswer === primary) {
+    return null;
+  }
   return (
-    <div className="mt-2 text-sm text-white/70" data-testid="answer-notes">
-      {matchedOther && (
-        <p>Matched “{result.matchedAnswer}”, one of the card’s answers.</p>
-      )}
-      <p>Also accepted: {others.map((answer) => answer.text).join(', ')}</p>
-    </div>
+    <p className="mt-2 text-sm text-white/70" data-testid="answer-notes">
+      Matched “{result.matchedAnswer}”, one of the card’s answers.
+    </p>
   );
 }
 
@@ -248,6 +248,8 @@ export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const yourAnswerId = useId();
   const answerChoiceId = useId();
+  // The card whose answers are open below the learner's answer
+  const [answersOpenFor, setAnswersOpenFor] = useState<string | null>(null);
   // The attempt whose "My answer was correct" is choosing an answer
   const [choosingAnswerFor, setChoosingAnswerFor] = useState<string | null>(
     null,
@@ -752,7 +754,23 @@ export default function StudyPage() {
                 {displayResult.userAnswer ?? "I don't know"}
               </p>
               {displayCard && (
-                <AnswerNotes card={displayCard} result={displayResult} />
+                <>
+                  <AnswerNotes card={displayCard} result={displayResult} />
+                  <CardAnswers
+                    deckId={deckId ?? ''}
+                    card={displayCard}
+                    isOpen={answersOpenFor === displayCard.id}
+                    onOpen={() => setAnswersOpenFor(displayCard.id)}
+                    onClose={() => setAnswersOpenFor(null)}
+                    onSaved={(card, resetsProgress) =>
+                      resetsProgress
+                        ? replaceCard(card)
+                        : showUnresetChange(card)
+                    }
+                    onVariantsChanged={showUnresetChange}
+                    className="mx-auto max-w-md text-center"
+                  />
+                </>
               )}
               {isChoosingAnswer && displayCard && (
                 <div

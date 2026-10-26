@@ -1,14 +1,16 @@
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { type Flashcard } from '@/lib/cards';
+import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { useAnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
 import { AnswersEditor } from '@/components/AnswersEditor';
 
 /**
- * A card's answers below it on the Cards tab: a summary of its Canonical
- * Answers and Accepted Variants that opens, in place, into the form for
- * them.
+ * A card's answers below it, on the Cards tab and below the learner's answer
+ * when studying: a summary of its Canonical Answers and Accepted Variants
+ * that opens, in place, into the form for them. `onSaved` says whether the
+ * saved answers reset the card's progress; variant changes reset nothing.
+ * Marked `data-card-answers`, so page shortcuts can leave its keys alone.
  */
 export function CardAnswers({
   deckId,
@@ -16,21 +18,34 @@ export function CardAnswers({
   isOpen,
   onOpen,
   onClose,
+  onSaved,
+  onVariantsChanged,
+  className = '',
 }: {
   deckId: string;
   card: Flashcard;
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
+  onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
+  onVariantsChanged?: (card: Flashcard) => void;
+  className?: string;
 }) {
   const label = `Answers of ${card.front}`;
   if (isOpen) {
     return (
       <section
         aria-label={label}
-        className="mt-2 rounded-xl border border-white/20 bg-white/10 p-3 text-white backdrop-blur-sm"
+        data-card-answers
+        className={`mt-2 rounded-xl border border-white/20 bg-white/10 p-3 text-left text-white backdrop-blur-sm ${className}`}
       >
-        <AnswersForm deckId={deckId} card={card} onDone={onClose} />
+        <AnswersForm
+          deckId={deckId}
+          card={card}
+          onDone={onClose}
+          onSaved={onSaved}
+          onVariantsChanged={onVariantsChanged}
+        />
       </section>
     );
   }
@@ -44,8 +59,9 @@ export function CardAnswers({
       type="button"
       aria-label={label}
       aria-expanded={false}
+      data-card-answers
       onClick={onOpen}
-      className="mt-2 block w-full rounded px-1 text-left text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+      className={`mt-2 block w-full rounded px-1 text-left text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white ${className}`}
     >
       <p className="truncate">
         {primary?.text}
@@ -66,15 +82,20 @@ function AnswersForm({
   deckId,
   card,
   onDone,
+  onSaved,
+  onVariantsChanged,
 }: {
   deckId: string;
   card: Flashcard;
   onDone: () => void;
+  onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
+  onVariantsChanged?: (card: Flashcard) => void;
 }) {
   const form = useAnswersForm(card);
   const utils = trpc.useUtils();
   const update = trpc.card.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      onSaved?.(toFlashcard(updated), form.resetsProgress);
       utils.card.listByDeck.invalidate({ deckId });
       utils.deck.getById.invalidate({ id: deckId });
       onDone();
@@ -101,7 +122,11 @@ function AnswersForm({
 
   return (
     <>
-      <AnswersEditor form={form} deckId={deckId} />
+      <AnswersEditor
+        form={form}
+        deckId={deckId}
+        onVariantsChanged={onVariantsChanged}
+      />
       <div className="mt-3 flex justify-end gap-2">
         <Button
           type="button"
