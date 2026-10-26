@@ -3,6 +3,8 @@
 @theme inline {
   --color-soft-foreground: oklch(0.45 0 0);
   --color-soft-muted-foreground: oklch(0.75 0.12 250);
+  /* Errors and deleting: a soft red that reads on the ocean background */
+  --color-destructive: oklch(0.78 0.14 25);
   --animate-pulse-halo: pulse-halo 2s ease-in-out infinite;
   --animate-pulse-halo-border: pulse-halo-border 2s ease-in-out infinite;
   --animate-card-out-left: card-out-left 350ms ease-in-out forwards;
