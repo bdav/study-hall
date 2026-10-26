@@ -29,6 +29,7 @@ import {
 import { DeckHeader } from '@/components/DeckHeader';
 import { StudyCardEditor } from '@/components/StudyCardEditor';
 import { CardAnswersSummary } from '@/components/CardAnswers';
+import { CardHistory } from '@/components/CardHistory';
 import {
   gradeOf,
   recallGradeColors,
@@ -246,6 +247,7 @@ function AnswerNotes({
 
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
+  const utils = trpc.useUtils();
   const yourAnswerId = useId();
   const answerChoiceId = useId();
   // The card in edit mode, for the slide it was turned on in, and, for a
@@ -332,14 +334,25 @@ export default function StudyPage() {
             ...gradeOf(studyState),
           }
         : null;
-  // "My answer was correct" on a card with several answers first asks which
-  // one the answer is another way of saying
-  const acceptDisplayedAnswer = displayResult
-    ? () =>
-        displayCard && displayCard.answers.length > 1
-          ? setChoosingAnswerFor(displayResult.attemptId)
-          : handleAcceptAnswer(displayResult.attemptId)
-    : undefined;
+  // "My answer was correct" regrades the answer, so the card's history shows
+  // its new grade
+  async function acceptAnswer(
+    attemptId: string,
+    cardId: string,
+    canonicalAnswerId?: string,
+  ) {
+    await handleAcceptAnswer(attemptId, canonicalAnswerId);
+    utils.card.history.invalidate({ cardId });
+  }
+  // On a card with several answers it first asks which one the answer is
+  // another way of saying
+  const acceptDisplayedAnswer =
+    displayResult && displayCard
+      ? () =>
+          displayCard.answers.length > 1
+            ? setChoosingAnswerFor(displayResult.attemptId)
+            : acceptAnswer(displayResult.attemptId, displayCard.id)
+      : undefined;
   const isChoosingAnswer =
     !!displayResult && choosingAnswerFor === displayResult.attemptId;
   const progress = isReviewing
@@ -782,72 +795,78 @@ export default function StudyPage() {
           )}
 
           {(studyState.phase === 'result' || isReviewing) && displayResult ? (
-            <div
-              role="group"
-              aria-labelledby={yourAnswerId}
-              className="py-2 text-center"
-            >
-              <p
-                id={yourAnswerId}
-                className="text-xs uppercase tracking-wide text-white/50"
+            <>
+              <div
+                role="group"
+                aria-labelledby={yourAnswerId}
+                className="py-2 text-center"
               >
-                Your answer
-              </p>
-              <p className="text-3xl font-bold uppercase tracking-wide text-white">
-                {displayResult.userAnswer ?? "I don't know"}
-              </p>
-              {displayCard && (
-                <>
-                  <AnswerNotes card={displayCard} result={displayResult} />
-                  <CardAnswersSummary
-                    card={displayCard}
-                    onOpen={() => startEditing(displayCard.id, true)}
-                    caption="Accepted answers"
-                    className="mx-auto max-w-md text-center"
-                  />
-                </>
-              )}
-              {isChoosingAnswer && displayCard && (
-                <div
-                  role="group"
-                  aria-labelledby={answerChoiceId}
-                  className="mt-3 text-sm"
+                <p
+                  id={yourAnswerId}
+                  className="text-xs uppercase tracking-wide text-white/50"
                 >
-                  <p id={answerChoiceId} className="text-white/70">
-                    Which answer is yours another way of saying?
-                  </p>
-                  <div className="mt-2 flex flex-wrap justify-center gap-2">
-                    {displayCard.answers.map((answer) => (
+                  Your answer
+                </p>
+                <p className="text-3xl font-bold uppercase tracking-wide text-white">
+                  {displayResult.userAnswer ?? "I don't know"}
+                </p>
+                {displayCard && (
+                  <>
+                    <AnswerNotes card={displayCard} result={displayResult} />
+                    <CardAnswersSummary
+                      card={displayCard}
+                      onOpen={() => startEditing(displayCard.id, true)}
+                      caption="Accepted answers"
+                      className="mx-auto max-w-md text-center"
+                    />
+                  </>
+                )}
+                {isChoosingAnswer && displayCard && (
+                  <div
+                    role="group"
+                    aria-labelledby={answerChoiceId}
+                    className="mt-3 text-sm"
+                  >
+                    <p id={answerChoiceId} className="text-white/70">
+                      Which answer is yours another way of saying?
+                    </p>
+                    <div className="mt-2 flex flex-wrap justify-center gap-2">
+                      {displayCard.answers.map((answer) => (
+                        <Button
+                          key={answer.id}
+                          type="button"
+                          size="sm"
+                          disabled={isAcceptingAnswer}
+                          onClick={() => {
+                            setChoosingAnswerFor(null);
+                            acceptAnswer(
+                              displayResult.attemptId,
+                              displayCard.id,
+                              answer.id,
+                            );
+                          }}
+                          className="bg-white/20 text-white hover:bg-white/30"
+                        >
+                          {answer.text}
+                        </Button>
+                      ))}
                       <Button
-                        key={answer.id}
                         type="button"
                         size="sm"
-                        disabled={isAcceptingAnswer}
-                        onClick={() => {
-                          setChoosingAnswerFor(null);
-                          handleAcceptAnswer(
-                            displayResult.attemptId,
-                            answer.id,
-                          );
-                        }}
-                        className="bg-white/20 text-white hover:bg-white/30"
+                        variant="ghost"
+                        onClick={() => setChoosingAnswerFor(null)}
+                        className="text-white/70 hover:bg-white/10 hover:text-white"
                       >
-                        {answer.text}
+                        Cancel
                       </Button>
-                    ))}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setChoosingAnswerFor(null)}
-                      className="text-white/70 hover:bg-white/10 hover:text-white"
-                    >
-                      Cancel
-                    </Button>
+                    </div>
                   </div>
-                </div>
+                )}
+              </div>
+              {displayCard && (
+                <CardHistory key={displayCard.id} cardId={displayCard.id} />
               )}
-            </div>
+            </>
           ) : studyState.phase !== 'answering' ? (
             // Holds the answer's place, label included
             <div className="py-2 text-center" aria-hidden>

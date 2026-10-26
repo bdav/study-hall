@@ -9,16 +9,21 @@ import { trpc } from '@/lib/trpc';
 // Mock tRPC hooks
 const mockInvalidateDeck = vi.fn();
 const mockInvalidateCards = vi.fn();
+const mockInvalidateHistory = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
       deck: { getById: { invalidate: mockInvalidateDeck } },
-      card: { listByDeck: { invalidate: mockInvalidateCards } },
+      card: {
+        listByDeck: { invalidate: mockInvalidateCards },
+        history: { invalidate: mockInvalidateHistory },
+      },
     })),
     card: {
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
+      history: { useQuery: vi.fn() },
     },
     deck: {
       getById: {
@@ -315,11 +320,129 @@ async function startStudyingWithVariants() {
   return user;
 }
 
+const DAY = 24 * 60 * 60 * 1000;
+
+type CardHistory = {
+  progress: { lifecycleState: string; dueAt: string | null } | null;
+  versions: {
+    id: string;
+    number: number;
+    front: string;
+    canonicalAnswers: string[];
+    startedAt: string;
+    isCurrent: boolean;
+    attempts: {
+      id: string;
+      userAnswer: string | null;
+      recallGrade: string;
+      createdAt: string;
+    }[];
+    answeredCount: number;
+    rightCount: number;
+  }[];
+  unversioned: {
+    attempts: CardHistory['versions'][number]['attempts'];
+    answeredCount: number;
+    rightCount: number;
+  } | null;
+};
+
+/** card-1's history: three answers to its current version, two right. */
+function historyOfCardOne(): CardHistory {
+  return {
+    progress: {
+      lifecycleState: 'LEARNING',
+      dueAt: new Date(Date.now() + 2 * DAY + 60 * 60 * 1000).toISOString(),
+    },
+    versions: [
+      {
+        id: 'version-2',
+        number: 2,
+        front: 'What is 2+2?',
+        canonicalAnswers: ['4'],
+        startedAt: '2026-10-20T12:00:00.000Z',
+        isCurrent: true,
+        attempts: [
+          {
+            id: 'attempt-3',
+            userAnswer: '4',
+            recallGrade: 'NAILED',
+            createdAt: '2026-10-24T12:00:00.000Z',
+          },
+          {
+            id: 'attempt-2',
+            userAnswer: null,
+            recallGrade: 'MISSED',
+            createdAt: '2026-10-22T12:00:00.000Z',
+          },
+          {
+            id: 'attempt-1',
+            userAnswer: 'four',
+            recallGrade: 'NAILED',
+            createdAt: '2026-10-21T12:00:00.000Z',
+          },
+        ],
+        answeredCount: 3,
+        rightCount: 2,
+      },
+      {
+        id: 'version-1',
+        number: 1,
+        front: 'What is two plus two?',
+        canonicalAnswers: ['4', 'four'],
+        startedAt: '2026-10-01T12:00:00.000Z',
+        isCurrent: false,
+        attempts: [
+          {
+            id: 'attempt-0',
+            userAnswer: 'five',
+            recallGrade: 'MISSED',
+            createdAt: '2026-10-02T12:00:00.000Z',
+          },
+        ],
+        answeredCount: 1,
+        rightCount: 0,
+      },
+    ],
+    unversioned: null,
+  };
+}
+
+/** Each card's history; card-1's by default, others with no answers. */
+function mockCardHistory(
+  history: (cardId: string) => CardHistory = (cardId) =>
+    cardId === 'card-1'
+      ? historyOfCardOne()
+      : {
+          progress: { lifecycleState: 'NEW', dueAt: null },
+          versions: [
+            {
+              ...historyOfCardOne().versions[0],
+              front: 'Capital of France?',
+              canonicalAnswers: ['Paris'],
+              attempts: [],
+              answeredCount: 0,
+              rightCount: 0,
+            },
+          ],
+          unversioned: null,
+        },
+) {
+  vi.mocked(trpc.card.history.useQuery).mockImplementation(((input: {
+    cardId: string;
+  }) => ({
+    data: history(input.cardId),
+    isLoading: false,
+    isError: false,
+  })) as unknown as typeof trpc.card.history.useQuery);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
   mockAcceptAnswerMutation();
   mockQueuePreview();
+  mockCardHistory();
 });
 
 describe('StudyPage', () => {
@@ -1730,6 +1853,193 @@ describe('StudyPage', () => {
       expect(
         await screen.findByRole('heading', { name: /session complete/i }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("a card's history below it", () => {
+    const historyRegion = { name: 'Your history with this card' };
+
+    async function answerFirstCard(
+      answer = '4',
+      grade: 'correct' | 'incorrect' = 'correct',
+    ) {
+      setupMocksWithStartSession(grade);
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
+      await screen.findByTestId('result');
+      return user;
+    }
+
+    it("isn't there before you answer", async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(
+        screen.queryByRole('region', historyRegion),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the current version's answers, how many were right, the card's state and next review", async () => {
+      await answerFirstCard();
+
+      const history = screen.getByRole('region', historyRegion);
+      expect(trpc.card.history.useQuery).toHaveBeenCalledWith(
+        { cardId: 'card-1' },
+        expect.anything(),
+      );
+      expect(history).toHaveTextContent('Answered 3 times · 2 right');
+      expect(history).toHaveTextContent(
+        'Still learning · Next review in 2 days',
+      );
+      const answers = within(history).getAllByRole('listitem');
+      expect(answers.map((item) => item.textContent)).toEqual([
+        '4Nailed itOct 24',
+        "I don't knowNeeds reviewOct 22",
+        'fourNailed itOct 21',
+      ]);
+      expect(history).not.toHaveTextContent(/mastery/i);
+    });
+
+    it('shows the five most recent answers to the current version', async () => {
+      const many = historyOfCardOne();
+      const attempts = Array.from({ length: 7 }, (_, i) => ({
+        id: `attempt-${i}`,
+        userAnswer: `answer ${i}`,
+        recallGrade: 'MISSED',
+        createdAt: '2026-10-24T12:00:00.000Z',
+      }));
+      many.versions[0] = {
+        ...many.versions[0],
+        attempts,
+        answeredCount: 7,
+        rightCount: 0,
+      };
+      mockCardHistory(() => many);
+      await answerFirstCard();
+
+      const history = screen.getByRole('region', historyRegion);
+      expect(within(history).getAllByRole('listitem')).toHaveLength(5);
+      expect(history).toHaveTextContent('Answered 7 times · 0 right');
+    });
+
+    it('lists earlier versions in a picker; choosing one shows its front, answer and answers', async () => {
+      const user = await answerFirstCard();
+      const history = screen.getByRole('region', historyRegion);
+      const picker = within(history).getByRole('combobox', {
+        name: 'Card version',
+      });
+      expect(
+        within(picker)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Current version', 'Oct 1: What is two plus two? → 4, four']);
+
+      await user.selectOptions(picker, 'version-1');
+
+      expect(history).toHaveTextContent('What is two plus two?');
+      expect(history).toHaveTextContent('Answers: 4, four');
+      expect(history).toHaveTextContent('Answered 1 time · 0 right');
+      expect(
+        within(history)
+          .getAllByRole('listitem')
+          .map((item) => item.textContent),
+      ).toEqual(['fiveNeeds reviewOct 2']);
+      // An earlier version has no progress of its own
+      expect(history).not.toHaveTextContent('Still learning');
+    });
+
+    it('puts answers with no recorded version under "An earlier version"', async () => {
+      const history = historyOfCardOne();
+      history.versions = history.versions.slice(0, 1);
+      history.unversioned = {
+        attempts: [
+          {
+            id: 'attempt-old',
+            userAnswer: 'three',
+            recallGrade: 'MISSED',
+            createdAt: '2026-09-01T12:00:00.000Z',
+          },
+        ],
+        answeredCount: 1,
+        rightCount: 0,
+      };
+      mockCardHistory(() => history);
+      const user = await answerFirstCard();
+      const region = screen.getByRole('region', historyRegion);
+
+      await user.selectOptions(
+        within(region).getByRole('combobox', { name: 'Card version' }),
+        'An earlier version',
+      );
+
+      expect(region).toHaveTextContent('Answered 1 time · 0 right');
+      expect(
+        within(region)
+          .getAllByRole('listitem')
+          .map((item) => item.textContent),
+      ).toEqual(['threeNeeds reviewSep 1']);
+    });
+
+    it('has no picker when the card has only its current version', async () => {
+      const history = historyOfCardOne();
+      history.versions = history.versions.slice(0, 1);
+      mockCardHistory(() => history);
+      await answerFirstCard();
+
+      expect(
+        within(screen.getByRole('region', historyRegion)).queryByRole(
+          'combobox',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is shown for a card reviewed with Back', async () => {
+      const user = await answerFirstCard();
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await screen.findByText('Capital of France?');
+      expect(
+        screen.queryByRole('region', historyRegion),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /previous/i }));
+
+      expect(
+        await screen.findByRole('region', historyRegion),
+      ).toHaveTextContent('Answered 3 times · 2 right');
+    });
+
+    it('refreshes once "My answer was correct" regrades the answer', async () => {
+      const user = await answerFirstCard('IV', 'incorrect');
+
+      await user.click(
+        screen.getByRole('button', { name: 'My answer was correct' }),
+      );
+
+      await waitFor(() =>
+        expect(mockInvalidateHistory).toHaveBeenCalledWith({
+          cardId: 'card-1',
+        }),
+      );
+    });
+
+    it('refreshes once an edit to the card is saved', async () => {
+      const user = await answerFirstCard();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+      await user.click(screen.getByRole('button', { name: 'Flip to front' }));
+      await user.type(
+        screen.getByRole('textbox', { name: 'Front' }),
+        ' exactly{Enter}',
+      );
+
+      expect(mockInvalidateHistory).toHaveBeenCalledWith({ cardId: 'card-1' });
     });
   });
 

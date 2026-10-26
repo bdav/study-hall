@@ -7,6 +7,7 @@ import {
   editCard,
   withCanonicalAnswers,
 } from '../services/cards.js';
+import { cardHistory } from '../services/cardHistory.js';
 
 const front = z.string().trim().min(1);
 const answerText = z.string().trim().min(1);
@@ -126,6 +127,13 @@ export const cardRouter = router({
 
       return { success: true };
     }),
+
+  // The learner's answers to a card, by Card Version, and its progress
+  history: protectedProcedure
+    .input(z.object({ cardId: z.string() }))
+    .query(({ ctx, input }) =>
+      cardHistory(ctx.prisma, { userId: ctx.userId, cardId: input.cardId }),
+    ),
 
   listByDeck: protectedProcedure
     .input(z.object({ deckId: z.string() }))

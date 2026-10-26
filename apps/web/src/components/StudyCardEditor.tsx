@@ -57,6 +57,7 @@ export function StudyCardEditor({
   function refreshDeck() {
     utils.deck.getById.invalidate({ id: deckId });
     utils.card.listByDeck.invalidate({ deckId });
+    utils.card.history.invalidate({ cardId: card.id });
   }
 
   const update = trpc.card.update.useMutation({
