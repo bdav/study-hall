@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -7,8 +7,19 @@ import StudyPage from './StudyPage';
 import { trpc } from '@/lib/trpc';
 
 // Mock tRPC hooks
+const mockInvalidateDeck = vi.fn();
+const mockInvalidateCards = vi.fn();
+
 vi.mock('@/lib/trpc', () => ({
   trpc: {
+    useUtils: vi.fn(() => ({
+      deck: { getById: { invalidate: mockInvalidateDeck } },
+      card: { listByDeck: { invalidate: mockInvalidateCards } },
+    })),
+    card: {
+      update: { useMutation: vi.fn() },
+      delete: { useMutation: vi.fn() },
+    },
     deck: {
       getById: {
         useQuery: vi.fn(),
@@ -156,8 +167,59 @@ function setupBasicMocks() {
   } as unknown as ReturnType<typeof trpc.study.finishSession.useMutation>);
 }
 
+const mockUpdateCard = vi.fn();
+const mockDeleteCard = vi.fn();
+
+type UpdateOptions = Parameters<typeof trpc.card.update.useMutation>[0];
+type DeleteOptions = Parameters<typeof trpc.card.delete.useMutation>[0];
+
+/**
+ * Card edits and deletions that succeed straight away, answering the way
+ * the API does.
+ */
+function mockCardMutations() {
+  vi.mocked(trpc.card.update.useMutation).mockImplementation(((
+    opts?: UpdateOptions,
+  ) => ({
+    mutate: mockUpdateCard.mockImplementation(
+      (input: { cardId: string; front: string; canonicalAnswer: string }) =>
+        opts?.onSuccess?.(
+          {
+            id: input.cardId,
+            front: input.front,
+            canonicalAnswers: [
+              {
+                id: 'answer-new',
+                text: input.canonicalAnswer,
+                isPrimary: true,
+              },
+            ],
+          } as never,
+          input as never,
+          undefined,
+          {} as never,
+        ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.update.useMutation);
+  vi.mocked(trpc.card.delete.useMutation).mockImplementation(((
+    opts?: DeleteOptions,
+  ) => ({
+    mutate: mockDeleteCard.mockImplementation((input: { cardId: string }) =>
+      opts?.onSuccess?.(
+        { success: true } as never,
+        input as never,
+        undefined,
+        {} as never,
+      ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.delete.useMutation);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCardMutations();
 });
 
 describe('StudyPage', () => {
@@ -548,6 +610,160 @@ describe('StudyPage', () => {
     expect(
       screen.getByRole('status', { name: /loading/i }),
     ).toBeInTheDocument();
+  });
+
+  describe('editing and deleting the current card', () => {
+    async function startStudying() {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      return user;
+    }
+
+    async function chooseFromCardMenu(
+      user: ReturnType<typeof userEvent.setup>,
+      item: 'Edit' | 'Delete',
+    ) {
+      await user.click(screen.getByRole('button', { name: 'Card options' }));
+      await user.click(await screen.findByRole('menuitem', { name: item }));
+    }
+
+    it('offers no card menu before the session starts', () => {
+      setupBasicMocks();
+      renderStudyPage();
+
+      expect(
+        screen.queryByRole('button', { name: 'Card options' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('edits the card and goes on studying the edited card', async () => {
+      const user = await startStudying();
+
+      await chooseFromCardMenu(user, 'Edit');
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByLabelText('Front')).toHaveValue(
+        'What is 2+2?',
+      );
+      expect(within(dialog).getByLabelText('Answer')).toHaveValue('4');
+      expect(dialog).toHaveTextContent(/progress starts over/i);
+      await user.clear(within(dialog).getByLabelText('Front'));
+      await user.type(within(dialog).getByLabelText('Front'), 'What is 2+3?');
+      await user.clear(within(dialog).getByLabelText('Answer'));
+      await user.type(within(dialog).getByLabelText('Answer'), '5');
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+3?',
+        canonicalAnswer: '5',
+      });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByText('What is 2+3?')).toBeInTheDocument();
+      expect(mockInvalidateDeck).toHaveBeenCalledWith({ id: 'deck-1' });
+    });
+
+    it("won't save a blank front or answer", async () => {
+      const user = await startStudying();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.clear(screen.getByLabelText('Answer'));
+
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    });
+
+    it('saves an edit with Enter without moving on from an answered card', async () => {
+      const user = await startStudying();
+      await user.type(screen.getByRole('textbox'), '4');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await screen.findByTestId('result');
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Front'), ' exactly{Enter}');
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2? exactly',
+        canonicalAnswer: '4',
+      });
+      // Still on the answered card, not the next one
+      expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent(
+        'What is 2+2? exactly',
+      );
+    });
+
+    it('says an answered card was graded before it was edited', async () => {
+      const user = await startStudying();
+      await user.type(screen.getByRole('textbox'), '4');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await screen.findByTestId('result');
+      expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.clear(screen.getByLabelText('Answer'));
+      await user.type(screen.getByLabelText('Answer'), 'four{Enter}');
+
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent('four');
+      expect(
+        screen.getByText(/your answer was graded before you edited this card/i),
+      ).toBeInTheDocument();
+    });
+
+    it('deletes the card once confirmed and moves on to the next', async () => {
+      const user = await startStudying();
+
+      await chooseFromCardMenu(user, 'Delete');
+      const dialog = screen.getByRole('alertdialog');
+      expect(mockDeleteCard).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      expect(mockDeleteCard).toHaveBeenCalledWith({ cardId: 'card-1' });
+      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
+      expect(screen.getByText('Card 1 of 1')).toBeInTheDocument();
+    });
+
+    it('leaves a deleted card out of the session summary', async () => {
+      const user = await startStudying();
+      await user.type(screen.getByRole('textbox'), '4');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await screen.findByTestId('result');
+
+      await chooseFromCardMenu(user, 'Delete');
+      await user.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', {
+          name: 'Delete',
+        }),
+      );
+      await screen.findByText('Capital of France?');
+      await user.click(screen.getByRole('button', { name: /finish session/i }));
+
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/you answered 0 of 1 cards/i),
+      ).toBeInTheDocument();
+    });
+
+    it('finishes the session when its last card is deleted', async () => {
+      const user = await startStudying();
+
+      for (const front of ['What is 2+2?', 'Capital of France?']) {
+        await screen.findByText(front);
+        await chooseFromCardMenu(user, 'Delete');
+        await user.click(
+          within(screen.getByRole('alertdialog')).getByRole('button', {
+            name: 'Delete',
+          }),
+        );
+      }
+
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe('review navigation', () => {

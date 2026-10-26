@@ -19,6 +19,7 @@ import {
   type CardSnapshot,
 } from '@/hooks/useSlideAnimation';
 import { DeckHeader } from '@/components/DeckHeader';
+import { StudyCardMenu } from '@/components/StudyCardMenu';
 import {
   recallGradeColors,
   recallGradeLabels,
@@ -38,6 +39,14 @@ const answerInputClasses =
 
 const navButtonClasses =
   'absolute top-1/2 h-16 w-16 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 focus-visible:border-transparent focus-visible:ring-0';
+
+/** Whether a key press happened in a dialog, which has its own Enter. */
+function isInDialog(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    target.closest('[role="dialog"], [role="alertdialog"]') !== null
+  );
+}
 
 const flipButtonClasses =
   'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
@@ -68,10 +77,13 @@ function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
 function CardBack({
   card,
   result,
+  editedAfterAnswer = false,
   onFlip,
 }: {
   card: CardSnapshot['card'];
   result: NonNullable<CardSnapshot['result']>;
+  /** The card was edited after this answer, so the grade is for the old card. */
+  editedAfterAnswer?: boolean;
   onFlip?: () => void;
 }) {
   return (
@@ -91,6 +103,11 @@ function CardBack({
       {result.accentMismatch && (
         <p className="mt-2 text-sm text-white/70" data-testid="accent-note">
           Check the accents in the answer above.
+        </p>
+      )}
+      {editedAfterAnswer && (
+        <p className="mt-2 text-sm text-white/70">
+          Your answer was graded before you edited this card.
         </p>
       )}
       {onFlip && (
@@ -137,6 +154,9 @@ export default function StudyPage() {
     handleSubmitAnswer,
     handleDontKnow,
     handleFinish,
+    replaceCurrentCard,
+    removeCurrentCard,
+    editedAfterAnswer,
     handleNext,
     handleBack,
     handleForward,
@@ -221,7 +241,7 @@ export default function StudyPage() {
   useEffect(() => {
     if (studyState.phase !== 'idle') return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Enter') slideToNext();
+      if (e.key === 'Enter' && !isInDialog(e.target)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -231,7 +251,7 @@ export default function StudyPage() {
   useEffect(() => {
     if (studyState.phase !== 'result') return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Enter') slideToNext();
+      if (e.key === 'Enter' && !isInDialog(e.target)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -362,6 +382,7 @@ export default function StudyPage() {
     queueLength: number,
     cardProgress: string | undefined,
     onFlip?: () => void,
+    gradedBeforeEdit = false,
   ) => (
     <CardStack
       queueLength={queueLength}
@@ -369,7 +390,12 @@ export default function StudyPage() {
       isFlipped={result ? flipped : undefined}
       backChildren={
         result ? (
-          <CardBack card={card} result={result} onFlip={onFlip} />
+          <CardBack
+            card={card}
+            result={result}
+            editedAfterAnswer={gradedBeforeEdit}
+            onFlip={onFlip}
+          />
         ) : undefined
       }
     >
@@ -430,6 +456,7 @@ export default function StudyPage() {
                         remainingCount,
                         progress,
                         toggleFlip,
+                        editedAfterAnswer.has(displayCard.id),
                       )
                     ) : (
                       <CardStack queueLength={cards.length}>
@@ -454,6 +481,7 @@ export default function StudyPage() {
                 remainingCount,
                 progress,
                 toggleFlip,
+                editedAfterAnswer.has(displayCard.id),
               )}
             </div>
           ) : isAtTitle ? (
@@ -472,6 +500,20 @@ export default function StudyPage() {
               </CardStack>
             </div>
           ) : null}
+
+          {currentCard &&
+            (studyState.phase === 'answering' ||
+              studyState.phase === 'result') && (
+              <div className="absolute left-3 top-6 z-10">
+                <StudyCardMenu
+                  key={currentCard.id}
+                  deckId={deckId ?? ''}
+                  card={currentCard}
+                  onEdited={replaceCurrentCard}
+                  onDeleted={removeCurrentCard}
+                />
+              </div>
+            )}
 
           {!isAtTitle && (
             <Button

@@ -34,6 +34,11 @@ export function useStudySession(deckId: string | undefined) {
   const [answerInput, setAnswerInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // Cards edited after they were answered, whose shown grade is for the
+  // card as it was
+  const [editedAfterAnswer, setEditedAfterAnswer] = useState<
+    ReadonlySet<string>
+  >(new Set());
 
   const startSession = trpc.study.startSession.useMutation({
     onSuccess: (started) => {
@@ -111,20 +116,72 @@ export function useStudySession(deckId: string | undefined) {
     await answerCurrentCard(null);
   }
 
-  /** Ends the session, at its last card or early; unanswered cards are skipped. */
-  const finish = useCallback(async () => {
-    if (studySession) {
-      try {
-        setError(null);
-        await finishSession.mutateAsync({ id: studySession.id });
-      } catch {
-        setError('Failed to finish study session. Please try again.');
-        return;
+  /**
+   * Ends the session; unanswered cards are skipped. Takes the queue's
+   * length, which deleting a card changes before the state catches up.
+   */
+  const endSession = useCallback(
+    async (queueLength: number) => {
+      if (studySession) {
+        try {
+          setError(null);
+          await finishSession.mutateAsync({ id: studySession.id });
+        } catch {
+          setError('Failed to finish study session. Please try again.');
+          return;
+        }
       }
+      setPosition(queueLength);
+      setStudyState({ phase: 'complete' });
+    },
+    [studySession, finishSession],
+  );
+
+  /** Ends the session, at its last card or early. */
+  const finish = useCallback(
+    () => endSession(items.length),
+    [endSession, items.length],
+  );
+
+  /** Shows an edit to the current card for the rest of the session. */
+  const replaceCurrentCard = useCallback(
+    (card: Flashcard) => {
+      if (history.some((entry) => entry.card.id === card.id)) {
+        setEditedAfterAnswer((prev) => new Set(prev).add(card.id));
+      }
+      setStudySession(
+        (prev) =>
+          prev && {
+            ...prev,
+            items: prev.items.map((item) =>
+              item.card.id === card.id ? { ...item, card } : item,
+            ),
+          },
+      );
+    },
+    [history],
+  );
+
+  /**
+   * Drops the current card, deleted from its deck, from the session and its
+   * summary, and moves on to the next card or the end of the session.
+   */
+  const removeCurrentCard = useCallback(async () => {
+    if (!studySession || !currentItem) return;
+    const remaining = studySession.items.filter(
+      (item) => item.itemId !== currentItem.itemId,
+    );
+    setStudySession({ ...studySession, items: remaining });
+    setHistory((prev) =>
+      prev.filter((entry) => entry.card.id !== currentItem.card.id),
+    );
+    setAnswerInput('');
+    if (position >= remaining.length) {
+      await endSession(remaining.length);
+    } else {
+      setStudyState({ phase: 'answering' });
     }
-    setPosition(items.length);
-    setStudyState({ phase: 'complete' });
-  }, [studySession, items.length, finishSession]);
+  }, [studySession, currentItem, position, endSession]);
 
   const advanceOrFinish = useCallback(async () => {
     if (position + 1 >= items.length) {
@@ -241,6 +298,9 @@ export function useStudySession(deckId: string | undefined) {
     handleSubmitAnswer,
     handleDontKnow,
     handleFinish: finish,
+    replaceCurrentCard,
+    removeCurrentCard,
+    editedAfterAnswer,
     handleNext,
     handleBack,
     handleForward,

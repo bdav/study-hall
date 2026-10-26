@@ -11,11 +11,15 @@ import {
 } from '@/components/ui/alert-dialog';
 
 interface ConfirmDialogProps {
-  trigger: React.ReactNode;
+  /** Opens the dialog; leave it out to open it with `open` instead. */
+  trigger?: React.ReactNode;
   title: string;
   description: string;
   confirmLabel?: string;
   onConfirm: () => void;
+  /** For a dialog opened from elsewhere, such as a menu item. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ConfirmDialog({
@@ -24,10 +28,12 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Continue',
   onConfirm,
+  open,
+  onOpenChange,
 }: ConfirmDialogProps) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      {trigger && <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>}
       <AlertDialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

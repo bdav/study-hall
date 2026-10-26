@@ -352,6 +352,72 @@ function progressOf(cardId: string) {
   });
 }
 
+describe('cards changed during a Study Session', () => {
+  it('drops a deleted card from the session, which goes on and finishes without it', async () => {
+    const { id, items } = await startedSession(capitals);
+    const caller = createCaller();
+
+    await caller.card.delete({ cardId: items[0].card.id });
+
+    // The rest of the session is unaffected
+    const answered = await caller.study.submitAnswer({
+      itemId: items[1].id,
+      userAnswer: 'Tokyo',
+    });
+    expect(answered.recallGrade).toBe('NAILED');
+    const finished = await caller.study.finishSession({ id });
+    expect(finished.items.map((item) => item.card.front)).toEqual([
+      'Capital of Japan',
+      'Capital of Brazil',
+    ]);
+    expect(finished.items.map((item) => item.status)).toEqual([
+      'COMPLETED',
+      'SKIPPED',
+    ]);
+  });
+
+  it("can't answer a deleted card's item", async () => {
+    const { items } = await startedSession(capitals);
+    const caller = createCaller();
+
+    await caller.card.delete({ cardId: items[0].card.id });
+
+    await expect(
+      caller.study.submitAnswer({ itemId: items[0].id, userAnswer: 'Paris' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('finishes a session whose only card was deleted', async () => {
+    const { id, items } = await startedSession([capitals[0]]);
+    const caller = createCaller();
+
+    await caller.card.delete({ cardId: items[0].card.id });
+
+    const finished = await caller.study.finishSession({ id });
+    expect(finished).toMatchObject({ status: 'COMPLETED', items: [] });
+  });
+
+  it('grades an edited card against its new answer, starting from NEW', async () => {
+    const { items } = await startedSession(capitals);
+    const caller = createCaller();
+
+    await caller.card.update({
+      cardId: items[0].card.id,
+      front: 'Capital of Italy',
+      canonicalAnswer: 'Rome',
+    });
+
+    const answered = await caller.study.submitAnswer({
+      itemId: items[0].id,
+      userAnswer: 'Rome',
+    });
+    expect(answered.recallGrade).toBe('NAILED');
+    expect((await progressOf(items[0].card.id)).lifecycleState).toBe(
+      'LEARNING',
+    );
+  });
+});
+
 /** Starts a session on a fresh deck holding the given cards. */
 async function startedSession(cards: NewCard[]) {
   const deck = await deckWith(cards);
