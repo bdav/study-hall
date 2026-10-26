@@ -149,14 +149,19 @@ model Card {
 
 // What a card asked from `startedAt` (ADR-0008): its front and Canonical
 // Answers' texts, primary first, as they were. Its first comes with the card,
-// and a new one with each progress reset (ADR-0004); Accepted Variants are
-// not part of it. The latest is the card's current version.
+// and a new one with each progress reset (ADR-0004); changing Accepted
+// Variants never starts one. The latest is the card's current version.
 model CardVersion {
   id               String        @id @default(cuid())
   cardId           String
   number           Int
   front            String
   canonicalAnswers String[]
+  // Once it's over, each Canonical Answer's Accepted Variants as it ended
+  // with them, as [{ text, acceptedVariants }]; none for the current version,
+  // whose are the card's own, and for versions that ended before they were
+  // recorded (#51)
+  acceptedVariants Json?
   startedAt        DateTime      @default(now())
   card             Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
   attempts         CardAttempt[]

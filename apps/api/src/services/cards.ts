@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 import { NEW_PROGRESS } from './progressUpdater.js';
 import {
   gradeAnswer,
@@ -36,6 +37,31 @@ export const deckOrder = [
   { position: 'asc' },
   { createdAt: 'asc' },
 ] satisfies Prisma.CardOrderByWithRelationInput[];
+
+const variantsByAnswerSchema = z.array(
+  z.object({ text: z.string(), acceptedVariants: z.array(z.string()) }),
+);
+
+/**
+ * Each of a card's Canonical Answers with its Accepted Variants' texts, as a
+ * Card Version records them when it ends (#51).
+ */
+export type VariantsByAnswer = z.infer<typeof variantsByAnswerSchema>;
+
+/** A card's answers' variants, loaded with `withCanonicalAnswers`. */
+export function variantsByAnswer(card: {
+  canonicalAnswers: { text: string; acceptedVariants: { text: string }[] }[];
+}): VariantsByAnswer {
+  return card.canonicalAnswers.map((answer) => ({
+    text: answer.text,
+    acceptedVariants: answer.acceptedVariants.map((v) => v.text),
+  }));
+}
+
+/** A Card Version's recorded variants; null for one with none recorded. */
+export function parseVariantsByAnswer(value: Prisma.JsonValue) {
+  return value === null ? null : variantsByAnswerSchema.parse(value);
+}
 
 /** The text of a card's primary canonical answer, loaded with `withCanonicalAnswers`. */
 export function primaryAnswerText(card: {
@@ -200,8 +226,9 @@ export async function createCards(
  * first primary, each with its Accepted Variants when listed (`AnswerEdit`).
  * A change to the front or to the answers' texts resets the card's progress
  * to NEW but keeps its attempts (ADR-0004), and starts a new Card Version
- * with it (ADR-0008); choosing another primary or changing variants alone
- * does neither, as neither changes what the card asks.
+ * with it (ADR-0008), the one it ends keeping the Accepted Variants it had;
+ * choosing another primary or changing variants alone does neither, as
+ * neither changes what the card asks.
  * A listed variant still on its answer keeps its row. A removed answer's
  * variants go with it, and an unlisted variant that is now one of the
  * card's answers is dropped, as listing it would be refused.
@@ -243,14 +270,20 @@ export async function editCard(
       where: { cardId },
       data: { ...NEW_PROGRESS, resetAt },
     });
-    const last = await db.cardVersion.aggregate({
+    // The version this edit ends keeps the variants it had (#51)
+    const ending = await db.cardVersion.findFirstOrThrow({
       where: { cardId },
-      _max: { number: true },
+      orderBy: { number: 'desc' },
+      select: { id: true, number: true },
+    });
+    await db.cardVersion.update({
+      where: { id: ending.id },
+      data: { acceptedVariants: variantsByAnswer(card) },
     });
     await db.cardVersion.create({
       data: {
         cardId,
-        number: (last._max.number ?? 0) + 1,
+        number: ending.number + 1,
         front: edited.front,
         canonicalAnswers: edited.canonicalAnswers.map((answer) => answer.text),
         startedAt: resetAt,

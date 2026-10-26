@@ -329,6 +329,7 @@ type CardHistory = {
     number: number;
     front: string;
     canonicalAnswers: string[];
+    acceptedVariants: string[][] | null;
     startedAt: string;
     isCurrent: boolean;
     attempts: {
@@ -360,6 +361,7 @@ function historyOfCardOne(): CardHistory {
         number: 2,
         front: 'What is 2+2?',
         canonicalAnswers: ['4'],
+        acceptedVariants: [[]],
         startedAt: '2026-10-20T12:00:00.000Z',
         isCurrent: true,
         attempts: [
@@ -390,6 +392,7 @@ function historyOfCardOne(): CardHistory {
         number: 1,
         front: 'What is two plus two?',
         canonicalAnswers: ['4', 'four'],
+        acceptedVariants: [['IV'], []],
         startedAt: '2026-10-01T12:00:00.000Z',
         isCurrent: false,
         attempts: [
@@ -1950,8 +1953,12 @@ describe('StudyPage', () => {
       ]);
       await user.click(screen.getByRole('option', { name: 'Version 1' }));
 
-      expect(history).toHaveTextContent('What is two plus two?');
-      expect(history).toHaveTextContent('Answers: 4, four');
+      const version = within(history).getByRole('group', {
+        name: 'Version 1',
+      });
+      expect(version).toHaveTextContent(
+        /^What is two plus two\?4Variants: IVfour$/,
+      );
       expect(history).toHaveTextContent('Answered 1 time · 0 right');
       expect(
         within(history)
@@ -1960,6 +1967,31 @@ describe('StudyPage', () => {
       ).toEqual(['fiveNeeds reviewOct 2']);
       // An earlier version has no progress of its own
       expect(history).not.toHaveTextContent('Still learning');
+    });
+
+    it("says when an earlier version's variants weren't recorded", async () => {
+      const history = historyOfCardOne();
+      history.versions[1].acceptedVariants = null;
+      mockCardHistory(() => history);
+      const user = await answerFirstCard();
+      const region = screen.getByRole('region', historyRegion);
+
+      await openPicker(user, region);
+      await user.click(screen.getByRole('option', { name: 'Version 1' }));
+
+      expect(
+        within(region).getByRole('group', { name: 'Version 1' }),
+      ).toHaveTextContent(
+        /^What is two plus two\?4fourVariants weren’t recorded for this version\.$/,
+      );
+    });
+
+    it('shows no version block for the current version', async () => {
+      await answerFirstCard();
+
+      expect(
+        within(screen.getByRole('region', historyRegion)).queryByRole('group'),
+      ).not.toBeInTheDocument();
     });
 
     it('puts answers with no recorded version before the first version recorded', async () => {

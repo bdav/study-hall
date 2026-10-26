@@ -8,7 +8,7 @@ import {
   afterEach,
   vi,
 } from 'vitest';
-import { type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
@@ -123,6 +123,106 @@ describe('card.history', () => {
     ]);
     expect(history.versions[0].attempts[0].createdAt).toBeInstanceOf(Date);
     expect(history.versions[1].startedAt).toBeInstanceOf(Date);
+  });
+
+  describe("a version's Accepted Variants", () => {
+    /** Gives the prime card's answers these variants, which starts no version. */
+    function setVariants(
+      card: Awaited<ReturnType<typeof primeCard>>['card'],
+      eleven: string[],
+      thirteen: string[],
+    ) {
+      const [a, b] = card.canonicalAnswers;
+      return createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: a.id, text: '11', acceptedVariants: eleven },
+          { id: b.id, text: '13', acceptedVariants: thirteen },
+        ],
+      });
+    }
+
+    it('records the variants a version ended with when an edit starts the next', async () => {
+      const { card } = await primeCard();
+      await setVariants(card, ['eleven'], []);
+
+      await createCaller().card.update({
+        cardId: card.id,
+        front: 'A prime between 10 and 20, please',
+      });
+
+      const history = await createCaller().card.history({ cardId: card.id });
+      expect(history.versions[1]).toMatchObject({
+        canonicalAnswers: ['11', '13'],
+        acceptedVariants: [['eleven'], []],
+      });
+    });
+
+    it('records nothing for an edit that only changes variants', async () => {
+      const { card } = await primeCard();
+
+      await setVariants(card, ['eleven'], ['thirteen']);
+
+      const [version] = await prisma.cardVersion.findMany({
+        where: { cardId: card.id },
+      });
+      expect(version.acceptedVariants).toBeNull();
+    });
+
+    it("gives the current version the card's own variants, as they are now", async () => {
+      const { card } = await primeCard();
+      await createCaller().card.update({
+        cardId: card.id,
+        front: 'A prime between 10 and 20, please',
+      });
+      await setVariants(card, [], ['thirteen']);
+
+      const history = await createCaller().card.history({ cardId: card.id });
+      expect(history.versions[0]).toMatchObject({
+        isCurrent: true,
+        acceptedVariants: [[], ['thirteen']],
+      });
+    });
+
+    it("lines the recorded variants up with the version's answers, primary changed since or not", async () => {
+      const { card } = await primeCard();
+      const [eleven, thirteen] = card.canonicalAnswers;
+      // 13 made primary, which starts no version
+      await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: thirteen.id, text: '13', acceptedVariants: ['thirteen'] },
+          { id: eleven.id, text: '11' },
+        ],
+      });
+
+      await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [{ text: '17' }],
+      });
+
+      const history = await createCaller().card.history({ cardId: card.id });
+      expect(history.versions[1]).toMatchObject({
+        canonicalAnswers: ['11', '13'],
+        acceptedVariants: [[], ['thirteen']],
+      });
+    });
+
+    it('has none for an earlier version that ended before variants were recorded', async () => {
+      const { card } = await primeCard();
+      await createCaller().card.update({
+        cardId: card.id,
+        front: 'A prime between 10 and 20, please',
+      });
+      // As versions that ended before #51 are
+      await prisma.cardVersion.updateMany({
+        where: { cardId: card.id, number: 1 },
+        data: { acceptedVariants: Prisma.DbNull },
+      });
+
+      const history = await createCaller().card.history({ cardId: card.id });
+      expect(history.versions[1].acceptedVariants).toBeNull();
+    });
   });
 
   it('includes "I don\'t know", with no answer', async () => {

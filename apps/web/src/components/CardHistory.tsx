@@ -61,8 +61,9 @@ const BEFORE = 'before';
  * The learner's history with a card, below it once answered (ADR-0008): for
  * its current Card Version, the recent answers with their final grades and
  * dates, how many were right, its state in plain words and when it's next
- * due; a picker of version numbers shows an earlier version's front,
- * answers and answers given instead. Read only.
+ * due; a picker of version numbers shows an earlier version instead, as a
+ * block of its front and each answer with the Accepted Variants it ended
+ * with, above the answers given to it. Read only.
  */
 export function CardHistory({ cardId }: { cardId: string }) {
   const headingId = useId();
@@ -150,11 +151,36 @@ export function CardHistory({ cardId }: { cardId: string }) {
       </div>
 
       {!isCurrent && chosen !== BEFORE && (
-        <div className="mt-2">
-          <p className="text-white">{version.front}</p>
-          <p className="text-white/60">
-            Answers: {version.canonicalAnswers.join(', ')}
+        // The earlier version as it was: its front, and each answer with the
+        // Accepted Variants it ended with
+        <div
+          role="group"
+          aria-label={`Version ${version.number}`}
+          className="mt-3 rounded-lg border border-white/20 bg-white/10 p-3 text-center"
+        >
+          <p className="font-semibold uppercase tracking-wide text-white">
+            {version.front}
           </p>
+          <div className="mt-2 space-y-1">
+            {version.canonicalAnswers.map((answer, i) => {
+              const variants = version.acceptedVariants?.[i] ?? [];
+              return (
+                <div key={answer}>
+                  <p className="text-white">{answer}</p>
+                  {variants.length > 0 && (
+                    <p className="text-xs text-white/50">
+                      Variants: {variants.join(', ')}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {version.acceptedVariants === null && (
+            <p className="mt-2 text-xs text-white/50">
+              Variants weren’t recorded for this version.
+            </p>
+          )}
         </div>
       )}
       {isCurrent && state && <p className="mt-2 text-white">{state}</p>}

@@ -47,7 +47,7 @@ An alternative phrasing accepted as equivalent to a canonical answer, without ch
 _Avoid_: Alias, synonym
 
 **Card Version**:
-What a card asked at one time: its front and canonical answers. A card gets a new version whenever an edit changes what it asks, which also resets its progress; changing accepted variants doesn't. Each card attempt records the version it answered.
+What a card asked at one time: its front and canonical answers. A card gets a new version whenever an edit changes what it asks, which also resets its progress; changing accepted variants doesn't, though a version that has ended records the accepted variants it ended with. Each card attempt records the version it answered.
 _Avoid_: Revision, edition
 
 **Recall Grade**:

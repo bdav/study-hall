@@ -15,3 +15,4 @@ A card's history is only meaningful if it shows which question each answer was g
 
 - Version boundaries and progress resets coincide: the current version's attempts are the ones scheduling and stats count (ADR-0004).
 - Attempts made before versions were recorded, and before the card's last reset, can't be tied to a version. History shows them as from an earlier version.
+- A version records the Accepted Variants its answers ended with, when the edit that ends it starts the next (#51), so history can show an earlier version as it was. Changing variants still never starts a version; the current version's variants are the card's own. Versions that ended before this was recorded have none.
