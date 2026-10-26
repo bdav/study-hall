@@ -1090,18 +1090,19 @@ describe('StudyPage', () => {
       expect(within(dialog).getByLabelText('Front')).toHaveValue(
         'What is 2+2?',
       );
-      expect(within(dialog).getByLabelText('Answer')).toHaveValue('4');
+      expect(within(dialog).getByLabelText('Answer 1')).toHaveValue('4');
       expect(dialog).toHaveTextContent(/progress starts over/i);
       await user.clear(within(dialog).getByLabelText('Front'));
       await user.type(within(dialog).getByLabelText('Front'), 'What is 2+3?');
-      await user.clear(within(dialog).getByLabelText('Answer'));
-      await user.type(within(dialog).getByLabelText('Answer'), '5');
+      await user.clear(within(dialog).getByLabelText('Answer 1'));
+      await user.type(within(dialog).getByLabelText('Answer 1'), '5');
       await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+3?',
         canonicalAnswers: [{ id: 'answer-4', text: '5' }],
+        keepVariantIds: [],
       });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.getByText('What is 2+3?')).toBeInTheDocument();
@@ -1112,9 +1113,23 @@ describe('StudyPage', () => {
       const user = await startStudying();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.clear(screen.getByLabelText('Answer'));
+      await user.clear(screen.getByLabelText('Answer 1'));
 
       expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    });
+
+    it('adds an answer to the card', async () => {
+      const user = await startStudying();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Answer 1'), ' || four{Enter}');
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2?',
+        canonicalAnswers: [{ id: 'answer-4', text: '4' }, { text: 'four' }],
+        keepVariantIds: [],
+      });
     });
 
     it('saves an edit with Enter without moving on from an answered card', async () => {
@@ -1130,6 +1145,7 @@ describe('StudyPage', () => {
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
         canonicalAnswers: [{ id: 'answer-4', text: '4' }],
+        keepVariantIds: [],
       });
       // Still on the answered card, not the next one
       expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
@@ -1146,8 +1162,8 @@ describe('StudyPage', () => {
       expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.clear(screen.getByLabelText('Answer'));
-      await user.type(screen.getByLabelText('Answer'), 'four{Enter}');
+      await user.clear(screen.getByLabelText('Answer 1'));
+      await user.type(screen.getByLabelText('Answer 1'), 'four{Enter}');
 
       expect(screen.getByTestId('correct-answer')).toHaveTextContent('four');
       expect(
@@ -1155,6 +1171,33 @@ describe('StudyPage', () => {
           "Graded before you edited this card. It doesn't count toward the card's progress.",
         ),
       ).toBeInTheDocument();
+    });
+
+    it("doesn't call the card edited when only its primary answer changes", async () => {
+      const user = await startStudying();
+      await user.type(screen.getByRole('textbox'), '4{Enter}');
+      await screen.findByTestId('result');
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Answer 1'), ' || four');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      // Now "4" and "four"; make "four" the primary
+      mockUpdateCard.mockClear();
+      await chooseFromCardMenu(user, 'Edit');
+      await user.click(
+        screen.getByRole('radio', { name: 'Answer 2 is primary' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          canonicalAnswers: [
+            { id: 'answer-new-1', text: 'four' },
+            { id: 'answer-4', text: '4' },
+          ],
+        }),
+      );
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent('four');
     });
 
     it("adds and removes the answer's Accepted Variants without saying the card was edited", async () => {
@@ -1165,12 +1208,12 @@ describe('StudyPage', () => {
 
       await chooseFromCardMenu(user, 'Edit');
       const variants = within(screen.getByRole('dialog')).getByRole('list', {
-        name: 'Accepted variants',
+        name: 'Accepted variants of 4',
       });
       expect(within(variants).getByText('four')).toBeInTheDocument();
 
       await user.type(
-        screen.getByLabelText('New accepted variant'),
+        screen.getByLabelText('New accepted variant of 4'),
         ' IV {Enter}',
       );
       expect(mockAddVariant).toHaveBeenCalledWith({
@@ -1178,7 +1221,9 @@ describe('StudyPage', () => {
         text: 'IV',
       });
       expect(within(variants).getByText('IV')).toBeInTheDocument();
-      expect(screen.getByLabelText('New accepted variant')).toHaveValue('');
+      expect(screen.getByLabelText('New accepted variant of 4')).toHaveValue(
+        '',
+      );
       // Adding a variant saves it without saving the card form
       expect(mockUpdateCard).not.toHaveBeenCalled();
       expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
@@ -1189,7 +1234,9 @@ describe('StudyPage', () => {
       expect(mockRemoveVariant).toHaveBeenCalledWith({
         variantId: 'variant-four',
       });
-      expect(within(variants).queryByText('four')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('list', { name: 'Accepted variants of 4' }),
+      ).not.toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
@@ -1202,7 +1249,7 @@ describe('StudyPage', () => {
 
       await chooseFromCardMenu(user, 'Edit');
       await user.type(
-        screen.getByLabelText('New accepted variant'),
+        screen.getByLabelText('New accepted variant of 4'),
         'IV{Enter}',
       );
       await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -1216,29 +1263,29 @@ describe('StudyPage', () => {
       const user = await startStudyingWithVariants();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.type(screen.getByLabelText('New accepted variant'), 'IV');
+      await user.type(screen.getByLabelText('New accepted variant of 4'), 'IV');
 
       expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
       expect(screen.getByRole('dialog')).toHaveTextContent(/not added yet/i);
 
-      await user.click(screen.getByRole('button', { name: 'Add' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Add variant of 4' }),
+      );
       expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
       expect(screen.getByRole('dialog')).not.toHaveTextContent(
         /not added yet/i,
       );
     });
 
-    it('asks which variants still fit when the answer changes, all kept unless unticked', async () => {
+    it('asks, below a retyped answer, which of its variants still fit, all kept unless unticked', async () => {
       const user = await startStudyingWithVariants();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.clear(screen.getByLabelText('Answer'));
-      await user.type(screen.getByLabelText('Answer'), 'IV');
-      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await user.clear(screen.getByLabelText('Answer 1'));
+      await user.type(screen.getByLabelText('Answer 1'), 'IV');
 
-      expect(mockUpdateCard).not.toHaveBeenCalled();
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveTextContent(/from “4” to “IV”/);
+      expect(dialog).toHaveTextContent(/which of “4”’s variants still fit/i);
       const four = within(dialog).getByRole('checkbox', { name: 'four' });
       expect(four).toBeChecked();
       await user.click(four);
@@ -1253,18 +1300,18 @@ describe('StudyPage', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('unticks a variant the new answer has become', async () => {
+    it('unticks a variant that is now one of the answers', async () => {
       const user = await startStudyingWithVariants();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.clear(screen.getByLabelText('Answer'));
-      await user.type(screen.getByLabelText('Answer'), 'Four{Enter}');
+      await user.clear(screen.getByLabelText('Answer 1'));
+      await user.type(screen.getByLabelText('Answer 1'), 'Four');
 
       const dialog = screen.getByRole('dialog');
       const four = within(dialog).getByRole('checkbox', { name: /four/ });
       expect(four).not.toBeChecked();
       expect(four).toBeDisabled();
-      expect(dialog).toHaveTextContent(/same as the new answer/i);
+      expect(dialog).toHaveTextContent(/same as an answer/i);
       await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
       expect(mockUpdateCard).toHaveBeenCalledWith({
@@ -1275,16 +1322,11 @@ describe('StudyPage', () => {
       });
     });
 
-    it('keeps the ticked variants of a changed answer', async () => {
+    it('keeps the ticked variants of a retyped answer', async () => {
       const user = await startStudyingWithVariants();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.type(screen.getByLabelText('Answer'), ' exactly{Enter}');
-      await user.click(
-        within(screen.getByRole('dialog')).getByRole('button', {
-          name: 'Save',
-        }),
-      );
+      await user.type(screen.getByLabelText('Answer 1'), ' exactly{Enter}');
 
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
@@ -1294,27 +1336,19 @@ describe('StudyPage', () => {
       });
     });
 
-    it('goes back to the edit from the question about variants, saving nothing', async () => {
-      const user = await startStudyingWithVariants();
-
-      await chooseFromCardMenu(user, 'Edit');
-      await user.type(screen.getByLabelText('Answer'), '!{Enter}');
-      await user.click(screen.getByRole('button', { name: 'Back' }));
-
-      expect(mockUpdateCard).not.toHaveBeenCalled();
-      expect(screen.getByLabelText('Answer')).toHaveValue('4!');
-    });
-
     it("doesn't ask about variants when only the front changes", async () => {
       const user = await startStudyingWithVariants();
 
       await chooseFromCardMenu(user, 'Edit');
-      await user.type(screen.getByLabelText('Front'), ' exactly{Enter}');
+      await user.type(screen.getByLabelText('Front'), ' exactly');
 
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Save' }));
       expect(mockUpdateCard).toHaveBeenCalledWith({
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
         canonicalAnswers: [{ id: 'answer-4', text: '4' }],
+        keepVariantIds: [],
       });
     });
 
@@ -1381,6 +1415,7 @@ describe('StudyPage', () => {
         cardId: 'card-1',
         front: 'What is 2+2? exactly',
         canonicalAnswers: [{ id: 'answer-4', text: '4' }],
+        keepVariantIds: [],
       });
       expect(screen.getByTestId('correct-answer')).toHaveTextContent(
         'What is 2+2? exactly',

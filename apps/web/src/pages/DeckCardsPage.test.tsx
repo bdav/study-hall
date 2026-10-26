@@ -693,13 +693,17 @@ describe('DeckCardsPage', () => {
       typeof trpc.card.addVariant.useMutation
     >[0];
 
+    /** Opens a card's answers below it; `dialog` is that panel. */
     async function openVariants(front: string) {
       const user = userEvent.setup();
       renderDeckCardsPage();
       await user.click(
-        screen.getByRole('button', { name: `Accepted variants for ${front}` }),
+        screen.getByRole('button', { name: `Answers of ${front}` }),
       );
-      return { user, dialog: await screen.findByRole('dialog') };
+      return {
+        user,
+        dialog: screen.getByRole('region', { name: `Answers of ${front}` }),
+      };
     }
 
     it("lists a card's Accepted Variants and adds one", async () => {
@@ -732,15 +736,17 @@ describe('DeckCardsPage', () => {
 
       const { user, dialog } = await openVariants('Capital of France');
       const variants = within(dialog).getByRole('list', {
-        name: 'Accepted variants',
+        name: 'Accepted variants of Paris',
       });
       expect(within(variants).getByText('Paree')).toBeInTheDocument();
 
       await user.type(
-        within(dialog).getByLabelText('New accepted variant'),
+        within(dialog).getByLabelText('New accepted variant of Paris'),
         'City of Light',
       );
-      await user.click(within(dialog).getByRole('button', { name: 'Add' }));
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Add variant of Paris' }),
+      );
 
       expect(mockAdd).toHaveBeenCalledWith({
         canonicalAnswerId: 'answer-Paris',
@@ -749,23 +755,25 @@ describe('DeckCardsPage', () => {
       expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
     });
 
-    it("won't close while a typed variant hasn't been added", async () => {
+    it("won't save while a typed variant hasn't been added", async () => {
       setupMocks();
 
       const { user, dialog } = await openVariants('Capital of France');
       await user.type(
-        within(dialog).getByLabelText('New accepted variant'),
+        within(dialog).getByLabelText('New accepted variant of Paris'),
         'Lutetia',
       );
 
       expect(
-        within(dialog).getByRole('button', { name: 'Done' }),
+        within(dialog).getByRole('button', { name: 'Save' }),
       ).toBeDisabled();
       expect(dialog).toHaveTextContent(/not added yet/i);
 
-      await user.clear(within(dialog).getByLabelText('New accepted variant'));
+      await user.clear(
+        within(dialog).getByLabelText('New accepted variant of Paris'),
+      );
       expect(
-        within(dialog).getByRole('button', { name: 'Done' }),
+        within(dialog).getByRole('button', { name: 'Save' }),
       ).toBeEnabled();
     });
 
@@ -805,18 +813,17 @@ describe('DeckCardsPage', () => {
       })) as unknown as typeof trpc.card.addVariant.useMutation);
 
       const { user, dialog } = await openVariants('Capital of Germany');
-      expect(dialog).toHaveTextContent(/none yet/i);
       await user.type(
-        within(dialog).getByLabelText('New accepted variant'),
+        within(dialog).getByLabelText('New accepted variant of Berlin'),
         'berlin{Enter}',
       );
 
       expect(toast.error).toHaveBeenCalledWith(
         'That answer is already accepted',
       );
-      expect(within(dialog).getByLabelText('New accepted variant')).toHaveValue(
-        'berlin',
-      );
+      expect(
+        within(dialog).getByLabelText('New accepted variant of Berlin'),
+      ).toHaveValue('berlin');
     });
 
     describe('changing an answer that has variants', () => {
@@ -905,6 +912,187 @@ describe('DeckCardsPage', () => {
           canonicalAnswers: [{ id: 'answer-Berlin', text: 'Bonn' }],
         });
       });
+    });
+  });
+
+  describe("a card's answers, below it", () => {
+    const primes = {
+      id: 'card-3',
+      deckId: 'deck-1',
+      front: 'A prime between 10 and 20',
+      position: 2,
+      canonicalAnswers: [
+        { id: 'answer-11', text: '11', isPrimary: true, acceptedVariants: [] },
+        {
+          id: 'answer-13',
+          text: '13',
+          isPrimary: false,
+          acceptedVariants: [],
+        },
+      ],
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    };
+
+    function mockUpdate() {
+      const mockMutate = vi.fn();
+      vi.mocked(trpc.card.update.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: mockMutate,
+      } as unknown as ReturnType<typeof trpc.card.update.useMutation>);
+      return mockMutate;
+    }
+
+    async function openAnswers(front: string) {
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      await user.click(
+        screen.getByRole('button', { name: `Answers of ${front}` }),
+      );
+      return {
+        user,
+        panel: screen.getByRole('region', { name: `Answers of ${front}` }),
+      };
+    }
+
+    it("sums up each card's answers and variants below it", () => {
+      setupMocks({ cards: [...mockCards, primes] });
+      renderDeckCardsPage();
+
+      expect(
+        screen.getByRole('button', { name: 'Answers of Capital of France' }),
+      ).toHaveTextContent('ParisVariants: Paree');
+      expect(
+        screen.getByRole('button', {
+          name: 'Answers of A prime between 10 and 20',
+        }),
+      ).toHaveTextContent('11 · also 13');
+    });
+
+    it("opens one card's answers at a time", async () => {
+      setupMocks();
+      const { user } = await openAnswers('Capital of France');
+
+      await user.click(
+        screen.getByRole('button', { name: 'Answers of Capital of Germany' }),
+      );
+
+      expect(
+        screen.queryByRole('region', { name: 'Answers of Capital of France' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('region', { name: 'Answers of Capital of Germany' }),
+      ).toBeInTheDocument();
+    });
+
+    it('adds an answer, saved with Save', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+      const { user, panel } = await openAnswers('Capital of Germany');
+
+      await user.click(
+        within(panel).getByRole('button', { name: 'Add answer' }),
+      );
+      await user.type(within(panel).getByLabelText('Answer 2'), 'Bonn');
+      expect(mockMutate).not.toHaveBeenCalled();
+      await user.click(within(panel).getByRole('button', { name: 'Save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-2',
+        canonicalAnswers: [
+          { id: 'answer-Berlin', text: 'Berlin' },
+          { text: 'Bonn' },
+        ],
+        keepVariantIds: [],
+      });
+    });
+
+    it('makes separate answers of "a || b" typed into one', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+      const { user, panel } = await openAnswers('Capital of Germany');
+
+      await user.type(within(panel).getByLabelText('Answer 1'), ' || Bonn');
+
+      expect(within(panel).getByLabelText('Answer 1')).toHaveValue('Berlin');
+      expect(within(panel).getByLabelText('Answer 2')).toHaveFocus();
+      await user.click(within(panel).getByRole('button', { name: 'Save' }));
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          canonicalAnswers: [
+            { id: 'answer-Berlin', text: 'Berlin' },
+            { text: 'Bonn' },
+          ],
+        }),
+      );
+    });
+
+    it('chooses the primary answer and removes one', async () => {
+      setupMocks({ cards: [...mockCards, primes] });
+      const mockMutate = mockUpdate();
+      const { user, panel } = await openAnswers('A prime between 10 and 20');
+
+      await user.click(
+        within(panel).getByRole('radio', { name: 'Answer 2 is primary' }),
+      );
+      expect(within(panel).getByLabelText('Answer 1')).toHaveValue('13');
+      await user.click(
+        within(panel).getByRole('button', { name: 'Add answer' }),
+      );
+      await user.type(within(panel).getByLabelText('Answer 3'), '17');
+      await user.click(
+        within(panel).getByRole('button', { name: 'Remove answer 2' }),
+      );
+      await user.click(within(panel).getByRole('button', { name: 'Save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-3',
+        canonicalAnswers: [{ id: 'answer-13', text: '13' }, { text: '17' }],
+        keepVariantIds: [],
+      });
+    });
+
+    it("won't remove a card's only answer", async () => {
+      setupMocks();
+      const { panel } = await openAnswers('Capital of Germany');
+
+      expect(
+        within(panel).getByRole('button', { name: 'Remove answer 1' }),
+      ).toBeDisabled();
+    });
+
+    it("asks whether a retyped answer's variants still fit", async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+      const { user, panel } = await openAnswers('Capital of France');
+
+      await user.clear(within(panel).getByLabelText('Answer 1'));
+      await user.type(within(panel).getByLabelText('Answer 1'), 'Paname');
+      const paree = within(panel).getByRole('checkbox', { name: 'Paree' });
+      expect(paree).toBeChecked();
+      await user.click(paree);
+      await user.click(within(panel).getByRole('button', { name: 'Save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [{ id: 'answer-Paris', text: 'Paname' }],
+        keepVariantIds: [],
+      });
+    });
+
+    it('discards the changes on Cancel', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+      const { user, panel } = await openAnswers('Capital of Germany');
+
+      await user.type(within(panel).getByLabelText('Answer 1'), 'er');
+      await user.click(within(panel).getByRole('button', { name: 'Cancel' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Answers of Capital of Germany' }),
+      );
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Answer 1')).toHaveValue('Berlin');
     });
   });
 });

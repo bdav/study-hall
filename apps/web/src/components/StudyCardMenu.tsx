@@ -3,8 +3,9 @@ import { DropdownMenu } from 'radix-ui';
 import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { answersWithPrimary, toFlashcard, type Flashcard } from '@/lib/cards';
+import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
+import { useAnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,54 +17,36 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
-import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
+import { AnswersEditor } from '@/components/AnswersEditor';
 
 /**
  * Edit or delete the card being studied, without leaving the Study
- * Session. Both work as on the deck's Cards tab: an edit resets the
- * card's progress and keeps its attempts (ADR-0004); deleting removes it.
- * Editing also manages the answer's Accepted Variants, which change how
- * answers are graded but not what the card asks, so they reset nothing. A
- * changed answer first asks which of its variants still fit.
+ * Session. Both work as on the deck's Cards tab: changing the front or the
+ * answers' texts resets the card's progress and keeps its attempts
+ * (ADR-0004); deleting removes it. A change that resets nothing, to its
+ * Accepted Variants or which answer is primary, goes to `onChanged`.
  */
 export function StudyCardMenu({
   deckId,
   card,
   onEdited,
-  onVariantsChanged,
+  onChanged,
   onDeleted,
 }: {
   deckId: string;
   card: Flashcard;
   onEdited: (card: Flashcard) => void;
-  onVariantsChanged: (card: Flashcard) => void;
+  onChanged: (card: Flashcard) => void;
   onDeleted: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [dialog, setDialog] = useState<
-    'edit' | 'keep-variants' | 'delete' | null
-  >(null);
-  const [front, setFront] = useState(card.front);
-  const [answer, setAnswer] = useState(card.canonicalAnswer);
-  // A variant typed but not added, which Save would otherwise lose
-  const [hasVariantDraft, setHasVariantDraft] = useState(false);
-  const frontId = useId();
-  const answerId = useId();
+  const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
 
   function refreshDeck() {
     utils.deck.getById.invalidate({ id: deckId });
     utils.card.listByDeck.invalidate({ deckId });
   }
 
-  const update = trpc.card.update.useMutation({
-    onSuccess: (updated) => {
-      onEdited(toFlashcard(updated));
-      setDialog(null);
-      refreshDeck();
-    },
-    onError: () => toast.error("Couldn't save the card"),
-  });
   const remove = trpc.card.delete.useMutation({
     onSuccess: () => {
       setDialog(null);
@@ -72,45 +55,6 @@ export function StudyCardMenu({
     },
     onError: () => toast.error("Couldn't delete the card"),
   });
-
-  function openEdit() {
-    setFront(card.front);
-    setAnswer(card.canonicalAnswer);
-    setHasVariantDraft(false);
-    setDialog('edit');
-  }
-
-  const canSave =
-    front.trim() !== '' &&
-    answer.trim() !== '' &&
-    !hasVariantDraft &&
-    !update.isPending;
-
-  const newAnswer = answer.trim();
-  const edit = {
-    cardId: card.id,
-    front: front.trim(),
-    canonicalAnswers: answersWithPrimary(card, newAnswer),
-  };
-
-  function handleSave(e: FormEvent) {
-    e.preventDefault();
-    if (!canSave) return;
-    // Nothing to save: variant changes are already saved, and an unchanged
-    // card isn't an edit
-    if (edit.front === card.front && newAnswer === card.canonicalAnswer) {
-      setDialog(null);
-      return;
-    }
-    if (
-      newAnswer !== card.canonicalAnswer &&
-      card.acceptedVariants.length > 0
-    ) {
-      setDialog('keep-variants');
-      return;
-    }
-    update.mutate(edit);
-  }
 
   return (
     <>
@@ -131,7 +75,7 @@ export function StudyCardMenu({
             className="z-50 min-w-32 rounded-lg border border-white/20 bg-[oklch(0.25_0.08_230)] p-1 text-sm text-white shadow-lg"
           >
             <DropdownMenu.Item
-              onSelect={openEdit}
+              onSelect={() => setDialog('edit')}
               className="cursor-pointer rounded px-3 py-1.5 outline-none data-[highlighted]:bg-white/10"
             >
               Edit
@@ -151,80 +95,20 @@ export function StudyCardMenu({
         onOpenChange={(open) => !open && setDialog(null)}
       >
         <DialogContent className={glassDialogClassName} showCloseButton={false}>
-          <form onSubmit={handleSave}>
-            <DialogHeader>
-              <DialogTitle className="text-white">Edit card</DialogTitle>
-              <DialogDescription className="text-white/70">
-                Changing the front or answer changes what the card asks, so its
-                progress starts over. Your earlier answers are still saved.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label htmlFor={frontId} className="text-sm text-white/70">
-                  Front
-                </label>
-                <Input
-                  id={frontId}
-                  value={front}
-                  onChange={(e) => setFront(e.target.value)}
-                  className={glassInputClassName}
-                />
-              </div>
-              <div>
-                <label htmlFor={answerId} className="text-sm text-white/70">
-                  Answer
-                </label>
-                <Input
-                  id={answerId}
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  className={glassInputClassName}
-                />
-              </div>
-              <div className="border-t border-white/20 pt-4">
-                <AcceptedVariantsEditor
-                  deckId={deckId}
-                  card={card}
-                  onChanged={onVariantsChanged}
-                  onDraftChange={setHasVariantDraft}
-                />
-              </div>
-            </div>
-            <DialogFooter className="mt-6 border-white/20 bg-white/5">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDialog(null)}
-                className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={!canSave}
-                className="bg-white/20 text-white hover:bg-white/30"
-              >
-                {update.isPending ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
+          <EditCardForm
+            deckId={deckId}
+            card={card}
+            onSaved={(updated, resetsProgress) => {
+              if (resetsProgress) onEdited(updated);
+              else onChanged(updated);
+              setDialog(null);
+              refreshDeck();
+            }}
+            onVariantsChanged={onChanged}
+            onCancel={() => setDialog(null)}
+          />
         </DialogContent>
       </Dialog>
-
-      {dialog === 'keep-variants' && (
-        <KeepVariantsDialog
-          oldAnswer={card.canonicalAnswer}
-          newAnswer={newAnswer}
-          variants={card.acceptedVariants}
-          cancelLabel="Back"
-          isSaving={update.isPending}
-          onSave={(keepVariantIds) =>
-            update.mutate({ ...edit, keepVariantIds })
-          }
-          onCancel={() => setDialog('edit')}
-        />
-      )}
 
       <ConfirmDialog
         open={dialog === 'delete'}
@@ -235,5 +119,104 @@ export function StudyCardMenu({
         onConfirm={() => remove.mutate({ cardId: card.id })}
       />
     </>
+  );
+}
+
+/**
+ * The card's front and answers, as one Save; mounted each time the dialog
+ * opens, so it starts from the card as it is.
+ */
+function EditCardForm({
+  deckId,
+  card,
+  onSaved,
+  onVariantsChanged,
+  onCancel,
+}: {
+  deckId: string;
+  card: Flashcard;
+  onSaved: (card: Flashcard, resetsProgress: boolean) => void;
+  onVariantsChanged: (card: Flashcard) => void;
+  onCancel: () => void;
+}) {
+  const [front, setFront] = useState(card.front);
+  const form = useAnswersForm(card);
+  const frontId = useId();
+  const frontChanged = front.trim() !== card.front;
+
+  const update = trpc.card.update.useMutation({
+    onSuccess: (updated) =>
+      onSaved(toFlashcard(updated), frontChanged || form.resetsProgress),
+    onError: (error) =>
+      toast.error(
+        error.data?.code === 'BAD_REQUEST'
+          ? error.message
+          : "Couldn't save the card",
+      ),
+  });
+
+  const canSave = front.trim() !== '' && form.canSave && !update.isPending;
+
+  function handleSave(e: FormEvent) {
+    e.preventDefault();
+    if (!canSave) return;
+    // Nothing to save: variant changes are already saved
+    if (!frontChanged && !form.isChanged) {
+      onCancel();
+      return;
+    }
+    update.mutate({
+      cardId: card.id,
+      front: front.trim(),
+      canonicalAnswers: form.edits,
+      keepVariantIds: form.keepVariantIds,
+    });
+  }
+
+  return (
+    <form onSubmit={handleSave}>
+      <DialogHeader>
+        <DialogTitle className="text-white">Edit card</DialogTitle>
+        <DialogDescription className="text-white/70">
+          Changing the front or answers changes what the card asks, so its
+          progress starts over. Your earlier answers are still saved.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="mt-4 space-y-4">
+        <div>
+          <label htmlFor={frontId} className="text-sm text-white/70">
+            Front
+          </label>
+          <Input
+            id={frontId}
+            value={front}
+            onChange={(e) => setFront(e.target.value)}
+            className={glassInputClassName}
+          />
+        </div>
+        <AnswersEditor
+          form={form}
+          deckId={deckId}
+          onVariantsChanged={onVariantsChanged}
+        />
+      </div>
+      <DialogFooter className="mt-6 border-white/20 bg-white/5">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={!canSave}
+          className="bg-white/20 text-white hover:bg-white/30"
+        >
+          {update.isPending ? 'Saving…' : 'Save'}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

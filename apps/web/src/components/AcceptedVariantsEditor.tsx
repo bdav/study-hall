@@ -2,32 +2,31 @@ import { useId, useState } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { toFlashcard, type CardAnswer, type Flashcard } from '@/lib/cards';
 import { glassInputClassName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 /**
- * Lists a card's Accepted Variants and adds and removes them, each change
- * saved straight away. Variants don't change what the card asks, so they
- * never reset its progress (ADR-0004). Not a form of its own, so it can sit
- * inside the card's edit form. `onDraftChange` says whether a typed variant
- * is waiting to be added, so the surrounding dialog can hold off closing.
+ * Lists one Canonical Answer's Accepted Variants and adds and removes them,
+ * each change saved straight away. Variants don't change what the card
+ * asks, so they never reset its progress (ADR-0004). Not a form of its own,
+ * so it can sit inside the card's edit form. `onDraftChange` says whether a
+ * typed variant is waiting to be added, so the form can hold off saving.
  */
 export function AcceptedVariantsEditor({
   deckId,
-  card,
+  answer,
   onChanged,
   onDraftChange,
 }: {
   deckId: string;
-  card: Flashcard;
+  answer: CardAnswer;
   onChanged?: (card: Flashcard) => void;
   onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const utils = trpc.useUtils();
   const [text, setText] = useState('');
-  const headingId = useId();
   const inputId = useId();
 
   function changeText(value: string) {
@@ -58,51 +57,47 @@ export function AcceptedVariantsEditor({
     onError: () => toast.error("Couldn't remove the variant"),
   });
 
-  const { canonicalAnswerId } = card;
-  if (!canonicalAnswerId) return null;
-
   const canAdd = text.trim() !== '' && !add.isPending;
 
   function handleAdd() {
-    if (!canAdd || !canonicalAnswerId) return;
-    add.mutate({ canonicalAnswerId, text: text.trim() });
+    if (!canAdd) return;
+    add.mutate({ canonicalAnswerId: answer.id, text: text.trim() });
   }
 
   return (
-    <div>
-      <h3 id={headingId} className="text-sm font-medium text-white">
-        Accepted variants
-      </h3>
-      <p className="mt-1 text-xs text-white/60">
-        Other answers accepted as “{card.canonicalAnswer}”. Saved as you add or
-        remove them, without resetting the card's progress.
-      </p>
-      {card.acceptedVariants.length === 0 ? (
-        <p className="mt-2 text-sm text-white/40">None yet.</p>
-      ) : (
-        <ul aria-labelledby={headingId} className="mt-2 flex flex-wrap gap-2">
-          {card.acceptedVariants.map((variant) => (
-            <li
-              key={variant.id}
-              className="flex items-center gap-1 rounded-full bg-white/10 py-0.5 pl-3 pr-1 text-sm"
-            >
-              <span>{variant.text}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${variant.text}`}
-                disabled={remove.isPending}
-                onClick={() => remove.mutate({ variantId: variant.id })}
-                className="rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+    <div className="text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-white/50">Variants</span>
+        {answer.acceptedVariants.length === 0 ? (
+          <span className="text-xs text-white/40">none yet</span>
+        ) : (
+          <ul
+            aria-label={`Accepted variants of ${answer.text}`}
+            className="flex flex-wrap gap-2"
+          >
+            {answer.acceptedVariants.map((variant) => (
+              <li
+                key={variant.id}
+                className="flex items-center gap-1 rounded-full bg-white/10 py-0.5 pl-3 pr-1"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-2 flex items-end gap-2">
+                <span>{variant.text}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${variant.text}`}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate({ variantId: variant.id })}
+                  className="rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="mt-1 flex items-end gap-2">
         <label htmlFor={inputId} className="sr-only">
-          New accepted variant
+          New accepted variant of {answer.text}
         </label>
         <Input
           id={inputId}
@@ -121,6 +116,7 @@ export function AcceptedVariantsEditor({
         <Button
           type="button"
           size="sm"
+          aria-label={`Add variant of ${answer.text}`}
           disabled={!canAdd}
           onClick={handleAdd}
           className="bg-white/20 text-white hover:bg-white/30"

@@ -360,9 +360,9 @@ export function useStudySession(deckId: string | undefined) {
     isAcceptingAnswer: acceptAnswer.isPending,
     handleFinish: finish,
     replaceCard,
-    // Accepted Variants don't change what a card asks, so a card whose
-    // variants changed wasn't edited after its answer
-    showVariantsChange: showCard,
+    // A change to a card's variants or primary answer resets nothing, so
+    // the card wasn't edited after its answer
+    showUnresetChange: showCard,
     removeCard,
     editedAfterAnswer,
     handleNext,

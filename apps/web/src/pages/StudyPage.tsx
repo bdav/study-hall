@@ -284,7 +284,7 @@ export default function StudyPage() {
     isAcceptingAnswer,
     handleFinish,
     replaceCard,
-    showVariantsChange,
+    showUnresetChange,
     removeCard,
     editedAfterAnswer,
     handleNext,
@@ -662,7 +662,7 @@ export default function StudyPage() {
                 deckId={deckId ?? ''}
                 card={displayCard}
                 onEdited={replaceCard}
-                onVariantsChanged={showVariantsChange}
+                onChanged={showUnresetChange}
                 onDeleted={() => removeCard(displayCard.id)}
               />
             </div>
