@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
-import { type GradedAnswer } from '@/lib/recallGrades';
+import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
 
 type HistoryEntry = GradedAnswer & { card: Flashcard };
 
@@ -86,36 +86,18 @@ export function useStudySession(deckId: string | undefined) {
     try {
       setError(null);
       const { itemId, card } = currentItem;
-      const {
-        id: attemptId,
-        recallGrade,
-        accentMismatch,
-        matchedVariant,
-      } = userAnswer === null
-        ? await dontKnow.mutateAsync({ itemId })
-        : await submitAnswer.mutateAsync({ itemId, userAnswer });
-
-      setHistory((prev) => [
-        ...prev,
-        {
-          card,
-          attemptId,
-          recallGrade,
-          accentMismatch,
-          matchedVariant,
-          userAnswer,
-        },
-      ]);
-
-      setStudyState({
-        phase: 'result',
-        attemptId,
-        recallGrade,
-        accentMismatch,
-        matchedVariant,
+      const attempt =
+        userAnswer === null
+          ? await dontKnow.mutateAsync({ itemId })
+          : await submitAnswer.mutateAsync({ itemId, userAnswer });
+      const answered = {
+        attemptId: attempt.id,
         userAnswer,
-        showingBack: true,
-      });
+        ...gradeOf(attempt),
+      };
+
+      setHistory((prev) => [...prev, { card, ...answered }]);
+      setStudyState({ phase: 'result', ...answered, showingBack: true });
     } catch {
       setError('Failed to submit answer. Please try again.');
     }
@@ -179,12 +161,17 @@ export function useStudySession(deckId: string | undefined) {
    * "My answer was correct": the answer becomes an Accepted Variant and is
    * graded again, here and in the session's summary.
    */
-  async function handleAcceptAnswer(attemptId: string) {
+  async function handleAcceptAnswer(
+    attemptId: string,
+    canonicalAnswerId?: string,
+  ) {
     try {
       setError(null);
-      const { card, recallGrade, accentMismatch, matchedVariant } =
-        await acceptAnswer.mutateAsync({ attemptId });
-      const grade = { recallGrade, accentMismatch, matchedVariant };
+      const accepted = await acceptAnswer.mutateAsync({
+        attemptId,
+        canonicalAnswerId,
+      });
+      const grade = gradeOf(accepted);
       setHistory((prev) =>
         prev.map((entry) =>
           entry.attemptId === attemptId ? { ...entry, ...grade } : entry,
@@ -196,7 +183,7 @@ export function useStudySession(deckId: string | undefined) {
           : prev,
       );
       // A new variant isn't an edit of the card
-      showCard(toFlashcard(card));
+      showCard(toFlashcard(accepted.card));
     } catch {
       setError("Couldn't accept your answer. Please try again.");
     }

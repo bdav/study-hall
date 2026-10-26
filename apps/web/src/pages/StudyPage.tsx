@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard } from '@/lib/cards';
+import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -21,6 +28,7 @@ import {
 import { DeckHeader } from '@/components/DeckHeader';
 import { StudyCardMenu } from '@/components/StudyCardMenu';
 import {
+  gradeOf,
   recallGradeColors,
   recallGradeLabels,
   type RecallGrade,
@@ -210,9 +218,40 @@ function TitleCardDetails({
   );
 }
 
+/**
+ * Below the learner's answer to a card with several Canonical Answers: the
+ * ones besides the primary shown on the card, and which one the answer
+ * matched, when it wasn't the primary.
+ */
+function AnswerNotes({
+  card,
+  result,
+}: {
+  card: Flashcard;
+  result: { matchedAnswer: string | null };
+}) {
+  const [primary, ...others] = card.answers;
+  if (others.length === 0) return null;
+  const matchedOther =
+    result.matchedAnswer !== null && result.matchedAnswer !== primary?.text;
+  return (
+    <div className="mt-2 text-sm text-white/70" data-testid="answer-notes">
+      {matchedOther && (
+        <p>Matched “{result.matchedAnswer}”, one of the card’s answers.</p>
+      )}
+      <p>Also accepted: {others.map((answer) => answer.text).join(', ')}</p>
+    </div>
+  );
+}
+
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const yourAnswerId = useId();
+  const answerChoiceId = useId();
+  // The attempt whose "My answer was correct" is choosing an answer
+  const [choosingAnswerFor, setChoosingAnswerFor] = useState<string | null>(
+    null,
+  );
 
   const queuePreviewQuery = trpc.study.queuePreview.useQuery(
     { deckId: deckId ?? '' },
@@ -282,15 +321,20 @@ export default function StudyPage() {
       : studyState.phase === 'result'
         ? {
             attemptId: studyState.attemptId,
-            recallGrade: studyState.recallGrade,
-            accentMismatch: studyState.accentMismatch,
-            matchedVariant: studyState.matchedVariant,
             userAnswer: studyState.userAnswer,
+            ...gradeOf(studyState),
           }
         : null;
+  // "My answer was correct" on a card with several answers first asks which
+  // one the answer is another way of saying
   const acceptDisplayedAnswer = displayResult
-    ? () => handleAcceptAnswer(displayResult.attemptId)
+    ? () =>
+        displayCard && displayCard.answers.length > 1
+          ? setChoosingAnswerFor(displayResult.attemptId)
+          : handleAcceptAnswer(displayResult.attemptId)
     : undefined;
+  const isChoosingAnswer =
+    !!displayResult && choosingAnswerFor === displayResult.attemptId;
   const progress = isReviewing
     ? undefined
     : `Card ${position + 1} of ${sessionSize}`;
@@ -707,6 +751,49 @@ export default function StudyPage() {
               <p className="text-3xl font-bold uppercase tracking-wide text-white">
                 {displayResult.userAnswer ?? "I don't know"}
               </p>
+              {displayCard && (
+                <AnswerNotes card={displayCard} result={displayResult} />
+              )}
+              {isChoosingAnswer && displayCard && (
+                <div
+                  role="group"
+                  aria-labelledby={answerChoiceId}
+                  className="mt-3 text-sm"
+                >
+                  <p id={answerChoiceId} className="text-white/70">
+                    Which answer is yours another way of saying?
+                  </p>
+                  <div className="mt-2 flex flex-wrap justify-center gap-2">
+                    {displayCard.answers.map((answer) => (
+                      <Button
+                        key={answer.id}
+                        type="button"
+                        size="sm"
+                        disabled={isAcceptingAnswer}
+                        onClick={() => {
+                          setChoosingAnswerFor(null);
+                          handleAcceptAnswer(
+                            displayResult.attemptId,
+                            answer.id,
+                          );
+                        }}
+                        className="bg-white/20 text-white hover:bg-white/30"
+                      >
+                        {answer.text}
+                      </Button>
+                    ))}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setChoosingAnswerFor(null)}
+                      className="text-white/70 hover:bg-white/10 hover:text-white"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : studyState.phase !== 'answering' ? (
             // Holds the answer's place, label included

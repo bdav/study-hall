@@ -911,6 +911,126 @@ describe('StudyPage', () => {
     });
   });
 
+  describe('cards with several Canonical Answers', () => {
+    /** Starts studying with card-1 accepting "4" (primary) and "IV". */
+    async function startWithTwoAnswers(grade: {
+      recallGrade: string;
+      matchedAnswer: string | null;
+    }) {
+      setupMocksWithStartSession();
+      const [card] = mockDeck.cards;
+      const twoAnswers = {
+        ...card,
+        canonicalAnswers: [
+          { ...card.canonicalAnswers[0] },
+          {
+            id: 'answer-IV',
+            text: 'IV',
+            isPrimary: false,
+            acceptedVariants: [],
+          },
+        ],
+      };
+      const session = {
+        ...mockSession,
+        items: [{ id: 'item-1', card: twoAnswers }, mockSession.items[1]],
+      };
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: typeof session) => void }) => ({
+          mutate: vi.fn(() => opts?.onSuccess?.(session)),
+          mutateAsync: vi.fn(),
+        })) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+      vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+        mutateAsync: vi.fn((args) =>
+          Promise.resolve({
+            id: 'attempt-1',
+            userAnswer: args.userAnswer,
+            accentMismatch: false,
+            matchedVariant: null,
+            ...grade,
+          }),
+        ),
+      } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      return user;
+    }
+
+    it('lists the other answers below yours and says which one you matched', async () => {
+      const user = await startWithTwoAnswers({
+        recallGrade: 'NAILED',
+        matchedAnswer: 'IV',
+      });
+
+      await user.type(screen.getByRole('textbox'), 'iv{Enter}');
+
+      const notes = await screen.findByTestId('answer-notes');
+      expect(notes).toHaveTextContent(
+        'Matched “IV”, one of the card’s answers.',
+      );
+      expect(notes).toHaveTextContent('Also accepted: IV');
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
+    });
+
+    it("doesn't call out a match with the primary answer", async () => {
+      const user = await startWithTwoAnswers({
+        recallGrade: 'NAILED',
+        matchedAnswer: '4',
+      });
+
+      await user.type(screen.getByRole('textbox'), '4{Enter}');
+
+      const notes = await screen.findByTestId('answer-notes');
+      expect(notes).not.toHaveTextContent(/matched/i);
+    });
+
+    it('asks which answer "My answer was correct" makes a variant of', async () => {
+      const user = await startWithTwoAnswers({
+        recallGrade: 'MISSED',
+        matchedAnswer: null,
+      });
+      await user.type(screen.getByRole('textbox'), 'quattro{Enter}');
+      await screen.findByTestId('result');
+
+      await user.click(
+        screen.getByRole('button', { name: 'My answer was correct' }),
+      );
+      expect(mockAcceptAnswer).not.toHaveBeenCalled();
+      const picker = screen.getByRole('group', {
+        name: 'Which answer is yours another way of saying?',
+      });
+      await user.click(within(picker).getByRole('button', { name: 'IV' }));
+
+      expect(mockAcceptAnswer).toHaveBeenCalledWith({
+        attemptId: 'attempt-1',
+        canonicalAnswerId: 'answer-IV',
+      });
+    });
+
+    it('lets you back out of choosing an answer', async () => {
+      const user = await startWithTwoAnswers({
+        recallGrade: 'MISSED',
+        matchedAnswer: null,
+      });
+      await user.type(screen.getByRole('textbox'), 'quattro{Enter}');
+      await screen.findByTestId('result');
+
+      await user.click(
+        screen.getByRole('button', { name: 'My answer was correct' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(
+        screen.queryByRole('group', {
+          name: 'Which answer is yours another way of saying?',
+        }),
+      ).not.toBeInTheDocument();
+      expect(mockAcceptAnswer).not.toHaveBeenCalled();
+    });
+  });
+
   describe('editing and deleting cards', () => {
     async function startStudying() {
       setupMocksWithStartSession();
