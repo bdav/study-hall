@@ -2,11 +2,9 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { protectedProcedure, router } from './trpc.js';
 import {
-  addAcceptedVariant,
   createCards,
   deckOrder,
   editCard,
-  removeAcceptedVariant,
   withCanonicalAnswers,
 } from '../services/cards.js';
 
@@ -70,13 +68,18 @@ export const cardRouter = router({
         .object({
           cardId: z.string(),
           front: front.optional(),
-          // In full, primary first; an existing answer by its id
+          // In full, primary first; an existing answer by its id, with all
+          // its Accepted Variants when listed
           canonicalAnswers: z
-            .array(z.object({ id: z.string().optional(), text: answerText }))
+            .array(
+              z.object({
+                id: z.string().optional(),
+                text: answerText,
+                acceptedVariants: z.array(variantText).optional(),
+              }),
+            )
             .min(1)
             .optional(),
-          // The Accepted Variants a new answer keeps; none when absent
-          keepVariantIds: z.array(z.string()).optional(),
         })
         .refine(
           (d) => d.front !== undefined || d.canonicalAnswers !== undefined,
@@ -205,45 +208,5 @@ export const cardRouter = router({
           updatedCount: input.update.length,
         };
       });
-    }),
-
-  addVariant: protectedProcedure
-    .input(z.object({ canonicalAnswerId: z.string(), text: variantText }))
-    .mutation(async ({ ctx, input }) => {
-      const answer = await ctx.prisma.canonicalAnswer.findFirst({
-        where: {
-          id: input.canonicalAnswerId,
-          card: { deck: { userId: ctx.userId } },
-        },
-      });
-
-      if (!answer) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Canonical answer not found',
-        });
-      }
-
-      return addAcceptedVariant(ctx.prisma, input);
-    }),
-
-  removeVariant: protectedProcedure
-    .input(z.object({ variantId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const variant = await ctx.prisma.acceptedVariant.findFirst({
-        where: {
-          id: input.variantId,
-          canonicalAnswer: { card: { deck: { userId: ctx.userId } } },
-        },
-      });
-
-      if (!variant) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Accepted variant not found',
-        });
-      }
-
-      return removeAcceptedVariant(ctx.prisma, input);
     }),
 });

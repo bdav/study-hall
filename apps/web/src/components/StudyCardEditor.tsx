@@ -18,8 +18,8 @@ const flipButtonClasses =
  * on the deck's Cards tab. Front and answers save together with Save, and
  * changing the front or the answers' texts resets the card's progress and
  * keeps its attempts (ADR-0004), going to `onEdited`; a Save that resets
- * nothing, like choosing another primary, and each Accepted Variant change,
- * saved straight away, go to `onChanged`. Cancel drops the edits; Delete,
+ * nothing, like choosing another primary or changing Accepted Variants,
+ * goes to `onChanged`. Cancel drops the edits; Delete,
  * once confirmed, removes the card. Mounted each time edit mode turns on,
  * so it starts from the card as it is. Marked `data-card-editor`, so page
  * shortcuts leave its keys alone.
@@ -69,7 +69,7 @@ export function StudyCardEditor({
     },
     onError: (error) =>
       toast.error(
-        error.data?.code === 'BAD_REQUEST'
+        error.data?.code === 'BAD_REQUEST' || error.data?.code === 'CONFLICT'
           ? error.message
           : "Couldn't save the card",
       ),
@@ -89,7 +89,6 @@ export function StudyCardEditor({
   function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!canSave) return;
-    // Nothing to save: variant changes are already saved
     if (!frontChanged && !form.isChanged) {
       onDone();
       return;
@@ -98,7 +97,6 @@ export function StudyCardEditor({
       cardId: card.id,
       front: front.trim(),
       canonicalAnswers: form.edits,
-      keepVariantIds: form.keepVariantIds,
     });
   }
 
@@ -164,11 +162,7 @@ export function StudyCardEditor({
                 {front.trim() || card.front}
               </p>
               <div className="mt-3">
-                <AnswersEditor
-                  form={form}
-                  deckId={deckId}
-                  onVariantsChanged={onChanged}
-                />
+                <AnswersEditor form={form} />
               </div>
               {isFlipped && actions}
               {flipButton('Flip to front')}

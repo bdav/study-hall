@@ -1,6 +1,5 @@
 import { useId } from 'react';
 import { Plus, X } from 'lucide-react';
-import { type Flashcard } from '@/lib/cards';
 import { glassInputClassName } from '@/lib/utils';
 import { type AnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
@@ -8,29 +7,16 @@ import { Input } from '@/components/ui/input';
 import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
 
 /**
- * A card's Canonical Answers as one form: each answer's field, the radio
- * choosing the primary, removing it, and below it its Accepted Variants.
- * A saved answer's variants are edited straight away; once the answer is
- * retyped they become ticked boxes, for which still fit it on Save. What
- * an answer is, and what a variant is, are explained where each is added:
- * below "Add answer", and below the first box for adding a variant.
+ * A card's Canonical Answers as one form, saved together: each answer's
+ * field, the radio choosing the primary, removing it, and below it its
+ * Accepted Variants, on any answer, new or retyped. What an answer is, and
+ * what a variant is, are explained where each is added: below "Add
+ * answer", and below the first answer's box for adding a variant.
  */
-export function AnswersEditor({
-  form,
-  deckId,
-  onVariantsChanged,
-}: {
-  form: AnswersForm;
-  deckId: string;
-  onVariantsChanged?: (card: Flashcard) => void;
-}) {
+export function AnswersEditor({ form }: { form: AnswersForm }) {
   const headingId = useId();
   const primaryName = useId();
   const answersHelpId = useId();
-  // The first answer whose variants can be added to
-  const firstVariantsAt = form.answers.findIndex(
-    (answer) => form.savedOf(answer)?.retyped === false,
-  );
 
   return (
     <div>
@@ -40,7 +26,6 @@ export function AnswersEditor({
       <ol aria-labelledby={headingId} className="mt-1 space-y-3">
         {form.answers.map((answer, i) => {
           const label = `Answer ${i + 1}`;
-          const saved = form.savedOf(answer);
           return (
             <li key={answer.key}>
               <div className="flex items-center gap-2">
@@ -70,56 +55,23 @@ export function AnswersEditor({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {saved && !saved.retyped && (
-                <div className="mt-1 pl-6">
-                  <AcceptedVariantsEditor
-                    deckId={deckId}
-                    answer={saved.saved}
-                    onChanged={onVariantsChanged}
-                    onDraftChange={(hasDraft) =>
-                      form.setVariantDraft(saved.saved.id, hasDraft)
-                    }
-                    description={
-                      i === firstVariantsAt
-                        ? 'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They save straight away and never reset progress.'
-                        : undefined
-                    }
-                  />
-                </div>
-              )}
-              {saved?.retyped && saved.saved.acceptedVariants.length > 0 && (
-                <fieldset className="mt-1 pl-6 text-sm">
-                  <legend className="text-xs text-white/60">
-                    Which of “{saved.saved.text}”’s variants still fit?
-                  </legend>
-                  <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                    {saved.saved.acceptedVariants.map((variant) => {
-                      const canKeep = form.canKeep(variant);
-                      return (
-                        <li key={variant.id}>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={canKeep && form.isKept(variant.id)}
-                              disabled={!canKeep}
-                              onChange={(e) =>
-                                form.setKept(variant.id, e.target.checked)
-                              }
-                              className="size-4 accent-white"
-                            />
-                            {variant.text}
-                            {!canKeep && (
-                              <span className="text-xs text-white/50">
-                                same as an answer
-                              </span>
-                            )}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </fieldset>
-              )}
+              <div className="mt-1 pl-6">
+                <AcceptedVariantsEditor
+                  name={answer.text.trim() || label}
+                  variants={answer.variants}
+                  isSameAsAnswer={form.isSameAsAnswer}
+                  text={answer.variantText}
+                  isTextAccepted={form.isVariantTextAccepted(i)}
+                  onTextChange={(text) => form.typeVariant(i, text)}
+                  onAdd={() => form.addVariant(i)}
+                  onRemove={(variant) => form.removeVariant(i, variant)}
+                  description={
+                    i === 0
+                      ? 'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They never reset progress.'
+                      : undefined
+                  }
+                />
+              </div>
             </li>
           );
         })}

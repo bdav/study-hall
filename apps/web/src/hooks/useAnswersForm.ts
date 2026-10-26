@@ -3,21 +3,30 @@ import { isSameAnswer, type AnswerEdit, type Flashcard } from '@/lib/cards';
 
 /**
  * One answer as the form holds it: an existing Canonical Answer, by id, or a
- * new one. `key` stays put as answers move, and `isNew` marks an answer the
- * author just added, to type into.
+ * new one, with its Accepted Variants' texts and the text typed into its
+ * box for adding one. `key` stays put as answers move, and `isNew` marks an
+ * answer the author just added, to type into.
  */
 export type AnswerDraft = {
   key: string;
   id?: string;
   text: string;
   isNew?: boolean;
+  variants: string[];
+  variantText: string;
 };
 
 let newKeys = 0;
 
 function newAnswer(): AnswerDraft {
   newKeys += 1;
-  return { key: `new-${newKeys}`, text: '', isNew: true };
+  return {
+    key: `new-${newKeys}`,
+    text: '',
+    isNew: true,
+    variants: [],
+    variantText: '',
+  };
 }
 
 function texts(answers: { text: string }[]) {
@@ -25,26 +34,29 @@ function texts(answers: { text: string }[]) {
 }
 
 /**
- * Editing a card's Canonical Answers, the first primary, for one Save:
- * adding, removing and retyping them, choosing the primary, and which of a
- * retyped answer's Accepted Variants still fit it. Variants of unchanged
- * answers are edited on their own, straight away; one typed but not added
- * holds off the Save.
+ * Editing a card's Canonical Answers, the first primary, and each one's
+ * Accepted Variants, all for one Save: adding, removing and retyping
+ * answers, choosing the primary, and adding and removing variants, on any
+ * answer, new or retyped. A variant typed but not added is added on Save,
+ * unless it's already accepted. A variant that grades the same as one of
+ * the answers adds nothing, so it holds off the Save until it's removed.
  */
 export function useAnswersForm(card: Flashcard) {
   const [answers, setAnswers] = useState<AnswerDraft[]>(() =>
-    card.answers.map(({ id, text }) => ({ key: id, id, text })),
-  );
-  // Variants of retyped answers the author unticked
-  const [unkept, setUnkept] = useState<ReadonlySet<string>>(new Set());
-  // Answers whose variant box has text not yet added
-  const [variantDrafts, setVariantDrafts] = useState<ReadonlySet<string>>(
-    new Set(),
+    card.answers.map(({ id, text, acceptedVariants }) => ({
+      key: id,
+      id,
+      text,
+      variants: acceptedVariants.map((variant) => variant.text),
+      variantText: '',
+    })),
   );
 
-  function typeAnswer(index: number, text: string) {
+  function change(index: number, update: Partial<AnswerDraft>) {
     setAnswers((prev) =>
-      prev.map((answer, i) => (i === index ? { ...answer, text } : answer)),
+      prev.map((answer, i) =>
+        i === index ? { ...answer, ...update } : answer,
+      ),
     );
   }
 
@@ -60,79 +72,81 @@ export function useAnswersForm(card: Flashcard) {
     setAnswers((prev) => [...prev, newAnswer()]);
   }
 
-  function setKept(variantId: string, keep: boolean) {
-    setUnkept((prev) => {
-      const next = new Set(prev);
-      if (keep) next.delete(variantId);
-      else next.add(variantId);
-      return next;
+  /** Whether a variant grades the same as one of the card's answers. */
+  function isSameAsAnswer(variant: string) {
+    return answers.some((answer) => isSameAnswer(variant, answer.text));
+  }
+
+  /** Whether the text typed into an answer's variant box is already accepted. */
+  function isVariantTextAccepted(index: number) {
+    const { variantText, variants } = answers[index];
+    return (
+      isSameAsAnswer(variantText) ||
+      variants.some((variant) => isSameAnswer(variantText, variant))
+    );
+  }
+
+  function addVariant(index: number) {
+    const text = answers[index].variantText.trim();
+    if (text === '' || isVariantTextAccepted(index)) return;
+    change(index, {
+      variants: [...answers[index].variants, text],
+      variantText: '',
     });
   }
 
-  function setVariantDraft(answerId: string, hasDraft: boolean) {
-    setVariantDrafts((prev) => {
-      const next = new Set(prev);
-      if (hasDraft) next.add(answerId);
-      else next.delete(answerId);
-      return next;
+  function removeVariant(index: number, variantIndex: number) {
+    change(index, {
+      variants: answers[index].variants.filter((_, i) => i !== variantIndex),
     });
   }
 
-  const edits: AnswerEdit[] = answers
-    .map(({ id, text }) => ({ id, text: text.trim() }))
-    .filter((answer) => answer.text !== '')
-    .map(({ id, text }) => (id ? { id, text } : { text }));
-
-  /** The saved answer behind a form answer, and whether it was retyped. */
-  function savedOf(answer: AnswerDraft) {
-    const saved = card.answers.find((a) => a.id === answer.id);
-    return saved && { saved, retyped: saved.text !== answer.text.trim() };
-  }
-
-  /** Whether a variant can stay: not the text of one of the answers. */
-  function canKeep(variant: { text: string }) {
-    return !edits.some((answer) => isSameAnswer(variant.text, answer.text));
-  }
-
-  const keepVariantIds = answers
-    .map(savedOf)
-    .filter((entry) => entry?.retyped)
-    .flatMap((entry) => entry!.saved.acceptedVariants)
-    .filter((variant) => !unkept.has(variant.id) && canKeep(variant))
-    .map((variant) => variant.id);
-
-  // A typed, unadded variant holds off Save while its box is still shown:
-  // its answer is there, not retyped
-  const hasVariantDraft = answers.some(
-    (answer) =>
-      answer.id &&
-      variantDrafts.has(answer.id) &&
-      savedOf(answer)?.retyped === false,
-  );
+  const edits: AnswerEdit[] = answers.flatMap((answer, i) => {
+    const text = answer.text.trim();
+    if (text === '') return [];
+    const typed = answer.variantText.trim();
+    const acceptedVariants =
+      typed !== '' && !isVariantTextAccepted(i)
+        ? [...answer.variants, typed]
+        : answer.variants;
+    return [
+      answer.id
+        ? { id: answer.id, text, acceptedVariants }
+        : { text, acceptedVariants },
+    ];
+  });
 
   const isChanged =
     JSON.stringify(edits) !==
-    JSON.stringify(card.answers.map(({ id, text }) => ({ id, text })));
+    JSON.stringify(
+      card.answers.map(({ id, text, acceptedVariants }) => ({
+        id,
+        text,
+        acceptedVariants: texts(acceptedVariants),
+      })),
+    );
   const sorted = (list: string[]) => [...list].sort().join('\n');
-  // Choosing another primary alone keeps the card's progress
+  // Choosing another primary, or changing variants, keeps the card's progress
   const resetsProgress = sorted(texts(edits)) !== sorted(texts(card.answers));
 
   return {
     answers,
-    typeAnswer,
+    typeAnswer: (index: number, text: string) => change(index, { text }),
     makePrimary,
     remove,
     add,
-    savedOf,
-    canKeep,
-    isKept: (variantId: string) => !unkept.has(variantId),
-    setKept,
-    setVariantDraft,
+    typeVariant: (index: number, variantText: string) =>
+      change(index, { variantText }),
+    addVariant,
+    removeVariant,
+    isSameAsAnswer,
+    isVariantTextAccepted,
     edits,
-    keepVariantIds,
     isChanged,
     resetsProgress,
-    canSave: edits.length > 0 && !hasVariantDraft,
+    canSave:
+      edits.length > 0 &&
+      !answers.some((answer) => answer.variants.some(isSameAsAnswer)),
   };
 }
 

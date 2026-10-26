@@ -79,10 +79,14 @@ export interface NewCard {
  * One of a card's Canonical Answers in an edit: an existing answer, by id,
  * possibly retyped, or a new one. An answer without an id that has an
  * existing answer's exact text is that answer, so its variants stay.
+ * `acceptedVariants`, when given, are all of its Accepted Variants' texts;
+ * without them an unchanged answer keeps its variants and a retyped one,
+ * whose old variants may not fit it, loses them.
  */
 export interface AnswerEdit {
   id?: string;
   text: string;
+  acceptedVariants?: string[];
 }
 
 /** Refuses answers that grading couldn't tell apart, so each is distinct. */
@@ -95,6 +99,28 @@ function assertDistinctAnswers(texts: string[]) {
       code: 'BAD_REQUEST',
       message: 'A card can’t have the same answer twice',
     });
+  }
+}
+
+/**
+ * Refuses listed Accepted Variants that add nothing: one that grading
+ * couldn't tell apart from an earlier one of its answer's, or from one of
+ * the card's answers. One differing only in accents isn't refused, so a
+ * variant can accept an unaccented form as exact.
+ */
+function assertUsefulVariants(answers: AnswerEdit[]) {
+  const texts = answers.map((answer) => answer.text);
+  for (const answer of answers) {
+    const variants = answer.acceptedVariants ?? [];
+    for (const [i, variant] of variants.entries()) {
+      const accepted = [...texts, ...variants.slice(0, i)];
+      if (accepted.some((text) => matchAnswer(variant, text) === 'exact')) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `“${variant}” is already accepted`,
+        });
+      }
+    }
   }
 }
 
@@ -162,13 +188,13 @@ export async function createCards(
 
 /**
  * Edits a card's front and/or its Canonical Answers, given in full, the
- * first primary. A change to the front or to the answers' texts resets the
- * card's progress to NEW but keeps its attempts (ADR-0004); choosing another
- * primary alone doesn't, as every answer is equally correct. A retyped
- * answer keeps only the Accepted Variants in `keepVariantIds`, since the old
- * text's variants may not fit it; none are kept when it's absent. A removed
- * answer's variants go with it, and a variant that is now one of the card's
- * answers is dropped, as adding it would be.
+ * first primary, each with its Accepted Variants when listed (`AnswerEdit`).
+ * A change to the front or to the answers' texts resets the card's progress
+ * to NEW but keeps its attempts (ADR-0004); choosing another primary or
+ * changing variants alone doesn't, as neither changes what the card asks.
+ * A listed variant still on its answer keeps its row. A removed answer's
+ * variants go with it, and an unlisted variant that is now one of the
+ * card's answers is dropped, as listing it would be refused.
  */
 export async function editCard(
   db: Db,
@@ -176,12 +202,10 @@ export async function editCard(
     cardId,
     front,
     canonicalAnswers,
-    keepVariantIds = [],
   }: {
     cardId: string;
     front?: string;
     canonicalAnswers?: AnswerEdit[];
-    keepVariantIds?: string[];
   },
 ) {
   const card = await db.card.findUniqueOrThrow({
@@ -200,7 +224,6 @@ export async function editCard(
       cardId,
       existing: card.canonicalAnswers,
       answers: canonicalAnswers,
-      keepVariantIds,
     }));
 
   if (frontChanged || answersChanged) {
@@ -223,7 +246,6 @@ async function replaceAnswers(
     cardId,
     existing,
     answers,
-    keepVariantIds,
   }: {
     cardId: string;
     existing: {
@@ -231,13 +253,14 @@ async function replaceAnswers(
       text: string;
       isPrimary: boolean;
       position: number;
+      acceptedVariants: { id: string; text: string }[];
     }[];
     answers: AnswerEdit[];
-    keepVariantIds: string[];
   },
 ) {
   const texts = answers.map((answer) => answer.text);
   assertDistinctAnswers(texts);
+  assertUsefulVariants(answers);
   const ids = answers.flatMap((answer) => (answer.id ? [answer.id] : []));
   if (new Set(ids).size !== ids.length) {
     throw new TRPCError({
@@ -289,20 +312,47 @@ async function replaceAnswers(
   for (const [position, answer] of answers.entries()) {
     const row = rows[position];
     const data = answerData(answer.text, position);
-    if (!row) {
-      await db.canonicalAnswer.create({ data: { cardId, ...data } });
-    } else if (
-      row.text !== data.text ||
-      row.isPrimary !== data.isPrimary ||
-      row.position !== data.position
+    const answerId =
+      row?.id ??
+      (
+        await db.canonicalAnswer.create({
+          data: { cardId, ...data },
+          select: { id: true },
+        })
+      ).id;
+    if (
+      row &&
+      (row.text !== data.text ||
+        row.isPrimary !== data.isPrimary ||
+        row.position !== data.position)
     ) {
       await db.canonicalAnswer.update({ where: { id: row.id }, data });
     }
-  }
-  for (const row of retyped) {
+
+    const listed = answer.acceptedVariants;
+    const current = row?.acceptedVariants ?? [];
+    if (listed === undefined) {
+      // A retyped answer's old variants may not fit it
+      if (row && row.text !== answer.text) {
+        await db.acceptedVariant.deleteMany({
+          where: { canonicalAnswerId: row.id },
+        });
+      }
+      continue;
+    }
     await db.acceptedVariant.deleteMany({
-      where: { canonicalAnswerId: row.id, id: { notIn: keepVariantIds } },
+      where: { canonicalAnswerId: answerId, text: { notIn: listed } },
     });
+    const kept = new Set(current.map((variant) => variant.text));
+    for (const text of listed.filter((text) => !kept.has(text))) {
+      await db.acceptedVariant.create({
+        data: {
+          canonicalAnswerId: answerId,
+          text,
+          normalizedText: normalizeAnswer(text),
+        },
+      });
+    }
   }
 
   // A variant that is now one of the card's answers adds nothing
@@ -377,21 +427,6 @@ function alreadyAccepted() {
     code: 'CONFLICT',
     message: 'That answer is already accepted',
   });
-}
-
-/**
- * Removes an Accepted Variant, leaving the card's progress untouched.
- * Returns the card.
- */
-export async function removeAcceptedVariant(
-  db: Db,
-  { variantId }: { variantId: string },
-) {
-  const variant = await db.acceptedVariant.delete({
-    where: { id: variantId },
-    select: { canonicalAnswer: { select: { cardId: true } } },
-  });
-  return cardWithAnswers(db, variant.canonicalAnswer.cardId);
 }
 
 function cardWithAnswers(db: Db, cardId: string) {

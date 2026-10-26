@@ -64,6 +64,11 @@ function makeProgressAdvanced(cardId: string) {
   });
 }
 
+/** Gives a Canonical Answer an Accepted Variant, as a fixture. */
+function seedVariant(canonicalAnswerId: string, text: string) {
+  return prisma.acceptedVariant.create({ data: { canonicalAnswerId, text } });
+}
+
 function primaryAnswer(card: {
   canonicalAnswers: { text: string; isPrimary: boolean }[];
 }) {
@@ -915,153 +920,191 @@ describe('cardRouter', () => {
       return { deck, card, answerId: card.canonicalAnswers[0].id };
     }
 
-    it("lists a variant added to a card's Canonical Answer with the deck's cards", async () => {
-      const { deck, answerId } = await cardWithAnswer();
+    /** "colour", accepting "color" and "colour (UK)". */
+    async function cardWithVariants() {
+      const { deck, card, answerId } = await cardWithAnswer();
+      const color = await seedVariant(answerId, 'color');
+      const uk = await seedVariant(answerId, 'colour (UK)');
+      return { deck, card, answerId, color, uk };
+    }
+
+    function variantTexts(card: {
+      canonicalAnswers: { acceptedVariants: { text: string }[] }[];
+    }) {
+      return card.canonicalAnswers[0].acceptedVariants.map((v) => v.text);
+    }
+
+    it("gives an answer the variants an edit lists, listed with the deck's cards", async () => {
+      const { deck, card, answerId } = await cardWithAnswer();
       const caller = createCaller();
 
-      await caller.card.addVariant({
-        canonicalAnswerId: answerId,
-        text: ' color ',
+      await caller.card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: answerId, text: 'colour', acceptedVariants: [' color '] },
+        ],
       });
 
-      const [card] = await caller.card.listByDeck({ deckId: deck.id });
-      expect(
-        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
-      ).toEqual(['color']);
-    });
-
-    it('removes a variant', async () => {
-      const { deck, answerId } = await cardWithAnswer();
-      const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'color',
-      });
-      const withVariants = await caller.card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'colr',
-      });
-      const misspelling = withVariants.canonicalAnswers[0].acceptedVariants[1];
-
-      const updated = await caller.card.removeVariant({
-        variantId: misspelling.id,
-      });
-
-      expect(
-        updated.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
-      ).toEqual(['color']);
       const [listed] = await caller.card.listByDeck({ deckId: deck.id });
-      expect(
-        listed.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
-      ).toEqual(['color']);
+      expect(variantTexts(listed)).toEqual(['color']);
     });
 
-    it("refuses to add a variant to another user's card", async () => {
-      const { deck, answerId } = await cardWithAnswer();
+    it('keeps the variants still listed, adds the new ones and removes the rest', async () => {
+      const { card, answerId, color } = await cardWithVariants();
 
-      await expect(
-        createCaller(otherUserId).card.addVariant({
-          canonicalAnswerId: answerId,
-          text: 'color',
-        }),
-      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-      const [card] = await createCaller().card.listByDeck({ deckId: deck.id });
-      expect(card.canonicalAnswers[0].acceptedVariants).toEqual([]);
-    });
-
-    it('refuses to add a variant to a nonexistent Canonical Answer', async () => {
-      await expect(
-        createCaller().card.addVariant({
-          canonicalAnswerId: 'nonexistent-id',
-          text: 'color',
-        }),
-      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    });
-
-    it("refuses to remove a variant from another user's card", async () => {
-      const { deck, answerId } = await cardWithAnswer();
-      const card = await createCaller().card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'color',
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          {
+            id: answerId,
+            text: 'colour',
+            acceptedVariants: ['color', 'couleur'],
+          },
+        ],
       });
 
+      expect(variantTexts(updated)).toEqual(['color', 'couleur']);
+      expect(updated.canonicalAnswers[0].acceptedVariants[0].id).toBe(color.id);
+    });
+
+    it('gives a new answer its variants', async () => {
+      const { card, answerId } = await cardWithAnswer();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: answerId, text: 'colour' },
+          { text: 'hue', acceptedVariants: ['tint'] },
+        ],
+      });
+
+      expect(updated.canonicalAnswers[1]).toMatchObject({
+        text: 'hue',
+        acceptedVariants: [{ text: 'tint' }],
+      });
+    });
+
+    it('keeps the listed variants of a retyped answer', async () => {
+      const { card, answerId } = await cardWithVariants();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          {
+            id: answerId,
+            text: 'colour, UK spelling',
+            acceptedVariants: ['colour (UK)'],
+          },
+        ],
+      });
+
+      expect(variantTexts(updated)).toEqual(['colour (UK)']);
+    });
+
+    it("leaves an unchanged answer's variants alone when the edit doesn't list them", async () => {
+      const { card, answerId } = await cardWithVariants();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        front: 'Colour, in American English',
+        canonicalAnswers: [{ id: answerId, text: 'colour' }],
+      });
+
+      expect(variantTexts(updated)).toEqual(['color', 'colour (UK)']);
+    });
+
+    it('keeps every variant when only the front changes', async () => {
+      const { card } = await cardWithVariants();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        front: 'Colour, in American English',
+      });
+
+      expect(variantTexts(updated)).toEqual(['color', 'colour (UK)']);
+    });
+
+    it("clears a retyped answer's variants when the edit doesn't list them", async () => {
+      const { card, answerId } = await cardWithVariants();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [{ id: answerId, text: 'red' }],
+      });
+
+      expect(variantTexts(updated)).toEqual([]);
+    });
+
+    it.each([
+      ['listed twice, as grading sees it', 'colour', ['color', 'Color!']],
+      ['that matches its answer', 'colour', ['Colour.']],
+      ['that matches another of the answers', 'colour', ['hue']],
+    ])(
+      'refuses a variant %s, changing nothing',
+      async (_, answer, acceptedVariants) => {
+        const { deck, card, answerId } = await cardWithAnswer();
+        const caller = createCaller();
+
+        await expect(
+          caller.card.update({
+            cardId: card.id,
+            front: 'Colour, in American English',
+            canonicalAnswers: [
+              { id: answerId, text: answer, acceptedVariants },
+              { text: 'hue' },
+            ],
+          }),
+        ).rejects.toMatchObject({ code: 'CONFLICT' });
+        const [listed] = await caller.card.listByDeck({ deckId: deck.id });
+        expect(listed.front).toBe('Colour in American English');
+        expect(listed.canonicalAnswers).toHaveLength(1);
+        expect(variantTexts(listed)).toEqual([]);
+      },
+    );
+
+    it('names the refused variant', async () => {
+      const { card, answerId } = await cardWithAnswer();
+
       await expect(
-        createCaller(otherUserId).card.removeVariant({
-          variantId: card.canonicalAnswers[0].acceptedVariants[0].id,
+        createCaller().card.update({
+          cardId: card.id,
+          canonicalAnswers: [
+            { id: answerId, text: 'colour', acceptedVariants: ['Colour.'] },
+          ],
         }),
-      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-      const [listed] = await createCaller().card.listByDeck({
-        deckId: deck.id,
-      });
-      expect(listed.canonicalAnswers[0].acceptedVariants).toHaveLength(1);
+      ).rejects.toThrow('“Colour.” is already accepted');
     });
 
-    it('refuses to remove a nonexistent variant', async () => {
-      await expect(
-        createCaller().card.removeVariant({ variantId: 'nonexistent-id' }),
-      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    });
+    it('accepts a variant that differs from its answer only in accents', async () => {
+      const { card, answerId } = await cardWithAnswer('Brasília');
 
-    it('rejects a variant that matches one already on the Canonical Answer', async () => {
-      const { deck, answerId } = await cardWithAnswer();
-      const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'color',
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: answerId, text: 'Brasília', acceptedVariants: ['Brasilia'] },
+        ],
       });
 
-      await expect(
-        caller.card.addVariant({ canonicalAnswerId: answerId, text: 'Color!' }),
-      ).rejects.toMatchObject({ code: 'CONFLICT' });
-      const [card] = await caller.card.listByDeck({ deckId: deck.id });
-      expect(
-        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
-      ).toEqual(['color']);
-    });
-
-    it('rejects a variant that matches the Canonical Answer itself', async () => {
-      const { answerId } = await cardWithAnswer('colour');
-
-      await expect(
-        createCaller().card.addVariant({
-          canonicalAnswerId: answerId,
-          text: 'Colour.',
-        }),
-      ).rejects.toMatchObject({ code: 'CONFLICT' });
-    });
-
-    it('accepts a variant that differs from the Canonical Answer only in accents', async () => {
-      const { answerId } = await cardWithAnswer('Brasília');
-
-      const card = await createCaller().card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'Brasilia',
-      });
-
-      expect(
-        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
-      ).toEqual(['Brasilia']);
+      expect(variantTexts(updated)).toEqual(['Brasilia']);
     });
 
     it("accepts a variant another card's answer already has", async () => {
       const first = await cardWithAnswer();
       const second = await cardWithAnswer();
-      const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: first.answerId,
-        text: 'color',
+      await seedVariant(first.answerId, 'color');
+
+      const updated = await createCaller().card.update({
+        cardId: second.card.id,
+        canonicalAnswers: [
+          { id: second.answerId, text: 'colour', acceptedVariants: ['color'] },
+        ],
       });
 
-      const card = await caller.card.addVariant({
-        canonicalAnswerId: second.answerId,
-        text: 'color',
-      });
-
-      expect(card.canonicalAnswers[0].acceptedVariants).toHaveLength(1);
+      expect(variantTexts(updated)).toEqual(['color']);
     });
 
-    it("never changes the card's progress or attempts", async () => {
-      const { deck, card, answerId } = await cardWithAnswer();
+    it("never changes the card's progress or attempts when only variants change", async () => {
+      const { deck, card, answerId } = await cardWithVariants();
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId: deck.id });
       await caller.study.submitAnswer({
@@ -1071,112 +1114,49 @@ describe('cardRouter', () => {
       await makeProgressAdvanced(card.id);
       const before = await progressOf(card.id);
 
-      const added = await caller.card.addVariant({
-        canonicalAnswerId: answerId,
-        text: 'color',
-      });
-      await caller.card.removeVariant({
-        variantId: added.canonicalAnswers[0].acceptedVariants[0].id,
+      await caller.card.update({
+        cardId: card.id,
+        front: 'Colour in American English',
+        canonicalAnswers: [
+          { id: answerId, text: 'colour', acceptedVariants: ['couleur'] },
+        ],
       });
 
       expect(await progressOf(card.id)).toEqual(before);
       expect(await attemptsIn(session!.id)).toHaveLength(1);
     });
 
-    describe('when an edit changes the answer', () => {
-      async function cardWithVariants() {
-        const { deck, card, answerId } = await cardWithAnswer();
-        const caller = createCaller();
-        await caller.card.addVariant({
-          canonicalAnswerId: answerId,
-          text: 'color',
-        });
-        const withVariants = await caller.card.addVariant({
-          canonicalAnswerId: answerId,
-          text: 'colour (UK)',
-        });
-        const [color, uk] = withVariants.canonicalAnswers[0].acceptedVariants;
-        return { deck, card, answerId, color, uk };
-      }
+    it('clears the variants of a card a CSV import gives a new answer', async () => {
+      const { deck, card } = await cardWithVariants();
+      const caller = createCaller();
 
-      function variantTexts(card: {
-        canonicalAnswers: { acceptedVariants: { text: string }[] }[];
-      }) {
-        return card.canonicalAnswers[0].acceptedVariants.map((v) => v.text);
-      }
-
-      it('keeps only the variants the edit says to keep', async () => {
-        const { card, answerId, uk } = await cardWithVariants();
-
-        const updated = await createCaller().card.update({
-          cardId: card.id,
-          canonicalAnswers: [{ id: answerId, text: 'colour, UK spelling' }],
-          keepVariantIds: [uk.id],
-        });
-
-        expect(variantTexts(updated)).toEqual(['colour (UK)']);
+      await caller.card.importCards({
+        deckId: deck.id,
+        new: [],
+        update: [{ cardId: card.id, canonicalAnswers: ['red'] }],
       });
 
-      it('drops a variant the new answer has become, even one marked to keep', async () => {
-        const { card, answerId, color, uk } = await cardWithVariants();
+      const [listed] = await caller.card.listByDeck({ deckId: deck.id });
+      expect(variantTexts(listed)).toEqual([]);
+    });
 
-        const updated = await createCaller().card.update({
-          cardId: card.id,
-          canonicalAnswers: [{ id: answerId, text: 'Color' }],
-          keepVariantIds: [color.id, uk.id],
-        });
+    it('clears the variants of a card whose answer a new card with the same front replaces', async () => {
+      const { deck } = await cardWithVariants();
 
-        expect(variantTexts(updated)).toEqual(['colour (UK)']);
+      const replaced = await createCaller().card.create({
+        deckId: deck.id,
+        front: 'Colour in American English',
+        canonicalAnswers: ['red'],
       });
 
-      it('clears the variants when the edit names none to keep', async () => {
-        const { card } = await cardWithVariants();
+      expect(variantTexts(replaced)).toEqual([]);
+    });
 
-        const updated = await createCaller().card.update({
-          cardId: card.id,
-          canonicalAnswers: [{ text: 'red' }],
-        });
+    it('has no procedures that add or remove a variant on their own', () => {
+      const procedures = Object.keys(appRouter._def.procedures);
 
-        expect(variantTexts(updated)).toEqual([]);
-      });
-
-      it('keeps every variant when only the front changes', async () => {
-        const { card } = await cardWithVariants();
-
-        const updated = await createCaller().card.update({
-          cardId: card.id,
-          front: 'Colour, in American English',
-          keepVariantIds: [],
-        });
-
-        expect(variantTexts(updated)).toEqual(['color', 'colour (UK)']);
-      });
-
-      it('clears the variants of a card a CSV import gives a new answer', async () => {
-        const { deck, card } = await cardWithVariants();
-        const caller = createCaller();
-
-        await caller.card.importCards({
-          deckId: deck.id,
-          new: [],
-          update: [{ cardId: card.id, canonicalAnswers: ['red'] }],
-        });
-
-        const [listed] = await caller.card.listByDeck({ deckId: deck.id });
-        expect(variantTexts(listed)).toEqual([]);
-      });
-
-      it('clears the variants of a card whose answer a new card with the same front replaces', async () => {
-        const { deck } = await cardWithVariants();
-
-        const replaced = await createCaller().card.create({
-          deckId: deck.id,
-          front: 'Colour in American English',
-          canonicalAnswers: ['red'],
-        });
-
-        expect(variantTexts(replaced)).toEqual([]);
-      });
+      expect(procedures).not.toContain('card.addVariant');
+      expect(procedures).not.toContain('card.removeVariant');
     });
   });
 
@@ -1192,7 +1172,11 @@ describe('cardRouter', () => {
         ],
       });
       const card = deck.cards[0];
-      const [eleven, thirteen] = card.canonicalAnswers;
+      // As an edit names them
+      const [eleven, thirteen] = card.canonicalAnswers.map(({ id, text }) => ({
+        id,
+        text,
+      }));
       return { deck, card, eleven, thirteen };
     }
 
@@ -1232,10 +1216,7 @@ describe('cardRouter', () => {
     it("adds an answer, resetting progress and keeping the others' variants", async () => {
       const { card, eleven, thirteen } = await primeCard();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: eleven.id,
-        text: 'eleven',
-      });
+      await seedVariant(eleven.id, 'eleven');
       await makeProgressAdvanced(card.id);
 
       const updated = await caller.card.update({
@@ -1254,10 +1235,7 @@ describe('cardRouter', () => {
     it('removes an answer with its variants, resetting progress', async () => {
       const { card, eleven, thirteen } = await primeCard();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: thirteen.id,
-        text: 'thirteen',
-      });
+      await seedVariant(thirteen.id, 'thirteen');
       await makeProgressAdvanced(card.id);
 
       const updated = await caller.card.update({
@@ -1274,10 +1252,7 @@ describe('cardRouter', () => {
     it("drops a variant that becomes one of the card's answers", async () => {
       const { card, eleven, thirteen } = await primeCard();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: eleven.id,
-        text: 'XI',
-      });
+      await seedVariant(eleven.id, 'XI');
 
       const updated = await caller.card.update({
         cardId: card.id,
@@ -1306,10 +1281,7 @@ describe('cardRouter', () => {
     it('moves texts between answers', async () => {
       const { card, eleven, thirteen } = await primeCard();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: eleven.id,
-        text: 'XI',
-      });
+      await seedVariant(eleven.id, 'XI');
 
       // 11 → 13 and 13 → 17, so 11's row takes the text 13's row had
       const updated = await caller.card.update({
@@ -1318,7 +1290,6 @@ describe('cardRouter', () => {
           { id: eleven.id, text: '13' },
           { id: thirteen.id, text: '17' },
         ],
-        keepVariantIds: [],
       });
 
       expect(answersOf(updated)).toEqual([
@@ -1406,10 +1377,7 @@ describe('cardRouter', () => {
     it("keeps an imported update's unchanged answer and its variants", async () => {
       const { deck, card, eleven } = await primeCard();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: eleven.id,
-        text: 'eleven',
-      });
+      await seedVariant(eleven.id, 'eleven');
 
       await caller.card.importCards({
         deckId: deck.id,

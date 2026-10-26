@@ -300,9 +300,12 @@ describe('studyRouter', () => {
       const [item] = items;
       const caller = createCaller();
       // Added after the session started, as an edit while studying is
-      await caller.card.addVariant({
-        canonicalAnswerId: item.card.canonicalAnswers[0].id,
-        text: 'NYC',
+      const [answer] = item.card.canonicalAnswers;
+      await caller.card.update({
+        cardId: item.card.id,
+        canonicalAnswers: [
+          { id: answer.id, text: answer.text, acceptedVariants: ['NYC'] },
+        ],
       });
 
       const attempt = await caller.study.submitAnswer({
@@ -542,9 +545,12 @@ describe('studyRouter', () => {
     it('grades again without a duplicate when the answer was accepted since', async () => {
       const { item, attempt } = await missedAnswer();
       const caller = createCaller();
-      await caller.card.addVariant({
-        canonicalAnswerId: item.card.canonicalAnswers[0].id,
-        text: 'nyc',
+      const [answer] = item.card.canonicalAnswers;
+      await caller.card.update({
+        cardId: item.card.id,
+        canonicalAnswers: [
+          { id: answer.id, text: answer.text, acceptedVariants: ['nyc'] },
+        ],
       });
 
       const accepted = await caller.study.acceptAnswer({

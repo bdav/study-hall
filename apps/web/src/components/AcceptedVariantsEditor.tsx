@@ -1,118 +1,95 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { X } from 'lucide-react';
-import { toast } from 'sonner';
-import { trpc } from '@/lib/trpc';
-import { toFlashcard, type CardAnswer, type Flashcard } from '@/lib/cards';
 import { glassInputClassName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 /**
- * Lists one Canonical Answer's Accepted Variants and adds and removes them,
- * each change saved straight away. Variants don't change what the card
- * asks, so they never reset its progress (ADR-0004). Not a form of its own,
- * so it can sit inside the card's edit form. `onDraftChange` says whether a
- * typed variant is waiting to be added, so the form can hold off saving.
- * `description`, when given, explains variants below the box for adding
- * one. With no variants yet, only that box shows.
+ * Lists one Canonical Answer's Accepted Variants, with the box for adding
+ * one, as part of the answers form: adding and removing them changes only
+ * the form, saved with its Save. Variants don't change what the card asks,
+ * so they never reset its progress (ADR-0004). `name` is the answer as
+ * typed; a variant that is the same as one of the card's answers is
+ * flagged, and typed text already accepted can't be added. `description`,
+ * when given, explains variants below the box. With no variants yet, only
+ * the box shows.
  */
 export function AcceptedVariantsEditor({
-  deckId,
-  answer,
-  onChanged,
-  onDraftChange,
+  name,
+  variants,
+  isSameAsAnswer,
+  text,
+  isTextAccepted,
+  onTextChange,
+  onAdd,
+  onRemove,
   description,
 }: {
-  deckId: string;
-  answer: CardAnswer;
-  onChanged?: (card: Flashcard) => void;
-  onDraftChange?: (hasDraft: boolean) => void;
+  name: string;
+  variants: string[];
+  isSameAsAnswer: (variant: string) => boolean;
+  text: string;
+  isTextAccepted: boolean;
+  onTextChange: (text: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
   description?: string;
 }) {
-  const utils = trpc.useUtils();
-  const [text, setText] = useState('');
   const inputId = useId();
   const descriptionId = useId();
-
-  function changeText(value: string) {
-    setText(value);
-    onDraftChange?.(value.trim() !== '');
-  }
-
-  function handleChanged(updated: Parameters<typeof toFlashcard>[0]) {
-    onChanged?.(toFlashcard(updated));
-    utils.deck.getById.invalidate({ id: deckId });
-    utils.card.listByDeck.invalidate({ deckId });
-  }
-
-  const add = trpc.card.addVariant.useMutation({
-    onSuccess: (updated) => {
-      changeText('');
-      handleChanged(updated);
-    },
-    onError: (error) =>
-      toast.error(
-        error.data?.code === 'CONFLICT'
-          ? error.message
-          : "Couldn't add the variant",
-      ),
-  });
-  const remove = trpc.card.removeVariant.useMutation({
-    onSuccess: handleChanged,
-    onError: () => toast.error("Couldn't remove the variant"),
-  });
-
-  const canAdd = text.trim() !== '' && !add.isPending;
-
-  function handleAdd() {
-    if (!canAdd) return;
-    add.mutate({ canonicalAnswerId: answer.id, text: text.trim() });
-  }
+  const canAdd = text.trim() !== '' && !isTextAccepted;
 
   return (
     <div className="text-sm">
-      {answer.acceptedVariants.length > 0 && (
+      {variants.length > 0 && (
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-xs text-white/50">Variants</span>
           <ul
-            aria-label={`Accepted variants of ${answer.text}`}
+            aria-label={`Accepted variants of ${name}`}
             className="flex flex-wrap gap-2"
           >
-            {answer.acceptedVariants.map((variant) => (
-              <li
-                key={variant.id}
-                className="flex items-center gap-1 rounded-full bg-white/10 py-0.5 pl-3 pr-1"
-              >
-                <span>{variant.text}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${variant.text}`}
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate({ variantId: variant.id })}
-                  className="rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            {variants.map((variant, i) => {
+              const sameAsAnswer = isSameAsAnswer(variant);
+              return (
+                <li
+                  key={variant}
+                  className={`flex items-center gap-1 rounded-full py-0.5 pl-3 pr-1 ${sameAsAnswer ? 'bg-amber-300/20' : 'bg-white/10'}`}
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
+                  <span>{variant}</span>
+                  {sameAsAnswer && (
+                    <span className="text-xs text-amber-200/90">
+                      same as an answer
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${variant}`}
+                    onClick={() => onRemove(i)}
+                    className="rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
       <div className="flex items-end gap-2">
         <label htmlFor={inputId} className="sr-only">
-          New accepted variant of {answer.text}
+          New accepted variant of {name}
         </label>
         <Input
           id={inputId}
           value={text}
           placeholder="Add variant"
           aria-describedby={description ? descriptionId : undefined}
-          onChange={(e) => changeText(e.target.value)}
+          onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
             // Enter adds the variant rather than submitting a surrounding form
             if (e.key === 'Enter') {
               e.preventDefault();
-              handleAdd();
+              if (canAdd) onAdd();
             }
           }}
           className={glassInputClassName}
@@ -120,18 +97,16 @@ export function AcceptedVariantsEditor({
         <Button
           type="button"
           size="sm"
-          aria-label={`Add variant of ${answer.text}`}
+          aria-label={`Add variant of ${name}`}
           disabled={!canAdd}
-          onClick={handleAdd}
+          onClick={onAdd}
           className="bg-white/20 text-white hover:bg-white/30"
         >
           Add
         </Button>
       </div>
-      {text.trim() !== '' && (
-        <p className="mt-1 text-xs text-amber-200/90">
-          Not added yet. Press Add or Enter.
-        </p>
+      {text.trim() !== '' && isTextAccepted && (
+        <p className="mt-1 text-xs text-amber-200/90">Already accepted.</p>
       )}
       {description && (
         <p id={descriptionId} className="mt-1 text-xs text-white/50">

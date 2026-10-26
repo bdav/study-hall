@@ -8,9 +8,9 @@ import { AnswersEditor } from '@/components/AnswersEditor';
 /**
  * A card's answers below it on the Cards tab: a summary of its Canonical
  * Answers and Accepted Variants that opens, in place, into the form for
- * them. `onSaved` says whether the saved answers reset the card's progress;
- * variant changes reset nothing. Marked `data-card-answers`, so page
- * shortcuts can leave its keys alone.
+ * them, saved together with Save. `onSaved` says whether the saved answers
+ * reset the card's progress; variant changes reset nothing. Marked
+ * `data-card-answers`, so page shortcuts can leave its keys alone.
  */
 export function CardAnswers({
   deckId,
@@ -19,7 +19,6 @@ export function CardAnswers({
   onOpen,
   onClose,
   onSaved,
-  onVariantsChanged,
   className = '',
 }: {
   deckId: string;
@@ -28,7 +27,6 @@ export function CardAnswers({
   onOpen: () => void;
   onClose: () => void;
   onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
-  onVariantsChanged?: (card: Flashcard) => void;
   className?: string;
 }) {
   const label = `Answers of ${card.front}`;
@@ -44,7 +42,6 @@ export function CardAnswers({
           card={card}
           onDone={onClose}
           onSaved={onSaved}
-          onVariantsChanged={onVariantsChanged}
         />
       </section>
     );
@@ -94,19 +91,20 @@ export function CardAnswersSummary({
   );
 }
 
-/** The open form: answers save together with Save; Cancel drops them. */
+/**
+ * The open form: answers and their variants save together with Save;
+ * Cancel drops them.
+ */
 function AnswersForm({
   deckId,
   card,
   onDone,
   onSaved,
-  onVariantsChanged,
 }: {
   deckId: string;
   card: Flashcard;
   onDone: () => void;
   onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
-  onVariantsChanged?: (card: Flashcard) => void;
 }) {
   const form = useAnswersForm(card);
   const utils = trpc.useUtils();
@@ -119,7 +117,7 @@ function AnswersForm({
     },
     onError: (error) =>
       toast.error(
-        error.data?.code === 'BAD_REQUEST'
+        error.data?.code === 'BAD_REQUEST' || error.data?.code === 'CONFLICT'
           ? error.message
           : "Couldn't save the answers",
       ),
@@ -133,17 +131,12 @@ function AnswersForm({
     update.mutate({
       cardId: card.id,
       canonicalAnswers: form.edits,
-      keepVariantIds: form.keepVariantIds,
     });
   }
 
   return (
     <>
-      <AnswersEditor
-        form={form}
-        deckId={deckId}
-        onVariantsChanged={onVariantsChanged}
-      />
+      <AnswersEditor form={form} />
       <div className="mt-3 flex justify-end gap-2">
         <Button
           type="button"

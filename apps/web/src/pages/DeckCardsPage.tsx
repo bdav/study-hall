@@ -597,8 +597,11 @@ export default function DeckCardsPage() {
                     updateCard.mutate({
                       cardId: card.id,
                       front,
-                      canonicalAnswers: answersWithPrimary(card, back),
-                      ...(keepVariantIds && { keepVariantIds }),
+                      canonicalAnswers: answersWithPrimary(
+                        card,
+                        back,
+                        keepVariantIds,
+                      ),
                     })
                   }
                   onDelete={() => deleteCard.mutate({ cardId: card.id })}

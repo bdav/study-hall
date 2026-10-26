@@ -42,8 +42,6 @@ vi.mock('@/lib/trpc', () => ({
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
       importCards: { useMutation: vi.fn() },
-      addVariant: { useMutation: vi.fn() },
-      removeVariant: { useMutation: vi.fn() },
     },
   },
 }));
@@ -154,14 +152,6 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
-
-  vi.mocked(trpc.card.addVariant.useMutation).mockReturnValue({
-    ...defaultMutationReturn,
-  } as unknown as ReturnType<typeof trpc.card.addVariant.useMutation>);
-
-  vi.mocked(trpc.card.removeVariant.useMutation).mockReturnValue({
-    ...defaultMutationReturn,
-  } as unknown as ReturnType<typeof trpc.card.removeVariant.useMutation>);
 }
 
 beforeEach(() => {
@@ -722,9 +712,14 @@ describe('DeckCardsPage', () => {
   });
 
   describe('accepted variants', () => {
-    type AddVariantOptions = Parameters<
-      typeof trpc.card.addVariant.useMutation
-    >[0];
+    function mockUpdate() {
+      const mockMutate = vi.fn();
+      vi.mocked(trpc.card.update.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: mockMutate,
+      } as unknown as ReturnType<typeof trpc.card.update.useMutation>);
+      return mockMutate;
+    }
 
     /** Opens a card's answers below it; `dialog` is that panel. */
     async function openVariants(front: string) {
@@ -739,33 +734,9 @@ describe('DeckCardsPage', () => {
       };
     }
 
-    it("lists a card's Accepted Variants and adds one", async () => {
+    it("lists a card's Accepted Variants and adds one, saved with Save", async () => {
       setupMocks();
-      const mockAdd = vi.fn();
-      vi.mocked(trpc.card.addVariant.useMutation).mockImplementation(((
-        opts?: AddVariantOptions,
-      ) => ({
-        ...defaultMutationReturn,
-        mutate: mockAdd.mockImplementation((input) =>
-          opts?.onSuccess?.(
-            {
-              ...mockCards[0],
-              canonicalAnswers: [
-                {
-                  ...mockCards[0].canonicalAnswers[0],
-                  acceptedVariants: [
-                    { id: 'variant-paree', text: 'Paree' },
-                    { id: 'variant-new', text: input.text },
-                  ],
-                },
-              ],
-            } as never,
-            input as never,
-            undefined,
-            {} as never,
-          ),
-        ),
-      })) as unknown as typeof trpc.card.addVariant.useMutation);
+      const mockMutate = mockUpdate();
 
       const { user, dialog } = await openVariants('Capital of France');
       const variants = within(dialog).getByRole('list', {
@@ -780,16 +751,28 @@ describe('DeckCardsPage', () => {
       await user.click(
         within(dialog).getByRole('button', { name: 'Add variant of Paris' }),
       );
+      expect(within(variants).getByText('City of Light')).toBeInTheDocument();
+      expect(
+        within(dialog).getByLabelText('New accepted variant of Paris'),
+      ).toHaveValue('');
+      expect(mockMutate).not.toHaveBeenCalled();
 
-      expect(mockAdd).toHaveBeenCalledWith({
-        canonicalAnswerId: 'answer-Paris',
-        text: 'City of Light',
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [
+          {
+            id: 'answer-Paris',
+            text: 'Paris',
+            acceptedVariants: ['Paree', 'City of Light'],
+          },
+        ],
       });
-      expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
     });
 
-    it("won't save while a typed variant hasn't been added", async () => {
+    it('adds a typed variant not yet added on Save', async () => {
       setupMocks();
+      const mockMutate = mockUpdate();
 
       const { user, dialog } = await openVariants('Capital of France');
       await user.type(
@@ -797,66 +780,167 @@ describe('DeckCardsPage', () => {
         'Lutetia',
       );
 
+      expect(dialog).not.toHaveTextContent(/not added yet/i);
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [
+          {
+            id: 'answer-Paris',
+            text: 'Paris',
+            acceptedVariants: ['Paree', 'Lutetia'],
+          },
+        ],
+      });
+    });
+
+    it('removes an Accepted Variant with Save', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+
+      const { user, dialog } = await openVariants('Capital of France');
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Remove Paree' }),
+      );
+      expect(within(dialog).queryByText('Paree')).not.toBeInTheDocument();
+      expect(mockMutate).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [
+          { id: 'answer-Paris', text: 'Paris', acceptedVariants: [] },
+        ],
+      });
+    });
+
+    it('says when a variant is already accepted, and leaves it out', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+
+      const { user, dialog } = await openVariants('Capital of France');
+      await user.type(
+        within(dialog).getByLabelText('New accepted variant of Paris'),
+        'paree!',
+      );
+
+      expect(dialog).toHaveTextContent(/already accepted/i);
+      expect(
+        within(dialog).getByRole('button', { name: 'Add variant of Paris' }),
+      ).toBeDisabled();
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      // Nothing changed, so nothing to save
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it('gives a newly added answer variants', async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+
+      const { user, dialog } = await openVariants('Capital of Germany');
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Add answer' }),
+      );
+      await user.type(within(dialog).getByLabelText('Answer 2'), 'Bonn');
+      await user.type(
+        within(dialog).getByLabelText('New accepted variant of Bonn'),
+        'Bonna{Enter}',
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-2',
+        canonicalAnswers: [
+          { id: 'answer-Berlin', text: 'Berlin', acceptedVariants: [] },
+          { text: 'Bonn', acceptedVariants: ['Bonna'] },
+        ],
+      });
+    });
+
+    it("keeps a retyped answer's variants, removing those that no longer fit", async () => {
+      setupMocks();
+      const mockMutate = mockUpdate();
+
+      const { user, dialog } = await openVariants('Capital of France');
+      await user.clear(within(dialog).getByLabelText('Answer 1'));
+      await user.type(within(dialog).getByLabelText('Answer 1'), 'Paname');
+      expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+      const variants = within(dialog).getByRole('list', {
+        name: 'Accepted variants of Paname',
+      });
+      await user.click(
+        within(variants).getByRole('button', { name: 'Remove Paree' }),
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        canonicalAnswers: [
+          { id: 'answer-Paris', text: 'Paname', acceptedVariants: [] },
+        ],
+      });
+    });
+
+    it('flags a variant that is now one of the answers, holding off Save', async () => {
+      setupMocks();
+      const { user, dialog } = await openVariants('Capital of France');
+
+      await user.clear(within(dialog).getByLabelText('Answer 1'));
+      await user.type(within(dialog).getByLabelText('Answer 1'), 'Paree');
+
+      expect(dialog).toHaveTextContent(/same as an answer/i);
       expect(
         within(dialog).getByRole('button', { name: 'Save' }),
       ).toBeDisabled();
-      expect(dialog).toHaveTextContent(/not added yet/i);
-
-      await user.clear(
-        within(dialog).getByLabelText('New accepted variant of Paris'),
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Remove Paree' }),
       );
       expect(
         within(dialog).getByRole('button', { name: 'Save' }),
       ).toBeEnabled();
     });
 
-    it('removes an Accepted Variant', async () => {
+    it('drops variant changes on Cancel', async () => {
       setupMocks();
-      const mockRemove = vi.fn();
-      vi.mocked(trpc.card.removeVariant.useMutation).mockReturnValue({
-        ...defaultMutationReturn,
-        mutate: mockRemove,
-      } as unknown as ReturnType<typeof trpc.card.removeVariant.useMutation>);
+      const mockMutate = mockUpdate();
 
       const { user, dialog } = await openVariants('Capital of France');
       await user.click(
         within(dialog).getByRole('button', { name: 'Remove Paree' }),
       );
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Answers of Capital of France' }),
+      );
 
-      expect(mockRemove).toHaveBeenCalledWith({ variantId: 'variant-paree' });
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('list', { name: 'Accepted variants of Paris' }),
+      ).toHaveTextContent('Paree');
     });
 
-    it('says when a variant is already accepted', async () => {
+    it('says why a save was refused', async () => {
       setupMocks();
-      vi.mocked(trpc.card.addVariant.useMutation).mockImplementation(((
-        opts?: AddVariantOptions,
-      ) => ({
+      vi.mocked(trpc.card.update.useMutation).mockImplementation(((opts?: {
+        onError?: (error: unknown) => void;
+      }) => ({
         ...defaultMutationReturn,
-        mutate: vi.fn((input) =>
-          opts?.onError?.(
-            {
-              message: 'That answer is already accepted',
-              data: { code: 'CONFLICT' },
-            } as never,
-            input as never,
-            undefined,
-            {} as never,
-          ),
+        mutate: vi.fn(() =>
+          opts?.onError?.({
+            message: '“Lutèce” is already accepted',
+            data: { code: 'CONFLICT' },
+          }),
         ),
-      })) as unknown as typeof trpc.card.addVariant.useMutation);
+      })) as unknown as typeof trpc.card.update.useMutation);
 
-      const { user, dialog } = await openVariants('Capital of Germany');
+      const { user, dialog } = await openVariants('Capital of France');
       await user.type(
-        within(dialog).getByLabelText('New accepted variant of Berlin'),
-        'berlin{Enter}',
+        within(dialog).getByLabelText('New accepted variant of Paris'),
+        'Lutèce{Enter}',
       );
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
-      expect(toast.error).toHaveBeenCalledWith(
-        'That answer is already accepted',
-      );
-      expect(
-        within(dialog).getByLabelText('New accepted variant of Berlin'),
-      ).toHaveValue('berlin');
+      expect(toast.error).toHaveBeenCalledWith('“Lutèce” is already accepted');
     });
 
     describe('changing an answer that has variants', () => {
@@ -903,8 +987,13 @@ describe('DeckCardsPage', () => {
         expect(mockMutate).toHaveBeenCalledWith({
           cardId: 'card-1',
           front: 'Capital of France',
-          canonicalAnswers: [{ id: 'answer-Paris', text: 'Lutetia' }],
-          keepVariantIds: ['variant-paree'],
+          canonicalAnswers: [
+            {
+              id: 'answer-Paris',
+              text: 'Lutetia',
+              acceptedVariants: ['Paree'],
+            },
+          ],
         });
       });
 
@@ -1033,10 +1122,9 @@ describe('DeckCardsPage', () => {
       expect(mockMutate).toHaveBeenCalledWith({
         cardId: 'card-2',
         canonicalAnswers: [
-          { id: 'answer-Berlin', text: 'Berlin' },
-          { text: 'Bonn' },
+          { id: 'answer-Berlin', text: 'Berlin', acceptedVariants: [] },
+          { text: 'Bonn', acceptedVariants: [] },
         ],
-        keepVariantIds: [],
       });
     });
 
@@ -1052,7 +1140,7 @@ describe('DeckCardsPage', () => {
       expect(
         within(panel).getByLabelText('New accepted variant of Berlin'),
       ).toHaveAccessibleDescription(
-        'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They save straight away and never reset progress.',
+        'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They never reset progress.',
       );
       expect(panel).not.toHaveTextContent('||');
     });
@@ -1083,7 +1171,13 @@ describe('DeckCardsPage', () => {
       await user.click(within(panel).getByRole('button', { name: 'Save' }));
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({
-          canonicalAnswers: [{ id: 'answer-Berlin', text: 'Berlin || Bonn' }],
+          canonicalAnswers: [
+            {
+              id: 'answer-Berlin',
+              text: 'Berlin || Bonn',
+              acceptedVariants: [],
+            },
+          ],
         }),
       );
     });
@@ -1108,8 +1202,10 @@ describe('DeckCardsPage', () => {
 
       expect(mockMutate).toHaveBeenCalledWith({
         cardId: 'card-3',
-        canonicalAnswers: [{ id: 'answer-13', text: '13' }, { text: '17' }],
-        keepVariantIds: [],
+        canonicalAnswers: [
+          { id: 'answer-13', text: '13', acceptedVariants: [] },
+          { text: '17', acceptedVariants: [] },
+        ],
       });
     });
 
@@ -1120,41 +1216,6 @@ describe('DeckCardsPage', () => {
       expect(
         within(panel).getByRole('button', { name: 'Remove answer 1' }),
       ).toBeDisabled();
-    });
-
-    it("asks whether a retyped answer's variants still fit", async () => {
-      setupMocks();
-      const mockMutate = mockUpdate();
-      const { user, panel } = await openAnswers('Capital of France');
-
-      await user.clear(within(panel).getByLabelText('Answer 1'));
-      await user.type(within(panel).getByLabelText('Answer 1'), 'Paname');
-      const paree = within(panel).getByRole('checkbox', { name: 'Paree' });
-      expect(paree).toBeChecked();
-      await user.click(paree);
-      await user.click(within(panel).getByRole('button', { name: 'Save' }));
-
-      expect(mockMutate).toHaveBeenCalledWith({
-        cardId: 'card-1',
-        canonicalAnswers: [{ id: 'answer-Paris', text: 'Paname' }],
-        keepVariantIds: [],
-      });
-    });
-
-    it('can save once the answer whose variant box had text is retyped', async () => {
-      setupMocks();
-      const { user, panel } = await openAnswers('Capital of France');
-
-      await user.type(
-        within(panel).getByLabelText('New accepted variant of Paris'),
-        'Paname',
-      );
-      expect(
-        within(panel).getByRole('button', { name: 'Save' }),
-      ).toBeDisabled();
-      await user.type(within(panel).getByLabelText('Answer 1'), ', France');
-
-      expect(within(panel).getByRole('button', { name: 'Save' })).toBeEnabled();
     });
 
     it('discards the changes on Cancel', async () => {

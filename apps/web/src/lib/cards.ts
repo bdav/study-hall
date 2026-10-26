@@ -19,8 +19,16 @@ export type Flashcard = {
   canonicalAnswer: string;
 };
 
-/** One of a card's Canonical Answers in an edit, as `card.update` takes it. */
-export type AnswerEdit = { id?: string; text: string };
+/**
+ * One of a card's Canonical Answers in an edit, as `card.update` takes it:
+ * with all its Accepted Variants' texts when listed; without them, a
+ * retyped answer loses its variants and an unchanged one keeps them.
+ */
+export type AnswerEdit = {
+  id?: string;
+  text: string;
+  acceptedVariants?: string[];
+};
 
 export function toFlashcard(card: {
   id: string;
@@ -77,17 +85,24 @@ export function splitAnswers(text: string): string[] {
 }
 
 /**
- * A card's answers, as `card.update` takes them, with the primary retyped.
+ * A card's answers, as `card.update` takes them, with the primary retyped,
+ * keeping those of its Accepted Variants in `keepVariantIds` when given.
  * Another answer the primary now grades the same as is dropped.
  */
 export function answersWithPrimary(
   card: Flashcard,
   text: string,
+  keepVariantIds?: string[],
 ): AnswerEdit[] {
   const [primary, ...others] = card.answers;
   const first = text.trim();
+  const kept = keepVariantIds && {
+    acceptedVariants: (primary?.acceptedVariants ?? [])
+      .filter((variant) => keepVariantIds.includes(variant.id))
+      .map((variant) => variant.text),
+  };
   return [
-    { id: primary?.id, text: first },
+    { id: primary?.id, text: first, ...kept },
     ...others
       .filter((other) => !isSameAnswer(other.text, first))
       .map(({ id, text }) => ({ id, text })),
