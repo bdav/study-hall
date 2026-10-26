@@ -593,11 +593,12 @@ export default function DeckCardsPage() {
                 <FlashCardTile
                   front={card.front}
                   back={card.canonicalAnswer}
-                  onSave={(front, back) =>
+                  onSave={(front, back, keepVariantIds) =>
                     updateCard.mutate({
                       cardId: card.id,
                       front,
                       canonicalAnswer: back,
+                      ...(keepVariantIds && { keepVariantIds }),
                     })
                   }
                   onDelete={() => deleteCard.mutate({ cardId: card.id })}
@@ -605,7 +606,7 @@ export default function DeckCardsPage() {
                     updateCard.isPending &&
                     updateCard.variables?.cardId === card.id
                   }
-                  variantCount={card.acceptedVariants.length}
+                  variants={card.acceptedVariants}
                   onEditVariants={() => setVariantsCardId(card.id)}
                 />
               </motion.div>

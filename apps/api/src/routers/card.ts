@@ -66,6 +66,8 @@ export const cardRouter = router({
           cardId: z.string(),
           front: front.optional(),
           canonicalAnswer: canonicalAnswer.optional(),
+          // The Accepted Variants a new answer keeps; none when absent
+          keepVariantIds: z.array(z.string()).optional(),
         })
         .refine(
           (d) => d.front !== undefined || d.canonicalAnswer !== undefined,

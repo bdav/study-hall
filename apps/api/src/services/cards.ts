@@ -120,6 +120,8 @@ export async function createCards(
 /**
  * Edits a card's front and/or its primary canonical answer. A change to
  * either resets the card's progress to NEW but keeps its attempts (ADR-0004).
+ * A new answer keeps only the Accepted Variants in `keepVariantIds`, since
+ * the old answer's variants may not fit it; none are kept when it's absent.
  */
 export async function editCard(
   db: Db,
@@ -127,7 +129,13 @@ export async function editCard(
     cardId,
     front,
     canonicalAnswer,
-  }: { cardId: string; front?: string; canonicalAnswer?: string },
+    keepVariantIds = [],
+  }: {
+    cardId: string;
+    front?: string;
+    canonicalAnswer?: string;
+    keepVariantIds?: string[];
+  },
 ) {
   const card = await db.card.findUniqueOrThrow({
     where: { id: cardId },
@@ -152,6 +160,9 @@ export async function editCard(
       await db.canonicalAnswer.update({
         where: { id: primary.id },
         data: answerData,
+      });
+      await db.acceptedVariant.deleteMany({
+        where: { canonicalAnswerId: primary.id, id: { notIn: keepVariantIds } },
       });
     } else {
       await db.canonicalAnswer.create({

@@ -1,4 +1,5 @@
 import type { CsvRow, CsvErrorRow } from './csvParser';
+import type { AcceptedVariant } from './cards';
 
 export interface NewCard {
   front: string;
@@ -10,6 +11,8 @@ export interface UpdateCard {
   front: string;
   oldBack: string;
   newBack: string;
+  // The old answer's Accepted Variants, which a new answer clears
+  variantCount: number;
 }
 
 export interface SkippedRow {
@@ -28,6 +31,7 @@ export interface ExistingCard {
   id: string;
   front: string;
   canonicalAnswer: string;
+  acceptedVariants?: AcceptedVariant[];
 }
 
 /**
@@ -67,6 +71,7 @@ export function diffCsvRows(
         front: row.front,
         oldBack: existing.canonicalAnswer,
         newBack: row.back,
+        variantCount: existing.acceptedVariants?.length ?? 0,
       });
     } else {
       skippedRows.push({

@@ -17,13 +17,15 @@ import {
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
+import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 
 /**
  * Edit or delete the card being studied, without leaving the Study
  * Session. Both work as on the deck's Cards tab: an edit resets the
  * card's progress and keeps its attempts (ADR-0004); deleting removes it.
  * Editing also manages the answer's Accepted Variants, which change how
- * answers are graded but not what the card asks, so they reset nothing.
+ * answers are graded but not what the card asks, so they reset nothing. A
+ * changed answer first asks which of its variants still fit.
  */
 export function StudyCardMenu({
   deckId,
@@ -39,7 +41,9 @@ export function StudyCardMenu({
   onDeleted: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<
+    'edit' | 'keep-variants' | 'delete' | null
+  >(null);
   const [front, setFront] = useState(card.front);
   const [answer, setAnswer] = useState(card.canonicalAnswer);
   const frontId = useId();
@@ -76,14 +80,23 @@ export function StudyCardMenu({
   const canSave =
     front.trim() !== '' && answer.trim() !== '' && !update.isPending;
 
+  const edit = {
+    cardId: card.id,
+    front: front.trim(),
+    canonicalAnswer: answer.trim(),
+  };
+
   function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!canSave) return;
-    update.mutate({
-      cardId: card.id,
-      front: front.trim(),
-      canonicalAnswer: answer.trim(),
-    });
+    if (
+      edit.canonicalAnswer !== card.canonicalAnswer &&
+      card.acceptedVariants.length > 0
+    ) {
+      setDialog('keep-variants');
+      return;
+    }
+    update.mutate(edit);
   }
 
   return (
@@ -182,6 +195,20 @@ export function StudyCardMenu({
           </form>
         </DialogContent>
       </Dialog>
+
+      {dialog === 'keep-variants' && (
+        <KeepVariantsDialog
+          oldAnswer={card.canonicalAnswer}
+          newAnswer={edit.canonicalAnswer}
+          variants={card.acceptedVariants}
+          cancelLabel="Back"
+          isSaving={update.isPending}
+          onSave={(keepVariantIds) =>
+            update.mutate({ ...edit, keepVariantIds })
+          }
+          onCancel={() => setDialog('edit')}
+        />
+      )}
 
       <ConfirmDialog
         open={dialog === 'delete'}

@@ -34,6 +34,7 @@ describe('csvDiff', () => {
         front: 'Capital of France',
         oldBack: 'Lyon',
         newBack: 'Paris',
+        variantCount: 0,
       },
     ]);
     expect(result.skippedRows).toEqual([]);

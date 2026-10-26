@@ -1036,5 +1036,89 @@ describe('cardRouter', () => {
       expect(await progressOf(card.id)).toEqual(before);
       expect(await attemptsIn(session!.id)).toHaveLength(1);
     });
+
+    describe('when an edit changes the answer', () => {
+      async function cardWithVariants() {
+        const { deck, card, answerId } = await cardWithAnswer();
+        const caller = createCaller();
+        await caller.card.addVariant({
+          canonicalAnswerId: answerId,
+          text: 'color',
+        });
+        const withVariants = await caller.card.addVariant({
+          canonicalAnswerId: answerId,
+          text: 'colour (UK)',
+        });
+        const [color, uk] = withVariants.canonicalAnswers[0].acceptedVariants;
+        return { deck, card, color, uk };
+      }
+
+      function variantTexts(card: {
+        canonicalAnswers: { acceptedVariants: { text: string }[] }[];
+      }) {
+        return card.canonicalAnswers[0].acceptedVariants.map((v) => v.text);
+      }
+
+      it('keeps only the variants the edit says to keep', async () => {
+        const { card, uk } = await cardWithVariants();
+
+        const updated = await createCaller().card.update({
+          cardId: card.id,
+          canonicalAnswer: 'colour, UK spelling',
+          keepVariantIds: [uk.id],
+        });
+
+        expect(variantTexts(updated)).toEqual(['colour (UK)']);
+      });
+
+      it('clears the variants when the edit names none to keep', async () => {
+        const { card } = await cardWithVariants();
+
+        const updated = await createCaller().card.update({
+          cardId: card.id,
+          canonicalAnswer: 'red',
+        });
+
+        expect(variantTexts(updated)).toEqual([]);
+      });
+
+      it('keeps every variant when only the front changes', async () => {
+        const { card } = await cardWithVariants();
+
+        const updated = await createCaller().card.update({
+          cardId: card.id,
+          front: 'Colour, in American English',
+          keepVariantIds: [],
+        });
+
+        expect(variantTexts(updated)).toEqual(['color', 'colour (UK)']);
+      });
+
+      it('clears the variants of a card a CSV import gives a new answer', async () => {
+        const { deck, card } = await cardWithVariants();
+        const caller = createCaller();
+
+        await caller.card.importCards({
+          deckId: deck.id,
+          new: [],
+          update: [{ cardId: card.id, canonicalAnswer: 'red' }],
+        });
+
+        const [listed] = await caller.card.listByDeck({ deckId: deck.id });
+        expect(variantTexts(listed)).toEqual([]);
+      });
+
+      it('clears the variants of a card whose answer a new card with the same front replaces', async () => {
+        const { deck } = await cardWithVariants();
+
+        const replaced = await createCaller().card.create({
+          deckId: deck.id,
+          front: 'Colour in American English',
+          canonicalAnswer: 'red',
+        });
+
+        expect(variantTexts(replaced)).toEqual([]);
+      });
+    });
   });
 });

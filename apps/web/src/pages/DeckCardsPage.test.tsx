@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DeckCardsPage from './DeckCardsPage';
@@ -315,6 +315,24 @@ describe('DeckCardsPage', () => {
     // New card should appear in preview
     expect(screen.getByDisplayValue('Capital of Spain')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Madrid')).toBeInTheDocument();
+  });
+
+  it('says which updates clear accepted variants', async () => {
+    setupMocks();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByText('Import CSV'));
+    const csvContent =
+      'front,back\nCapital of France,Lutetia\nCapital of Germany,Bonn\n';
+    await user.upload(
+      screen.getByTestId('csv-file-input'),
+      new File([csvContent], 'cards.csv', { type: 'text/csv' }),
+    );
+
+    const rows = await screen.findAllByTestId('update-card-row');
+    expect(rows[0]).toHaveTextContent(/clears 1 accepted variant/i);
+    expect(rows[1]).not.toHaveTextContent(/variant/i);
   });
 
   it('calls importCards mutation when Import button is clicked in preview', async () => {
@@ -727,6 +745,94 @@ describe('DeckCardsPage', () => {
       expect(within(dialog).getByLabelText('New accepted variant')).toHaveValue(
         'berlin',
       );
+    });
+
+    describe('changing an answer that has variants', () => {
+      function mockUpdate() {
+        const mockMutate = vi.fn();
+        vi.mocked(trpc.card.update.useMutation).mockReturnValue({
+          ...defaultMutationReturn,
+          mutate: mockMutate,
+        } as unknown as ReturnType<typeof trpc.card.update.useMutation>);
+        return mockMutate;
+      }
+
+      async function changeAnswer(from: string, to: string) {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        const user = userEvent.setup({
+          advanceTimers: vi.advanceTimersByTime,
+        });
+        renderDeckCardsPage();
+        const answer = screen.getByDisplayValue(from);
+        await user.clear(answer);
+        await user.type(answer, to);
+        vi.advanceTimersByTime(900);
+        return user;
+      }
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('waits until you leave the answer, then asks which variants still fit', async () => {
+        setupMocks();
+        const mockMutate = mockUpdate();
+        const user = await changeAnswer('Paris', 'Lutetia');
+        expect(mockMutate).not.toHaveBeenCalled();
+
+        await user.tab();
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent(/from “Paris” to “Lutetia”/);
+        expect(
+          within(dialog).getByRole('checkbox', { name: 'Paree' }),
+        ).toBeChecked();
+        await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+        expect(mockMutate).toHaveBeenCalledWith({
+          cardId: 'card-1',
+          front: 'Capital of France',
+          canonicalAnswer: 'Lutetia',
+          keepVariantIds: ['variant-paree'],
+        });
+      });
+
+      it('puts the answer back when you cancel', async () => {
+        setupMocks();
+        const mockMutate = mockUpdate();
+        const user = await changeAnswer('Paris', 'Lutetia');
+
+        await user.tab();
+        await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(screen.getByDisplayValue('Paris')).toBeInTheDocument();
+      });
+
+      it('reverts a changed answer without asking about variants', async () => {
+        setupMocks();
+        const mockMutate = mockUpdate();
+        const user = await changeAnswer('Paris', 'Lutetia');
+
+        const reverts = screen.getAllByTitle('Revert changes');
+        await user.click(reverts[reverts.length - 1]);
+        await user.tab();
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByDisplayValue('Paris')).toBeInTheDocument();
+        expect(mockMutate).not.toHaveBeenCalled();
+      });
+
+      it('still saves the answer of a card with no variants as you type', async () => {
+        setupMocks();
+        const mockMutate = mockUpdate();
+        await changeAnswer('Berlin', 'Bonn');
+
+        expect(mockMutate).toHaveBeenCalledWith({
+          cardId: 'card-2',
+          front: 'Capital of Germany',
+          canonicalAnswer: 'Bonn',
+        });
+      });
     });
   });
 });

@@ -223,6 +223,13 @@ export function ImportPreviewDialog({
                         <TruncatedCell className="text-white/60 line-through">
                           {card.oldBack}
                         </TruncatedCell>
+                        {card.variantCount > 0 &&
+                          card.newBack.trim() !== card.oldBack && (
+                            <p className="text-xs text-white/50">
+                              Clears {card.variantCount} accepted{' '}
+                              {card.variantCount === 1 ? 'variant' : 'variants'}
+                            </p>
+                          )}
                       </TableCell>
                       <TableCell className="py-2">
                         <Input

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Undo2, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
+import { type AcceptedVariant } from '@/lib/cards';
 
 interface FlashCardTileProps {
   front: string;
   back: string;
-  onSave: (front: string, back: string) => void;
+  /** `keepVariantIds` comes with a changed answer that had variants. */
+  onSave: (front: string, back: string, keepVariantIds?: string[]) => void;
   onDelete: () => void;
   isSaving?: boolean;
-  /** How many Accepted Variants the answer has. */
-  variantCount: number;
+  /** The answer's Accepted Variants. */
+  variants: AcceptedVariant[];
   onEditVariants: () => void;
 }
 
@@ -19,7 +22,7 @@ export function FlashCardTile({
   onSave,
   onDelete,
   isSaving,
-  variantCount,
+  variants,
   onEditVariants,
 }: FlashCardTileProps) {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -28,6 +31,8 @@ export function FlashCardTile({
   const [isDirty, setIsDirty] = useState(false);
   const [prevFront, setPrevFront] = useState(front);
   const [prevBack, setPrevBack] = useState(back);
+  // A changed answer waiting on which of its variants still fit
+  const [pendingAnswer, setPendingAnswer] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const onSaveRef = useRef(onSave);
   useEffect(() => {
@@ -43,13 +48,45 @@ export function FlashCardTile({
     setIsDirty(false);
   }
 
+  // An answer with variants isn't saved as you type: leaving it asks which
+  // variants still fit the new answer
+  const asksAboutVariants = variants.length > 0;
+
   function debouncedSave(newFront: string, newBack: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      if (newFront.trim() && newBack.trim()) {
-        onSaveRef.current(newFront.trim(), newBack.trim());
+      if (!newFront.trim() || !newBack.trim()) return;
+      if (asksAboutVariants && newBack.trim() !== back) {
+        if (newFront.trim() !== front) onSaveRef.current(newFront.trim(), back);
+        return;
       }
+      onSaveRef.current(newFront.trim(), newBack.trim());
     }, 800);
+  }
+
+  function handleBackBlur() {
+    const answer = localBack.trim();
+    if (!asksAboutVariants || !answer || answer === back) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setPendingAnswer(answer);
+  }
+
+  function saveAnswer(keepVariantIds: string[]) {
+    if (pendingAnswer === null) return;
+    onSaveRef.current(
+      localFront.trim() || front,
+      pendingAnswer,
+      keepVariantIds,
+    );
+    setPendingAnswer(null);
+  }
+
+  function cancelAnswer() {
+    setPendingAnswer(null);
+    setLocalBack(back);
+    setIsDirty(localFront !== front);
+    // A front edited alongside the answer is still saved
+    debouncedSave(localFront, back);
   }
 
   // Cleanup on unmount
@@ -165,6 +202,9 @@ export function FlashCardTile({
               {isDirty && (
                 <button
                   onClick={handleRevert}
+                  // Keeps focus in the answer, so leaving it doesn't ask
+                  // about variants of an answer being reverted
+                  onMouseDown={(e) => e.preventDefault()}
                   className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                   title="Revert changes"
                 >
@@ -187,6 +227,7 @@ export function FlashCardTile({
             <textarea
               value={localBack}
               onChange={(e) => handleBackChange(e.target.value)}
+              onBlur={handleBackBlur}
               className="w-full resize-none bg-transparent text-center text-base font-medium text-white outline-none placeholder:text-white/30"
               rows={2}
               placeholder="Back text..."
@@ -198,9 +239,9 @@ export function FlashCardTile({
               aria-label={`Accepted variants for ${front}`}
               className="rounded px-1 text-[10px] font-medium uppercase tracking-wider text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
             >
-              {variantCount === 0
+              {variants.length === 0
                 ? 'Variants'
-                : `${variantCount} ${variantCount === 1 ? 'variant' : 'variants'}`}
+                : `${variants.length} ${variants.length === 1 ? 'variant' : 'variants'}`}
             </button>
             <ConfirmDialog
               title="Delete card"
@@ -220,6 +261,16 @@ export function FlashCardTile({
           </div>
         </div>
       </div>
+      {pendingAnswer !== null && (
+        <KeepVariantsDialog
+          oldAnswer={back}
+          newAnswer={pendingAnswer}
+          variants={variants}
+          cancelLabel="Cancel"
+          onSave={saveAnswer}
+          onCancel={cancelAnswer}
+        />
+      )}
     </div>
   );
 }

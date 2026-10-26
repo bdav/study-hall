@@ -53,7 +53,7 @@ const mockDeck = {
           id: 'answer-4',
           text: '4',
           isPrimary: true,
-          acceptedVariants: [{ id: 'variant-four', text: 'four' }],
+          acceptedVariants: [] as { id: string; text: string }[],
         },
       ],
       createdAt: new Date(),
@@ -723,6 +723,31 @@ describe('StudyPage', () => {
       return user;
     }
 
+    /** Starts studying with card-1's answer, "4", accepting "four". */
+    async function startStudyingWithVariants() {
+      setupMocksWithStartSession();
+      const session = {
+        ...mockSession,
+        items: [
+          {
+            id: 'item-1',
+            card: cardOneWithVariants([{ id: 'variant-four', text: 'four' }]),
+          },
+          mockSession.items[1],
+        ],
+      };
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: typeof session) => void }) => ({
+          mutate: vi.fn(() => opts?.onSuccess?.(session)),
+          mutateAsync: vi.fn(),
+        })) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      return user;
+    }
+
     async function chooseFromCardMenu(
       user: ReturnType<typeof userEvent.setup>,
       item: 'Edit' | 'Delete',
@@ -814,7 +839,7 @@ describe('StudyPage', () => {
     });
 
     it("adds and removes the answer's Accepted Variants without saying the card was edited", async () => {
-      const user = await startStudying();
+      const user = await startStudyingWithVariants();
       await user.type(screen.getByRole('textbox'), 'four');
       await user.click(screen.getByRole('button', { name: /submit/i }));
       await screen.findByTestId('result');
@@ -849,6 +874,74 @@ describe('StudyPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
+    });
+
+    it('asks which variants still fit when the answer changes, all kept unless unticked', async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.clear(screen.getByLabelText('Answer'));
+      await user.type(screen.getByLabelText('Answer'), 'IV');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).not.toHaveBeenCalled();
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveTextContent(/from “4” to “IV”/);
+      const four = within(dialog).getByRole('checkbox', { name: 'four' });
+      expect(four).toBeChecked();
+      await user.click(four);
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2?',
+        canonicalAnswer: 'IV',
+        keepVariantIds: [],
+      });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('keeps the ticked variants of a changed answer', async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Answer'), ' exactly{Enter}');
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', {
+          name: 'Save',
+        }),
+      );
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2?',
+        canonicalAnswer: '4 exactly',
+        keepVariantIds: ['variant-four'],
+      });
+    });
+
+    it('goes back to the edit from the question about variants, saving nothing', async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Answer'), '!{Enter}');
+      await user.click(screen.getByRole('button', { name: 'Back' }));
+
+      expect(mockUpdateCard).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Answer')).toHaveValue('4!');
+    });
+
+    it("doesn't ask about variants when only the front changes", async () => {
+      const user = await startStudyingWithVariants();
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(screen.getByLabelText('Front'), ' exactly{Enter}');
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2? exactly',
+        canonicalAnswer: '4',
+      });
     });
 
     it('deletes the card once confirmed and moves on to the next', async () => {
