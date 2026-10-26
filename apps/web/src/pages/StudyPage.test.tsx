@@ -19,6 +19,8 @@ vi.mock('@/lib/trpc', () => ({
     card: {
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
+      addVariant: { useMutation: vi.fn() },
+      removeVariant: { useMutation: vi.fn() },
     },
     deck: {
       getById: {
@@ -46,7 +48,14 @@ const mockDeck = {
       id: 'card-1',
       deckId: 'deck-1',
       front: 'What is 2+2?',
-      canonicalAnswers: [{ id: 'answer-4', text: '4', isPrimary: true }],
+      canonicalAnswers: [
+        {
+          id: 'answer-4',
+          text: '4',
+          isPrimary: true,
+          acceptedVariants: [{ id: 'variant-four', text: 'four' }],
+        },
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -55,7 +64,12 @@ const mockDeck = {
       deckId: 'deck-1',
       front: 'Capital of France?',
       canonicalAnswers: [
-        { id: 'answer-Paris', text: 'Paris', isPrimary: true },
+        {
+          id: 'answer-Paris',
+          text: 'Paris',
+          isPrimary: true,
+          acceptedVariants: [],
+        },
       ],
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -169,9 +183,26 @@ function setupBasicMocks() {
 
 const mockUpdateCard = vi.fn();
 const mockDeleteCard = vi.fn();
+const mockAddVariant = vi.fn();
+const mockRemoveVariant = vi.fn();
 
 type UpdateOptions = Parameters<typeof trpc.card.update.useMutation>[0];
 type DeleteOptions = Parameters<typeof trpc.card.delete.useMutation>[0];
+type AddVariantOptions = Parameters<typeof trpc.card.addVariant.useMutation>[0];
+type RemoveVariantOptions = Parameters<
+  typeof trpc.card.removeVariant.useMutation
+>[0];
+
+/** card-1, the "What is 2+2?" card, with the given variants of its answer. */
+function cardOneWithVariants(variants: { id: string; text: string }[]) {
+  const [card] = mockDeck.cards;
+  return {
+    ...card,
+    canonicalAnswers: [
+      { ...card.canonicalAnswers[0], acceptedVariants: variants },
+    ],
+  };
+}
 
 /**
  * Card edits and deletions that succeed straight away, answering the way
@@ -192,6 +223,7 @@ function mockCardMutations() {
                 id: 'answer-new',
                 text: input.canonicalAnswer,
                 isPrimary: true,
+                acceptedVariants: [],
               },
             ],
           } as never,
@@ -215,6 +247,37 @@ function mockCardMutations() {
     ),
     isPending: false,
   })) as unknown as typeof trpc.card.delete.useMutation);
+  vi.mocked(trpc.card.addVariant.useMutation).mockImplementation(((
+    opts?: AddVariantOptions,
+  ) => ({
+    mutate: mockAddVariant.mockImplementation(
+      (input: { canonicalAnswerId: string; text: string }) =>
+        opts?.onSuccess?.(
+          cardOneWithVariants([
+            { id: 'variant-four', text: 'four' },
+            { id: 'variant-new', text: input.text },
+          ]) as never,
+          input as never,
+          undefined,
+          {} as never,
+        ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.addVariant.useMutation);
+  vi.mocked(trpc.card.removeVariant.useMutation).mockImplementation(((
+    opts?: RemoveVariantOptions,
+  ) => ({
+    mutate: mockRemoveVariant.mockImplementation(
+      (input: { variantId: string }) =>
+        opts?.onSuccess?.(
+          cardOneWithVariants([]) as never,
+          input as never,
+          undefined,
+          {} as never,
+        ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.removeVariant.useMutation);
 }
 
 beforeEach(() => {
@@ -493,6 +556,45 @@ describe('StudyPage', () => {
     expect(screen.getByTestId('correct-answer')).toHaveTextContent('4');
   });
 
+  it('says when the answer matched an Accepted Variant', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+      mutateAsync: vi.fn((args) =>
+        Promise.resolve({
+          id: 'attempt-1',
+          userAnswer: args.userAnswer,
+          recallGrade: 'NAILED',
+          accentMismatch: false,
+          matchedVariant: 'four',
+        }),
+      ),
+    } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), 'Four{Enter}');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
+    });
+    expect(screen.getByTestId('variant-note')).toHaveTextContent(
+      /accepted variant .*four/i,
+    );
+  });
+
+  it('says nothing about variants when the Canonical Answer matched', async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), '4{Enter}');
+
+    await screen.findByTestId('result');
+    expect(screen.queryByTestId('variant-note')).not.toBeInTheDocument();
+  });
+
   it('summarises the session by grade and offers another session', async () => {
     setupMocksWithStartSession();
     const grades = ['NAILED', 'MISSED'];
@@ -709,6 +811,44 @@ describe('StudyPage', () => {
       expect(
         screen.getByText(/your answer was graded before you edited this card/i),
       ).toBeInTheDocument();
+    });
+
+    it("adds and removes the answer's Accepted Variants without saying the card was edited", async () => {
+      const user = await startStudying();
+      await user.type(screen.getByRole('textbox'), 'four');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await screen.findByTestId('result');
+
+      await chooseFromCardMenu(user, 'Edit');
+      const variants = within(screen.getByRole('dialog')).getByRole('list', {
+        name: 'Accepted variants',
+      });
+      expect(within(variants).getByText('four')).toBeInTheDocument();
+
+      await user.type(
+        screen.getByLabelText('New accepted variant'),
+        ' IV {Enter}',
+      );
+      expect(mockAddVariant).toHaveBeenCalledWith({
+        canonicalAnswerId: 'answer-4',
+        text: 'IV',
+      });
+      expect(within(variants).getByText('IV')).toBeInTheDocument();
+      expect(screen.getByLabelText('New accepted variant')).toHaveValue('');
+      // Adding a variant saves it without saving the card form
+      expect(mockUpdateCard).not.toHaveBeenCalled();
+      expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
+
+      await user.click(
+        within(variants).getByRole('button', { name: 'Remove four' }),
+      );
+      expect(mockRemoveVariant).toHaveBeenCalledWith({
+        variantId: 'variant-four',
+      });
+      expect(within(variants).queryByText('four')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
     });
 
     it('deletes the card once confirmed and moves on to the next', async () => {

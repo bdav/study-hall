@@ -24,6 +24,7 @@ import { DeckTabs } from '@/components/DeckTabs';
 import { DeckCardsSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
+import { AcceptedVariantsDialog } from '@/components/AcceptedVariantsDialog';
 
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
@@ -122,6 +123,8 @@ export default function DeckCardsPage() {
   const [previewSkippedRows, setPreviewSkippedRows] = useState<SkippedRow[]>(
     [],
   );
+  // The card whose Accepted Variants are open
+  const [variantsCardId, setVariantsCardId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newCardButtonRef = useRef<HTMLDivElement | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
@@ -602,12 +605,20 @@ export default function DeckCardsPage() {
                     updateCard.isPending &&
                     updateCard.variables?.cardId === card.id
                   }
+                  variantCount={card.acceptedVariants.length}
+                  onEditVariants={() => setVariantsCardId(card.id)}
                 />
               </motion.div>
             ))}
           </div>
         </LayoutGroup>
       </div>
+
+      <AcceptedVariantsDialog
+        deckId={deckId}
+        card={cards.find((card) => card.id === variantsCardId)}
+        onClose={() => setVariantsCardId(null)}
+      />
 
       {previewOpen && (
         <ImportPreviewDialog

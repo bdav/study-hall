@@ -15,28 +15,54 @@ export function normalizeAnswer(answer: string): string {
     .toLowerCase();
 }
 
-/** A deterministic grade, and whether it was lowered for wrong accents. */
+/**
+ * A deterministic grade, whether it was lowered for wrong accents, and the
+ * Accepted Variant the answer matched, if it matched one rather than the
+ * Canonical Answer.
+ */
 export type Grading = {
   recallGrade: Extract<RecallGrade, 'NAILED' | 'GOOD' | 'MISSED'>;
   accentMismatch: boolean;
+  matchedVariant: string | null;
 };
 
 /**
- * Grades an answer against a Canonical Answer. An Accent Mismatch is
- * accepted but never perfect, so it grades GOOD (ADR-0002).
+ * Grades an answer against a Canonical Answer and its Accepted Variants. A
+ * variant is graded as its Canonical Answer would be. An Accent Mismatch is
+ * accepted but never perfect, so it grades GOOD (ADR-0002); an exact match
+ * with any of them wins over one, and the Canonical Answer over a variant.
  */
 export function gradeAnswer(
   userAnswer: string,
   canonicalAnswer: string,
+  acceptedVariants: string[] = [],
 ): Grading {
-  switch (matchAnswer(userAnswer, canonicalAnswer)) {
-    case 'exact':
-      return { recallGrade: 'NAILED', accentMismatch: false };
-    case 'accent-mismatch':
-      return { recallGrade: 'GOOD', accentMismatch: true };
-    case 'no-match':
-      return { recallGrade: 'MISSED', accentMismatch: false };
+  const candidates = [
+    { text: canonicalAnswer, variant: null },
+    ...acceptedVariants.map((text) => ({ text, variant: text })),
+  ];
+  const matches = candidates.map((candidate) => ({
+    ...candidate,
+    match: matchAnswer(userAnswer, candidate.text),
+  }));
+
+  const exact = matches.find((m) => m.match === 'exact');
+  if (exact) {
+    return {
+      recallGrade: 'NAILED',
+      accentMismatch: false,
+      matchedVariant: exact.variant,
+    };
   }
+  const accentMismatch = matches.find((m) => m.match === 'accent-mismatch');
+  if (accentMismatch) {
+    return {
+      recallGrade: 'GOOD',
+      accentMismatch: true,
+      matchedVariant: accentMismatch.variant,
+    };
+  }
+  return { recallGrade: 'MISSED', accentMismatch: false, matchedVariant: null };
 }
 
 /**
@@ -47,9 +73,9 @@ export type AnswerMatch = 'exact' | 'accent-mismatch' | 'no-match';
 
 /**
  * The one comparison between an answer and a correct answer: a Canonical
- * Answer or an exercise's expected answer today, and Accepted Variants (#4)
- * next. Case, punctuation and extra whitespace never matter, but the spaces
- * between words do. An answer with no letters or digits never matches.
+ * Answer, an Accepted Variant or an exercise's expected answer. Case,
+ * punctuation and extra whitespace never matter, but the spaces between
+ * words do. An answer with no letters or digits never matches.
  */
 export function matchAnswer(
   answer: string,

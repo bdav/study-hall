@@ -85,20 +85,21 @@ export function useStudySession(deckId: string | undefined) {
     try {
       setError(null);
       const { itemId, card } = currentItem;
-      const { recallGrade, accentMismatch } =
+      const { recallGrade, accentMismatch, matchedVariant } =
         userAnswer === null
           ? await dontKnow.mutateAsync({ itemId })
           : await submitAnswer.mutateAsync({ itemId, userAnswer });
 
       setHistory((prev) => [
         ...prev,
-        { card, recallGrade, accentMismatch, userAnswer },
+        { card, recallGrade, accentMismatch, matchedVariant, userAnswer },
       ]);
 
       setStudyState({
         phase: 'result',
         recallGrade,
         accentMismatch,
+        matchedVariant,
         userAnswer,
         showingBack: true,
       });
@@ -143,6 +144,24 @@ export function useStudySession(deckId: string | undefined) {
     [endSession, items.length],
   );
 
+  /** Shows a card of the session as it now is, wherever it appears. */
+  const showCard = useCallback((card: Flashcard) => {
+    setStudySession(
+      (prev) =>
+        prev && {
+          ...prev,
+          items: prev.items.map((item) =>
+            item.card.id === card.id ? { ...item, card } : item,
+          ),
+        },
+    );
+    setHistory((prev) =>
+      prev.map((entry) =>
+        entry.card.id === card.id ? { ...entry, card } : entry,
+      ),
+    );
+  }, []);
+
   /**
    * Shows an edit to a card of the session, the one in play or one answered
    * earlier, wherever it appears from now on.
@@ -152,22 +171,9 @@ export function useStudySession(deckId: string | undefined) {
       if (history.some((entry) => entry.card.id === card.id)) {
         setEditedAfterAnswer((prev) => new Set(prev).add(card.id));
       }
-      setStudySession(
-        (prev) =>
-          prev && {
-            ...prev,
-            items: prev.items.map((item) =>
-              item.card.id === card.id ? { ...item, card } : item,
-            ),
-          },
-      );
-      setHistory((prev) =>
-        prev.map((entry) =>
-          entry.card.id === card.id ? { ...entry, card } : entry,
-        ),
-      );
+      showCard(card);
     },
-    [history],
+    [history, showCard],
   );
 
   /**
@@ -325,6 +331,9 @@ export function useStudySession(deckId: string | undefined) {
     handleDontKnow,
     handleFinish: finish,
     replaceCard,
+    // Accepted Variants don't change what a card asks, so a card whose
+    // variants changed wasn't edited after its answer
+    showVariantsChange: showCard,
     removeCard,
     editedAfterAnswer,
     handleNext,

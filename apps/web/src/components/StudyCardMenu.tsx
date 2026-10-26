@@ -4,7 +4,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
-import { glassInputClassName } from '@/lib/utils';
+import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,24 +16,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-
-const dialogClassName =
-  'border border-white/20 bg-[oklch(0.25_0.08_230)] text-white backdrop-blur-md';
+import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
 
 /**
  * Edit or delete the card being studied, without leaving the Study
  * Session. Both work as on the deck's Cards tab: an edit resets the
  * card's progress and keeps its attempts (ADR-0004); deleting removes it.
+ * Editing also manages the answer's Accepted Variants, which change how
+ * answers are graded but not what the card asks, so they reset nothing.
  */
 export function StudyCardMenu({
   deckId,
   card,
   onEdited,
+  onVariantsChanged,
   onDeleted,
 }: {
   deckId: string;
   card: Flashcard;
   onEdited: (card: Flashcard) => void;
+  onVariantsChanged: (card: Flashcard) => void;
   onDeleted: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -122,7 +124,7 @@ export function StudyCardMenu({
         open={dialog === 'edit'}
         onOpenChange={(open) => !open && setDialog(null)}
       >
-        <DialogContent className={dialogClassName} showCloseButton={false}>
+        <DialogContent className={glassDialogClassName} showCloseButton={false}>
           <form onSubmit={handleSave}>
             <DialogHeader>
               <DialogTitle className="text-white">Edit card</DialogTitle>
@@ -154,6 +156,11 @@ export function StudyCardMenu({
                   className={glassInputClassName}
                 />
               </div>
+              <AcceptedVariantsEditor
+                deckId={deckId}
+                card={card}
+                onChanged={onVariantsChanged}
+              />
             </div>
             <DialogFooter className="mt-6 border-white/20 bg-white/5">
               <Button

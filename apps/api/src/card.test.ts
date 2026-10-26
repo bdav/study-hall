@@ -858,4 +858,183 @@ describe('cardRouter', () => {
       expect(await attemptsIn(session!.id)).toHaveLength(1);
     });
   });
+
+  describe('accepted variants', () => {
+    async function cardWithAnswer(canonicalAnswer = 'colour') {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Colour in American English', canonicalAnswer }],
+      });
+      const card = deck.cards[0];
+      return { deck, card, answerId: card.canonicalAnswers[0].id };
+    }
+
+    it("lists a variant added to a card's Canonical Answer with the deck's cards", async () => {
+      const { deck, answerId } = await cardWithAnswer();
+      const caller = createCaller();
+
+      await caller.card.addVariant({
+        canonicalAnswerId: answerId,
+        text: ' color ',
+      });
+
+      const [card] = await caller.card.listByDeck({ deckId: deck.id });
+      expect(
+        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['color']);
+    });
+
+    it('removes a variant', async () => {
+      const { deck, answerId } = await cardWithAnswer();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'color',
+      });
+      const withVariants = await caller.card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'colr',
+      });
+      const misspelling = withVariants.canonicalAnswers[0].acceptedVariants[1];
+
+      const updated = await caller.card.removeVariant({
+        variantId: misspelling.id,
+      });
+
+      expect(
+        updated.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['color']);
+      const [listed] = await caller.card.listByDeck({ deckId: deck.id });
+      expect(
+        listed.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['color']);
+    });
+
+    it("refuses to add a variant to another user's card", async () => {
+      const { deck, answerId } = await cardWithAnswer();
+
+      await expect(
+        createCaller(otherUserId).card.addVariant({
+          canonicalAnswerId: answerId,
+          text: 'color',
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      const [card] = await createCaller().card.listByDeck({ deckId: deck.id });
+      expect(card.canonicalAnswers[0].acceptedVariants).toEqual([]);
+    });
+
+    it('refuses to add a variant to a nonexistent Canonical Answer', async () => {
+      await expect(
+        createCaller().card.addVariant({
+          canonicalAnswerId: 'nonexistent-id',
+          text: 'color',
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it("refuses to remove a variant from another user's card", async () => {
+      const { deck, answerId } = await cardWithAnswer();
+      const card = await createCaller().card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'color',
+      });
+
+      await expect(
+        createCaller(otherUserId).card.removeVariant({
+          variantId: card.canonicalAnswers[0].acceptedVariants[0].id,
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      const [listed] = await createCaller().card.listByDeck({
+        deckId: deck.id,
+      });
+      expect(listed.canonicalAnswers[0].acceptedVariants).toHaveLength(1);
+    });
+
+    it('refuses to remove a nonexistent variant', async () => {
+      await expect(
+        createCaller().card.removeVariant({ variantId: 'nonexistent-id' }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('rejects a variant that matches one already on the Canonical Answer', async () => {
+      const { deck, answerId } = await cardWithAnswer();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'color',
+      });
+
+      await expect(
+        caller.card.addVariant({ canonicalAnswerId: answerId, text: 'Color!' }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      const [card] = await caller.card.listByDeck({ deckId: deck.id });
+      expect(
+        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['color']);
+    });
+
+    it('rejects a variant that matches the Canonical Answer itself', async () => {
+      const { answerId } = await cardWithAnswer('colour');
+
+      await expect(
+        createCaller().card.addVariant({
+          canonicalAnswerId: answerId,
+          text: 'Colour.',
+        }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('accepts a variant that differs from the Canonical Answer only in accents', async () => {
+      const { answerId } = await cardWithAnswer('Brasília');
+
+      const card = await createCaller().card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'Brasilia',
+      });
+
+      expect(
+        card.canonicalAnswers[0].acceptedVariants.map((v) => v.text),
+      ).toEqual(['Brasilia']);
+    });
+
+    it("accepts a variant another card's answer already has", async () => {
+      const first = await cardWithAnswer();
+      const second = await cardWithAnswer();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: first.answerId,
+        text: 'color',
+      });
+
+      const card = await caller.card.addVariant({
+        canonicalAnswerId: second.answerId,
+        text: 'color',
+      });
+
+      expect(card.canonicalAnswers[0].acceptedVariants).toHaveLength(1);
+    });
+
+    it("never changes the card's progress or attempts", async () => {
+      const { deck, card, answerId } = await cardWithAnswer();
+      const caller = createCaller();
+      const session = await caller.study.startSession({ deckId: deck.id });
+      await caller.study.submitAnswer({
+        itemId: session!.items[0].id,
+        userAnswer: 'colour',
+      });
+      await makeProgressAdvanced(card.id);
+      const before = await progressOf(card.id);
+
+      const added = await caller.card.addVariant({
+        canonicalAnswerId: answerId,
+        text: 'color',
+      });
+      await caller.card.removeVariant({
+        variantId: added.canonicalAnswers[0].acceptedVariants[0].id,
+      });
+
+      expect(await progressOf(card.id)).toEqual(before);
+      expect(await attemptsIn(session!.id)).toHaveLength(1);
+    });
+  });
 });

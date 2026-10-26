@@ -216,6 +216,32 @@ describe('studyRouter', () => {
       );
     });
 
+    it('accepts an answer matching an Accepted Variant as it would the Canonical Answer, and says the variant matched', async () => {
+      const { items } = await startedSession([
+        { front: 'Largest US city', canonicalAnswer: 'New York City' },
+      ]);
+      const [item] = items;
+      const caller = createCaller();
+      // Added after the session started, as an edit while studying is
+      await caller.card.addVariant({
+        canonicalAnswerId: item.card.canonicalAnswers[0].id,
+        text: 'NYC',
+      });
+
+      const attempt = await caller.study.submitAnswer({
+        itemId: item.id,
+        userAnswer: 'nyc',
+      });
+
+      expect(attempt).toMatchObject({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: 'NYC',
+      });
+      // Scheduled as NAILED: mastery 2
+      expect((await progressOf(item.cardId)).masteryScore).toBe(2);
+    });
+
     it("updates the card's progress: NEW to LEARNING, mastery and next due date", async () => {
       const { items } = await startedSession(capitals);
       const before = Date.now();

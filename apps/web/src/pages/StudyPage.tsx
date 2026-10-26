@@ -100,9 +100,16 @@ function CardBack({
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
+      {result.matchedVariant && (
+        <p className="mt-2 text-sm text-white/70" data-testid="variant-note">
+          Matched the accepted variant “{result.matchedVariant}”.
+        </p>
+      )}
       {result.accentMismatch && (
         <p className="mt-2 text-sm text-white/70" data-testid="accent-note">
-          Check the accents in the answer above.
+          {result.matchedVariant
+            ? 'Check the accents in that variant.'
+            : 'Check the accents in the answer above.'}
         </p>
       )}
       {editedAfterAnswer && (
@@ -155,6 +162,7 @@ export default function StudyPage() {
     handleDontKnow,
     handleFinish,
     replaceCard,
+    showVariantsChange,
     removeCard,
     editedAfterAnswer,
     handleNext,
@@ -180,6 +188,7 @@ export default function StudyPage() {
         ? {
             recallGrade: studyState.recallGrade,
             accentMismatch: studyState.accentMismatch,
+            matchedVariant: studyState.matchedVariant,
             userAnswer: studyState.userAnswer,
           }
         : null;
@@ -509,6 +518,7 @@ export default function StudyPage() {
                 deckId={deckId ?? ''}
                 card={displayCard}
                 onEdited={replaceCard}
+                onVariantsChanged={showVariantsChange}
                 onDeleted={() => removeCard(displayCard.id)}
               />
             </div>

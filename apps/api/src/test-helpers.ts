@@ -5,10 +5,9 @@ import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { LESSON_MODEL, LESSON_PROMPT_VERSION } from './ai/lesson.js';
-import { gradeAnswer } from './services/answerGrader.js';
 import {
   createCards,
-  primaryAnswerText,
+  gradeCardAnswer,
   withCanonicalAnswers,
   type NewCard,
 } from './services/cards.js';
@@ -112,8 +111,7 @@ export async function recordStudySession(
         studySessionId: session.id,
         cardId,
         userAnswer,
-        recallGrade: gradeAnswer(userAnswer, primaryAnswerText(card))
-          .recallGrade,
+        recallGrade: gradeCardAnswer(userAnswer, card).recallGrade,
         attemptNumber,
         isRetry: attemptNumber > 1,
       },

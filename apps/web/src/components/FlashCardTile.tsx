@@ -8,6 +8,9 @@ interface FlashCardTileProps {
   onSave: (front: string, back: string) => void;
   onDelete: () => void;
   isSaving?: boolean;
+  /** How many Accepted Variants the answer has. */
+  variantCount: number;
+  onEditVariants: () => void;
 }
 
 export function FlashCardTile({
@@ -16,6 +19,8 @@ export function FlashCardTile({
   onSave,
   onDelete,
   isSaving,
+  variantCount,
+  onEditVariants,
 }: FlashCardTileProps) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [localFront, setLocalFront] = useState(front);
@@ -187,7 +192,16 @@ export function FlashCardTile({
               placeholder="Back text..."
             />
           </div>
-          <div className="flex justify-end px-3 pb-2">
+          <div className="flex items-center justify-between px-3 pb-2">
+            <button
+              onClick={onEditVariants}
+              aria-label={`Accepted variants for ${front}`}
+              className="rounded px-1 text-[10px] font-medium uppercase tracking-wider text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+            >
+              {variantCount === 0
+                ? 'Variants'
+                : `${variantCount} ${variantCount === 1 ? 'variant' : 'variants'}`}
+            </button>
             <ConfirmDialog
               title="Delete card"
               description="Are you sure you want to delete this card? This cannot be undone."

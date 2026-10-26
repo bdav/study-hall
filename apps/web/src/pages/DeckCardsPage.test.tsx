@@ -1,10 +1,13 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DeckCardsPage from './DeckCardsPage';
 import { trpc } from '@/lib/trpc';
+import { toast } from 'sonner';
+
+const mockInvalidateCards = vi.fn();
 
 vi.mock('sonner', () => ({
   toast: {
@@ -25,7 +28,7 @@ vi.mock('react-router-dom', async () => {
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
-      card: { listByDeck: { invalidate: vi.fn() } },
+      card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: vi.fn() }, getById: { invalidate: vi.fn() } },
     })),
     deck: {
@@ -39,6 +42,8 @@ vi.mock('@/lib/trpc', () => ({
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
       importCards: { useMutation: vi.fn() },
+      addVariant: { useMutation: vi.fn() },
+      removeVariant: { useMutation: vi.fn() },
     },
   },
 }));
@@ -49,7 +54,14 @@ const mockCards = [
     deckId: 'deck-1',
     front: 'Capital of France',
     position: 0,
-    canonicalAnswers: [{ id: 'answer-Paris', text: 'Paris', isPrimary: true }],
+    canonicalAnswers: [
+      {
+        id: 'answer-Paris',
+        text: 'Paris',
+        isPrimary: true,
+        acceptedVariants: [{ id: 'variant-paree', text: 'Paree' }],
+      },
+    ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
   },
@@ -59,7 +71,12 @@ const mockCards = [
     front: 'Capital of Germany',
     position: 0,
     canonicalAnswers: [
-      { id: 'answer-Berlin', text: 'Berlin', isPrimary: true },
+      {
+        id: 'answer-Berlin',
+        text: 'Berlin',
+        isPrimary: true,
+        acceptedVariants: [],
+      },
     ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
@@ -137,6 +154,14 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
+
+  vi.mocked(trpc.card.addVariant.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.addVariant.useMutation>);
+
+  vi.mocked(trpc.card.removeVariant.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.removeVariant.useMutation>);
 }
 
 beforeEach(() => {
@@ -591,5 +616,117 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).not.toHaveBeenCalled();
 
     vi.useRealTimers();
+  });
+
+  describe('accepted variants', () => {
+    type AddVariantOptions = Parameters<
+      typeof trpc.card.addVariant.useMutation
+    >[0];
+
+    async function openVariants(front: string) {
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      await user.click(
+        screen.getByRole('button', { name: `Accepted variants for ${front}` }),
+      );
+      return { user, dialog: await screen.findByRole('dialog') };
+    }
+
+    it("lists a card's Accepted Variants and adds one", async () => {
+      setupMocks();
+      const mockAdd = vi.fn();
+      vi.mocked(trpc.card.addVariant.useMutation).mockImplementation(((
+        opts?: AddVariantOptions,
+      ) => ({
+        ...defaultMutationReturn,
+        mutate: mockAdd.mockImplementation((input) =>
+          opts?.onSuccess?.(
+            {
+              ...mockCards[0],
+              canonicalAnswers: [
+                {
+                  ...mockCards[0].canonicalAnswers[0],
+                  acceptedVariants: [
+                    { id: 'variant-paree', text: 'Paree' },
+                    { id: 'variant-new', text: input.text },
+                  ],
+                },
+              ],
+            } as never,
+            input as never,
+            undefined,
+            {} as never,
+          ),
+        ),
+      })) as unknown as typeof trpc.card.addVariant.useMutation);
+
+      const { user, dialog } = await openVariants('Capital of France');
+      const variants = within(dialog).getByRole('list', {
+        name: 'Accepted variants',
+      });
+      expect(within(variants).getByText('Paree')).toBeInTheDocument();
+
+      await user.type(
+        within(dialog).getByLabelText('New accepted variant'),
+        'City of Light',
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Add' }));
+
+      expect(mockAdd).toHaveBeenCalledWith({
+        canonicalAnswerId: 'answer-Paris',
+        text: 'City of Light',
+      });
+      expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
+    });
+
+    it('removes an Accepted Variant', async () => {
+      setupMocks();
+      const mockRemove = vi.fn();
+      vi.mocked(trpc.card.removeVariant.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: mockRemove,
+      } as unknown as ReturnType<typeof trpc.card.removeVariant.useMutation>);
+
+      const { user, dialog } = await openVariants('Capital of France');
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Remove Paree' }),
+      );
+
+      expect(mockRemove).toHaveBeenCalledWith({ variantId: 'variant-paree' });
+    });
+
+    it('says when a variant is already accepted', async () => {
+      setupMocks();
+      vi.mocked(trpc.card.addVariant.useMutation).mockImplementation(((
+        opts?: AddVariantOptions,
+      ) => ({
+        ...defaultMutationReturn,
+        mutate: vi.fn((input) =>
+          opts?.onError?.(
+            {
+              message: 'That answer is already accepted',
+              data: { code: 'CONFLICT' },
+            } as never,
+            input as never,
+            undefined,
+            {} as never,
+          ),
+        ),
+      })) as unknown as typeof trpc.card.addVariant.useMutation);
+
+      const { user, dialog } = await openVariants('Capital of Germany');
+      expect(dialog).toHaveTextContent(/none yet/i);
+      await user.type(
+        within(dialog).getByLabelText('New accepted variant'),
+        'berlin{Enter}',
+      );
+
+      expect(toast.error).toHaveBeenCalledWith(
+        'That answer is already accepted',
+      );
+      expect(within(dialog).getByLabelText('New accepted variant')).toHaveValue(
+        'berlin',
+      );
+    });
   });
 });

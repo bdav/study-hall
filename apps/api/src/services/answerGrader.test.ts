@@ -110,6 +110,7 @@ describe('gradeAnswer', () => {
     expect(gradeAnswer('brasilia', 'Brasília')).toEqual({
       recallGrade: 'GOOD',
       accentMismatch: true,
+      matchedVariant: null,
     });
   });
 
@@ -131,5 +132,53 @@ describe('gradeAnswer', () => {
 
   it('returns MISSED for a whitespace-only answer', () => {
     expect(gradeAnswer('   ', 'Paris').recallGrade).toBe('MISSED');
+  });
+
+  describe('with Accepted Variants', () => {
+    it('grades an answer matching a variant as it would the Canonical Answer, and says which variant matched', () => {
+      expect(gradeAnswer('Color!', 'colour', ['color'])).toEqual({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: 'color',
+      });
+    });
+
+    it('grades an Accent Mismatch with a variant GOOD', () => {
+      expect(gradeAnswer('sao paulo', 'São Paulo, SP', ['São Paulo'])).toEqual({
+        recallGrade: 'GOOD',
+        accentMismatch: true,
+        matchedVariant: 'São Paulo',
+      });
+    });
+
+    it('prefers an exact variant to an Accent Mismatch with the Canonical Answer', () => {
+      expect(gradeAnswer('Brasilia', 'Brasília', ['Brasilia'])).toEqual({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: 'Brasilia',
+      });
+    });
+
+    it('reports no variant when the Canonical Answer matches', () => {
+      expect(gradeAnswer('colour', 'colour', ['Colour'])).toEqual({
+        recallGrade: 'NAILED',
+        accentMismatch: false,
+        matchedVariant: null,
+      });
+    });
+
+    it('applies the spacing rule to variants', () => {
+      expect(gradeAnswer('por que', 'why', ['porque']).recallGrade).toBe(
+        'MISSED',
+      );
+    });
+
+    it('returns MISSED when no answer matches', () => {
+      expect(gradeAnswer('red', 'colour', ['color'])).toEqual({
+        recallGrade: 'MISSED',
+        accentMismatch: false,
+        matchedVariant: null,
+      });
+    });
   });
 });

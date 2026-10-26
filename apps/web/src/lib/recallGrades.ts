@@ -6,6 +6,9 @@ export type GradedAnswer = {
   recallGrade: RecallGrade;
   // Right except for the accents: shown with the accented form (ADR-0002)
   accentMismatch: boolean;
+  // The Accepted Variant the answer matched, or null when it matched the
+  // Canonical Answer or nothing
+  matchedVariant: string | null;
   // null when the learner chose "I don't know"
   userAnswer: string | null;
 };
