@@ -101,6 +101,23 @@ describe('statsRouter', () => {
       expect(stats.overallAccuracy).toBeCloseTo(2 / 4, 5);
     });
 
+    it('counts an answer wrong only in its accents as correct (ADR-0002)', async () => {
+      await recordStudySession(prisma, {
+        userId,
+        deckId,
+        answers: [
+          { cardId: cardIds[0], userAnswer: 'Paris' },
+          // An Accent Mismatch, graded GOOD
+          { cardId: cardIds[2], userAnswer: 'Brasilia' },
+        ],
+      });
+
+      const stats = await createCaller().stats.deckStats({ deckId });
+
+      expect(stats.firstTryAccuracy).toBe(1);
+      expect(stats.overallAccuracy).toBe(1);
+    });
+
     it('scopes first-try accuracy per session when deck is studied multiple times', async () => {
       const caller = createCaller();
 

@@ -184,6 +184,22 @@ describe('card.history', () => {
     });
   });
 
+  it('counts an answer wrong only in its accents as right', async () => {
+    const deck = await createDeckWithCards(prisma, {
+      userId,
+      cards: [{ front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] }],
+    });
+    const [card] = deck.cards;
+    await answer(deck.id, card.id, 'Brasilia');
+
+    const history = await createCaller().card.history({ cardId: card.id });
+
+    expect(history.versions[0]).toMatchObject({
+      rightCount: 1,
+      attempts: [{ userAnswer: 'Brasilia', recallGrade: 'GOOD' }],
+    });
+  });
+
   it('puts attempts with no recorded version under an earlier version', async () => {
     const { deckId, card } = await primeCard();
     const session = await answer(deckId, card.id, '11');
