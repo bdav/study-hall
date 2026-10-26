@@ -353,6 +353,26 @@ describe('lesson.createReviewCards', () => {
     ]);
   });
 
+  it('gives each confirmed card its first Card Version', async () => {
+    const { lessonId, deckId } = await openLesson();
+    const caller = createCaller();
+
+    await confirm(lessonId, [
+      { front: 'Translate: Good morning', canonicalAnswer: 'Buongiorno' },
+    ]);
+
+    const [card] = await caller.card.listByDeck({ deckId });
+    expect(
+      await prisma.cardVersion.findMany({ where: { cardId: card.id } }),
+    ).toMatchObject([
+      {
+        number: 1,
+        front: 'Translate: Good morning',
+        canonicalAnswers: ['Buongiorno'],
+      },
+    ]);
+  });
+
   it('records the model and prompt version of the proposal the cards came from', async () => {
     const { lessonId, deckId } = await openLesson();
     const caller = createCaller();

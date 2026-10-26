@@ -137,6 +137,7 @@ model Card {
   deck                Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
   sourceLesson        Lesson?            @relation(fields: [sourceLessonId], references: [id], onDelete: SetNull)
   canonicalAnswers    CanonicalAnswer[]
+  versions            CardVersion[]
   attempts            CardAttempt[]
   progress            CardProgress[]
   sessionItems        StudySessionItem[]
@@ -144,6 +145,23 @@ model Card {
   @@index([deckId])
   @@index([deckId, position])
   @@index([sourceLessonId])
+}
+
+// What a card asked from `startedAt` (ADR-0008): its front and Canonical
+// Answers' texts, primary first, as they were. Its first comes with the card,
+// and a new one with each progress reset (ADR-0004); Accepted Variants are
+// not part of it. The latest is the card's current version.
+model CardVersion {
+  id               String        @id @default(cuid())
+  cardId           String
+  number           Int
+  front            String
+  canonicalAnswers String[]
+  startedAt        DateTime      @default(now())
+  card             Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  attempts         CardAttempt[]
+
+  @@unique([cardId, number])
 }
 
 model CanonicalAnswer {
@@ -243,6 +261,9 @@ model CardAttempt {
   studySessionId        String
   studySessionItemId    String?
   cardId                String
+  // The Card Version answered; none for attempts from before versions were
+  // recorded and before the card's last reset (ADR-0008)
+  cardVersionId         String?
   userAnswer            String?
   recallGrade           RecallGrade
   attemptNumber         Int               @default(1)
@@ -257,10 +278,12 @@ model CardAttempt {
   studySession          StudySession      @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
   studySessionItem      StudySessionItem? @relation(fields: [studySessionItemId], references: [id], onDelete: SetNull)
   card                  Card              @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardVersion           CardVersion?      @relation(fields: [cardVersionId], references: [id], onDelete: SetNull)
 
   @@index([studySessionId])
   @@index([studySessionItemId])
   @@index([cardId])
+  @@index([cardVersionId])
   @@index([studySessionId, cardId])
 }
 

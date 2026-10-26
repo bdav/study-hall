@@ -2,7 +2,11 @@ import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '../apps/api/src/auth/password.js';
-import { createCards, type NewCard } from '../apps/api/src/services/cards.js';
+import {
+  createCards,
+  currentVersionId,
+  type NewCard,
+} from '../apps/api/src/services/cards.js';
 
 type AttemptInput = Prisma.CardAttemptCreateManyInput;
 
@@ -34,6 +38,16 @@ async function createDeckWithCards(
 
   console.log(`Seeded deck: ${name} with ${createdCards.length} cards`);
   return { deck, cards: createdCards };
+}
+
+/** The attempts, each answering its card's current Card Version. */
+function answeringCurrentVersions(attempts: AttemptInput[]) {
+  return Promise.all(
+    attempts.map(async (attempt) => ({
+      ...attempt,
+      cardVersionId: await currentVersionId(prisma, attempt.cardId),
+    })),
+  );
 }
 
 async function main() {
@@ -214,7 +228,9 @@ async function main() {
     },
   );
 
-  await prisma.cardAttempt.createMany({ data: capitalsAttempts });
+  await prisma.cardAttempt.createMany({
+    data: await answeringCurrentVersions(capitalsAttempts),
+  });
   console.log(
     'Seeded study session 1: World Capitals (completed, two cards missed first)',
   );
@@ -232,13 +248,15 @@ async function main() {
   });
 
   await prisma.cardAttempt.createMany({
-    data: math.cards.map((card) => ({
-      studySessionId: session2.id,
-      cardId: card.id,
-      userAnswer: card.canonicalAnswers[0].text,
-      recallGrade: 'NAILED' as const,
-      attemptNumber: 1,
-    })),
+    data: await answeringCurrentVersions(
+      math.cards.map((card) => ({
+        studySessionId: session2.id,
+        cardId: card.id,
+        userAnswer: card.canonicalAnswers[0].text,
+        recallGrade: 'NAILED' as const,
+        attemptNumber: 1,
+      })),
+    ),
   });
 
   console.log('Seeded study session 2: Basic Math (completed, all nailed)');
@@ -317,7 +335,9 @@ async function main() {
     },
   );
 
-  await prisma.cardAttempt.createMany({ data: spanishAttempts });
+  await prisma.cardAttempt.createMany({
+    data: await answeringCurrentVersions(spanishAttempts),
+  });
   console.log(
     'Seeded study session 3: Spanish Vocabulary (completed, several misses)',
   );

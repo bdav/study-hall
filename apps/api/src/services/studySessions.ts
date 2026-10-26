@@ -4,6 +4,7 @@ import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
   addAcceptedVariant,
   alreadyAccepts,
+  currentVersionId,
   deckOrder,
   gradeCardAnswer,
   withCanonicalAnswers,
@@ -190,6 +191,7 @@ export async function answerItem(
         studySessionId: item.studySessionId,
         studySessionItemId: item.id,
         cardId: item.cardId,
+        cardVersionId: await currentVersionId(tx, item.cardId),
         userAnswer,
         recallGrade,
         gradingMethod: 'DETERMINISTIC',

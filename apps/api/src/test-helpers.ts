@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { LESSON_MODEL, LESSON_PROMPT_VERSION } from './ai/lesson.js';
 import {
   createCards,
+  currentVersionId,
   gradeCardAnswer,
   withCanonicalAnswers,
   type NewCard,
@@ -110,6 +111,7 @@ export async function recordStudySession(
       data: {
         studySessionId: session.id,
         cardId,
+        cardVersionId: await currentVersionId(prisma, cardId),
         userAnswer,
         recallGrade: gradeCardAnswer(userAnswer, card).recallGrade,
         attemptNumber,

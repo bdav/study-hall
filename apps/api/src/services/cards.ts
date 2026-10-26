@@ -143,8 +143,8 @@ export interface CardSource {
 
 /**
  * Creates cards at the end of a deck, in the order given, each with its
- * Canonical Answers, the first primary, and card progress in NEW state for
- * the deck owner.
+ * Canonical Answers, the first primary, card progress in NEW state for the
+ * deck owner, and its first Card Version, starting with that progress.
  */
 export async function createCards(
   db: Db,
@@ -165,6 +165,7 @@ export async function createCards(
 
   const created = [];
   for (const [i, card] of cards.entries()) {
+    const startedAt = new Date();
     created.push(
       await db.card.create({
         data: {
@@ -177,7 +178,15 @@ export async function createCards(
           canonicalAnswers: {
             create: card.canonicalAnswers.map(answerData),
           },
-          progress: { create: { userId, deckId } },
+          progress: { create: { userId, deckId, resetAt: startedAt } },
+          versions: {
+            create: {
+              number: 1,
+              front: card.front,
+              canonicalAnswers: card.canonicalAnswers,
+              startedAt,
+            },
+          },
         },
         include: withCanonicalAnswers,
       }),
@@ -190,8 +199,9 @@ export async function createCards(
  * Edits a card's front and/or its Canonical Answers, given in full, the
  * first primary, each with its Accepted Variants when listed (`AnswerEdit`).
  * A change to the front or to the answers' texts resets the card's progress
- * to NEW but keeps its attempts (ADR-0004); choosing another primary or
- * changing variants alone doesn't, as neither changes what the card asks.
+ * to NEW but keeps its attempts (ADR-0004), and starts a new Card Version
+ * with it (ADR-0008); choosing another primary or changing variants alone
+ * does neither, as neither changes what the card asks.
  * A listed variant still on its answer keeps its row. A removed answer's
  * variants go with it, and an unlisted variant that is now one of the
  * card's answers is dropped, as listing it would be refused.
@@ -226,14 +236,39 @@ export async function editCard(
       answers: canonicalAnswers,
     }));
 
+  const edited = await cardWithAnswers(db, cardId);
   if (frontChanged || answersChanged) {
+    const resetAt = new Date();
     await db.cardProgress.updateMany({
       where: { cardId },
-      data: { ...NEW_PROGRESS, resetAt: new Date() },
+      data: { ...NEW_PROGRESS, resetAt },
+    });
+    const last = await db.cardVersion.aggregate({
+      where: { cardId },
+      _max: { number: true },
+    });
+    await db.cardVersion.create({
+      data: {
+        cardId,
+        number: (last._max.number ?? 0) + 1,
+        front: edited.front,
+        canonicalAnswers: edited.canonicalAnswers.map((answer) => answer.text),
+        startedAt: resetAt,
+      },
     });
   }
 
-  return cardWithAnswers(db, cardId);
+  return edited;
+}
+
+/** The id of a card's current Card Version, the latest. */
+export async function currentVersionId(db: Db, cardId: string) {
+  const version = await db.cardVersion.findFirstOrThrow({
+    where: { cardId },
+    orderBy: { number: 'desc' },
+    select: { id: true },
+  });
+  return version.id;
 }
 
 /**
