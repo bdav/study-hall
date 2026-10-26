@@ -1872,6 +1872,17 @@ describe('StudyPage', () => {
       return user;
     }
 
+    /** Opens the version picker and lists its options. */
+    async function openPicker(
+      user: ReturnType<typeof userEvent.setup>,
+      history: HTMLElement,
+    ) {
+      await user.click(
+        within(history).getByRole('combobox', { name: 'Card version' }),
+      );
+      return screen.getAllByRole('option').map((option) => option.textContent);
+    }
+
     it("isn't there before you answer", async () => {
       setupMocksWithStartSession();
       const user = userEvent.setup();
@@ -1926,19 +1937,18 @@ describe('StudyPage', () => {
       expect(history).toHaveTextContent('Answered 7 times · 0 right');
     });
 
-    it('lists earlier versions in a picker; choosing one shows its front, answer and answers', async () => {
+    it('lists the versions by number in a picker; choosing one shows its front, answers and answers given', async () => {
       const user = await answerFirstCard();
       const history = screen.getByRole('region', historyRegion);
-      const picker = within(history).getByRole('combobox', {
-        name: 'Card version',
-      });
       expect(
-        within(picker)
-          .getAllByRole('option')
-          .map((option) => option.textContent),
-      ).toEqual(['Current version', 'Oct 1: What is two plus two? → 4, four']);
+        within(history).getByRole('combobox', { name: 'Card version' }),
+      ).toHaveTextContent('Version 2 (current)');
 
-      await user.selectOptions(picker, 'version-1');
+      expect(await openPicker(user, history)).toEqual([
+        'Version 2 (current)',
+        'Version 1',
+      ]);
+      await user.click(screen.getByRole('option', { name: 'Version 1' }));
 
       expect(history).toHaveTextContent('What is two plus two?');
       expect(history).toHaveTextContent('Answers: 4, four');
@@ -1952,7 +1962,7 @@ describe('StudyPage', () => {
       expect(history).not.toHaveTextContent('Still learning');
     });
 
-    it('puts answers with no recorded version under "An earlier version"', async () => {
+    it('puts answers with no recorded version before the first version recorded', async () => {
       const history = historyOfCardOne();
       history.versions = history.versions.slice(0, 1);
       history.unversioned = {
@@ -1971,9 +1981,12 @@ describe('StudyPage', () => {
       const user = await answerFirstCard();
       const region = screen.getByRole('region', historyRegion);
 
-      await user.selectOptions(
-        within(region).getByRole('combobox', { name: 'Card version' }),
-        'An earlier version',
+      expect(await openPicker(user, region)).toEqual([
+        'Version 2 (current)',
+        'Before version 2',
+      ]);
+      await user.click(
+        screen.getByRole('option', { name: 'Before version 2' }),
       );
 
       expect(region).toHaveTextContent('Answered 1 time · 0 right');

@@ -1,6 +1,13 @@
 import { useId, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // How many of the current version's answers show
 const RECENT_ANSWERS = 5;
@@ -47,18 +54,20 @@ function answeredLine(answeredCount: number, rightCount: number) {
   return `Answered ${answeredCount} ${times} · ${rightCount} right`;
 }
 
-const EARLIER = 'An earlier version';
+// The picker's choice for attempts from before versions were recorded
+const BEFORE = 'before';
 
 /**
  * The learner's history with a card, below it once answered (ADR-0008): for
  * its current Card Version, the recent answers with their final grades and
  * dates, how many were right, its state in plain words and when it's next
- * due; a picker shows an earlier version's front, answers and answers given
- * instead. Read only.
+ * due; a picker of version numbers shows an earlier version's front,
+ * answers and answers given instead. Read only.
  */
 export function CardHistory({ cardId }: { cardId: string }) {
   const headingId = useId();
-  const [chosen, setChosen] = useState('current');
+  // A Card Version's id, or BEFORE; the current version until chosen
+  const [chosen, setChosen] = useState<string | null>(null);
   // Not kept once off screen, so it always comes with the answer just given
   const query = trpc.card.history.useQuery({ cardId }, { gcTime: 0 });
   const history = query.data;
@@ -72,13 +81,12 @@ export function CardHistory({ cardId }: { cardId: string }) {
   }
   if (!history) return null;
 
-  const [current, ...earlier] = history.versions;
-  const version =
-    chosen === 'current'
-      ? current
-      : history.versions.find((v) => v.id === chosen);
-  const shown = chosen === EARLIER ? history.unversioned : (version ?? current);
-  const hasEarlier = earlier.length > 0 || history.unversioned !== null;
+  const [current] = history.versions;
+  const first = history.versions[history.versions.length - 1];
+  const version = history.versions.find((v) => v.id === chosen) ?? current;
+  const shown = chosen === BEFORE ? history.unversioned : version;
+  const hasEarlier =
+    history.versions.length > 1 || history.unversioned !== null;
   const isCurrent = shown === current;
   const attempts = isCurrent
     ? (shown?.attempts ?? []).slice(0, RECENT_ANSWERS)
@@ -105,25 +113,43 @@ export function CardHistory({ cardId }: { cardId: string }) {
           Your history with this card
         </h2>
         {hasEarlier && (
-          <select
-            aria-label="Card version"
-            value={chosen}
-            onChange={(e) => setChosen(e.target.value)}
-            className="max-w-[60%] truncate rounded border border-white/20 bg-white/10 px-1 py-0.5 text-xs text-white"
-          >
-            <option value="current">Current version</option>
-            {earlier.map((v) => (
-              <option key={v.id} value={v.id}>
-                {formatDay(v.startedAt)}: {v.front} →{' '}
-                {v.canonicalAnswers.join(', ')}
-              </option>
-            ))}
-            {history.unversioned && <option value={EARLIER}>{EARLIER}</option>}
-          </select>
+          <Select value={chosen ?? current.id} onValueChange={setChosen}>
+            <SelectTrigger
+              size="sm"
+              aria-label="Card version"
+              className="border-white/20 bg-white/10 text-xs text-white hover:bg-white/15 [&_svg]:text-white/60"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              position="popper"
+              align="end"
+              className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
+            >
+              {history.versions.map((v) => (
+                <SelectItem
+                  key={v.id}
+                  value={v.id}
+                  className="text-xs focus:bg-white/10 focus:text-white"
+                >
+                  Version {v.number}
+                  {v.isCurrent && ' (current)'}
+                </SelectItem>
+              ))}
+              {history.unversioned && (
+                <SelectItem
+                  value={BEFORE}
+                  className="text-xs focus:bg-white/10 focus:text-white"
+                >
+                  Before version {first.number}
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         )}
       </div>
 
-      {!isCurrent && version && chosen !== EARLIER && (
+      {!isCurrent && chosen !== BEFORE && (
         <div className="mt-2">
           <p className="text-white">{version.front}</p>
           <p className="text-white/60">
