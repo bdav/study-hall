@@ -1040,17 +1040,31 @@ describe('DeckCardsPage', () => {
       });
     });
 
-    it('explains how answers differ from variants', async () => {
+    it('explains answers where they are added, and variants where they are added', async () => {
       setupMocks();
       const { panel } = await openAnswers('Capital of Germany');
 
-      expect(panel).toHaveTextContent(
+      expect(
+        within(panel).getByRole('button', { name: 'Add answer' }),
+      ).toHaveAccessibleDescription(
         'Answers are different correct answers, each right on its own, like 11, 13 and 17 for “a prime between 10 and 20”. Changing them starts the card’s progress over.',
       );
-      expect(panel).toHaveTextContent(
+      expect(
+        within(panel).getByLabelText('New accepted variant of Berlin'),
+      ).toHaveAccessibleDescription(
         'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They save straight away and never reset progress.',
       );
       expect(panel).not.toHaveTextContent('||');
+    });
+
+    it('shows only the box to add one for an answer without variants', async () => {
+      setupMocks();
+      const { panel } = await openAnswers('Capital of Germany');
+
+      expect(panel).not.toHaveTextContent(/none yet/i);
+      expect(
+        within(panel).getByLabelText('New accepted variant of Berlin'),
+      ).toHaveAttribute('placeholder', 'Add variant');
     });
 
     it('keeps "||" typed into an answer as plain text', async () => {

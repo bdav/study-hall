@@ -1328,19 +1328,39 @@ describe('StudyPage', () => {
       );
     });
 
-    it("explains, on the card's back, how answers differ from variants", async () => {
+    it("explains, on the card's back, answers and variants where they are added", async () => {
       const user = await startStudying();
 
       await editAnswers(user);
 
-      const back = screen.getByLabelText('Answer 1').closest('form')!;
-      expect(back).toHaveTextContent(
-        /Answers are different correct answers, each right on its own, like 11, 13 and 17/,
+      expect(
+        screen.getByRole('button', { name: 'Add answer' }),
+      ).toHaveAccessibleDescription(
+        /^Answers are different correct answers, each right on its own, like 11, 13 and 17.*progress over\.$/,
       );
-      expect(back).toHaveTextContent(/progress over/);
-      expect(back).toHaveTextContent(
-        /Variants are other ways to write one answer.*“color” for “colour”.*never reset progress/,
+      expect(
+        screen.getByLabelText('New accepted variant of 4'),
+      ).toHaveAccessibleDescription(
+        /^Variants are other ways to write one answer.*“color” for “colour”.*never reset progress\.$/,
       );
+    });
+
+    it("explains variants once, below the first answer's", async () => {
+      const user = await startStudying();
+
+      await editAnswers(user);
+      await user.click(screen.getByRole('button', { name: 'Add answer' }));
+      await user.type(screen.getByLabelText('Answer 2'), 'four');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await startEditing(user);
+      await user.click(screen.getByRole('button', { name: 'Flip to back' }));
+
+      expect(
+        screen.getAllByText(/Variants are other ways to write one answer/),
+      ).toHaveLength(1);
+      expect(
+        screen.getByLabelText('New accepted variant of four'),
+      ).not.toHaveAccessibleDescription();
     });
 
     it('saves an edit with Enter without moving on from an answered card', async () => {

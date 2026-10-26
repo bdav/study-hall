@@ -182,13 +182,20 @@ export function StudyCardEditor({
             >
               Front
             </label>
-            <input
+            {/* Wraps and grows with the text; Enter saves, as fronts are one line */}
+            <textarea
               id={frontId}
-              type="text"
+              rows={1}
               value={front}
               autoFocus={!isFlipped}
               onChange={(e) => setFront(e.target.value)}
-              className="mt-1 w-full border-0 border-b-2 border-white/40 bg-transparent py-2 text-center text-2xl font-bold tracking-wide text-white outline-none focus:border-white/60"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
+              className="mt-1 field-sizing-content w-full resize-none border-0 border-b-2 border-white/40 bg-transparent py-2 text-center text-2xl font-bold tracking-wide text-white outline-none focus:border-white/60"
             />
             {!isFlipped && actions}
           </div>

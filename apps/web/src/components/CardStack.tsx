@@ -46,9 +46,10 @@ export function CardStack({
         <div className="absolute inset-x-1 top-1.5 aspect-3/2 rounded-xl border border-white/30" />
       )}
       {hasFlip ? (
-        // The faces share one grid cell, so the card grows to fit the taller face
+        // The faces share one grid cell, so the card grows to fit the taller
+        // face; one column as wide as the card, so long text wraps
         <div
-          className="relative grid w-full transition-transform duration-500"
+          className="relative grid w-full grid-cols-1 transition-transform duration-500"
           style={{
             transformStyle: 'preserve-3d',
             transform: isFlipped ? 'rotateY(-180deg)' : 'rotateY(0deg)',

@@ -11,7 +11,9 @@ import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
  * A card's Canonical Answers as one form: each answer's field, the radio
  * choosing the primary, removing it, and below it its Accepted Variants.
  * A saved answer's variants are edited straight away; once the answer is
- * retyped they become ticked boxes, for which still fit it on Save.
+ * retyped they become ticked boxes, for which still fit it on Save. What
+ * an answer is, and what a variant is, are explained where each is added:
+ * below "Add answer", and below the first box for adding a variant.
  */
 export function AnswersEditor({
   form,
@@ -24,16 +26,16 @@ export function AnswersEditor({
 }) {
   const headingId = useId();
   const primaryName = useId();
+  const answersHelpId = useId();
+  // The first answer whose variants can be added to
+  const firstVariantsAt = form.answers.findIndex(
+    (answer) => form.savedOf(answer)?.retyped === false,
+  );
 
   return (
     <div>
       <p id={headingId} className="text-sm text-white/70">
         Answers
-      </p>
-      <p className="text-xs text-white/50">
-        Answers are different correct answers, each right on its own, like 11,
-        13 and 17 for “a prime between 10 and 20”. Changing them starts the
-        card’s progress over.
       </p>
       <ol aria-labelledby={headingId} className="mt-1 space-y-3">
         {form.answers.map((answer, i) => {
@@ -76,6 +78,11 @@ export function AnswersEditor({
                     onChanged={onVariantsChanged}
                     onDraftChange={(hasDraft) =>
                       form.setVariantDraft(saved.saved.id, hasDraft)
+                    }
+                    description={
+                      i === firstVariantsAt
+                        ? 'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They save straight away and never reset progress.'
+                        : undefined
                     }
                   />
                 </div>
@@ -122,15 +129,16 @@ export function AnswersEditor({
         size="sm"
         variant="ghost"
         onClick={form.add}
+        aria-describedby={answersHelpId}
         className="mt-2 text-white/70 hover:bg-white/10 hover:text-white"
       >
         <Plus className="mr-1 h-4 w-4" />
         Add answer
       </Button>
-      <p className="mt-1 text-xs text-white/50">
-        Variants are other ways to write one answer, such as spellings or forms,
-        like “color” for “colour”. They save straight away and never reset
-        progress.
+      <p id={answersHelpId} className="mt-1 text-xs text-white/50">
+        Answers are different correct answers, each right on its own, like 11,
+        13 and 17 for “a prime between 10 and 20”. Changing them starts the
+        card’s progress over.
       </p>
     </div>
   );

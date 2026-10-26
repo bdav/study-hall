@@ -13,21 +13,26 @@ import { Input } from '@/components/ui/input';
  * asks, so they never reset its progress (ADR-0004). Not a form of its own,
  * so it can sit inside the card's edit form. `onDraftChange` says whether a
  * typed variant is waiting to be added, so the form can hold off saving.
+ * `description`, when given, explains variants below the box for adding
+ * one. With no variants yet, only that box shows.
  */
 export function AcceptedVariantsEditor({
   deckId,
   answer,
   onChanged,
   onDraftChange,
+  description,
 }: {
   deckId: string;
   answer: CardAnswer;
   onChanged?: (card: Flashcard) => void;
   onDraftChange?: (hasDraft: boolean) => void;
+  description?: string;
 }) {
   const utils = trpc.useUtils();
   const [text, setText] = useState('');
   const inputId = useId();
+  const descriptionId = useId();
 
   function changeText(value: string) {
     setText(value);
@@ -66,11 +71,9 @@ export function AcceptedVariantsEditor({
 
   return (
     <div className="text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/50">Variants</span>
-        {answer.acceptedVariants.length === 0 ? (
-          <span className="text-xs text-white/40">none yet</span>
-        ) : (
+      {answer.acceptedVariants.length > 0 && (
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-white/50">Variants</span>
           <ul
             aria-label={`Accepted variants of ${answer.text}`}
             className="flex flex-wrap gap-2"
@@ -93,16 +96,17 @@ export function AcceptedVariantsEditor({
               </li>
             ))}
           </ul>
-        )}
-      </div>
-      <div className="mt-1 flex items-end gap-2">
+        </div>
+      )}
+      <div className="flex items-end gap-2">
         <label htmlFor={inputId} className="sr-only">
           New accepted variant of {answer.text}
         </label>
         <Input
           id={inputId}
           value={text}
-          placeholder="Add a variant"
+          placeholder="Add variant"
+          aria-describedby={description ? descriptionId : undefined}
           onChange={(e) => changeText(e.target.value)}
           onKeyDown={(e) => {
             // Enter adds the variant rather than submitting a surrounding form
@@ -127,6 +131,11 @@ export function AcceptedVariantsEditor({
       {text.trim() !== '' && (
         <p className="mt-1 text-xs text-amber-200/90">
           Not added yet. Press Add or Enter.
+        </p>
+      )}
+      {description && (
+        <p id={descriptionId} className="mt-1 text-xs text-white/50">
+          {description}
         </p>
       )}
     </div>
