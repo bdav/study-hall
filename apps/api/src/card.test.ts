@@ -1303,6 +1303,75 @@ describe('cardRouter', () => {
       });
     });
 
+    it('moves texts between answers', async () => {
+      const { card, eleven, thirteen } = await primeCard();
+      const caller = createCaller();
+      await caller.card.addVariant({
+        canonicalAnswerId: eleven.id,
+        text: 'XI',
+      });
+
+      // 11 → 13 and 13 → 17, so 11's row takes the text 13's row had
+      const updated = await caller.card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: eleven.id, text: '13' },
+          { id: thirteen.id, text: '17' },
+        ],
+        keepVariantIds: [],
+      });
+
+      expect(answersOf(updated)).toEqual([
+        { text: '13', isPrimary: true, variants: [] },
+        { text: '17', isPrimary: false, variants: [] },
+      ]);
+    });
+
+    it('swaps the texts of two answers', async () => {
+      const { card, eleven, thirteen } = await primeCard();
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { id: eleven.id, text: '13' },
+          { id: thirteen.id, text: '11' },
+        ],
+      });
+
+      expect(answersOf(updated).map((a) => a.text)).toEqual(['13', '11']);
+    });
+
+    it("gives a retyped answer's old text, added anew, its own row", async () => {
+      const { card, eleven, thirteen } = await primeCard();
+
+      // 11 retyped to 19, and a new answer "11" made primary
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        canonicalAnswers: [
+          { text: '11' },
+          { id: eleven.id, text: '19' },
+          thirteen,
+        ],
+      });
+
+      expect(answersOf(updated)).toEqual([
+        { text: '11', isPrimary: true, variants: [] },
+        { text: '19', isPrimary: false, variants: [] },
+        { text: '13', isPrimary: false, variants: [] },
+      ]);
+    });
+
+    it('refuses an edit naming one answer twice', async () => {
+      const { card, eleven } = await primeCard();
+
+      await expect(
+        createCaller().card.update({
+          cardId: card.id,
+          canonicalAnswers: [eleven, { id: eleven.id, text: '17' }],
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
     it('imports cards with several answers, the first primary, in import order', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,

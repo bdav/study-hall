@@ -362,6 +362,42 @@ describe('DeckCardsPage', () => {
     expect(rows[1]).not.toHaveTextContent(/variant/i);
   });
 
+  async function previewCsv(csvContent: string) {
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+    await user.click(screen.getByText('Import CSV'));
+    await user.upload(
+      screen.getByTestId('csv-file-input'),
+      new File([csvContent], 'cards.csv', { type: 'text/csv' }),
+    );
+    await screen.findByText('Import Preview');
+    return user;
+  }
+
+  it('shows the answers a row splits into', async () => {
+    setupMocks();
+    await previewCsv('front,back\nA prime between 10 and 20,11 || 13\n');
+
+    expect(screen.getByText('2 answers: 11 · 13')).toBeInTheDocument();
+  });
+
+  it('keeps the variants of an answer an update keeps', async () => {
+    setupMocks();
+    await previewCsv('front,back\nCapital of France,Paris || Lutetia\n');
+
+    const [row] = await screen.findAllByTestId('update-card-row');
+    expect(row).toHaveTextContent('2 answers: Paris · Lutetia');
+    expect(row).not.toHaveTextContent(/clears/i);
+  });
+
+  it('counts a variant an update makes one of the answers as cleared', async () => {
+    setupMocks();
+    await previewCsv('front,back\nCapital of France,Paris || Paree\n');
+
+    const [row] = await screen.findAllByTestId('update-card-row');
+    expect(row).toHaveTextContent(/clears 1 accepted variant/i);
+  });
+
   it('calls importCards mutation when Import button is clicked in preview', async () => {
     setupMocks();
     const mockMutate = vi.fn();
@@ -1078,6 +1114,22 @@ describe('DeckCardsPage', () => {
         canonicalAnswers: [{ id: 'answer-Paris', text: 'Paname' }],
         keepVariantIds: [],
       });
+    });
+
+    it('can save once the answer whose variant box had text is retyped', async () => {
+      setupMocks();
+      const { user, panel } = await openAnswers('Capital of France');
+
+      await user.type(
+        within(panel).getByLabelText('New accepted variant of Paris'),
+        'Paname',
+      );
+      expect(
+        within(panel).getByRole('button', { name: 'Save' }),
+      ).toBeDisabled();
+      await user.type(within(panel).getByLabelText('Answer 1'), ', France');
+
+      expect(within(panel).getByRole('button', { name: 'Save' })).toBeEnabled();
     });
 
     it('discards the changes on Cancel', async () => {

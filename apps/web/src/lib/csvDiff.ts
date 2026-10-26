@@ -1,5 +1,5 @@
 import type { CsvRow, CsvErrorRow } from './csvParser';
-import type { AcceptedVariant } from './cards';
+import { splitAnswers, type AcceptedVariant } from './cards';
 
 export interface NewCard {
   front: string;
@@ -9,10 +9,12 @@ export interface NewCard {
 export interface UpdateCard {
   cardId: string;
   front: string;
+  // The card's answers, as an answer column holds them
   oldBack: string;
   newBack: string;
-  // The old answer's Accepted Variants, which a new answer clears
-  variantCount: number;
+  // The card's answers and their Accepted Variants' texts; an answer the
+  // import drops takes its variants with it
+  oldAnswers: { text: string; variants: string[] }[];
 }
 
 export interface SkippedRow {
@@ -31,7 +33,8 @@ export interface ExistingCard {
   id: string;
   front: string;
   canonicalAnswer: string;
-  acceptedVariants?: AcceptedVariant[];
+  // All its Canonical Answers, primary first, when known
+  answers?: { text: string; acceptedVariants: AcceptedVariant[] }[];
 }
 
 /**
@@ -46,8 +49,9 @@ export function duplicateFinder(existingCards: ExistingCard[]) {
 
 /**
  * Compares parsed CSV rows against existing cards in a deck.
- * Categorizes into: new (no front match), update (front match, back differs
- * from the canonical answer), duplicate (exact match), error (from parser).
+ * Categorizes into: new (no front match), update (front match, answers
+ * differ from the card's, split on "||", order included), duplicate (the
+ * same answers), error (from parser).
  */
 export function diffCsvRows(
   validRows: CsvRow[],
@@ -63,15 +67,23 @@ export function diffCsvRows(
   for (const row of validRows) {
     const existing = findDuplicate(row.front);
 
+    const answers = existing?.answers ?? [
+      { text: existing?.canonicalAnswer ?? '', acceptedVariants: [] },
+    ];
+    const oldBack = answers.map((answer) => answer.text).join(' || ');
+
     if (!existing) {
       newCards.push({ front: row.front, back: row.back });
-    } else if (existing.canonicalAnswer !== row.back) {
+    } else if (splitAnswers(row.back).join(' || ') !== oldBack) {
       updateCards.push({
         cardId: existing.id,
         front: row.front,
-        oldBack: existing.canonicalAnswer,
+        oldBack,
         newBack: row.back,
-        variantCount: existing.acceptedVariants?.length ?? 0,
+        oldAnswers: answers.map((answer) => ({
+          text: answer.text,
+          variants: answer.acceptedVariants.map((variant) => variant.text),
+        })),
       });
     } else {
       skippedRows.push({

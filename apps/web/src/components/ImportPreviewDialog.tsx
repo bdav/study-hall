@@ -25,7 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
-import { splitAnswers } from '@/lib/cards';
+import { isSameAnswer, splitAnswers } from '@/lib/cards';
 import { glassInputClassName } from '@/lib/utils';
 
 function TruncatedCell({
@@ -76,6 +76,39 @@ interface ImportPreviewDialogProps {
   initialNewCards: NewCard[];
   initialUpdateCards: UpdateCard[];
   skippedRows: SkippedRow[];
+}
+
+/** The answers an answer column splits into, when it holds several. */
+function ParsedAnswers({ back }: { back: string }) {
+  const answers = splitAnswers(back);
+  if (answers.length < 2) return null;
+  return (
+    <p className="mt-1 text-xs text-white/50">
+      {answers.length} answers: {answers.join(' · ')}
+    </p>
+  );
+}
+
+/**
+ * How many Accepted Variants an update clears: those of the card's answers
+ * the new ones leave out, and any that is now one of the answers. A kept
+ * answer keeps its other variants.
+ */
+function ClearedVariants({ card }: { card: UpdateCard }) {
+  const answers = splitAnswers(card.newBack);
+  const cleared = card.oldAnswers.flatMap((answer) =>
+    answers.includes(answer.text)
+      ? answer.variants.filter((variant) =>
+          answers.some((text) => isSameAnswer(variant, text)),
+        )
+      : answer.variants,
+  ).length;
+  if (cleared === 0) return null;
+  return (
+    <p className="text-xs text-white/50">
+      Clears {cleared} accepted {cleared === 1 ? 'variant' : 'variants'}
+    </p>
+  );
 }
 
 export function ImportPreviewDialog({
@@ -181,6 +214,7 @@ export function ImportPreviewDialog({
                           aria-label={`New card ${i + 1} back`}
                           className={glassInputClassName}
                         />
+                        <ParsedAnswers back={card.back} />
                       </TableCell>
                       <TableCell className="py-2">
                         <Button
@@ -227,13 +261,7 @@ export function ImportPreviewDialog({
                         <TruncatedCell className="text-white/60 line-through">
                           {card.oldBack}
                         </TruncatedCell>
-                        {card.variantCount > 0 &&
-                          card.newBack.trim() !== card.oldBack && (
-                            <p className="text-xs text-white/50">
-                              Clears {card.variantCount} accepted{' '}
-                              {card.variantCount === 1 ? 'variant' : 'variants'}
-                            </p>
-                          )}
+                        <ClearedVariants card={card} />
                       </TableCell>
                       <TableCell className="py-2">
                         <Input
@@ -244,6 +272,7 @@ export function ImportPreviewDialog({
                           aria-label={`Update card ${i + 1} new back`}
                           className={glassInputClassName}
                         />
+                        <ParsedAnswers back={card.newBack} />
                       </TableCell>
                       <TableCell className="py-2">
                         <Button

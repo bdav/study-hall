@@ -21,6 +21,7 @@ export const withCanonicalAnswers = {
       id: true,
       text: true,
       isPrimary: true,
+      position: true,
       acceptedVariants: {
         select: { id: true, text: true },
         orderBy: { createdAt: 'asc' },
@@ -228,7 +229,8 @@ async function replaceAnswers(
     existing: {
       id: string;
       text: string;
-      acceptedVariants: { id: string; text: string }[];
+      isPrimary: boolean;
+      position: number;
     }[];
     answers: AnswerEdit[];
     keepVariantIds: string[];
@@ -236,43 +238,71 @@ async function replaceAnswers(
 ) {
   const texts = answers.map((answer) => answer.text);
   assertDistinctAnswers(texts);
+  const ids = answers.flatMap((answer) => (answer.id ? [answer.id] : []));
+  if (new Set(ids).size !== ids.length) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'An answer can only appear once',
+    });
+  }
 
-  // Each answer's existing row: by id, else by its unchanged text
-  const claimed = new Set<string>();
+  // Each answer's existing row: by id, then, for an answer without one, by
+  // the unchanged text of a row no other answer has
   const rows = answers.map((answer) => {
-    const row = answer.id
-      ? existing.find((r) => r.id === answer.id)
-      : existing.find((r) => !claimed.has(r.id) && r.text === answer.text);
-    if (answer.id && !row) {
+    if (!answer.id) return undefined;
+    const row = existing.find((r) => r.id === answer.id);
+    if (!row) {
       throw new TRPCError({
         code: 'NOT_FOUND',
         message: 'Canonical answer not found',
       });
     }
-    if (row) claimed.add(row.id);
     return row;
   });
+  const claimed = new Set(ids);
+  for (const [i, answer] of answers.entries()) {
+    if (answer.id) continue;
+    const row = existing.find(
+      (r) => !claimed.has(r.id) && r.text === answer.text,
+    );
+    if (row) {
+      rows[i] = row;
+      claimed.add(row.id);
+    }
+  }
 
   await db.canonicalAnswer.deleteMany({
     where: { cardId, id: { notIn: [...claimed] } },
   });
-  for (const [position, answer] of answers.entries()) {
-    const row = rows[position];
-    if (!row) {
-      await db.canonicalAnswer.create({
-        data: { cardId, ...answerData(answer.text, position) },
-      });
-      continue;
-    }
+  // A text moving to another row gets there in two steps, through a
+  // placeholder no answer has, so no two rows ever share one
+  const retyped = answers.flatMap((answer, i) => {
+    const row = rows[i];
+    return row && row.text !== answer.text ? [row] : [];
+  });
+  for (const row of retyped) {
     await db.canonicalAnswer.update({
       where: { id: row.id },
-      data: answerData(answer.text, position),
+      data: { text: `moving answer ${row.id}` },
     });
-    if (row.text !== answer.text) {
-      await db.acceptedVariant.deleteMany({
-        where: { canonicalAnswerId: row.id, id: { notIn: keepVariantIds } },
-      });
+  }
+  for (const [position, answer] of answers.entries()) {
+    const row = rows[position];
+    const data = answerData(answer.text, position);
+    if (!row) {
+      await db.canonicalAnswer.create({ data: { cardId, ...data } });
+    } else if (
+      row.text !== data.text ||
+      row.isPrimary !== data.isPrimary ||
+      row.position !== data.position
+    ) {
+      await db.canonicalAnswer.update({ where: { id: row.id }, data });
     }
+  }
+  for (const row of retyped) {
+    await db.acceptedVariant.deleteMany({
+      where: { canonicalAnswerId: row.id, id: { notIn: keepVariantIds } },
+    });
   }
 
   // A variant that is now one of the card's answers adds nothing

@@ -110,6 +110,15 @@ export function useAnswersForm(card: Flashcard) {
     .filter((variant) => !unkept.has(variant.id) && canKeep(variant))
     .map((variant) => variant.id);
 
+  // A typed, unadded variant holds off Save while its box is still shown:
+  // its answer is there, not retyped
+  const hasVariantDraft = answers.some(
+    (answer) =>
+      answer.id &&
+      variantDrafts.has(answer.id) &&
+      savedOf(answer)?.retyped === false,
+  );
+
   const isChanged =
     JSON.stringify(edits) !==
     JSON.stringify(card.answers.map(({ id, text }) => ({ id, text })));
@@ -132,7 +141,7 @@ export function useAnswersForm(card: Flashcard) {
     keepVariantIds,
     isChanged,
     resetsProgress,
-    canSave: edits.length > 0 && variantDrafts.size === 0,
+    canSave: edits.length > 0 && !hasVariantDraft,
   };
 }
 

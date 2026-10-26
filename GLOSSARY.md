@@ -39,7 +39,7 @@ The lesson a card was generated from, if any. It explains why the card exists; t
 _Avoid_: Origin, parent lesson
 
 **Canonical Answer**:
-An answer the deck author considers correct for a typed recall card. Editing it changes what the card asks for.
+An answer the deck author considers correct for a typed recall card. A card has one or more, all equally correct; one is primary, the answer the card shows. Editing one changes what the card asks for; choosing another primary doesn't.
 _Avoid_: Back, solution
 
 **Accepted Variant**:

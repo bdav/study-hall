@@ -34,7 +34,7 @@ describe('csvDiff', () => {
         front: 'Capital of France',
         oldBack: 'Lyon',
         newBack: 'Paris',
-        variantCount: 0,
+        oldAnswers: [{ text: 'Lyon', variants: [] }],
       },
     ]);
     expect(result.skippedRows).toEqual([]);
@@ -97,5 +97,49 @@ describe('csvDiff', () => {
     expect(result.updateCards[0].cardId).toBe('card-1');
     expect(result.skippedRows).toHaveLength(1);
     expect(result.skippedRows[0].front).toBe('Exact Q');
+  });
+
+  describe('cards with several answers', () => {
+    const primes = {
+      id: 'card-1',
+      front: 'A prime between 10 and 20',
+      canonicalAnswer: '11',
+      answers: [
+        { text: '11', acceptedVariants: [{ id: 'v', text: 'eleven' }] },
+        { text: '13', acceptedVariants: [] },
+      ],
+    };
+
+    it('skips a row with the same answers, however they are spaced', () => {
+      const result = diffCsvRows(
+        [{ front: 'A prime between 10 and 20', back: '11||  13' }],
+        [primes],
+        [],
+      );
+
+      expect(result.updateCards).toEqual([]);
+      expect(result.skippedRows).toHaveLength(1);
+    });
+
+    it('updates a card whose answers or primary differ', () => {
+      const result = diffCsvRows(
+        [{ front: 'A prime between 10 and 20', back: '13 || 11' }],
+        [primes],
+        [],
+      );
+
+      expect(result.updateCards).toEqual([
+        {
+          cardId: 'card-1',
+          front: 'A prime between 10 and 20',
+          oldBack: '11 || 13',
+          newBack: '13 || 11',
+          oldAnswers: [
+            { text: '11', variants: ['eleven'] },
+            { text: '13', variants: [] },
+          ],
+        },
+      ]);
+    });
   });
 });

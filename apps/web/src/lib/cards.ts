@@ -10,17 +10,13 @@ export type CardAnswer = {
 
 /**
  * A card as the flashcard UI shows it: its Canonical Answers, primary
- * first, and, for the places that show one answer, the primary's text, id
- * and Accepted Variants.
+ * first, and, for the places that show one answer, the primary's text.
  */
 export type Flashcard = {
   id: string;
   front: string;
   answers: CardAnswer[];
   canonicalAnswer: string;
-  // null only for a card with no canonical answer
-  canonicalAnswerId: string | null;
-  acceptedVariants: AcceptedVariant[];
 };
 
 /** One of a card's Canonical Answers in an edit, as `card.update` takes it. */
@@ -46,8 +42,6 @@ export function toFlashcard(card: {
       ({ id, text, acceptedVariants }) => ({ id, text, acceptedVariants }),
     ),
     canonicalAnswer: primary?.text ?? '',
-    canonicalAnswerId: primary?.id ?? null,
-    acceptedVariants: primary?.acceptedVariants ?? [],
   };
 }
 

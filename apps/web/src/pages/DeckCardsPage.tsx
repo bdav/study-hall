@@ -606,7 +606,7 @@ export default function DeckCardsPage() {
                     updateCard.isPending &&
                     updateCard.variables?.cardId === card.id
                   }
-                  variants={card.acceptedVariants}
+                  variants={card.answers[0]?.acceptedVariants ?? []}
                 />
                 <CardAnswers
                   deckId={deckId}
