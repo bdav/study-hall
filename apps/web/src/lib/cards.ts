@@ -62,8 +62,9 @@ export function isSameAnswer(a: string, b: string) {
 }
 
 /**
- * The answers typed into one answer field: "a || b" is two, as in a CSV's
- * answer column. Each is trimmed; empty ones and repeats are dropped.
+ * The answers in a CSV's answer column: "a || b" is two (`updated-plan.md`
+ * §17.10). Each is trimmed; empty ones and repeats are dropped. Typed answer
+ * fields don't split: they take one answer each.
  */
 export function splitAnswers(text: string): string[] {
   const answers: string[] = [];
@@ -77,20 +78,16 @@ export function splitAnswers(text: string): string[] {
 
 /**
  * A card's answers, as `card.update` takes them, with the primary retyped.
- * Typing "a || b" makes a the primary and b another answer, unless the
- * card already has it.
+ * Another answer the primary now grades the same as is dropped.
  */
-export function answersWithPrimary(card: Flashcard, text: string) {
+export function answersWithPrimary(
+  card: Flashcard,
+  text: string,
+): AnswerEdit[] {
   const [primary, ...others] = card.answers;
-  const [first = text.trim(), ...added] = splitAnswers(text);
-  const edits: AnswerEdit[] = [{ id: primary?.id, text: first }];
-  for (const answer of added) {
-    if (!others.some((other) => isSameAnswer(other.text, answer))) {
-      edits.push({ text: answer });
-    }
-  }
+  const first = text.trim();
   return [
-    ...edits,
+    { id: primary?.id, text: first },
     ...others
       .filter((other) => !isSameAnswer(other.text, first))
       .map(({ id, text }) => ({ id, text })),

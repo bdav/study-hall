@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CornerDownLeft,
+  Pencil,
   RefreshCw,
 } from 'lucide-react';
 import { CardStack } from '@/components/CardStack';
@@ -26,8 +27,8 @@ import {
   type CardSnapshot,
 } from '@/hooks/useSlideAnimation';
 import { DeckHeader } from '@/components/DeckHeader';
-import { StudyCardMenu } from '@/components/StudyCardMenu';
-import { CardAnswers } from '@/components/CardAnswers';
+import { StudyCardEditor } from '@/components/StudyCardEditor';
+import { CardAnswersSummary } from '@/components/CardAnswers';
 import {
   gradeOf,
   recallGradeColors,
@@ -49,13 +50,12 @@ const answerInputClasses =
 const navButtonClasses =
   'absolute top-1/2 h-16 w-16 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 focus-visible:border-transparent focus-visible:ring-0';
 
-/** Whether a key press happened in a dialog, which has its own Enter. */
-/** Whether a key belongs to a dialog or the card's answers form, not the page. */
+/** Whether a key belongs to a dialog or the card's editor, not the page. */
 function isInDialog(target: EventTarget | null) {
   return (
     target instanceof Element &&
     target.closest(
-      '[role="dialog"], [role="alertdialog"], [data-card-answers]',
+      '[role="dialog"], [role="alertdialog"], [data-card-answers], [data-card-editor]',
     ) !== null
   );
 }
@@ -248,8 +248,13 @@ export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const yourAnswerId = useId();
   const answerChoiceId = useId();
-  // The card whose answers are open below the learner's answer
-  const [answersOpenFor, setAnswersOpenFor] = useState<string | null>(null);
+  // The card in edit mode, for the slide it was turned on in, and, for a
+  // card not yet answered, whether its back is in view
+  const [editing, setEditing] = useState<{
+    cardId: string;
+    slideKey: number;
+    showsBack: boolean;
+  } | null>(null);
   // The attempt whose "My answer was correct" is choosing an answer
   const [choosingAnswerFor, setChoosingAnswerFor] = useState<string | null>(
     null,
@@ -367,6 +372,26 @@ export default function StudyPage() {
     handleBack,
   );
 
+  // Moving to another card leaves edit mode
+  const isEditing =
+    !!displayCard &&
+    editing?.cardId === displayCard.id &&
+    editing.slideKey === slideKey;
+  // An answered card keeps the side it shows; an unanswered one has no back
+  // outside edit mode
+  const editorShowsBack = displayResult
+    ? isFlipped
+    : isEditing && editing.showsBack;
+  const flipEditor = displayResult
+    ? toggleFlip
+    : () =>
+        setEditing((prev) => prev && { ...prev, showsBack: !prev.showsBack });
+
+  function startEditing(cardId: string, onBack = false) {
+    setEditing({ cardId, slideKey, showsBack: onBack });
+    if (onBack && displayResult && !isFlipped) toggleFlip();
+  }
+
   const forwardButtonRef = useRef<HTMLButtonElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -401,15 +426,15 @@ export default function StudyPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [studyState.phase, slideToNext]);
 
-  // Enter key advances during result phase (with slide)
+  // Enter key advances during result phase (with slide), unless editing
   useEffect(() => {
-    if (studyState.phase !== 'result') return;
+    if (studyState.phase !== 'result' || isEditing) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Enter' && !isInDialog(e.target)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [studyState.phase, slideToNext]);
+  }, [studyState.phase, isEditing, slideToNext]);
 
   if (deckQuery.isLoading) {
     return <StudySkeleton />;
@@ -563,6 +588,34 @@ export default function StudyPage() {
     </CardStack>
   );
 
+  // The card on screen: the one in play, or one answered earlier
+  const renderDisplayCard = (card: Flashcard) =>
+    isEditing ? (
+      <StudyCardEditor
+        deckId={deckId ?? ''}
+        card={card}
+        queueLength={remainingCount}
+        progress={progress}
+        isFlipped={editorShowsBack}
+        onFlip={flipEditor}
+        onEdited={replaceCard}
+        onChanged={showUnresetChange}
+        onDeleted={() => removeCard(card.id)}
+        onDone={() => setEditing(null)}
+      />
+    ) : (
+      renderStudyCard(
+        card,
+        displayResult,
+        isFlipped,
+        remainingCount,
+        progress,
+        toggleFlip,
+        editedAfterAnswer.has(card.id),
+        acceptDisplayedAnswer,
+      )
+    );
+
   return (
     <CenteredPage>
       <DeckHeader
@@ -606,16 +659,7 @@ export default function StudyPage() {
                     onAnimationEnd={handleSlideEnd}
                   >
                     {displayCard ? (
-                      renderStudyCard(
-                        displayCard,
-                        displayResult,
-                        isFlipped,
-                        remainingCount,
-                        progress,
-                        toggleFlip,
-                        editedAfterAnswer.has(displayCard.id),
-                        acceptDisplayedAnswer,
-                      )
+                      renderDisplayCard(displayCard)
                     ) : (
                       <CardStack queueLength={titleQueueLength}>
                         <p className="text-3xl font-bold text-white">
@@ -629,18 +673,7 @@ export default function StudyPage() {
               </div>
             </div>
           ) : displayCard ? (
-            <div key={slideKey}>
-              {renderStudyCard(
-                displayCard,
-                displayResult,
-                isFlipped,
-                remainingCount,
-                progress,
-                toggleFlip,
-                editedAfterAnswer.has(displayCard.id),
-                acceptDisplayedAnswer,
-              )}
-            </div>
+            <div key={slideKey}>{renderDisplayCard(displayCard)}</div>
           ) : isAtTitle ? (
             <div key={slideKey}>
               <CardStack
@@ -656,17 +689,21 @@ export default function StudyPage() {
             </div>
           ) : null}
 
-          {/* The card on screen: the one in play, or one answered earlier */}
+          {/* Part of the editor, so Enter toggles it rather than moving on */}
           {displayCard && (
-            <div className="absolute left-3 top-6 z-10">
-              <StudyCardMenu
-                key={displayCard.id}
-                deckId={deckId ?? ''}
-                card={displayCard}
-                onEdited={replaceCard}
-                onChanged={showUnresetChange}
-                onDeleted={() => removeCard(displayCard.id)}
-              />
+            <div className="absolute left-3 top-6 z-10" data-card-editor>
+              <button
+                type="button"
+                aria-label="Edit card"
+                aria-pressed={isEditing}
+                title={isEditing ? 'Stop editing' : 'Edit card'}
+                onClick={() =>
+                  isEditing ? setEditing(null) : startEditing(displayCard.id)
+                }
+                className={`rounded p-1 transition-colors hover:bg-white/10 hover:text-white/80 ${isEditing ? 'bg-white/15 text-white' : 'text-white/40'}`}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
             </div>
           )}
 
@@ -756,18 +793,9 @@ export default function StudyPage() {
               {displayCard && (
                 <>
                   <AnswerNotes card={displayCard} result={displayResult} />
-                  <CardAnswers
-                    deckId={deckId ?? ''}
+                  <CardAnswersSummary
                     card={displayCard}
-                    isOpen={answersOpenFor === displayCard.id}
-                    onOpen={() => setAnswersOpenFor(displayCard.id)}
-                    onClose={() => setAnswersOpenFor(null)}
-                    onSaved={(card, resetsProgress) =>
-                      resetsProgress
-                        ? replaceCard(card)
-                        : showUnresetChange(card)
-                    }
-                    onVariantsChanged={showUnresetChange}
+                    onOpen={() => startEditing(displayCard.id, true)}
                     className="mx-auto max-w-md text-center"
                   />
                 </>

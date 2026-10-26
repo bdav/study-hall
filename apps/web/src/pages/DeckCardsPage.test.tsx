@@ -266,7 +266,7 @@ describe('DeckCardsPage', () => {
     });
   });
 
-  it('makes separate Canonical Answers of "a || b" in a new card\'s back', async () => {
+  it('keeps "||" in a new card\'s back as part of its one answer', async () => {
     setupMocks({ cards: [] });
     const mockMutate = vi.fn();
     vi.mocked(trpc.card.create.useMutation).mockReturnValue({
@@ -283,13 +283,13 @@ describe('DeckCardsPage', () => {
     );
     await user.type(
       screen.getByRole('textbox', { name: /back/i }),
-      '11 || 13 ||  || 13{Enter}',
+      '11 || 13{Enter}',
     );
 
     expect(mockMutate).toHaveBeenCalledWith({
       deckId: 'deck-1',
       front: 'A prime between 10 and 20',
-      canonicalAnswers: ['11', '13'],
+      canonicalAnswers: ['11 || 13'],
     });
   });
 
@@ -567,7 +567,7 @@ describe('DeckCardsPage', () => {
     vi.useRealTimers();
   });
 
-  it('adds the answers after "||" in a tile\'s back to the card', async () => {
+  it('keeps "||" in a tile\'s back as part of its primary answer', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     setupMocks();
     const mockMutate = vi.fn();
@@ -584,10 +584,7 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).toHaveBeenCalledWith({
       cardId: 'card-2',
       front: 'Capital of Germany',
-      canonicalAnswers: [
-        { id: 'answer-Berlin', text: 'Berlin' },
-        { text: 'Bonn' },
-      ],
+      canonicalAnswers: [{ id: 'answer-Berlin', text: 'Berlin || Bonn' }],
     });
     vi.useRealTimers();
   });
@@ -1043,22 +1040,36 @@ describe('DeckCardsPage', () => {
       });
     });
 
-    it('makes separate answers of "a || b" typed into one', async () => {
+    it('explains how answers differ from variants', async () => {
+      setupMocks();
+      const { panel } = await openAnswers('Capital of Germany');
+
+      expect(panel).toHaveTextContent(
+        'Answers are different correct answers, each right on its own, like 11, 13 and 17 for “a prime between 10 and 20”. Changing them starts the card’s progress over.',
+      );
+      expect(panel).toHaveTextContent(
+        'Variants are other ways to write one answer, such as spellings or forms, like “color” for “colour”. They save straight away and never reset progress.',
+      );
+      expect(panel).not.toHaveTextContent('||');
+    });
+
+    it('keeps "||" typed into an answer as plain text', async () => {
       setupMocks();
       const mockMutate = mockUpdate();
       const { user, panel } = await openAnswers('Capital of Germany');
 
       await user.type(within(panel).getByLabelText('Answer 1'), ' || Bonn');
 
-      expect(within(panel).getByLabelText('Answer 1')).toHaveValue('Berlin');
-      expect(within(panel).getByLabelText('Answer 2')).toHaveFocus();
+      expect(within(panel).getByLabelText('Answer 1')).toHaveValue(
+        'Berlin || Bonn',
+      );
+      expect(
+        within(panel).queryByLabelText('Answer 2'),
+      ).not.toBeInTheDocument();
       await user.click(within(panel).getByRole('button', { name: 'Save' }));
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({
-          canonicalAnswers: [
-            { id: 'answer-Berlin', text: 'Berlin' },
-            { text: 'Bonn' },
-          ],
+          canonicalAnswers: [{ id: 'answer-Berlin', text: 'Berlin || Bonn' }],
         }),
       );
     });

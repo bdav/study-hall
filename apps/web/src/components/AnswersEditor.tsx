@@ -30,6 +30,11 @@ export function AnswersEditor({
       <p id={headingId} className="text-sm text-white/70">
         Answers
       </p>
+      <p className="text-xs text-white/50">
+        Answers are different correct answers, each right on its own, like 11,
+        13 and 17 for “a prime between 10 and 20”. Changing them starts the
+        card’s progress over.
+      </p>
       <ol aria-labelledby={headingId} className="mt-1 space-y-3">
         {form.answers.map((answer, i) => {
           const label = `Answer ${i + 1}`;
@@ -123,8 +128,9 @@ export function AnswersEditor({
         Add answer
       </Button>
       <p className="mt-1 text-xs text-white/50">
-        Type “||” to start another answer. Changing the answers starts the
-        card’s progress over; variants save as you add or remove them.
+        Variants are other ways to write one answer, such as spellings or forms,
+        like “color” for “colour”. They save straight away and never reset
+        progress.
       </p>
     </div>
   );

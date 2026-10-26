@@ -15,9 +15,9 @@ export type AnswerDraft = {
 
 let newKeys = 0;
 
-function newAnswer(text = ''): AnswerDraft {
+function newAnswer(): AnswerDraft {
   newKeys += 1;
-  return { key: `new-${newKeys}`, text, isNew: true };
+  return { key: `new-${newKeys}`, text: '', isNew: true };
 }
 
 function texts(answers: { text: string }[]) {
@@ -27,9 +27,9 @@ function texts(answers: { text: string }[]) {
 /**
  * Editing a card's Canonical Answers, the first primary, for one Save:
  * adding, removing and retyping them, choosing the primary, and which of a
- * retyped answer's Accepted Variants still fit it. Typing "a || b" into an
- * answer makes it two. Variants of unchanged answers are edited on their own,
- * straight away; one typed but not added holds off the Save.
+ * retyped answer's Accepted Variants still fit it. Variants of unchanged
+ * answers are edited on their own, straight away; one typed but not added
+ * holds off the Save.
  */
 export function useAnswersForm(card: Flashcard) {
   const [answers, setAnswers] = useState<AnswerDraft[]>(() =>
@@ -42,19 +42,10 @@ export function useAnswersForm(card: Flashcard) {
     new Set(),
   );
 
-  function typeAnswer(index: number, value: string) {
-    const [first, ...rest] = value.split('||');
-    const added = rest
-      .map((part) => part.trim())
-      // A trailing empty part is the new answer to type into
-      .filter((part, i) => part !== '' || i === rest.length - 1)
-      .map(newAnswer);
-    setAnswers((prev) => [
-      ...prev.slice(0, index),
-      { ...prev[index], text: added.length > 0 ? first.trim() : first },
-      ...added,
-      ...prev.slice(index + 1),
-    ]);
+  function typeAnswer(index: number, text: string) {
+    setAnswers((prev) =>
+      prev.map((answer, i) => (i === index ? { ...answer, text } : answer)),
+    );
   }
 
   function makePrimary(index: number) {

@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { AnswersEditor } from '@/components/AnswersEditor';
 
 /**
- * A card's answers below it, on the Cards tab and below the learner's answer
- * when studying: a summary of its Canonical Answers and Accepted Variants
- * that opens, in place, into the form for them. `onSaved` says whether the
- * saved answers reset the card's progress; variant changes reset nothing.
- * Marked `data-card-answers`, so page shortcuts can leave its keys alone.
+ * A card's answers below it on the Cards tab: a summary of its Canonical
+ * Answers and Accepted Variants that opens, in place, into the form for
+ * them. `onSaved` says whether the saved answers reset the card's progress;
+ * variant changes reset nothing. Marked `data-card-answers`, so page
+ * shortcuts can leave its keys alone.
  */
 export function CardAnswers({
   deckId,
@@ -50,6 +50,24 @@ export function CardAnswers({
     );
   }
 
+  return (
+    <CardAnswersSummary card={card} onOpen={onOpen} className={className} />
+  );
+}
+
+/**
+ * The summary of a card's Canonical Answers and Accepted Variants, read
+ * only; choosing it opens where they're edited.
+ */
+export function CardAnswersSummary({
+  card,
+  onOpen,
+  className = '',
+}: {
+  card: Flashcard;
+  onOpen: () => void;
+  className?: string;
+}) {
   const [primary, ...others] = card.answers;
   const variants = card.answers.flatMap((answer) =>
     answer.acceptedVariants.map((variant) => variant.text),
@@ -57,8 +75,7 @@ export function CardAnswers({
   return (
     <button
       type="button"
-      aria-label={label}
-      aria-expanded={false}
+      aria-label={`Answers of ${card.front}`}
       data-card-answers
       onClick={onOpen}
       className={`mt-2 block w-full rounded px-1 text-left text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white ${className}`}
