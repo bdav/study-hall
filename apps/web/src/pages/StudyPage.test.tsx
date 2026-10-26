@@ -876,6 +876,23 @@ describe('StudyPage', () => {
       expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
     });
 
+    it('closes without saving or calling the card edited when Save follows only a variant change', async () => {
+      const user = await startStudyingWithVariants();
+      await user.type(screen.getByRole('textbox'), 'IV{Enter}');
+      await screen.findByTestId('result');
+
+      await chooseFromCardMenu(user, 'Edit');
+      await user.type(
+        screen.getByLabelText('New accepted variant'),
+        'IV{Enter}',
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(mockUpdateCard).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByText(/graded before/i)).not.toBeInTheDocument();
+    });
+
     it('asks which variants still fit when the answer changes, all kept unless unticked', async () => {
       const user = await startStudyingWithVariants();
 

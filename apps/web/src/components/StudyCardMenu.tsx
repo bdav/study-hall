@@ -89,6 +89,15 @@ export function StudyCardMenu({
   function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!canSave) return;
+    // Nothing to save: variant changes are already saved, and an unchanged
+    // card isn't an edit
+    if (
+      edit.front === card.front &&
+      edit.canonicalAnswer === card.canonicalAnswer
+    ) {
+      setDialog(null);
+      return;
+    }
     if (
       edit.canonicalAnswer !== card.canonicalAnswer &&
       card.acceptedVariants.length > 0
@@ -169,11 +178,13 @@ export function StudyCardMenu({
                   className={glassInputClassName}
                 />
               </div>
-              <AcceptedVariantsEditor
-                deckId={deckId}
-                card={card}
-                onChanged={onVariantsChanged}
-              />
+              <div className="border-t border-white/20 pt-4">
+                <AcceptedVariantsEditor
+                  deckId={deckId}
+                  card={card}
+                  onChanged={onVariantsChanged}
+                />
+              </div>
             </div>
             <DialogFooter className="mt-6 border-white/20 bg-white/5">
               <Button

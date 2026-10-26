@@ -62,12 +62,12 @@ export function AcceptedVariantsEditor({
 
   return (
     <div>
-      <p id={headingId} className="text-sm text-white/70">
+      <h3 id={headingId} className="text-sm font-medium text-white">
         Accepted variants
-      </p>
-      <p className="text-xs text-white/50">
-        Other answers accepted as “{card.canonicalAnswer}”. Changing them
-        doesn't reset the card's progress.
+      </h3>
+      <p className="mt-1 text-xs text-white/60">
+        Other answers accepted as “{card.canonicalAnswer}”. Saved as you add or
+        remove them, without resetting the card's progress.
       </p>
       {card.acceptedVariants.length === 0 ? (
         <p className="mt-2 text-sm text-white/40">None yet.</p>
