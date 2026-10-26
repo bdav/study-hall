@@ -35,6 +35,8 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #27 Course Review section
    - [x] #43 Better review card proposals
    - [ ] #44 Edit or delete a card while studying
+   - [ ] #4 Accepted Variants
+   - [ ] #12 "My answer was correct" during study
    - [ ] #45 Revise a deck's cards with an instruction
    - [ ] #7 Full card lifecycle
    - [ ] #46 Mark cards as known, one at a time or in bulk
@@ -50,8 +52,6 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #24 Tutor knows the current exercise and my attempts
 6. Rest of v2 and courses
    - [ ] #3 Cards with multiple Canonical Answers
-   - [ ] #4 Accepted Variants
-   - [ ] #12 "My answer was correct" during study
    - [ ] #10 Resume and abandon Study Sessions
    - [ ] #11 Missed cards come back in the same Study Session
    - [ ] #8 Queue buckets and session types
