@@ -612,7 +612,7 @@ describe('StudyPage', () => {
     ).toBeInTheDocument();
   });
 
-  describe('editing and deleting the current card', () => {
+  describe('editing and deleting cards', () => {
     async function startStudying() {
       setupMocksWithStartSession();
       const user = userEvent.setup();
@@ -745,6 +745,64 @@ describe('StudyPage', () => {
       expect(
         screen.getByText(/you answered 0 of 1 cards/i),
       ).toBeInTheDocument();
+    });
+
+    /** Answers the first card, moves on, then goes Back to review it. */
+    async function reviewFirstCard(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByRole('textbox'), '4');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await screen.findByTestId('result');
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await screen.findByText('Capital of France?');
+      await user.click(screen.getByRole('button', { name: /previous/i }));
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Capital of France?'),
+        ).not.toBeInTheDocument(),
+      );
+    }
+
+    it('edits a card reviewed with Back', async () => {
+      const user = await startStudying();
+      await reviewFirstCard(user);
+
+      await chooseFromCardMenu(user, 'Edit');
+      expect(screen.getByLabelText('Front')).toHaveValue('What is 2+2?');
+      await user.type(screen.getByLabelText('Front'), ' exactly{Enter}');
+
+      expect(mockUpdateCard).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        front: 'What is 2+2? exactly',
+        canonicalAnswer: '4',
+      });
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent(
+        'What is 2+2? exactly',
+      );
+      expect(
+        screen.getByText(/your answer was graded before you edited this card/i),
+      ).toBeInTheDocument();
+    });
+
+    it('deletes a card reviewed with Back, and the session goes on without it', async () => {
+      const user = await startStudying();
+      await reviewFirstCard(user);
+
+      await chooseFromCardMenu(user, 'Delete');
+      await user.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', {
+          name: 'Delete',
+        }),
+      );
+      expect(mockDeleteCard).toHaveBeenCalledWith({ cardId: 'card-1' });
+
+      // No answered cards are left to review, so forward returns to the
+      // card in play
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getAllByText('Card 1 of 1').length).toBeGreaterThan(0),
+      );
+      expect(screen.queryByText('What is 2+2?')).not.toBeInTheDocument();
     });
 
     it('finishes the session when its last card is deleted', async () => {

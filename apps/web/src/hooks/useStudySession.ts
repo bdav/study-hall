@@ -143,8 +143,11 @@ export function useStudySession(deckId: string | undefined) {
     [endSession, items.length],
   );
 
-  /** Shows an edit to the current card for the rest of the session. */
-  const replaceCurrentCard = useCallback(
+  /**
+   * Shows an edit to a card of the session, the one in play or one answered
+   * earlier, wherever it appears from now on.
+   */
+  const replaceCard = useCallback(
     (card: Flashcard) => {
       if (history.some((entry) => entry.card.id === card.id)) {
         setEditedAfterAnswer((prev) => new Set(prev).add(card.id));
@@ -158,30 +161,53 @@ export function useStudySession(deckId: string | undefined) {
             ),
           },
       );
+      setHistory((prev) =>
+        prev.map((entry) =>
+          entry.card.id === card.id ? { ...entry, card } : entry,
+        ),
+      );
     },
     [history],
   );
 
   /**
-   * Drops the current card, deleted from its deck, from the session and its
-   * summary, and moves on to the next card or the end of the session.
+   * Drops a card deleted from its deck from the session and its summary.
+   * Deleting the card in play moves on to the next card or the end of the
+   * session; deleting one being reviewed shows the next answered card, or
+   * the title card when none are left, and going forward carries on.
    */
-  const removeCurrentCard = useCallback(async () => {
-    if (!studySession || !currentItem) return;
-    const remaining = studySession.items.filter(
-      (item) => item.itemId !== currentItem.itemId,
-    );
-    setStudySession({ ...studySession, items: remaining });
-    setHistory((prev) =>
-      prev.filter((entry) => entry.card.id !== currentItem.card.id),
-    );
-    setAnswerInput('');
-    if (position >= remaining.length) {
-      await endSession(remaining.length);
-    } else {
-      setStudyState({ phase: 'answering' });
-    }
-  }, [studySession, currentItem, position, endSession]);
+  const removeCard = useCallback(
+    async (cardId: string) => {
+      if (!studySession) return;
+      const index = studySession.items.findIndex(
+        (item) => item.card.id === cardId,
+      );
+      if (index === -1) return;
+      const remaining = studySession.items.filter((_, i) => i !== index);
+      const answered = history.filter((entry) => entry.card.id !== cardId);
+      setStudySession({ ...studySession, items: remaining });
+      setHistory(answered);
+
+      if (studyState.phase === 'reviewing') {
+        // The cards after it move up one place in the queue
+        if (index < position) setPosition(position - 1);
+        setStudyState({
+          phase: 'reviewing',
+          reviewIndex: Math.min(studyState.reviewIndex, answered.length - 1),
+          showingBack: true,
+        });
+        return;
+      }
+
+      setAnswerInput('');
+      if (position >= remaining.length) {
+        await endSession(remaining.length);
+      } else {
+        setStudyState({ phase: 'answering' });
+      }
+    },
+    [studySession, history, studyState, position, endSession],
+  );
 
   const advanceOrFinish = useCallback(async () => {
     if (position + 1 >= items.length) {
@@ -298,8 +324,8 @@ export function useStudySession(deckId: string | undefined) {
     handleSubmitAnswer,
     handleDontKnow,
     handleFinish: finish,
-    replaceCurrentCard,
-    removeCurrentCard,
+    replaceCard,
+    removeCard,
     editedAfterAnswer,
     handleNext,
     handleBack,

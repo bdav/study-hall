@@ -154,8 +154,8 @@ export default function StudyPage() {
     handleSubmitAnswer,
     handleDontKnow,
     handleFinish,
-    replaceCurrentCard,
-    removeCurrentCard,
+    replaceCard,
+    removeCard,
     editedAfterAnswer,
     handleNext,
     handleBack,
@@ -501,19 +501,18 @@ export default function StudyPage() {
             </div>
           ) : null}
 
-          {currentCard &&
-            (studyState.phase === 'answering' ||
-              studyState.phase === 'result') && (
-              <div className="absolute left-3 top-6 z-10">
-                <StudyCardMenu
-                  key={currentCard.id}
-                  deckId={deckId ?? ''}
-                  card={currentCard}
-                  onEdited={replaceCurrentCard}
-                  onDeleted={removeCurrentCard}
-                />
-              </div>
-            )}
+          {/* The card on screen: the one in play, or one answered earlier */}
+          {displayCard && (
+            <div className="absolute left-3 top-6 z-10">
+              <StudyCardMenu
+                key={displayCard.id}
+                deckId={deckId ?? ''}
+                card={displayCard}
+                onEdited={replaceCard}
+                onDeleted={() => removeCard(displayCard.id)}
+              />
+            </div>
+          )}
 
           {!isAtTitle && (
             <Button
