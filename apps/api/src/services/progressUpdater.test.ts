@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { type RecallGrade } from '@prisma/client';
 import {
   applyAnswer,
+  markKnown,
   replayAnswers,
   NEW_PROGRESS,
   type ScheduledAnswer,
@@ -506,5 +507,90 @@ describe('replayAnswers', () => {
       replayAnswers([...lapsed, onDay(8, 'GOOD'), onDay(9, 'GOOD')])
         .lifecycleState,
     ).toBe('STABLE');
+  });
+});
+
+describe('replayAnswers, with a card marked known', () => {
+  const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
+  function onDay(day: number, recallGrade: RecallGrade): ScheduledAnswer {
+    return { recallGrade, answeredAt: at(day), studySessionId: `day-${day}` };
+  }
+
+  it('replays the mark, with no answers since', () => {
+    expect(replayAnswers([], at(1))).toMatchObject({
+      lifecycleState: 'STABLE',
+      masteryScore: 3,
+      markedKnownAt: at(1),
+    });
+  });
+
+  it('replays a miss at the review after the mark as a lapse', () => {
+    expect(replayAnswers([onDay(6, 'MISSED')], at(1))).toMatchObject({
+      lifecycleState: 'STABLE',
+      lapseCount: 1,
+    });
+  });
+
+  it('replays the mark between the answers given before and after it', () => {
+    const replayed = replayAnswers(
+      [onDay(1, 'MISSED'), onDay(8, 'MISSED')],
+      at(2),
+    );
+
+    // Missed while LEARNING, marked known, then a first STABLE miss
+    expect(replayed).toMatchObject({ lifecycleState: 'STABLE', lapseCount: 1 });
+  });
+});
+
+describe('markKnown', () => {
+  it.each(['NEW', 'LEARNING'] as const)(
+    'makes a %s card STABLE as if it had just graduated, due 5 days on',
+    (lifecycleState) => {
+      const known = markKnown(
+        progress({
+          lifecycleState,
+          masteryScore: 0,
+          lapseCount: 2,
+          lastReviewedAt: daysAgo(3),
+        }),
+        now,
+      );
+
+      expect(known).toEqual({
+        lifecycleState: 'STABLE',
+        lifecycleChangedAt: now,
+        masteryScore: 3,
+        dueAt: new Date('2026-10-27T12:00:00Z'),
+        lastIntervalDays: 5,
+        // Not a review, and not a lapse
+        lastReviewedAt: daysAgo(3),
+        lapseCount: 2,
+        markedKnownAt: now,
+      });
+    },
+  );
+
+  it('keeps a higher mastery, scheduling the card by its band', () => {
+    const known = markKnown(progress({ masteryScore: 7 }), now);
+
+    expect(known).toMatchObject({ masteryScore: 7, lastIntervalDays: 14 });
+  });
+
+  it.each(['STABLE', 'RETIRED'] as const)(
+    'leaves a %s card as it is',
+    (lifecycleState) => {
+      expect(markKnown(progress({ lifecycleState }), now)).toBeNull();
+    },
+  );
+
+  it("doesn't count misses from before the card was marked known", () => {
+    const marked = markKnown(progress(), daysAgo(10))!;
+
+    const next = applyAnswer(marked, answer('MISSED'), [
+      answer('MISSED', { at: daysAgo(12), studySession: 'before' }),
+      answer('GOOD', { at: daysAgo(11), studySession: 'before' }),
+    ]);
+
+    expect(next.lifecycleState).toBe('STABLE');
   });
 });

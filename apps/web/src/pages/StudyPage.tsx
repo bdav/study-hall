@@ -619,6 +619,12 @@ export default function StudyPage() {
         onEdited={replaceCard}
         onChanged={showUnresetChange}
         onDeleted={() => removeCard(card.id)}
+        onMarkedKnown={() => {
+          // The card in play is done with; an answered one stays answered
+          if (!history.some((entry) => entry.card.id === card.id)) {
+            removeCard(card.id);
+          }
+        }}
         onDone={() => setEditing(null)}
       />
     ) : (

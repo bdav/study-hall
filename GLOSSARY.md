@@ -54,6 +54,10 @@ _Avoid_: Revision, edition
 The system's judgement of one answer to a card: Missed, Partially Correct, Good or Nailed. The learner never assigns it.
 _Avoid_: Score, result, rating
 
+**Marked Known**:
+A card the learner says they already know, so it moves on to review a few days out instead of coming back as new. It adjusts when the card is next reviewed, never its Recall Grades: no answer is recorded (ADR-0009).
+_Avoid_: Mark correct, skip, mastered
+
 **Accent Mismatch**:
 An answer that matches a correct answer except for accent marks. It is accepted, but the correct accented form is always shown and it never counts as perfect recall.
 _Avoid_: Typo, near miss

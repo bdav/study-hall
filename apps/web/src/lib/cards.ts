@@ -108,3 +108,15 @@ export function answersWithPrimary(
       .map(({ id, text }) => ({ id, text })),
   ];
 }
+
+/** "1 card", "3 cards". */
+export function cardsCount(count: number) {
+  return `${count} ${count === 1 ? 'card' : 'cards'}`;
+}
+
+/** What marking cards known did (ADR-0009), for a toast. */
+export function markedKnownMessage(markedCount: number) {
+  return markedCount === 0
+    ? 'Already known'
+    : `Marked ${cardsCount(markedCount)} known`;
+}

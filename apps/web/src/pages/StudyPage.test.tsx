@@ -23,6 +23,7 @@ vi.mock('@/lib/trpc', () => ({
     card: {
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
+      markKnown: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
     },
     deck: {
@@ -188,9 +189,11 @@ function setupBasicMocks() {
 
 const mockUpdateCard = vi.fn();
 const mockDeleteCard = vi.fn();
+const mockMarkKnown = vi.fn();
 
 type UpdateOptions = Parameters<typeof trpc.card.update.useMutation>[0];
 type DeleteOptions = Parameters<typeof trpc.card.delete.useMutation>[0];
+type MarkKnownOptions = Parameters<typeof trpc.card.markKnown.useMutation>[0];
 
 /** card-1, the "What is 2+2?" card, with the given variants of its answer. */
 function cardOneWithVariants(variants: { id: string; text: string }[]) {
@@ -255,6 +258,19 @@ function mockCardMutations() {
     ),
     isPending: false,
   })) as unknown as typeof trpc.card.delete.useMutation);
+  vi.mocked(trpc.card.markKnown.useMutation).mockImplementation(((
+    opts?: MarkKnownOptions,
+  ) => ({
+    mutate: mockMarkKnown.mockImplementation((input: { cardIds: string[] }) =>
+      opts?.onSuccess?.(
+        { markedCount: input.cardIds.length } as never,
+        input as never,
+        undefined,
+        {} as never,
+      ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.markKnown.useMutation);
 }
 
 const mockAcceptAnswer = vi.fn();
@@ -1843,6 +1859,35 @@ describe('StudyPage', () => {
         expect(screen.getAllByText('Card 1 of 1').length).toBeGreaterThan(0),
       );
       expect(screen.queryByText('What is 2+2?')).not.toBeInTheDocument();
+    });
+
+    it('marks the card in play known from edit mode and moves on to the next', async () => {
+      const user = await startStudying();
+
+      await startEditing(user);
+      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
+      expect(screen.getByText('Card 1 of 1')).toBeInTheDocument();
+    });
+
+    it('marks a card reviewed with Back known, keeping its answer in the session', async () => {
+      const user = await startStudying();
+      await reviewFirstCard(user);
+
+      await startEditing(user);
+      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(
+        screen.queryByRole('textbox', { name: 'Front' }),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getAllByText('Card 2 of 2').length).toBeGreaterThan(0),
+      );
     });
 
     it('finishes the session when its last card is deleted', async () => {

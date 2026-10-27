@@ -304,9 +304,8 @@ export async function acceptAnswer(
     });
   }
   const progressKey = { userId_cardId: { userId, cardId: attempt.cardId } };
-  const { resetAt } = await prisma.cardProgress.findUniqueOrThrow({
-    where: progressKey,
-  });
+  const { resetAt, markedKnownAt } =
+    await prisma.cardProgress.findUniqueOrThrow({ where: progressKey });
   // It answered what was effectively a different card
   if (!countsSinceReset(attempt.createdAt, resetAt)) {
     throw new TRPCError({
@@ -366,6 +365,7 @@ export async function acceptAnswer(
           cardId: attempt.cardId,
           resetAt,
         }),
+        markedKnownAt,
       ),
     });
 

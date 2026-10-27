@@ -17,6 +17,8 @@ export type ScheduledProgress = {
   // When the card last entered its lifecycle state; none for progress from
   // before it was recorded, when every counted answer is taken as since then
   lifecycleChangedAt: Date | null;
+  // When the learner last marked the card known, for replays (ADR-0009)
+  markedKnownAt: Date | null;
 };
 
 /** One finalized answer to a card, as the scheduler needs it. */
@@ -186,6 +188,7 @@ export function applyAnswer(
   return {
     dueAt: new Date(now.getTime() + intervalDays * DAY_IN_MS),
     lastReviewedAt: now,
+    markedKnownAt: progress.markedKnownAt,
     lastIntervalDays: intervalDays,
     ...lifecycle,
     lapseCount:
@@ -238,6 +241,40 @@ function stableIntervalDays(
   return Math.min(MAX_INTERVAL_DAYS, base * bonus);
 }
 
+/** The least mastery a card marked known has: two good answers' worth. */
+const KNOWN_MIN_MASTERY = 3;
+
+/**
+ * A card's progress once the learner marks it known (ADR-0009): a timing
+ * adjustment, not an answer. A NEW or LEARNING card becomes STABLE as if it
+ * had just graduated, its mastery raised to at least 3, and is next due a
+ * STABLE GOOD interval away for its band. Its last review and lapses stay.
+ * Null for a card already STABLE or RETIRED, which is left as it is.
+ */
+export function markKnown(
+  progress: ScheduledProgress,
+  now: Date,
+): ScheduledProgress | null {
+  if (
+    progress.lifecycleState !== 'NEW' &&
+    progress.lifecycleState !== 'LEARNING'
+  ) {
+    return null;
+  }
+  const masteryScore = Math.max(progress.masteryScore, KNOWN_MIN_MASTERY);
+  const intervalDays = STABLE_INTERVAL_DAYS[masteryBand(masteryScore)].GOOD;
+  return {
+    lifecycleState: 'STABLE',
+    lifecycleChangedAt: now,
+    masteryScore,
+    dueAt: new Date(now.getTime() + intervalDays * DAY_IN_MS),
+    lastIntervalDays: intervalDays,
+    lastReviewedAt: progress.lastReviewedAt,
+    lapseCount: progress.lapseCount,
+    markedKnownAt: now,
+  };
+}
+
 /** A card's progress before its first answer, and after a reset. */
 export const NEW_PROGRESS: ScheduledProgress = {
   lifecycleState: 'NEW',
@@ -247,18 +284,36 @@ export const NEW_PROGRESS: ScheduledProgress = {
   lastIntervalDays: null,
   lapseCount: 0,
   lifecycleChangedAt: null,
+  markedKnownAt: null,
 };
 
 /**
  * A card's progress rebuilt from its counted answers, oldest first,
  * starting from NEW (`updated-plan.md` §11.2): the progress `applyAnswer`
- * would have left had each been graded as it is now.
+ * would have left had each been graded as it is now. A card marked known
+ * since its last reset is marked again at that time, between the answers
+ * given before and after it (ADR-0009).
  */
-export function replayAnswers(answers: ScheduledAnswer[]): ScheduledProgress {
-  return answers.reduce(
-    (progress, answer, i) => applyAnswer(progress, answer, answers.slice(0, i)),
+export function replayAnswers(
+  answers: ScheduledAnswer[],
+  markedKnownAt: Date | null = null,
+): ScheduledProgress {
+  const markIfDue = (progress: ScheduledProgress, before?: Date) =>
+    markedKnownAt &&
+    !progress.markedKnownAt &&
+    (!before || markedKnownAt <= before)
+      ? (markKnown(progress, markedKnownAt) ?? { ...progress, markedKnownAt })
+      : progress;
+  const replayed = answers.reduce(
+    (progress, answer, i) =>
+      applyAnswer(
+        markIfDue(progress, answer.answeredAt),
+        answer,
+        answers.slice(0, i),
+      ),
     NEW_PROGRESS,
   );
+  return markIfDue(replayed);
 }
 
 function masteryChange(mastery: number, recallGrade: RecallGrade): number {

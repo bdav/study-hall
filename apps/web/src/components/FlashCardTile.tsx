@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Undo2, Trash2 } from 'lucide-react';
+import { BadgeCheck, RefreshCw, Undo2, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 import { type AcceptedVariant } from '@/lib/cards';
@@ -10,6 +10,8 @@ interface FlashCardTileProps {
   /** `keepVariantIds` comes with a changed answer that had variants. */
   onSave: (front: string, back: string, keepVariantIds?: string[]) => void;
   onDelete: () => void;
+  /** Marks the card known (ADR-0009). */
+  onMarkKnown: () => void;
   isSaving?: boolean;
   /** The answer's Accepted Variants. */
   variants: AcceptedVariant[];
@@ -20,6 +22,7 @@ export function FlashCardTile({
   back,
   onSave,
   onDelete,
+  onMarkKnown,
   isSaving,
   variants,
 }: FlashCardTileProps) {
@@ -165,7 +168,17 @@ export function FlashCardTile({
               placeholder="Front text..."
             />
           </div>
-          <div className="flex justify-end px-3 pb-2">
+          <div className="flex justify-end gap-1 px-3 pb-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkKnown();
+              }}
+              className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+              title="Mark known"
+            >
+              <BadgeCheck className="h-3.5 w-3.5" />
+            </button>
             <ConfirmDialog
               title="Delete card"
               description="Are you sure you want to delete this card? This cannot be undone."
@@ -231,7 +244,17 @@ export function FlashCardTile({
               placeholder="Back text..."
             />
           </div>
-          <div className="flex justify-end px-3 pb-2">
+          <div className="flex justify-end gap-1 px-3 pb-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkKnown();
+              }}
+              className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+              title="Mark known"
+            >
+              <BadgeCheck className="h-3.5 w-3.5" />
+            </button>
             <ConfirmDialog
               title="Delete card"
               description="Are you sure you want to delete this card? This cannot be undone."

@@ -217,6 +217,9 @@ model CardProgress {
   // When the card last entered its lifecycle state, so LEARNING → STABLE
   // counts only the successes since (#7); none from before it was recorded
   lifecycleChangedAt DateTime?
+  // When the learner last marked the card known (ADR-0009), so replaying its
+  // answers keeps the mark; none once its progress resets
+  markedKnownAt      DateTime?
   // When this progress last started over from NEW: its creation or a card
   // edit reset (ADR-0004). Only attempts since then count toward stats.
   resetAt            DateTime           @default(now())

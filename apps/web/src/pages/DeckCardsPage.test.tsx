@@ -44,6 +44,8 @@ vi.mock('@/lib/trpc', () => ({
       create: { useMutation: vi.fn() },
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
+      deleteMany: { useMutation: vi.fn() },
+      markKnown: { useMutation: vi.fn() },
       importCards: { useMutation: vi.fn() },
     },
   },
@@ -168,6 +170,14 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.card.delete.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.card.delete.useMutation>);
+
+  vi.mocked(trpc.card.deleteMany.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.deleteMany.useMutation>);
+
+  vi.mocked(trpc.card.markKnown.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.markKnown.useMutation>);
 
   vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
     ...defaultMutationReturn,
@@ -1485,6 +1495,110 @@ describe('DeckCardsPage', () => {
       expect(
         within(refined).queryByLabelText('Refinement'),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('marking cards known, and acting on a selection', () => {
+    function mockMutation(
+      procedure: typeof trpc.card.markKnown | typeof trpc.card.deleteMany,
+    ) {
+      const mutate = vi.fn();
+      vi.mocked(procedure.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate,
+      } as never);
+      return mutate;
+    }
+
+    it('marks one card known from its tile', async () => {
+      setupMocks();
+      const markKnown = mockMutation(trpc.card.markKnown);
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getAllByTitle('Mark known')[0]);
+
+      expect(markKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    });
+
+    it('marks the selected cards known, after a confirmation that says how many', async () => {
+      setupMocks();
+      const markKnown = mockMutation(trpc.card.markKnown);
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+      await user.click(screen.getByLabelText('Select “Capital of France”'));
+      await user.click(screen.getByLabelText('Select “Capital of Germany”'));
+      expect(screen.getByText('2 selected')).toBeInTheDocument();
+      await user.click(
+        screen.getByRole('button', { name: 'Mark selected known' }),
+      );
+
+      const dialog = screen.getByRole('alertdialog');
+      expect(
+        within(dialog).getByText('Mark 2 cards known?'),
+      ).toBeInTheDocument();
+      expect(markKnown).not.toHaveBeenCalled();
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Mark known' }),
+      );
+
+      expect(markKnown).toHaveBeenCalledWith({
+        cardIds: ['card-1', 'card-2'],
+      });
+    });
+
+    it('deletes every card, selected all at once, after a confirmation', async () => {
+      setupMocks();
+      const deleteMany = mockMutation(trpc.card.deleteMany);
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+      await user.click(screen.getByRole('button', { name: 'Select all' }));
+      await user.click(screen.getByRole('button', { name: 'Delete selected' }));
+
+      const dialog = screen.getByRole('alertdialog');
+      expect(
+        within(dialog).getByText(`Delete ${mockCards.length} cards?`),
+      ).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      expect(deleteMany).toHaveBeenCalledWith({
+        cardIds: mockCards.map((card) => card.id),
+      });
+    });
+
+    it('holds off acting on a selection until a card is selected', async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+
+      expect(
+        screen.getByRole('button', { name: 'Mark selected known' }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Delete selected' }),
+      ).toBeDisabled();
+    });
+
+    it('stops selecting with Done, clearing the selection', async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+      await user.click(screen.getByLabelText('Select “Capital of France”'));
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+
+      expect(
+        screen.queryByLabelText('Select “Capital of France”'),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+      expect(screen.getByText('0 selected')).toBeInTheDocument();
     });
   });
 });

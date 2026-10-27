@@ -1,8 +1,8 @@
 import { useId, useState, type FormEvent } from 'react';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { BadgeCheck, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { markedKnownMessage, toFlashcard, type Flashcard } from '@/lib/cards';
 import { useAnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
 import { CardStack } from '@/components/CardStack';
@@ -19,9 +19,10 @@ const flipButtonClasses =
  * changing the front or the answers' texts resets the card's progress and
  * keeps its attempts (ADR-0004), going to `onEdited`; a Save that resets
  * nothing, like choosing another primary or changing Accepted Variants,
- * goes to `onChanged`. Cancel drops the edits; Delete,
- * once confirmed, removes the card. Mounted each time edit mode turns on,
- * so it starts from the card as it is. Marked `data-card-editor`, so page
+ * goes to `onChanged`. Cancel drops the edits; Delete, once confirmed,
+ * removes the card; Mark known marks it known (ADR-0009), going to
+ * `onMarkedKnown`, and leaves edit mode. Mounted each time edit mode turns
+ * on, so it starts from the card as it is. Marked `data-card-editor`, so page
  * shortcuts leave its keys alone.
  */
 export function StudyCardEditor({
@@ -34,6 +35,7 @@ export function StudyCardEditor({
   onEdited,
   onChanged,
   onDeleted,
+  onMarkedKnown,
   onDone,
 }: {
   deckId: string;
@@ -45,6 +47,7 @@ export function StudyCardEditor({
   onEdited: (card: Flashcard) => void;
   onChanged: (card: Flashcard) => void;
   onDeleted: () => void;
+  onMarkedKnown: () => void;
   onDone: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -85,6 +88,16 @@ export function StudyCardEditor({
     onError: () => toast.error("Couldn't delete the card"),
   });
 
+  const markKnown = trpc.card.markKnown.useMutation({
+    onSuccess: ({ markedCount }) => {
+      toast.success(markedKnownMessage(markedCount));
+      refreshDeck();
+      onMarkedKnown();
+      onDone();
+    },
+    onError: () => toast.error("Couldn't mark the card known"),
+  });
+
   const canSave = front.trim() !== '' && form.canSave && !update.isPending;
 
   function handleSave(e: FormEvent) {
@@ -113,6 +126,17 @@ export function StudyCardEditor({
       >
         <Trash2 className="mr-1 h-4 w-4" />
         Delete
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled={markKnown.isPending}
+        onClick={() => markKnown.mutate({ cardIds: [card.id] })}
+        className="mr-auto text-white/70 hover:bg-white/10 hover:text-white"
+      >
+        <BadgeCheck className="mr-1 h-4 w-4" />
+        Mark known
       </Button>
       <div className="flex gap-2">
         <Button

@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { NEW_PROGRESS } from './progressUpdater.js';
+import { markKnown, NEW_PROGRESS } from './progressUpdater.js';
 import {
   gradeAnswer,
   matchAnswer,
@@ -507,5 +507,40 @@ function cardWithAnswers(db: Db, cardId: string) {
   return db.card.findUniqueOrThrow({
     where: { id: cardId },
     include: withCanonicalAnswers,
+  });
+}
+
+/**
+ * Marks a learner's cards known (ADR-0009), in one transaction: NEW and
+ * LEARNING cards take `markKnown`'s progress, and ones already STABLE or
+ * RETIRED are left as they are. No attempt is recorded. The cards' items
+ * waiting in a Study Session under way are skipped, as the study screen
+ * moves past them. Returns how many cards were marked.
+ */
+export async function markCardsKnown(
+  prisma: PrismaClient,
+  { userId, cardIds }: { userId: string; cardIds: string[] },
+) {
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    const progresses = await tx.cardProgress.findMany({
+      where: { userId, cardId: { in: cardIds } },
+    });
+    let markedCount = 0;
+    for (const progress of progresses) {
+      const known = markKnown(progress, now);
+      if (!known) continue;
+      await tx.cardProgress.update({ where: { id: progress.id }, data: known });
+      markedCount++;
+    }
+    await tx.studySessionItem.updateMany({
+      where: {
+        cardId: { in: cardIds },
+        status: 'PENDING',
+        studySession: { userId, status: 'ACTIVE' },
+      },
+      data: { status: 'SKIPPED' },
+    });
+    return { markedCount };
   });
 }

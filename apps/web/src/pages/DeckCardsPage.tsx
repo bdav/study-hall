@@ -7,12 +7,17 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  SquareCheck,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { answersWithPrimary, toFlashcard } from '@/lib/cards';
+import {
+  answersWithPrimary,
+  markedKnownMessage,
+  toFlashcard,
+} from '@/lib/cards';
 import { parseCsv } from '@/lib/csvParser';
 import { diffCsvRows } from '@/lib/csvDiff';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
@@ -26,6 +31,7 @@ import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
 import { ReviseCards } from '@/components/ReviseCards';
+import { CardSelectionBar } from '@/components/CardSelectionBar';
 
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
@@ -126,6 +132,8 @@ export default function DeckCardsPage() {
   );
   // The card whose answers are open below it
   const [answersCardId, setAnswersCardId] = useState<string | null>(null);
+  // The selected cards while selecting, none otherwise
+  const [selection, setSelection] = useState<Set<string> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newCardButtonRef = useRef<HTMLDivElement | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
@@ -202,6 +210,16 @@ export default function DeckCardsPage() {
     },
     onError: () => {
       toast.error('Failed to delete card');
+    },
+  });
+
+  const markKnown = trpc.card.markKnown.useMutation({
+    onSuccess: ({ markedCount }) => {
+      invalidateCards();
+      toast.success(markedKnownMessage(markedCount));
+    },
+    onError: () => {
+      toast.error("Couldn't mark the card known");
     },
   });
 
@@ -309,24 +327,45 @@ export default function DeckCardsPage() {
           )}
         </p>
 
-        <div className="flex justify-end gap-4 mr-4">
-          {canUseAI && cards.length > 0 && <ReviseCards deckId={deckId} />}
-          <ConfirmDialog
-            title="Delete deck"
-            description={`Are you sure you want to delete "${deck.name}"? This cannot be undone.`}
-            confirmLabel="Delete"
-            onConfirm={() => deleteDeck.mutate({ id: deckId })}
-            trigger={
-              <button
-                className="inline-flex items-center text-sm text-white/40 hover:text-destructive transition-colors"
-                title="Delete deck"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete Deck
-              </button>
-            }
+        {selection ? (
+          <CardSelectionBar
+            deckId={deckId}
+            cardIds={cards.map((card) => card.id)}
+            selected={selection}
+            onSelect={setSelection}
+            onDone={() => setSelection(null)}
           />
-        </div>
+        ) : (
+          <div className="flex justify-end gap-4 mr-4">
+            {cards.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelection(new Set())}
+                aria-label="Select cards"
+                className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
+              >
+                <SquareCheck className="h-4 w-4 mr-1" />
+                Select
+              </button>
+            )}
+            {canUseAI && cards.length > 0 && <ReviseCards deckId={deckId} />}
+            <ConfirmDialog
+              title="Delete deck"
+              description={`Are you sure you want to delete "${deck.name}"? This cannot be undone.`}
+              confirmLabel="Delete"
+              onConfirm={() => deleteDeck.mutate({ id: deckId })}
+              trigger={
+                <button
+                  className="inline-flex items-center text-sm text-white/40 hover:text-destructive transition-colors"
+                  title="Delete deck"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete Deck
+                </button>
+              }
+            />
+          </div>
+        )}
 
         {/* Card Grid */}
         <LayoutGroup>
@@ -593,7 +632,22 @@ export default function DeckCardsPage() {
                 key={card.id}
                 layout="position"
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="relative"
               >
+                {selection && (
+                  <input
+                    type="checkbox"
+                    checked={selection.has(card.id)}
+                    onChange={(e) => {
+                      const next = new Set(selection);
+                      if (e.target.checked) next.add(card.id);
+                      else next.delete(card.id);
+                      setSelection(next);
+                    }}
+                    aria-label={`Select “${card.front}”`}
+                    className="absolute -left-2 -top-2 z-20 size-5 accent-white"
+                  />
+                )}
                 <FlashCardTile
                   front={card.front}
                   back={card.canonicalAnswer}
@@ -609,6 +663,7 @@ export default function DeckCardsPage() {
                     })
                   }
                   onDelete={() => deleteCard.mutate({ cardId: card.id })}
+                  onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
                   isSaving={
                     updateCard.isPending &&
                     updateCard.variables?.cardId === card.id

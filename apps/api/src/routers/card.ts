@@ -5,15 +5,32 @@ import {
   createCards,
   deckOrder,
   editCard,
+  markCardsKnown,
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
+import { type Context } from '../context.js';
 
 const front = z.string().trim().min(1);
 const answerText = z.string().trim().min(1);
 // A card's Canonical Answers, primary first
 const canonicalAnswers = z.array(answerText).min(1);
 const variantText = z.string().trim().min(1);
+// Cards acted on together: one, or a selection from the Cards tab
+const cardIds = z.array(z.string()).min(1).max(1000);
+
+/** Refuses, as not found, any card that isn't in one of the learner's decks. */
+async function assertOwnsCards(
+  ctx: { prisma: Context['prisma']; userId: string },
+  ids: string[],
+) {
+  const owned = await ctx.prisma.card.count({
+    where: { id: { in: ids }, deck: { userId: ctx.userId } },
+  });
+  if (owned !== new Set(ids).size) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Card not found' });
+  }
+}
 
 export const cardRouter = router({
   create: protectedProcedure
@@ -126,6 +143,31 @@ export const cardRouter = router({
       });
 
       return { success: true };
+    }),
+
+  /**
+   * Marks cards known (ADR-0009): a timing adjustment, not a grade, so it
+   * records no attempt (`markCardsKnown`).
+   */
+  markKnown: protectedProcedure
+    .input(z.object({ cardIds }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwnsCards(ctx, input.cardIds);
+      return markCardsKnown(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
+    }),
+
+  /** Deletes several cards, as `delete` deletes one. */
+  deleteMany: protectedProcedure
+    .input(z.object({ cardIds }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwnsCards(ctx, input.cardIds);
+      const { count } = await ctx.prisma.card.deleteMany({
+        where: { id: { in: input.cardIds } },
+      });
+      return { deletedCount: count };
     }),
 
   // The learner's answers to a card, by Card Version, and its progress
