@@ -1621,4 +1621,126 @@ describe('DeckCardsPage', () => {
       expect(screen.getByText('0 selected')).toBeInTheDocument();
     });
   });
+
+  describe('cards shown in full, with edit pencils', () => {
+    it("shows a pencil by each face's text at rest", () => {
+      setupMocks();
+      renderDeckCardsPage();
+
+      expect(
+        screen.getAllByRole('button', { name: 'Edit card front' }),
+      ).toHaveLength(mockCards.length);
+      expect(
+        screen.getAllByRole('button', { name: 'Edit card answer' }),
+      ).toHaveLength(mockCards.length);
+    });
+
+    it("hides a face's pencil and underlines its text while it has focus", async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      const [front] = screen.getAllByLabelText('Card front');
+
+      await user.click(front);
+
+      expect(
+        screen.getAllByRole('button', { name: 'Edit card front' }),
+      ).toHaveLength(mockCards.length - 1);
+      expect(front).toHaveClass('border-white/60');
+
+      await user.tab();
+
+      expect(
+        screen.getAllByRole('button', { name: 'Edit card front' }),
+      ).toHaveLength(mockCards.length);
+      expect(front).not.toHaveClass('border-white/60');
+    });
+
+    it("puts the cursor in a face's text from its pencil", async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(
+        screen.getAllByRole('button', { name: 'Edit card front' })[0],
+      );
+
+      expect(screen.getAllByLabelText('Card front')[0]).toHaveFocus();
+    });
+
+    it("puts the cursor in a face's text from anywhere around it", async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      const [front] = screen.getAllByLabelText('Card front');
+
+      await user.click(front.closest('[data-tile-field]')!);
+
+      expect(front).toHaveFocus();
+    });
+
+    it('takes the answers below each card out of reach while selecting', async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+
+      const summary = screen.getByRole('button', {
+        name: 'Answers of Capital of France',
+      });
+      expect(summary).toBeDisabled();
+      expect(summary.querySelector('svg')).toBeNull();
+      expect(
+        screen.queryAllByRole('button', { name: 'Edit card front' }),
+      ).toHaveLength(0);
+    });
+
+    it('shows a pencil on the answers below each card', () => {
+      setupMocks();
+      renderDeckCardsPage();
+
+      expect(
+        screen
+          .getByRole('button', { name: 'Answers of Capital of France' })
+          .querySelector('svg'),
+      ).not.toBeNull();
+    });
+
+    it('shows a long front, answer and answers list in full', () => {
+      const longFront =
+        'Which Italian adjective, in its feminine form, means long, as in "La strada è ___"?';
+      const answers = ['lunga', 'lunghissima', 'allungata', 'distesa'];
+      setupMocks({
+        cards: [
+          {
+            ...mockCards[0],
+            front: longFront,
+            canonicalAnswers: answers.map((text, i) => ({
+              id: `answer-${i}`,
+              text,
+              isPrimary: i === 0,
+              acceptedVariants: [],
+            })),
+          },
+        ],
+      });
+      renderDeckCardsPage();
+
+      const front = screen.getByLabelText('Card front');
+      expect(front).toHaveValue(longFront);
+      // Grows to its text instead of a fixed two rows
+      expect(front).toHaveClass('field-sizing-content');
+      expect(screen.getByLabelText('Card answer')).toHaveClass(
+        'field-sizing-content',
+      );
+      const summary = screen.getByRole('button', {
+        name: `Answers of ${longFront}`,
+      });
+      expect(summary).toHaveTextContent(answers.join(', '));
+      for (const line of summary.querySelectorAll('p')) {
+        expect(line).not.toHaveClass('truncate');
+      }
+    });
+  });
 });

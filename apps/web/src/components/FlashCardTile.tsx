@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, RefreshCw, Undo2, Trash2 } from 'lucide-react';
+import { BadgeCheck, Pencil, RefreshCw, Undo2, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 import { type AcceptedVariant } from '@/lib/cards';
@@ -20,6 +20,69 @@ interface FlashCardTileProps {
   isSaving?: boolean;
   /** The answer's Accepted Variants. */
   variants: AcceptedVariant[];
+}
+
+/**
+ * A face's text, edited in place: shown in full, wrapping and growing with
+ * it, with a pencil beside it at rest, as the deck title has. While it has
+ * focus, the pencil goes and the text is underlined.
+ */
+function TileField({
+  label,
+  value,
+  onChange,
+  onBlur,
+  placeholder,
+  showPencil,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  placeholder: string;
+  showPencil: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  return (
+    // The face's middle, all of which puts the cursor in the text
+    <div
+      data-tile-field
+      onClick={() => ref.current?.focus()}
+      className="flex min-w-0 flex-1 cursor-text items-center justify-center gap-1.5 px-4 pb-3"
+    >
+      <textarea
+        ref={ref}
+        aria-label={label}
+        // Two rows where the text can't size itself, full width there too
+        rows={2}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => {
+          setIsFocused(false);
+          onBlur?.();
+        }}
+        placeholder={placeholder}
+        className={`field-sizing-content min-w-12 max-w-full resize-none border-b-2 bg-transparent text-center text-base font-medium text-white outline-none transition-colors placeholder:text-white/30 not-supports-[field-sizing:content]:w-full ${
+          isFocused ? 'border-white/60' : 'border-transparent'
+        }`}
+      />
+      {showPencil && !isFocused && (
+        <button
+          type="button"
+          // The text itself takes focus from the keyboard; a click here
+          // reaches the face's middle, which focuses it
+          tabIndex={-1}
+          aria-label={`Edit ${label.toLowerCase()}`}
+          title={`Edit ${label.toLowerCase()}`}
+          className="shrink-0 rounded p-0.5 text-white/40 transition-colors hover:text-white/70"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function FlashCardTile({
@@ -128,7 +191,9 @@ export function FlashCardTile({
       style={{ perspective: '600px' }}
     >
       <div
-        className="relative aspect-3/2 w-full transition-transform duration-500"
+        // The faces share one grid cell: the tile is 3:2 at least, and grows
+        // to show a long front or answer in full
+        className="grid aspect-3/2 w-full grid-cols-1 transition-transform duration-500"
         style={{
           transformStyle: 'preserve-3d',
           transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -136,7 +201,7 @@ export function FlashCardTile({
       >
         {/* Front face */}
         <div
-          className="absolute inset-0 flex flex-col rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm"
+          className="col-start-1 row-start-1 flex min-w-0 flex-col rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm"
           style={{ backfaceVisibility: 'hidden' }}
         >
           <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
@@ -167,15 +232,13 @@ export function FlashCardTile({
               </div>
             )}
           </div>
-          <div className="flex flex-1 items-center justify-center px-4 pb-3">
-            <textarea
-              value={localFront}
-              onChange={(e) => handleFrontChange(e.target.value)}
-              className="w-full resize-none bg-transparent text-center text-base font-medium text-white outline-none placeholder:text-white/30"
-              rows={2}
-              placeholder="Front text..."
-            />
-          </div>
+          <TileField
+            label="Card front"
+            value={localFront}
+            onChange={handleFrontChange}
+            placeholder="Front text..."
+            showPencil={!isSelecting}
+          />
           <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
             {!isSelecting && (
               <>
@@ -211,7 +274,7 @@ export function FlashCardTile({
 
         {/* Back face */}
         <div
-          className="absolute inset-0 flex flex-col rounded-xl border border-white/30 bg-white/15 backdrop-blur-sm"
+          className="col-start-1 row-start-1 flex min-w-0 flex-col rounded-xl border border-white/30 bg-white/15 backdrop-blur-sm"
           style={{
             backfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
@@ -248,16 +311,14 @@ export function FlashCardTile({
               </div>
             )}
           </div>
-          <div className="flex flex-1 items-center justify-center px-4 pb-3">
-            <textarea
-              value={localBack}
-              onChange={(e) => handleBackChange(e.target.value)}
-              onBlur={handleBackBlur}
-              className="w-full resize-none bg-transparent text-center text-base font-medium text-white outline-none placeholder:text-white/30"
-              rows={2}
-              placeholder="Back text..."
-            />
-          </div>
+          <TileField
+            label="Card answer"
+            value={localBack}
+            onChange={handleBackChange}
+            onBlur={handleBackBlur}
+            placeholder="Back text..."
+            showPencil={!isSelecting}
+          />
           <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
             {!isSelecting && (
               <>

@@ -20,6 +20,7 @@ export function CardAnswers({
   onOpen,
   onClose,
   onSaved,
+  disabled = false,
   className = '',
 }: {
   deckId: string;
@@ -28,6 +29,8 @@ export function CardAnswers({
   onOpen: () => void;
   onClose: () => void;
   onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
+  /** The summary can't be chosen, as while the Cards tab is selecting. */
+  disabled?: boolean;
   className?: string;
 }) {
   const label = `Answers of ${card.front}`;
@@ -52,6 +55,7 @@ export function CardAnswers({
     <CardAnswersSummary
       card={card}
       onOpen={onOpen}
+      disabled={disabled}
       className={`text-left ${className}`}
     />
   );
@@ -60,8 +64,9 @@ export function CardAnswers({
 /**
  * The summary of a card's Canonical Answers and Accepted Variants, read
  * only; choosing it opens where they're edited. `caption`, when given,
- * heads it, saying what it is, with a pencil unless `disabled`, as when
- * they're open for editing already.
+ * heads it, saying what it is. A pencil, on the caption or else after the
+ * answers, shows it can be chosen, unless `disabled`, as when they're open
+ * for editing already. Every answer and variant shows in full, wrapping.
  */
 export function CardAnswersSummary({
   card,
@@ -79,6 +84,10 @@ export function CardAnswersSummary({
   const variants = card.answers.flatMap((answer) =>
     answer.acceptedVariants.map((variant) => variant.text),
   );
+  // On the caption, or else after the answers
+  const pencil = !disabled && (
+    <Pencil aria-hidden className="ml-1 inline h-3 w-3 text-white/50" />
+  );
   return (
     <button
       type="button"
@@ -91,14 +100,15 @@ export function CardAnswersSummary({
       {caption && (
         <p className="text-xs uppercase tracking-wide text-white/50">
           {caption}
-          {!disabled && <Pencil aria-hidden className="ml-1 inline h-3 w-3" />}
+          {pencil}
         </p>
       )}
-      <p className="truncate">
+      <p className="break-words">
         {card.answers.map((answer) => answer.text).join(', ')}
+        {!caption && pencil}
       </p>
       {variants.length > 0 && (
-        <p className="truncate text-xs text-white/50">
+        <p className="break-words text-xs text-white/50">
           Variants: {variants.join(', ')}
         </p>
       )}

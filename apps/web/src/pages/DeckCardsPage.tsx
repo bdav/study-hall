@@ -676,6 +676,7 @@ export default function DeckCardsPage() {
                 <CardAnswers
                   deckId={deckId}
                   card={card}
+                  disabled={selection !== null}
                   isOpen={answersCardId === card.id}
                   onOpen={() => setAnswersCardId(card.id)}
                   onClose={() => setAnswersCardId(null)}
