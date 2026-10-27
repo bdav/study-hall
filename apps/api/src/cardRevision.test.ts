@@ -286,6 +286,96 @@ describe('deck.proposeRevision', () => {
     expect(ai.requests).toHaveLength(0);
   });
 
+  describe('refining a proposal', () => {
+    function refining(cards: { id: string }[]) {
+      return {
+        instructions: ['Remove the hints'],
+        changes: [
+          {
+            cardId: cards[0].id,
+            action: 'EDIT' as const,
+            front: "Italian for 'seven', the number",
+            canonicalAnswer: 'sette',
+            included: true,
+          },
+          { cardId: cards[1].id, action: 'DELETE' as const, included: false },
+        ],
+      };
+    }
+
+    it('proposes again from every instruction and the proposal as the learner left it', async () => {
+      const deck = await italianDeck();
+      ai.respondWith({
+        changes: [
+          { action: 'EDIT', card: 1, front: "Italian for 'seven', the number" },
+          { action: 'EDIT', card: 2, front: 'Hello' },
+        ],
+      });
+
+      const proposal = await createCaller().deck.proposeRevision({
+        deckId: deck.id,
+        instruction: 'Keep the hints that say how formal it is',
+        refining: refining(deck.cards),
+      });
+
+      const prompt = ai.requests[0].prompt;
+      expect(prompt).toContain(
+        '1. Remove the hints\n2. Keep the hints that say how formal it is',
+      );
+      expect(prompt).toContain(
+        "Card 1: edit to Italian for 'seven', the number → sette",
+      );
+      expect(prompt).toContain('Card 2: delete (unticked by the learner)');
+      expect(proposal.changes.map((change) => change.cardId)).toEqual([
+        deck.cards[0].id,
+        deck.cards[1].id,
+      ]);
+    });
+
+    it("refuses, before any model call, a proposal with a card that isn't in the deck", async () => {
+      const deck = await italianDeck();
+      const otherDeck = await createDeckWithCards(prisma, {
+        userId: otherUserId,
+        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
+      });
+
+      await expect(
+        createCaller().deck.proposeRevision({
+          deckId: deck.id,
+          instruction: 'Keep the formal hints',
+          refining: refining([deck.cards[0], otherDeck.cards[0]]),
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it("refuses refining on another learner's deck, before any model call", async () => {
+      const deck = await italianDeck();
+
+      await expect(
+        createCaller(otherUserId).deck.proposeRevision({
+          deckId: deck.id,
+          instruction: 'Keep the formal hints',
+          refining: refining(deck.cards),
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(ai.requests).toHaveLength(0);
+    });
+
+    it('refuses a proposal that changes a card twice', async () => {
+      const deck = await italianDeck();
+
+      await expect(
+        createCaller().deck.proposeRevision({
+          deckId: deck.id,
+          instruction: 'Keep the formal hints',
+          refining: refining([deck.cards[0], deck.cards[0]]),
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      expect(ai.requests).toHaveLength(0);
+    });
+  });
+
   it("refuses another learner's deck, before any model call", async () => {
     const deck = await italianDeck();
 

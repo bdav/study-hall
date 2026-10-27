@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { Loader2, Sparkles } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
@@ -11,27 +13,38 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { ReviseCardsDialog } from '@/components/ReviseCardsDialog';
+import {
+  ReviseCardsDialog,
+  MAX_INSTRUCTION_LENGTH,
+  type RefiningChange,
+} from '@/components/ReviseCardsDialog';
 import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
 
-/** The longest instruction the API takes. */
-const MAX_INSTRUCTION_LENGTH = 1000;
+type Proposal = inferRouterOutputs<AppRouter>['deck']['proposeRevision'];
+
+/** The latest proposal and the instructions it came from, oldest first. */
+interface Revision {
+  instructions: string[];
+  proposal: Proposal;
+}
 
 /**
  * The "Revise cards" action on a deck (ADR-0007): the learner writes an
- * instruction, the AI proposes edits and deletions, and only the changes
- * the learner approves in the preview are applied.
+ * instruction, the AI proposes edits and deletions, the learner refines the
+ * proposal with more instructions as often as they like, and only the
+ * changes they approve in the preview are applied. The latest proposal is
+ * kept here, not in the mutation, so a round in flight or failed leaves it.
  */
 export function ReviseCards({ deckId }: { deckId: string }) {
   const utils = trpc.useUtils();
   const [isWriting, setIsWriting] = useState(false);
   const [instruction, setInstruction] = useState('');
+  const [revision, setRevision] = useState<Revision | null>(null);
 
-  const propose = trpc.deck.proposeRevision.useMutation({
-    onSuccess: () => setIsWriting(false),
-  });
+  const propose = trpc.deck.proposeRevision.useMutation();
   const apply = trpc.deck.applyRevision.useMutation({
     onSuccess: ({ editedCount, deletedCount }) => {
+      setRevision(null);
       propose.reset();
       utils.card.listByDeck.invalidate({ deckId });
       utils.deck.list.invalidate();
@@ -47,11 +60,32 @@ export function ReviseCards({ deckId }: { deckId: string }) {
       toast.error(error.message);
     },
   });
-  const proposal = propose.data;
-
   function close() {
     setIsWriting(false);
     propose.reset();
+  }
+
+  function closePreview() {
+    setRevision(null);
+    // Escape still closes while proposing again: this drops that round,
+    // so it can't reopen the preview
+    propose.reset();
+  }
+
+  function refine(next: string, changes: RefiningChange[]) {
+    if (!revision) return;
+    const { instructions } = revision;
+    propose.mutate(
+      {
+        deckId,
+        instruction: next,
+        refining: { instructions, changes },
+      },
+      {
+        onSuccess: (proposal) =>
+          setRevision({ instructions: [...instructions, next], proposal }),
+      },
+    );
   }
 
   return (
@@ -60,6 +94,7 @@ export function ReviseCards({ deckId }: { deckId: string }) {
         type="button"
         onClick={() => {
           setInstruction('');
+          propose.reset();
           setIsWriting(true);
         }}
         className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
@@ -85,8 +120,17 @@ export function ReviseCards({ deckId }: { deckId: string }) {
             id="revise-cards"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!instruction.trim()) return;
-              propose.mutate({ deckId, instruction: instruction.trim() });
+              const first = instruction.trim();
+              if (!first) return;
+              propose.mutate(
+                { deckId, instruction: first },
+                {
+                  onSuccess: (proposal) => {
+                    setIsWriting(false);
+                    setRevision({ instructions: [first], proposal });
+                  },
+                },
+              );
             }}
           >
             <textarea
@@ -129,22 +173,27 @@ export function ReviseCards({ deckId }: { deckId: string }) {
         </DialogContent>
       </Dialog>
 
-      {proposal && (
+      {revision && (
         <ReviseCardsDialog
+          // Each round's proposal starts the preview afresh
+          key={revision.instructions.length}
           open
-          onClose={() => propose.reset()}
-          onConfirm={(revision) =>
+          onClose={closePreview}
+          onConfirm={(approved) =>
             apply.mutate({
               deckId,
-              model: proposal.model,
-              promptVersion: proposal.promptVersion,
-              ...revision,
+              model: revision.proposal.model,
+              promptVersion: revision.proposal.promptVersion,
+              ...approved,
             })
           }
+          onRefine={refine}
           isPending={apply.isPending}
-          instruction={propose.variables?.instruction ?? ''}
-          changes={proposal.changes}
-          note={proposal.note}
+          isRefining={propose.isPending}
+          refineError={propose.error?.message ?? null}
+          instructions={revision.instructions}
+          changes={revision.proposal.changes}
+          note={revision.proposal.note}
         />
       )}
     </>

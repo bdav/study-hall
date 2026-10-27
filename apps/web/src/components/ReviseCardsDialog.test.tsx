@@ -36,27 +36,43 @@ const changes: CardChange[] = [
 ];
 
 const mockConfirm = vi.fn();
+const mockRefine = vi.fn();
 
-function renderDialog({
-  isPending = false,
-  proposed = changes,
-  note = null,
-}: {
+type DialogOptions = {
   isPending?: boolean;
   proposed?: CardChange[];
   note?: string | null;
-} = {}) {
-  return render(
+  instructions?: string[];
+  isRefining?: boolean;
+  refineError?: string | null;
+};
+
+function dialogElement({
+  isPending = false,
+  proposed = changes,
+  note = null,
+  instructions = ['Remove the hints from the fronts'],
+  isRefining = false,
+  refineError = null,
+}: DialogOptions = {}) {
+  return (
     <ReviseCardsDialog
       open
       onClose={vi.fn()}
       onConfirm={mockConfirm}
+      onRefine={mockRefine}
       isPending={isPending}
-      instruction="Remove the hints from the fronts"
+      isRefining={isRefining}
+      refineError={refineError}
+      instructions={instructions}
       changes={proposed}
       note={note}
-    />,
+    />
   );
+}
+
+function renderDialog(options: DialogOptions = {}) {
+  return render(dialogElement(options));
 }
 
 beforeEach(() => {
@@ -94,6 +110,25 @@ describe('ReviseCardsDialog', () => {
     expect(
       screen.getByText('Remove the hints from the fronts'),
     ).toBeInTheDocument();
+  });
+
+  it('lists every instruction, oldest first', () => {
+    renderDialog({
+      instructions: [
+        'Remove the hints from the fronts',
+        'Keep the hint on the morning card',
+      ],
+    });
+
+    const list = screen.getByRole('list', { name: 'Your instructions' });
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Remove the hints from the fronts',
+      'Keep the hint on the morning card',
+    ]);
   });
 
   it("shows the model's note on what it couldn't do", () => {
@@ -268,5 +303,128 @@ describe('ReviseCardsDialog', () => {
     renderDialog({ isPending: true });
 
     expect(screen.getByRole('button', { name: /applying/i })).toBeDisabled();
+  });
+
+  describe('refining', () => {
+    it('proposes again from a follow-up instruction and the proposal as the learner left it', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+
+      const front = screen.getByLabelText('Change 1 front');
+      await user.clear(front);
+      await user.type(front, "Italian for 'seven', the number");
+      await user.click(screen.getByLabelText('Include change 3'));
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+      await user.type(
+        screen.getByLabelText('Refinement'),
+        '  Keep the hint on the morning card ',
+      );
+      await user.click(screen.getByRole('button', { name: 'Propose again' }));
+
+      expect(mockRefine).toHaveBeenCalledWith(
+        'Keep the hint on the morning card',
+        [
+          {
+            cardId: 'card-seven',
+            action: 'EDIT',
+            front: "Italian for 'seven', the number",
+            canonicalAnswer: 'sette',
+            included: true,
+          },
+          {
+            cardId: 'card-morning',
+            action: 'EDIT',
+            front: 'Good morning',
+            canonicalAnswer: 'Buongiorno',
+            included: true,
+          },
+          { cardId: 'card-hello', action: 'DELETE', included: false },
+        ],
+      );
+      expect(mockConfirm).not.toHaveBeenCalled();
+    });
+
+    it('refines past a blank field on an unticked edit, giving it as proposed', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+
+      await user.clear(screen.getByLabelText('Change 2 answer'));
+      await user.click(screen.getByLabelText('Include change 2'));
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+      await user.type(screen.getByLabelText('Refinement'), 'Shorter fronts');
+      await user.click(screen.getByRole('button', { name: 'Propose again' }));
+
+      expect(mockRefine).toHaveBeenCalledWith(
+        'Shorter fronts',
+        expect.arrayContaining([
+          {
+            cardId: 'card-morning',
+            action: 'EDIT',
+            front: 'Good morning',
+            canonicalAnswer: 'Buongiorno',
+            included: false,
+          },
+        ]),
+      );
+    });
+
+    it('needs a follow-up instruction to propose again', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+
+      expect(
+        screen.getByRole('button', { name: 'Propose again' }),
+      ).toBeDisabled();
+    });
+
+    it('is put away without proposing', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+
+      const refine = screen.getByRole('button', { name: 'Refine' });
+      await user.click(refine);
+      expect(refine).toHaveAttribute('aria-expanded', 'true');
+      await user.click(refine);
+
+      expect(screen.queryByLabelText('Refinement')).not.toBeInTheDocument();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+
+    it('holds off applying while proposing again', async () => {
+      const user = userEvent.setup();
+      const { rerender } = renderDialog();
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+
+      rerender(dialogElement({ isRefining: true }));
+
+      expect(
+        screen.getByRole('button', { name: /proposing again/i }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Apply 3 changes' }),
+      ).toBeDisabled();
+    });
+
+    it('says why a round failed, keeping the proposal as the learner left it', async () => {
+      const user = userEvent.setup();
+      const { rerender } = renderDialog();
+      await user.click(screen.getByLabelText('Include change 3'));
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+      await user.type(screen.getByLabelText('Refinement'), 'Shorter fronts');
+
+      rerender(
+        dialogElement({
+          refineError: 'AI is paused for the rest of the month',
+        }),
+      );
+
+      expect(
+        screen.getByText('AI is paused for the rest of the month'),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Include change 3')).not.toBeChecked();
+      expect(screen.getByLabelText('Refinement')).toHaveValue('Shorter fronts');
+    });
   });
 });

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import type { inferRouterOutputs } from '@trpc/server';
+import { useId, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +17,14 @@ import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
 export type CardChange =
   inferRouterOutputs<AppRouter>['deck']['proposeRevision']['changes'][number];
 
+/** A change of the proposal being refined, as the learner left it. */
+export type RefiningChange = NonNullable<
+  inferRouterInputs<AppRouter>['deck']['proposeRevision']['refining']
+>['changes'][number];
+
+/** The longest instruction, or follow-up instruction, the API takes. */
+export const MAX_INSTRUCTION_LENGTH = 1000;
+
 /** The changes the learner approved, each edit giving only what it changes. */
 export interface ApprovedRevision {
   edits: { cardId: string; front?: string; canonicalAnswer?: string }[];
@@ -26,9 +35,14 @@ interface ReviseCardsDialogProps {
   open: boolean;
   onClose: () => void;
   onConfirm: (revision: ApprovedRevision) => void;
+  /** Proposes again from a follow-up instruction and the proposal as left. */
+  onRefine: (instruction: string, changes: RefiningChange[]) => void;
   isPending: boolean;
-  /** The learner's instruction the changes were proposed from. */
-  instruction: string;
+  isRefining: boolean;
+  /** Why the last round of refining failed, if it did. */
+  refineError: string | null;
+  /** The learner's instructions the changes were proposed from, oldest first. */
+  instructions: string[];
   changes: CardChange[];
   /** The model's note on what it couldn't do, such as add cards. */
   note: string | null;
@@ -57,6 +71,36 @@ function editOf(row: Row) {
 function changesSomething(row: Row) {
   const edit = editOf(row);
   return edit.front !== undefined || edit.canonicalAnswer !== undefined;
+}
+
+/** Whether a row is a change that would be applied. */
+function isApplied(row: Row) {
+  return (
+    row.selected && (row.change.action === 'DELETE' || changesSomething(row))
+  );
+}
+
+/**
+ * A row as the model is told of it when refining: as the learner left it,
+ * ticked or not. A field left blank on an unticked edit, which applying
+ * ignores, goes as the model proposed it.
+ */
+function refiningChangeOf(row: Row): RefiningChange {
+  const { change, selected: included } = row;
+  return change.action === 'EDIT'
+    ? {
+        cardId: change.cardId,
+        action: 'EDIT',
+        front: row.front.trim() || change.after.front,
+        canonicalAnswer:
+          row.canonicalAnswer.trim() || change.after.canonicalAnswer,
+        included,
+      }
+    : { cardId: change.cardId, action: 'DELETE', included };
+}
+
+function isComplete(row: Row) {
+  return row.front.trim() !== '' && row.canonicalAnswer.trim() !== '';
 }
 
 /** An After field that wraps and grows with its text, kept to one line. */
@@ -88,16 +132,25 @@ function plural(count: number, one: string, many: string) {
  * before and after, editable, and each deletion. The learner unticks the
  * changes they don't want; nothing changes until they apply the rest. An
  * edit resets its card's progress (ADR-0004), so the preview counts them.
+ * Refine proposes again from a follow-up instruction, as many times as the
+ * learner likes; a new proposal comes with a new dialog, so the parent
+ * keys it by round.
  */
 export function ReviseCardsDialog({
   open,
   onClose,
   onConfirm,
+  onRefine,
   isPending,
-  instruction,
+  isRefining,
+  refineError,
+  instructions,
   changes,
   note,
 }: ReviseCardsDialogProps) {
+  const instructionsId = useId();
+  const [isRefineOpen, setIsRefineOpen] = useState(false);
+  const [refinement, setRefinement] = useState('');
   const [rows, setRows] = useState<Row[]>(() =>
     changes.map((change) => ({
       change,
@@ -106,14 +159,11 @@ export function ReviseCardsDialog({
     })),
   );
 
-  const applied = rows.filter(
-    (row) =>
-      row.selected && (row.change.action === 'DELETE' || changesSomething(row)),
-  );
+  const applied = rows.filter(isApplied);
   const edits = applied.filter((row) => row.change.action === 'EDIT');
-  const complete = edits.every(
-    (row) => row.front.trim() !== '' && row.canonicalAnswer.trim() !== '',
-  );
+  const complete = edits.every(isComplete);
+  const canRefine = refinement.trim() !== '' && complete;
+  const isBusy = isPending || isRefining;
 
   function updateRow(index: number, change: Partial<Omit<Row, 'change'>>) {
     setRows((prev) =>
@@ -146,10 +196,21 @@ export function ReviseCardsDialog({
         </DialogHeader>
 
         <div className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm">
-          <p className="text-xs text-white/50">Your instruction</p>
-          <p className="whitespace-pre-wrap break-words text-white/80">
-            {instruction}
+          <p id={instructionsId} className="text-xs text-white/50">
+            {instructions.length === 1
+              ? 'Your instruction'
+              : 'Your instructions'}
           </p>
+          <ol
+            aria-labelledby={instructionsId}
+            className={`space-y-1 text-white/80 ${instructions.length > 1 ? 'list-decimal pl-5' : ''}`}
+          >
+            {instructions.map((instruction, i) => (
+              <li key={i} className="whitespace-pre-wrap break-words">
+                {instruction}
+              </li>
+            ))}
+          </ol>
         </div>
         {note && <p className="text-sm text-white/80">{note}</p>}
 
@@ -239,18 +300,64 @@ export function ReviseCardsDialog({
           </p>
         )}
 
+        {isRefineOpen && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canRefine)
+                onRefine(refinement.trim(), rows.map(refiningChangeOf));
+            }}
+          >
+            <textarea
+              aria-label="Refinement"
+              value={refinement}
+              onChange={(e) => setRefinement(e.target.value)}
+              maxLength={MAX_INSTRUCTION_LENGTH}
+              rows={2}
+              autoFocus
+              placeholder="Say what to change about these changes"
+              className={`w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+            />
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">{refineError}</p>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="text-xs text-white/50">
+                  {refinement.length}/{MAX_INSTRUCTION_LENGTH}
+                </span>
+                <Button
+                  type="submit"
+                  disabled={!canRefine || isBusy}
+                  className="bg-white/20 text-white hover:bg-white/30"
+                >
+                  {isRefining && <Loader2 className="size-4 animate-spin" />}
+                  {isRefining ? 'Proposing again…' : 'Propose again'}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+
         <DialogFooter className="border-white/20 bg-white/5">
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={isPending}
+            disabled={isBusy}
             className="border-white/20 bg-white/10 text-white hover:bg-white/20"
           >
             Cancel
           </Button>
           <Button
+            variant="outline"
+            onClick={() => setIsRefineOpen((isOpen) => !isOpen)}
+            aria-expanded={isRefineOpen}
+            disabled={isBusy}
+            className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+          >
+            Refine
+          </Button>
+          <Button
             onClick={handleConfirm}
-            disabled={applied.length === 0 || !complete || isPending}
+            disabled={applied.length === 0 || !complete || isBusy}
             className="bg-white/20 text-white hover:bg-white/30"
           >
             {isPending

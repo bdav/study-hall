@@ -23,6 +23,54 @@ import { matchAnswer } from '../services/answerGrader.js';
 
 const text = z.string().trim().min(1);
 const proposalSource = z.string().min(1).max(100);
+const instruction = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_REVISION_INSTRUCTION_LENGTH);
+
+function changesEachCardOnce(cardIds: string[]) {
+  return new Set(cardIds).size === cardIds.length;
+}
+
+/** A revision that names a card the deck no longer has. */
+function cardNotInDeck() {
+  return new TRPCError({
+    code: 'NOT_FOUND',
+    message:
+      'A card in this revision is no longer in the deck. Please revise again.',
+  });
+}
+
+/**
+ * A proposal being refined, as the learner left it: the instructions it
+ * came from, oldest first, and its changes as edited, ticked or not.
+ */
+const refiningInput = z.object({
+  instructions: z.array(instruction).min(1),
+  changes: z
+    .array(
+      z.discriminatedUnion('action', [
+        z.object({
+          cardId: z.string(),
+          action: z.literal('EDIT'),
+          front: text,
+          canonicalAnswer: text,
+          included: z.boolean(),
+        }),
+        z.object({
+          cardId: z.string(),
+          action: z.literal('DELETE'),
+          included: z.boolean(),
+        }),
+      ]),
+    )
+    .max(MAX_REVISABLE_CARDS)
+    .refine(
+      (changes) => changesEachCardOnce(changes.map((change) => change.cardId)),
+      { message: 'A revision changes each card once' },
+    ),
+});
 
 export const deckRouter = router({
   getById: protectedProcedure
@@ -178,18 +226,17 @@ export const deckRouter = router({
 
   /**
    * Proposes edits to and deletions of the deck's cards from the learner's
-   * instruction (ADR-0007), for the cards it concerns. Nothing changes: the
-   * learner approves the changes they want with `applyRevision`.
+   * instruction (ADR-0007), for the cards it concerns. When refining, the
+   * earlier instructions and the proposal as the learner left it come too,
+   * and the whole revision is proposed again. Nothing changes: the learner
+   * approves the changes they want with `applyRevision`.
    */
   proposeRevision: aiProcedure
     .input(
       z.object({
         deckId: z.string(),
-        instruction: z
-          .string()
-          .trim()
-          .min(1)
-          .max(MAX_REVISION_INSTRUCTION_LENGTH),
+        instruction,
+        refining: refiningInput.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -216,6 +263,17 @@ export const deckRouter = router({
           message: `Revising works on decks of up to ${MAX_REVISABLE_CARDS} cards, and this one has ${deck.cards.length}.`,
         });
       }
+      // The prompt names cards by their number in the deck
+      const cardNumbers = new Map(
+        deck.cards.map((card, i) => [card.id, i + 1]),
+      );
+      const refiningChanges = input.refining?.changes.map(
+        ({ cardId, ...change }) => {
+          const card = cardNumbers.get(cardId);
+          if (card === undefined) throw cardNotInDeck();
+          return { card, ...change };
+        },
+      );
 
       const { output, model, promptVersion } = await generateStructured(ctx, {
         userId: ctx.userId,
@@ -224,11 +282,15 @@ export const deckRouter = router({
         promptVersion: CARD_REVISION_PROMPT_VERSION,
         system: CARD_REVISION_SYSTEM_PROMPT,
         prompt: buildCardRevisionPrompt({
-          instruction: input.instruction,
+          instructions: [
+            ...(input.refining?.instructions ?? []),
+            input.instruction,
+          ],
           cards: deck.cards.map((card) => ({
             front: card.front,
             canonicalAnswers: card.canonicalAnswers.map((a) => a.text),
           })),
+          refining: refiningChanges,
         }),
         outputSchema: cardRevisionOutputSchema,
       });
@@ -287,10 +349,11 @@ export const deckRouter = router({
           message: 'A revision changes at least one card',
         })
         .refine(
-          ({ edits, deletions }) => {
-            const ids = [...edits.map((edit) => edit.cardId), ...deletions];
-            return new Set(ids).size === ids.length;
-          },
+          ({ edits, deletions }) =>
+            changesEachCardOnce([
+              ...edits.map((edit) => edit.cardId),
+              ...deletions,
+            ]),
           { message: 'A revision changes each card once' },
         ),
     )
@@ -309,11 +372,7 @@ export const deckRouter = router({
       const cards = new Map(deck.cards.map((card) => [card.id, card]));
       const changed = [...input.edits.map((e) => e.cardId), ...input.deletions];
       if (changed.some((cardId) => !cards.has(cardId))) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message:
-            'A card in this revision is no longer in the deck. Please revise again.',
-        });
+        throw cardNotInDeck();
       }
       // Grading couldn't tell a new primary from the card's other answers,
       // and saying which card beats editCard's general refusal

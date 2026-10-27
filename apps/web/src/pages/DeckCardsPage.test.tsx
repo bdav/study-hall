@@ -103,6 +103,7 @@ function renderDeckCardsPage(deckId = 'deck-1') {
 const defaultMutationReturn = {
   mutate: vi.fn(),
   mutateAsync: vi.fn(),
+  reset: vi.fn(),
   isPending: false,
   isError: false,
   error: null,
@@ -1332,10 +1333,10 @@ describe('DeckCardsPage', () => {
         within(dialog).getByRole('button', { name: 'Propose changes' }),
       );
 
-      expect(propose).toHaveBeenCalledWith({
-        deckId: 'deck-1',
-        instruction: 'Remove the hints from the fronts',
-      });
+      expect(propose).toHaveBeenCalledWith(
+        { deckId: 'deck-1', instruction: 'Remove the hints from the fronts' },
+        expect.anything(),
+      );
     });
 
     it('starts each revision with a blank instruction', async () => {
@@ -1368,22 +1369,42 @@ describe('DeckCardsPage', () => {
       ).toBeInTheDocument();
     });
 
+    /** proposeRevision's mutate, answering each call with the next proposal. */
+    function proposeReplying(...proposals: unknown[]) {
+      const propose = vi.fn(
+        (
+          _input: unknown,
+          options?: { onSuccess?: (data: unknown) => void },
+        ) => {
+          options?.onSuccess?.(proposals[propose.mock.calls.length - 1]);
+        },
+      );
+      vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: propose,
+      } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
+      return propose;
+    }
+
+    async function proposeFrom(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /revise cards/i }));
+      await user.type(screen.getByLabelText('Instruction'), 'Tidy the fronts');
+      await user.click(screen.getByRole('button', { name: 'Propose changes' }));
+      return screen.getByRole('dialog');
+    }
+
     it('opens the proposal in the preview and applies the approved changes', async () => {
       const user = userEvent.setup();
       setupMocks({ canUseAI: true });
+      proposeReplying(proposal);
       const apply = vi.fn();
-      vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
-        ...defaultMutationReturn,
-        data: proposal,
-        variables: { deckId: 'deck-1', instruction: 'Tidy the fronts' },
-      } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
       vi.mocked(trpc.deck.applyRevision.useMutation).mockReturnValue({
         ...defaultMutationReturn,
         mutate: apply,
       } as unknown as ReturnType<typeof trpc.deck.applyRevision.useMutation>);
       renderDeckCardsPage();
 
-      const preview = screen.getByRole('dialog');
+      const preview = await proposeFrom(user);
       expect(within(preview).getByText('Tidy the fronts')).toBeInTheDocument();
       expect(within(preview).getByLabelText('Change 1 front')).toHaveValue(
         'The capital of France',
@@ -1399,6 +1420,71 @@ describe('DeckCardsPage', () => {
         edits: [{ cardId: 'card-1', front: 'The capital of France' }],
         deletions: ['card-2'],
       });
+    });
+
+    it('refines the proposal, showing the new one with every instruction', async () => {
+      const user = userEvent.setup();
+      setupMocks({ canUseAI: true });
+      const propose = proposeReplying(proposal, {
+        ...proposal,
+        changes: [
+          {
+            action: 'EDIT' as const,
+            cardId: 'card-2',
+            before: proposal.changes[1].before,
+            after: {
+              front: 'The capital of Germany',
+              canonicalAnswer: 'Berlin',
+            },
+          },
+        ],
+      });
+      renderDeckCardsPage();
+
+      const preview = await proposeFrom(user);
+      await user.click(within(preview).getByLabelText('Include change 1'));
+      await user.click(within(preview).getByRole('button', { name: 'Refine' }));
+      await user.type(
+        within(preview).getByLabelText('Refinement'),
+        'Keep Germany, reworded',
+      );
+      await user.click(
+        within(preview).getByRole('button', { name: 'Propose again' }),
+      );
+
+      expect(propose).toHaveBeenLastCalledWith(
+        {
+          deckId: 'deck-1',
+          instruction: 'Keep Germany, reworded',
+          refining: {
+            instructions: ['Tidy the fronts'],
+            changes: [
+              {
+                cardId: 'card-1',
+                action: 'EDIT',
+                front: 'The capital of France',
+                canonicalAnswer: 'Paris',
+                included: false,
+              },
+              { cardId: 'card-2', action: 'DELETE', included: true },
+            ],
+          },
+        },
+        expect.anything(),
+      );
+      const refined = screen.getByRole('dialog');
+      expect(
+        within(within(refined).getByRole('list', { name: 'Your instructions' }))
+          .getAllByRole('listitem')
+          .map((item) => item.textContent),
+      ).toEqual(['Tidy the fronts', 'Keep Germany, reworded']);
+      expect(within(refined).getAllByTestId('card-change')).toHaveLength(1);
+      expect(within(refined).getByLabelText('Change 1 front')).toHaveValue(
+        'The capital of Germany',
+      );
+      expect(
+        within(refined).queryByLabelText('Refinement'),
+      ).not.toBeInTheDocument();
     });
   });
 });

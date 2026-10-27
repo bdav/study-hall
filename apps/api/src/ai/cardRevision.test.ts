@@ -95,7 +95,7 @@ describe('card revision prompt', () => {
 
   it("numbers the deck's cards and gives the learner's instruction", () => {
     const prompt = buildCardRevisionPrompt({
-      instruction: 'Remove the hints from the fronts',
+      instructions: ['Remove the hints from the fronts'],
       cards: [
         {
           front: "Italian for 'seven' (double t)",
@@ -109,5 +109,41 @@ describe('card revision prompt', () => {
     expect(prompt).toContain("1. Italian for 'seven' (double t) → sette");
     expect(prompt).toContain('2. Hello (informal) → Ciao');
     expect(prompt).toContain('Salve');
+  });
+
+  it('gives every instruction of a refinement in order, and the proposal as the learner left it', () => {
+    const prompt = buildCardRevisionPrompt({
+      instructions: [
+        'Remove the hints from the fronts',
+        'Keep the (formal) hints',
+      ],
+      cards: [
+        {
+          front: "Italian for 'seven' (double t)",
+          canonicalAnswers: ['sette'],
+        },
+        { front: 'Hello (formal)', canonicalAnswers: ['Salve'] },
+        { front: 'Hello (informal)', canonicalAnswers: ['Ciao'] },
+      ],
+      refining: [
+        {
+          card: 1,
+          action: 'EDIT',
+          front: "Italian for 'seven', the number",
+          canonicalAnswer: 'sette',
+          included: true,
+        },
+        { card: 2, action: 'DELETE', included: false },
+      ],
+    });
+
+    expect(prompt).toContain(
+      '1. Remove the hints from the fronts\n2. Keep the (formal) hints',
+    );
+    expect(prompt).toContain(
+      "Card 1: edit to Italian for 'seven', the number → sette",
+    );
+    expect(prompt).toContain('Card 2: delete (unticked by the learner)');
+    expect(prompt).not.toContain('Card 3');
   });
 });
