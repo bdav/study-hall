@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { cardsCount, markedKnownMessage } from '@/lib/cards';
@@ -107,5 +107,48 @@ export function CardSelectionBar({
         onConfirm={() => deleteMany.mutate({ cardIds: selectedIds })}
       />
     </div>
+  );
+}
+
+/**
+ * A card tile while selecting: the whole tile ticks it, with a check badge
+ * in its corner and a ring once selected. It covers the tile, so the card
+ * can't be edited while selecting. Goes inside a relative wrapper of the
+ * tile.
+ */
+export function SelectCardToggle({
+  front,
+  selected,
+  onChange,
+}: {
+  front: string;
+  selected: boolean;
+  onChange: (selected: boolean) => void;
+}) {
+  return (
+    // The tile's card starts below its 12px top gutter (`FlashCardTile`)
+    <label
+      className={`absolute inset-x-0 bottom-0 top-3 z-20 cursor-pointer rounded-xl transition-colors ${
+        selected ? 'bg-white/10 ring-2 ring-white/80' : 'hover:bg-white/5'
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={`Select “${front}”`}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden
+        className={`absolute right-3 top-3 flex size-6 items-center justify-center rounded-full border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-white peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-transparent ${
+          selected
+            ? 'border-white bg-white text-slate-900'
+            : 'border-white/60 bg-black/10'
+        }`}
+      >
+        {selected && <Check className="size-4" strokeWidth={3} />}
+      </span>
+    </label>
   );
 }

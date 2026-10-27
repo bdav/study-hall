@@ -31,7 +31,10 @@ import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
 import { ReviseCards } from '@/components/ReviseCards';
-import { CardSelectionBar } from '@/components/CardSelectionBar';
+import {
+  CardSelectionBar,
+  SelectCardToggle,
+} from '@/components/CardSelectionBar';
 
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
@@ -632,44 +635,43 @@ export default function DeckCardsPage() {
                 key={card.id}
                 layout="position"
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
-                className="relative"
               >
-                {selection && (
-                  <input
-                    type="checkbox"
-                    checked={selection.has(card.id)}
-                    onChange={(e) => {
-                      const next = new Set(selection);
-                      if (e.target.checked) next.add(card.id);
-                      else next.delete(card.id);
-                      setSelection(next);
-                    }}
-                    aria-label={`Select “${card.front}”`}
-                    className="absolute -left-2 -top-2 z-20 size-5 accent-white"
+                <div className="relative">
+                  <FlashCardTile
+                    front={card.front}
+                    back={card.canonicalAnswer}
+                    onSave={(front, back, keepVariantIds) =>
+                      updateCard.mutate({
+                        cardId: card.id,
+                        front,
+                        canonicalAnswers: answersWithPrimary(
+                          card,
+                          back,
+                          keepVariantIds,
+                        ),
+                      })
+                    }
+                    onDelete={() => deleteCard.mutate({ cardId: card.id })}
+                    onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
+                    isSaving={
+                      updateCard.isPending &&
+                      updateCard.variables?.cardId === card.id
+                    }
+                    variants={card.answers[0]?.acceptedVariants ?? []}
                   />
-                )}
-                <FlashCardTile
-                  front={card.front}
-                  back={card.canonicalAnswer}
-                  onSave={(front, back, keepVariantIds) =>
-                    updateCard.mutate({
-                      cardId: card.id,
-                      front,
-                      canonicalAnswers: answersWithPrimary(
-                        card,
-                        back,
-                        keepVariantIds,
-                      ),
-                    })
-                  }
-                  onDelete={() => deleteCard.mutate({ cardId: card.id })}
-                  onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
-                  isSaving={
-                    updateCard.isPending &&
-                    updateCard.variables?.cardId === card.id
-                  }
-                  variants={card.answers[0]?.acceptedVariants ?? []}
-                />
+                  {selection && (
+                    <SelectCardToggle
+                      front={card.front}
+                      selected={selection.has(card.id)}
+                      onChange={(selected) => {
+                        const next = new Set(selection);
+                        if (selected) next.add(card.id);
+                        else next.delete(card.id);
+                        setSelection(next);
+                      }}
+                    />
+                  )}
+                </div>
                 <CardAnswers
                   deckId={deckId}
                   card={card}
