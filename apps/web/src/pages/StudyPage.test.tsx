@@ -1081,6 +1081,17 @@ describe('StudyPage', () => {
       );
     });
 
+    it('shows its edit pencil only while edit mode is off', async () => {
+      const user = await answerWithVariants('4');
+      const summary = screen.getByRole('button', answersOfCard);
+      expect(summary.querySelector('svg')).not.toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+
+      expect(summary).toBeDisabled();
+      expect(summary.querySelector('svg')).toBeNull();
+    });
+
     it("isn't there before you answer", async () => {
       await startStudyingWithVariants();
 
@@ -1102,8 +1113,8 @@ describe('StudyPage', () => {
       expect(screen.getByLabelText('Answer 1')).toHaveValue('4');
       // The back is in view: its face is the one not inert
       expect(screen.getByLabelText('Answer 1').closest('[inert]')).toBeNull();
-      // The summary stays, read only
-      expect(screen.getByRole('button', answersOfCard)).toBeInTheDocument();
+      // The summary stays, read only, and can't open edit mode again
+      expect(screen.getByRole('button', answersOfCard)).toBeDisabled();
       expect(
         screen.queryByRole('region', answersOfCard),
       ).not.toBeInTheDocument();

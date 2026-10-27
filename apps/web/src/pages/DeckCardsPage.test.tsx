@@ -1570,6 +1570,26 @@ describe('DeckCardsPage', () => {
       });
     });
 
+    it("hides the tiles' own buttons while selecting", async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      expect(screen.getAllByTitle('Flip to back')).toHaveLength(
+        mockCards.length,
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+
+      for (const title of [
+        'Flip to back',
+        'Flip to front',
+        'Mark known',
+        'Delete card',
+      ]) {
+        expect(screen.queryAllByTitle(title)).toHaveLength(0);
+      }
+    });
+
     it('holds off acting on a selection until a card is selected', async () => {
       setupMocks();
       const user = userEvent.setup();

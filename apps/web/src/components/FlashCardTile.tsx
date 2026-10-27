@@ -12,6 +12,11 @@ interface FlashCardTileProps {
   onDelete: () => void;
   /** Marks the card known (ADR-0009). */
   onMarkKnown: () => void;
+  /**
+   * While the Cards tab is selecting cards: the tile's buttons are hidden,
+   * its rows keeping their height so the text doesn't move.
+   */
+  isSelecting?: boolean;
   isSaving?: boolean;
   /** The answer's Accepted Variants. */
   variants: AcceptedVariant[];
@@ -23,6 +28,7 @@ export function FlashCardTile({
   onSave,
   onDelete,
   onMarkKnown,
+  isSelecting = false,
   isSaving,
   variants,
 }: FlashCardTileProps) {
@@ -133,31 +139,33 @@ export function FlashCardTile({
           className="absolute inset-0 flex flex-col rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm"
           style={{ backfaceVisibility: 'hidden' }}
         >
-          <div className="flex items-center justify-between px-3 pt-2">
+          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
             <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">
               Front
             </span>
-            <div className="flex items-center gap-1">
-              {isDirty && (
+            {!isSelecting && (
+              <div className="flex items-center gap-1">
+                {isDirty && (
+                  <button
+                    onClick={handleRevert}
+                    className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    title="Revert changes"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {isSaving && (
+                  <span className="text-[10px] text-white/40">Saving...</span>
+                )}
                 <button
-                  onClick={handleRevert}
+                  onClick={() => setIsFlipped(true)}
                   className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
-                  title="Revert changes"
+                  title="Flip to back"
                 >
-                  <Undo2 className="h-3.5 w-3.5" />
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </button>
-              )}
-              {isSaving && (
-                <span className="text-[10px] text-white/40">Saving...</span>
-              )}
-              <button
-                onClick={() => setIsFlipped(true)}
-                className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
-                title="Flip to back"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
-            </div>
+              </div>
+            )}
           </div>
           <div className="flex flex-1 items-center justify-center px-4 pb-3">
             <textarea
@@ -168,32 +176,36 @@ export function FlashCardTile({
               placeholder="Front text..."
             />
           </div>
-          <div className="flex justify-end gap-1 px-3 pb-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMarkKnown();
-              }}
-              className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
-              title="Mark known"
-            >
-              <BadgeCheck className="h-3.5 w-3.5" />
-            </button>
-            <ConfirmDialog
-              title="Delete card"
-              description="Are you sure you want to delete this card? This cannot be undone."
-              confirmLabel="Delete"
-              onConfirm={onDelete}
-              trigger={
+          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+            {!isSelecting && (
+              <>
                 <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
-                  title="Delete card"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkKnown();
+                  }}
+                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  title="Mark known"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <BadgeCheck className="h-3.5 w-3.5" />
                 </button>
-              }
-            />
+                <ConfirmDialog
+                  title="Delete card"
+                  description="Are you sure you want to delete this card? This cannot be undone."
+                  confirmLabel="Delete"
+                  onConfirm={onDelete}
+                  trigger={
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
+                      title="Delete card"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  }
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -205,34 +217,36 @@ export function FlashCardTile({
             transform: 'rotateY(180deg)',
           }}
         >
-          <div className="flex items-center justify-between px-3 pt-2">
+          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
             <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">
               Back
             </span>
-            <div className="flex items-center gap-1">
-              {isDirty && (
+            {!isSelecting && (
+              <div className="flex items-center gap-1">
+                {isDirty && (
+                  <button
+                    onClick={handleRevert}
+                    // Keeps focus in the answer, so leaving it doesn't ask
+                    // about variants of an answer being reverted
+                    onMouseDown={(e) => e.preventDefault()}
+                    className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    title="Revert changes"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {isSaving && (
+                  <span className="text-[10px] text-white/40">Saving...</span>
+                )}
                 <button
-                  onClick={handleRevert}
-                  // Keeps focus in the answer, so leaving it doesn't ask
-                  // about variants of an answer being reverted
-                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setIsFlipped(false)}
                   className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
-                  title="Revert changes"
+                  title="Flip to front"
                 >
-                  <Undo2 className="h-3.5 w-3.5" />
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </button>
-              )}
-              {isSaving && (
-                <span className="text-[10px] text-white/40">Saving...</span>
-              )}
-              <button
-                onClick={() => setIsFlipped(false)}
-                className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
-                title="Flip to front"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
-            </div>
+              </div>
+            )}
           </div>
           <div className="flex flex-1 items-center justify-center px-4 pb-3">
             <textarea
@@ -244,32 +258,36 @@ export function FlashCardTile({
               placeholder="Back text..."
             />
           </div>
-          <div className="flex justify-end gap-1 px-3 pb-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMarkKnown();
-              }}
-              className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
-              title="Mark known"
-            >
-              <BadgeCheck className="h-3.5 w-3.5" />
-            </button>
-            <ConfirmDialog
-              title="Delete card"
-              description="Are you sure you want to delete this card? This cannot be undone."
-              confirmLabel="Delete"
-              onConfirm={onDelete}
-              trigger={
+          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+            {!isSelecting && (
+              <>
                 <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
-                  title="Delete card"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkKnown();
+                  }}
+                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  title="Mark known"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <BadgeCheck className="h-3.5 w-3.5" />
                 </button>
-              }
-            />
+                <ConfirmDialog
+                  title="Delete card"
+                  description="Are you sure you want to delete this card? This cannot be undone."
+                  confirmLabel="Delete"
+                  onConfirm={onDelete}
+                  trigger={
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
+                      title="Delete card"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  }
+                />
+              </>
+            )}
           </div>
         </div>
       </div>

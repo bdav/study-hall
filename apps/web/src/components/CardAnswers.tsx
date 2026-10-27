@@ -60,17 +60,20 @@ export function CardAnswers({
 /**
  * The summary of a card's Canonical Answers and Accepted Variants, read
  * only; choosing it opens where they're edited. `caption`, when given,
- * heads it, saying what it is.
+ * heads it, saying what it is, with a pencil unless `disabled`, as when
+ * they're open for editing already.
  */
 export function CardAnswersSummary({
   card,
   onOpen,
   caption,
+  disabled = false,
   className = '',
 }: {
   card: Flashcard;
   onOpen: () => void;
   caption?: string;
+  disabled?: boolean;
   className?: string;
 }) {
   const variants = card.answers.flatMap((answer) =>
@@ -82,12 +85,13 @@ export function CardAnswersSummary({
       aria-label={`Answers of ${card.front}`}
       data-card-answers
       onClick={onOpen}
-      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white ${className}`}
+      disabled={disabled}
+      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white ${className}`}
     >
       {caption && (
         <p className="text-xs uppercase tracking-wide text-white/50">
           {caption}
-          <Pencil aria-hidden className="ml-1 inline h-3 w-3" />
+          {!disabled && <Pencil aria-hidden className="ml-1 inline h-3 w-3" />}
         </p>
       )}
       <p className="truncate">

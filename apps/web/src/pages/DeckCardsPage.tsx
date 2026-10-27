@@ -653,6 +653,7 @@ export default function DeckCardsPage() {
                     }
                     onDelete={() => deleteCard.mutate({ cardId: card.id })}
                     onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
+                    isSelecting={selection !== null}
                     isSaving={
                       updateCard.isPending &&
                       updateCard.variables?.cardId === card.id

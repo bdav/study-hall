@@ -823,6 +823,7 @@ export default function StudyPage() {
                       card={displayCard}
                       onOpen={() => startEditing(displayCard.id, true)}
                       caption="Accepted answers"
+                      disabled={isEditing}
                       className="mx-auto max-w-md text-center"
                     />
                   </>
