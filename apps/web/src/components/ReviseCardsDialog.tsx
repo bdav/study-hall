@@ -2,7 +2,6 @@ import { useState } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -28,7 +27,11 @@ interface ReviseCardsDialogProps {
   onClose: () => void;
   onConfirm: (revision: ApprovedRevision) => void;
   isPending: boolean;
+  /** The learner's instruction the changes were proposed from. */
+  instruction: string;
   changes: CardChange[];
+  /** The model's note on what it couldn't do, such as add cards. */
+  note: string | null;
 }
 
 /** A proposed change as the learner has it: ticked or not, and as edited. */
@@ -56,6 +59,26 @@ function changesSomething(row: Row) {
   return edit.front !== undefined || edit.canonicalAnswer !== undefined;
 }
 
+/** An After field that wraps and grows with its text, kept to one line. */
+function AfterField(props: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  return (
+    <textarea
+      rows={1}
+      value={props.value}
+      onChange={(e) => props.onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.preventDefault();
+      }}
+      aria-label={props.label}
+      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-sm outline-none ${glassInputClassName}`}
+    />
+  );
+}
+
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
 }
@@ -71,7 +94,9 @@ export function ReviseCardsDialog({
   onClose,
   onConfirm,
   isPending,
+  instruction,
   changes,
+  note,
 }: ReviseCardsDialogProps) {
   const [rows, setRows] = useState<Row[]>(() =>
     changes.map((change) => ({
@@ -120,6 +145,14 @@ export function ReviseCardsDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm">
+          <p className="text-xs text-white/50">Your instruction</p>
+          <p className="whitespace-pre-wrap break-words text-white/80">
+            {instruction}
+          </p>
+        </div>
+        {note && <p className="text-sm text-white/80">{note}</p>}
+
         <ol className="flex-1 space-y-3 overflow-y-auto py-2">
           {rows.map((row, i) => {
             const n = i + 1;
@@ -161,21 +194,17 @@ export function ReviseCardsDialog({
                   {action === 'EDIT' && (
                     <div className="min-w-0">
                       <p className="text-xs text-white/50">After</p>
-                      <Input
+                      <AfterField
                         value={row.front}
-                        onChange={(e) =>
-                          updateRow(i, { front: e.target.value })
-                        }
-                        aria-label={`Change ${n} front`}
-                        className={glassInputClassName}
+                        onChange={(front) => updateRow(i, { front })}
+                        label={`Change ${n} front`}
                       />
-                      <Input
+                      <AfterField
                         value={row.canonicalAnswer}
-                        onChange={(e) =>
-                          updateRow(i, { canonicalAnswer: e.target.value })
+                        onChange={(canonicalAnswer) =>
+                          updateRow(i, { canonicalAnswer })
                         }
-                        aria-label={`Change ${n} answer`}
-                        className={glassInputClassName}
+                        label={`Change ${n} answer`}
                       />
                       {clearedVariants > 0 && (
                         <p className="mt-1 text-xs text-white/50">
@@ -194,7 +223,7 @@ export function ReviseCardsDialog({
             );
           })}
         </ol>
-        {rows.length === 0 && (
+        {rows.length === 0 && !note && (
           <p className="py-4 text-center text-sm text-white/70">
             No cards need changing.
           </p>

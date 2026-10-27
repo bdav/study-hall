@@ -138,7 +138,37 @@ describe('deck.proposeRevision', () => {
           },
         },
       ],
+      note: null,
     });
+  });
+
+  it("gives the learner the model's note on what it couldn't do", async () => {
+    const deck = await italianDeck();
+    ai.respondWith({
+      changes: [],
+      note: 'Revising edits and deletes cards; it can’t add new ones.',
+    });
+
+    const proposal = await createCaller().deck.proposeRevision({
+      deckId: deck.id,
+      instruction: 'Add five cards on numbers',
+    });
+
+    expect(proposal.note).toBe(
+      'Revising edits and deletes cards; it can’t add new ones.',
+    );
+  });
+
+  it('gives no note for a blank one', async () => {
+    const deck = await italianDeck();
+    ai.respondWith({ changes: [], note: '  ' });
+
+    const proposal = await createCaller().deck.proposeRevision({
+      deckId: deck.id,
+      instruction: 'Remove the hints',
+    });
+
+    expect(proposal.note).toBeNull();
   });
 
   it('records the call as a card revision', async () => {

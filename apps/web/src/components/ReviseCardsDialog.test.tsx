@@ -40,14 +40,21 @@ const mockConfirm = vi.fn();
 function renderDialog({
   isPending = false,
   proposed = changes,
-}: { isPending?: boolean; proposed?: CardChange[] } = {}) {
+  note = null,
+}: {
+  isPending?: boolean;
+  proposed?: CardChange[];
+  note?: string | null;
+} = {}) {
   return render(
     <ReviseCardsDialog
       open
       onClose={vi.fn()}
       onConfirm={mockConfirm}
       isPending={isPending}
+      instruction="Remove the hints from the fronts"
       changes={proposed}
+      note={note}
     />,
   );
 }
@@ -79,6 +86,40 @@ describe('ReviseCardsDialog', () => {
       within(hello).getByText('Hello (starts with C)'),
     ).toBeInTheDocument();
     expect(within(hello).queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it("shows the learner's instruction", () => {
+    renderDialog();
+
+    expect(
+      screen.getByText('Remove the hints from the fronts'),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the model's note on what it couldn't do", () => {
+    renderDialog({
+      proposed: [],
+      note: 'Revising edits and deletes cards; it can’t add new ones.',
+    });
+
+    expect(
+      screen.getByText(
+        'Revising edits and deletes cards; it can’t add new ones.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no cards need changing/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps an edited front or answer on one line', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    const front = screen.getByLabelText('Change 1 front');
+    await user.type(front, '{Enter}!');
+
+    expect(front).toHaveValue("Italian for 'seven'!");
   });
 
   it('applies every change, giving only the parts an edit changes', async () => {

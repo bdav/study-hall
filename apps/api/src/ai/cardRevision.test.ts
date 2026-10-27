@@ -58,6 +58,15 @@ describe('cardRevisionOutputSchema', () => {
     expect(cardRevisionOutputSchema.safeParse(output).success).toBe(false);
   });
 
+  it('accepts a note to the learner, trimmed', () => {
+    const parsed = cardRevisionOutputSchema.parse({
+      changes: [],
+      note: ' Revising can’t add cards. ',
+    });
+
+    expect(parsed.note).toBe('Revising can’t add cards.');
+  });
+
   it('trims fronts and answers', () => {
     const parsed = cardRevisionOutputSchema.parse({
       changes: [

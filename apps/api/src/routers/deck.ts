@@ -245,6 +245,7 @@ export const deckRouter = router({
         model,
         promptVersion,
         changes: toProposedChanges(output.changes, cards),
+        note: output.note || null,
       };
     }),
 

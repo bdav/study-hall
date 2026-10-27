@@ -1282,6 +1282,7 @@ describe('DeckCardsPage', () => {
           },
         },
       ],
+      note: null,
     };
 
     it('is offered to a learner who can use AI', () => {
@@ -1337,6 +1338,19 @@ describe('DeckCardsPage', () => {
       });
     });
 
+    it('starts each revision with a blank instruction', async () => {
+      const user = userEvent.setup();
+      setupMocks({ canUseAI: true });
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: /revise cards/i }));
+      await user.type(screen.getByLabelText('Instruction'), 'Remove the hints');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await user.click(screen.getByRole('button', { name: /revise cards/i }));
+
+      expect(screen.getByLabelText('Instruction')).toHaveValue('');
+    });
+
     it('shows why proposing failed', async () => {
       const user = userEvent.setup();
       setupMocks({ canUseAI: true });
@@ -1361,6 +1375,7 @@ describe('DeckCardsPage', () => {
       vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
         ...defaultMutationReturn,
         data: proposal,
+        variables: { deckId: 'deck-1', instruction: 'Tidy the fronts' },
       } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
       vi.mocked(trpc.deck.applyRevision.useMutation).mockReturnValue({
         ...defaultMutationReturn,
@@ -1369,6 +1384,7 @@ describe('DeckCardsPage', () => {
       renderDeckCardsPage();
 
       const preview = screen.getByRole('dialog');
+      expect(within(preview).getByText('Tidy the fronts')).toBeInTheDocument();
       expect(within(preview).getByLabelText('Change 1 front')).toHaveValue(
         'The capital of France',
       );

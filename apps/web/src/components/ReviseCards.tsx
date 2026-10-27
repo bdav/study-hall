@@ -33,7 +33,6 @@ export function ReviseCards({ deckId }: { deckId: string }) {
   const apply = trpc.deck.applyRevision.useMutation({
     onSuccess: ({ editedCount, deletedCount }) => {
       propose.reset();
-      setInstruction('');
       utils.card.listByDeck.invalidate({ deckId });
       utils.deck.list.invalidate();
       const parts = [
@@ -59,7 +58,10 @@ export function ReviseCards({ deckId }: { deckId: string }) {
     <>
       <button
         type="button"
-        onClick={() => setIsWriting(true)}
+        onClick={() => {
+          setInstruction('');
+          setIsWriting(true);
+        }}
         className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
       >
         <Sparkles className="h-4 w-4 mr-1" />
@@ -74,9 +76,9 @@ export function ReviseCards({ deckId }: { deckId: string }) {
           <DialogHeader>
             <DialogTitle className="text-white">Revise cards</DialogTitle>
             <DialogDescription className="text-white/70">
-              Say how to change this deck's cards, such as “remove the hints
-              from the fronts”. You'll see every proposed change before anything
-              changes.
+              Say how to change or remove this deck's cards, such as “remove the
+              hints from the fronts”. Revising doesn't add cards. You'll see
+              every proposed change before anything changes.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -140,7 +142,9 @@ export function ReviseCards({ deckId }: { deckId: string }) {
             })
           }
           isPending={apply.isPending}
+          instruction={propose.variables?.instruction ?? ''}
           changes={proposal.changes}
+          note={proposal.note}
         />
       )}
     </>
