@@ -434,6 +434,7 @@ A card moves from LEARNING to STABLE when:
 
 - it has at least 2 successful recalls
 - those successful recalls occur across at least 2 separate sessions or days
+- as built (#7): only successes since the card last entered LEARNING count (`CardProgress.lifecycleChangedAt`), so a card that lapsed back needs 2 new ones; "days" are UTC days
 - the latest result is successful
 
 Successful means:
@@ -574,7 +575,7 @@ NAILED 2d
 Rules:
 
 - NEW cards become LEARNING on first exposure.
-- First-ever attempts cannot produce NAILED.
+- First-ever attempts cannot produce NAILED's interval. As built (#7): a NEW card's first answer, including the first after a progress reset, keeps its NAILED Recall Grade but is scheduled with GOOD's 1-day interval.
 - Same-session retries are separate from persisted intervals.
 - MISSED may recur in-session.
 - PARTIALLY_CORRECT does not trigger aggressive same-session retry.
@@ -621,6 +622,8 @@ solid 6–8 1d 5d 14d 30d
 mastered 9–10 3d 10d 45d 90d
 
 MISSED interval values determine persisted dueAt after the attempt.
+
+As built (#7): the band is the card's mastery before the answer (a MISSED never leaves a card in the mastered band, so banding after it would leave that column unused), and the table is that of the card's state after the answer: a card that graduates gets a STABLE interval, one that lapses back to LEARNING a LEARNING one.
 
 Same-session retries are queue behavior, not interval behavior.
 
@@ -705,6 +708,7 @@ Lateness Rules
 - no bonus until overdueRatio >= 1.5
 - cap interval bonus around 1.25×
 - apply only on GOOD or NAILED
+- as built (#7): a flat 1.25× from an overdueRatio of 1.5, only for a card already STABLE (not on the answer that graduates it), never past the 90-day cap
 
 Lateness is intentionally asymmetric:
 

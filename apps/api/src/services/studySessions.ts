@@ -1,4 +1,8 @@
-import { type Prisma, type PrismaClient } from '@prisma/client';
+import {
+  type Prisma,
+  type PrismaClient,
+  type RecallGrade,
+} from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
@@ -9,7 +13,11 @@ import {
   gradeCardAnswer,
   withCanonicalAnswers,
 } from './cards.js';
-import { applyAnswer, replayAnswers } from './progressUpdater.js';
+import {
+  applyAnswer,
+  replayAnswers,
+  type ScheduledAnswer,
+} from './progressUpdater.js';
 import { countsSinceReset } from './countedAttempts.js';
 
 /** Include for returning a Study Session with its items in queue order. */
@@ -22,6 +30,50 @@ const withItems = {
 
 /** The most cards a Standard session holds (`updated-plan.md` §12.1). */
 const STANDARD_SESSION_SIZE = 25;
+
+/**
+ * A learner's counted answers to a card, oldest first: those since its
+ * progress last reset (`countsSinceReset`, as a query), as the scheduler
+ * takes them, leaving out the attempt being applied.
+ */
+async function findCountedAnswers(
+  tx: Prisma.TransactionClient,
+  {
+    userId,
+    cardId,
+    resetAt,
+    exceptAttemptId,
+  }: {
+    userId: string;
+    cardId: string;
+    resetAt: Date;
+    exceptAttemptId?: string;
+  },
+): Promise<ScheduledAnswer[]> {
+  const attempts = await tx.cardAttempt.findMany({
+    where: {
+      cardId,
+      studySession: { userId },
+      createdAt: { gte: resetAt },
+      ...(exceptAttemptId && { id: { not: exceptAttemptId } }),
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { recallGrade: true, createdAt: true, studySessionId: true },
+  });
+  return attempts.map(toScheduledAnswer);
+}
+
+function toScheduledAnswer(attempt: {
+  recallGrade: RecallGrade;
+  createdAt: Date;
+  studySessionId: string;
+}): ScheduledAnswer {
+  return {
+    recallGrade: attempt.recallGrade,
+    answeredAt: attempt.createdAt,
+    studySessionId: attempt.studySessionId,
+  };
+}
 
 /** A learner's cards in one deck. */
 type LearnerDeck = { userId: string; deckId: string };
@@ -201,9 +253,15 @@ export async function answerItem(
     const progress = await tx.cardProgress.findUniqueOrThrow({
       where: progressKey,
     });
+    const earlier = await findCountedAnswers(tx, {
+      userId,
+      cardId: item.cardId,
+      resetAt: progress.resetAt,
+      exceptAttemptId: attempt.id,
+    });
     await tx.cardProgress.update({
       where: progressKey,
-      data: applyAnswer(progress, recallGrade, attempt.createdAt),
+      data: applyAnswer(progress, toScheduledAnswer(attempt), earlier),
     });
 
     return { ...attempt, accentMismatch, matchedAnswer, matchedVariant };
@@ -300,23 +358,14 @@ export async function acceptAnswer(
       });
     }
 
-    // The attempts that count: `countsSinceReset`, as a query
-    const counted = await tx.cardAttempt.findMany({
-      where: {
-        cardId: attempt.cardId,
-        studySession: { userId },
-        createdAt: { gte: resetAt },
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { recallGrade: true, createdAt: true },
-    });
     await tx.cardProgress.update({
       where: progressKey,
       data: replayAnswers(
-        counted.map((a) => ({
-          recallGrade: a.recallGrade,
-          answeredAt: a.createdAt,
-        })),
+        await findCountedAnswers(tx, {
+          userId,
+          cardId: attempt.cardId,
+          resetAt,
+        }),
       ),
     });
 

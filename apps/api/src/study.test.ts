@@ -355,13 +355,11 @@ describe('studyRouter', () => {
       const progress = await progressOf(items[0].cardId);
       expect(progress.lifecycleState).toBe('LEARNING');
       expect(progress.masteryScore).toBe(2);
-      // NAILED on a LEARNING card is due again in 2 days
-      const twoDays = 2 * 24 * 60 * 60 * 1000;
-      expect(progress.dueAt!.getTime()).toBeGreaterThanOrEqual(
-        before + twoDays,
-      );
+      // A first NAILED is due again in 1 day, as GOOD would be
+      const oneDay = 24 * 60 * 60 * 1000;
+      expect(progress.dueAt!.getTime()).toBeGreaterThanOrEqual(before + oneDay);
       expect(progress.dueAt!.getTime()).toBeLessThanOrEqual(
-        Date.now() + twoDays,
+        Date.now() + oneDay,
       );
     });
 
@@ -478,16 +476,16 @@ describe('studyRouter', () => {
 
       await createCaller().study.acceptAnswer({ attemptId: attempt.id });
 
-      // NAILED on a NEW card: LEARNING, mastery 2, due in 2 days
+      // A first NAILED: LEARNING, mastery 2, due in 1 day as GOOD would be
       const progress = await progressOf(item.cardId);
       expect(progress).toMatchObject({
         lifecycleState: 'LEARNING',
         masteryScore: 2,
-        lastIntervalDays: 2,
+        lastIntervalDays: 1,
         lastReviewedAt: attempt.createdAt,
       });
       expect(progress.dueAt).toEqual(
-        new Date(attempt.createdAt.getTime() + 2 * DAY_MS),
+        new Date(attempt.createdAt.getTime() + DAY_MS),
       );
     });
 
@@ -516,11 +514,13 @@ describe('studyRouter', () => {
 
       await createCaller().study.acceptAnswer({ attemptId: missed.id });
 
-      // NAILED twice: mastery 0 → 2 → 4, due 2 days after the second
+      // NAILED in two sessions: mastery 0 → 2 → 4, and STABLE, due 4 days
+      // after the second (NAILED on a fragile card)
       const progress = await progressOf(cardId);
       expect(progress.masteryScore).toBe(4);
+      expect(progress.lifecycleState).toBe('STABLE');
       expect(progress.dueAt).toEqual(
-        new Date(missed.createdAt.getTime() + 2 * DAY_MS),
+        new Date(missed.createdAt.getTime() + 4 * DAY_MS),
       );
     });
 
@@ -728,6 +728,70 @@ describe('studyRouter', () => {
         /not found/i,
       );
     });
+  });
+});
+
+describe('the card lifecycle across Study Sessions', () => {
+  const france: NewCard[] = [
+    { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+  ];
+
+  /** Answers the deck's one card in a session of its own, then finishes it. */
+  async function answerInNewSession(deckId: string, userAnswer: string) {
+    const caller = createCaller();
+    const session = await caller.study.startSession({ deckId });
+    if (!session) throw new Error('Expected a session to start');
+    const attempt = await caller.study.submitAnswer({
+      itemId: session.items[0].id,
+      userAnswer,
+    });
+    await caller.study.finishSession({ id: session.id });
+    return attempt;
+  }
+
+  /** Makes the card due now, as if its interval had passed. */
+  async function dueNow(cardId: string) {
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId } },
+      data: { dueAt: new Date(Date.now() - 1000) },
+    });
+  }
+
+  it('graduates a card recalled in two Study Sessions to STABLE, on the STABLE table', async () => {
+    const deck = await deckWith(france);
+    const [card] = deck.cards;
+
+    await answerInNewSession(deck.id, 'Paris');
+    expect(await progressOf(card.id)).toMatchObject({
+      lifecycleState: 'LEARNING',
+      masteryScore: 2,
+      // A first NAILED is scheduled as GOOD
+      lastIntervalDays: 1,
+    });
+
+    await dueNow(card.id);
+    await answerInNewSession(deck.id, 'Paris');
+
+    // NAILED on a fragile (mastery 2) STABLE card is 4 days
+    expect(await progressOf(card.id)).toMatchObject({
+      lifecycleState: 'STABLE',
+      masteryScore: 4,
+      lastIntervalDays: 4,
+    });
+  });
+
+  it('graduates a card when "My answer was correct" turns its second session\'s miss into a success', async () => {
+    const deck = await deckWith(france);
+    const [card] = deck.cards;
+
+    await answerInNewSession(deck.id, 'Paris');
+    await dueNow(card.id);
+    const missed = await answerInNewSession(deck.id, 'Paris, France');
+    expect((await progressOf(card.id)).lifecycleState).toBe('LEARNING');
+
+    await createCaller().study.acceptAnswer({ attemptId: missed.id });
+
+    expect((await progressOf(card.id)).lifecycleState).toBe('STABLE');
   });
 });
 
