@@ -86,7 +86,7 @@ export function CardAnswersSummary({
       data-card-answers
       onClick={onOpen}
       disabled={disabled}
-      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white ${className}`}
+      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-default ${className}`}
     >
       {caption && (
         <p className="text-xs uppercase tracking-wide text-white/50">

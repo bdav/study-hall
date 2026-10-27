@@ -1901,6 +1901,49 @@ describe('StudyPage', () => {
       );
     });
 
+    it('marks an answered card known from below its grade, keeping it in the session', async () => {
+      const user = await startStudying();
+      await answerCard(user);
+
+      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(screen.getByText('Marked known')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Mark known' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId('result')).toBeInTheDocument();
+    });
+
+    it('says when the answered card was already known', async () => {
+      const user = await startStudying();
+      vi.mocked(trpc.card.markKnown.useMutation).mockImplementation(((
+        opts?: MarkKnownOptions,
+      ) => ({
+        mutate: (input: { cardIds: string[] }) =>
+          opts?.onSuccess?.(
+            { markedCount: 0 } as never,
+            input as never,
+            undefined,
+            {} as never,
+          ),
+        isPending: false,
+      })) as unknown as typeof trpc.card.markKnown.useMutation);
+      await answerCard(user);
+
+      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+      expect(screen.getByText('Already known')).toBeInTheDocument();
+    });
+
+    it("doesn't offer Mark known below the card before it's answered", async () => {
+      await startStudying();
+
+      expect(
+        screen.queryByRole('button', { name: 'Mark known' }),
+      ).not.toBeInTheDocument();
+    });
+
     it('finishes the session when its last card is deleted', async () => {
       const user = await startStudying();
 

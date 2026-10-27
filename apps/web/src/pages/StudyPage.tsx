@@ -87,6 +87,9 @@ function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
   );
 }
 
+/** What marking a card known did, once done. */
+type KnownState = 'marked' | 'already';
+
 function CardBack({
   card,
   result,
@@ -94,6 +97,8 @@ function CardBack({
   onFlip,
   onAcceptAnswer,
   isAcceptingAnswer = false,
+  onMarkKnown,
+  knownState,
 }: {
   card: CardSnapshot['card'];
   result: NonNullable<CardSnapshot['result']>;
@@ -103,6 +108,10 @@ function CardBack({
   /** "My answer was correct", for the card in play or one reviewed. */
   onAcceptAnswer?: () => void;
   isAcceptingAnswer?: boolean;
+  /** Marks the card known (ADR-0009). */
+  onMarkKnown?: () => void;
+  /** Once marked known: whether that changed it, or it was known already. */
+  knownState?: KnownState;
 }) {
   // A typed answer graded MISSED, still graded against the card as it is
   const canAccept =
@@ -137,6 +146,24 @@ function CardBack({
         >
           My answer was correct
         </button>
+      )}
+      {knownState ? (
+        <p className="mt-3 text-sm text-white/70">
+          {knownState === 'marked' ? 'Marked known' : 'Already known'}
+        </p>
+      ) : (
+        onMarkKnown && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkKnown();
+            }}
+            className="mt-3 block w-full text-sm text-white/70 underline hover:text-white"
+          >
+            Mark known
+          </button>
+        )
       )}
       {result.matchedVariant && (
         <p className="mt-2 text-sm text-white/70" data-testid="variant-note">
@@ -248,6 +275,22 @@ function AnswerNotes({
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const utils = trpc.useUtils();
+  // Answered cards marked known from below their grade, and what it did
+  const [knownCards, setKnownCards] = useState<Map<string, KnownState>>(
+    () => new Map(),
+  );
+  const markKnown = trpc.card.markKnown.useMutation({
+    onSuccess: ({ markedCount }, { cardIds }) => {
+      setKnownCards((prev) => {
+        const next = new Map(prev);
+        for (const cardId of cardIds) {
+          next.set(cardId, markedCount > 0 ? 'marked' : 'already');
+        }
+        return next;
+      });
+      for (const cardId of cardIds) utils.card.history.invalidate({ cardId });
+    },
+  });
   const yourAnswerId = useId();
   const answerChoiceId = useId();
   // The card in edit mode, for the slide it was turned on in, and, for a
@@ -581,6 +624,8 @@ export default function StudyPage() {
     onFlip?: () => void,
     gradedBeforeEdit = false,
     onAcceptAnswer?: () => void,
+    onMarkKnown?: () => void,
+    knownState?: KnownState,
   ) => (
     <CardStack
       queueLength={queueLength}
@@ -595,6 +640,8 @@ export default function StudyPage() {
             onFlip={onFlip}
             onAcceptAnswer={onAcceptAnswer}
             isAcceptingAnswer={isAcceptingAnswer}
+            onMarkKnown={onMarkKnown}
+            knownState={knownState}
           />
         ) : undefined
       }
@@ -637,6 +684,8 @@ export default function StudyPage() {
         toggleFlip,
         editedAfterAnswer.has(card.id),
         acceptDisplayedAnswer,
+        () => markKnown.mutate({ cardIds: [card.id] }),
+        knownCards.get(card.id),
       )
     );
 
