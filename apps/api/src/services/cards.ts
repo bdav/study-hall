@@ -232,6 +232,8 @@ export async function createCards(
  * A listed variant still on its answer keeps its row. A removed answer's
  * variants go with it, and an unlisted variant that is now one of the
  * card's answers is dropped, as listing it would be refused.
+ * An edit from a revision of the deck (ADR-0007) records its model and
+ * prompt version on the Card Version it starts.
  */
 export async function editCard(
   db: Db,
@@ -239,10 +241,12 @@ export async function editCard(
     cardId,
     front,
     canonicalAnswers,
+    source,
   }: {
     cardId: string;
     front?: string;
     canonicalAnswers?: AnswerEdit[];
+    source?: Omit<CardSource, 'lessonId'>;
   },
 ) {
   const card = await db.card.findUniqueOrThrow({
@@ -287,6 +291,8 @@ export async function editCard(
         front: edited.front,
         canonicalAnswers: edited.canonicalAnswers.map((answer) => answer.text),
         startedAt: resetAt,
+        sourceModel: source?.model,
+        sourcePromptVersion: source?.promptVersion,
       },
     });
   }

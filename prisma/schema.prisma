@@ -58,6 +58,7 @@ enum AiPurpose {
   LESSON_GENERATION
   EXERCISE_EVALUATION
   CARD_PROPOSAL
+  CARD_REVISION
 }
 
 enum ExerciseType {
@@ -152,19 +153,23 @@ model Card {
 // and a new one with each progress reset (ADR-0004); changing Accepted
 // Variants never starts one. The latest is the card's current version.
 model CardVersion {
-  id               String        @id @default(cuid())
-  cardId           String
-  number           Int
-  front            String
-  canonicalAnswers String[]
+  id                  String        @id @default(cuid())
+  cardId              String
+  number              Int
+  front               String
+  canonicalAnswers    String[]
   // Once it's over, each Canonical Answer's Accepted Variants as it ended
   // with them, as [{ text, acceptedVariants }]; none for the current version,
   // whose are the card's own, and for versions that ended before they were
   // recorded (#51)
-  acceptedVariants Json?
-  startedAt        DateTime      @default(now())
-  card             Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  attempts         CardAttempt[]
+  acceptedVariants    Json?
+  // Set on a version a revision of the deck started (ADR-0007): the model
+  // and prompt version that proposed the edit
+  sourceModel         String?
+  sourcePromptVersion String?
+  startedAt           DateTime      @default(now())
+  card                Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  attempts            CardAttempt[]
 
   @@unique([cardId, number])
 }

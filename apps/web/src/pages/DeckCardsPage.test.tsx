@@ -31,10 +31,13 @@ vi.mock('@/lib/trpc', () => ({
       card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: vi.fn() }, getById: { invalidate: vi.fn() } },
     })),
+    auth: { me: { useQuery: vi.fn() } },
     deck: {
       getById: { useQuery: vi.fn() },
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
+      proposeRevision: { useMutation: vi.fn() },
+      applyRevision: { useMutation: vi.fn() },
     },
     card: {
       listByDeck: { useQuery: vi.fn() },
@@ -110,7 +113,27 @@ function setupMocks(overrides?: {
   deckLoading?: boolean;
   cardsLoading?: boolean;
   deckError?: boolean;
+  canUseAI?: boolean;
 }) {
+  vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
+    data: {
+      user: {
+        id: 'user-1',
+        email: 'learner@example.com',
+        canUseAI: overrides?.canUseAI ?? false,
+      },
+    },
+  } as unknown as ReturnType<typeof trpc.auth.me.useQuery>);
+
+  vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+    data: undefined,
+  } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
+
+  vi.mocked(trpc.deck.applyRevision.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.deck.applyRevision.useMutation>);
+
   vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
     data: overrides?.deckError
       ? undefined
@@ -1231,6 +1254,135 @@ describe('DeckCardsPage', () => {
 
       expect(mockMutate).not.toHaveBeenCalled();
       expect(screen.getByLabelText('Answer 1')).toHaveValue('Berlin');
+    });
+  });
+
+  describe('revising cards', () => {
+    const proposal = {
+      model: 'claude-sonnet-5-5',
+      promptVersion: 'card-revision-v1',
+      changes: [
+        {
+          action: 'EDIT' as const,
+          cardId: 'card-1',
+          before: {
+            front: 'Capital of France',
+            canonicalAnswer: 'Paris',
+            acceptedVariants: ['Paree'],
+          },
+          after: { front: 'The capital of France', canonicalAnswer: 'Paris' },
+        },
+        {
+          action: 'DELETE' as const,
+          cardId: 'card-2',
+          before: {
+            front: 'Capital of Germany',
+            canonicalAnswer: 'Berlin',
+            acceptedVariants: [],
+          },
+        },
+      ],
+    };
+
+    it('is offered to a learner who can use AI', () => {
+      setupMocks({ canUseAI: true });
+      renderDeckCardsPage();
+
+      expect(
+        screen.getByRole('button', { name: /revise cards/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("isn't offered to a learner who can't use AI, or on a deck with no cards", () => {
+      setupMocks({ canUseAI: false });
+      const { unmount } = renderDeckCardsPage();
+      expect(
+        screen.queryByRole('button', { name: /revise cards/i }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      setupMocks({ canUseAI: true, cards: [] });
+      renderDeckCardsPage();
+      expect(
+        screen.queryByRole('button', { name: /revise cards/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('proposes changes from the instruction the learner writes', async () => {
+      const user = userEvent.setup();
+      setupMocks({ canUseAI: true });
+      const propose = vi.fn();
+      vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: propose,
+      } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: /revise cards/i }));
+      const dialog = screen.getByRole('dialog');
+      expect(
+        within(dialog).getByRole('button', { name: 'Propose changes' }),
+      ).toBeDisabled();
+      await user.type(
+        within(dialog).getByLabelText('Instruction'),
+        'Remove the hints from the fronts',
+      );
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Propose changes' }),
+      );
+
+      expect(propose).toHaveBeenCalledWith({
+        deckId: 'deck-1',
+        instruction: 'Remove the hints from the fronts',
+      });
+    });
+
+    it('shows why proposing failed', async () => {
+      const user = userEvent.setup();
+      setupMocks({ canUseAI: true });
+      vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        isError: true,
+        error: { message: 'Revising works on decks of up to 200 cards' },
+      } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: /revise cards/i }));
+
+      expect(
+        within(screen.getByRole('dialog')).getByText(/up to 200 cards/),
+      ).toBeInTheDocument();
+    });
+
+    it('opens the proposal in the preview and applies the approved changes', async () => {
+      const user = userEvent.setup();
+      setupMocks({ canUseAI: true });
+      const apply = vi.fn();
+      vi.mocked(trpc.deck.proposeRevision.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        data: proposal,
+      } as unknown as ReturnType<typeof trpc.deck.proposeRevision.useMutation>);
+      vi.mocked(trpc.deck.applyRevision.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate: apply,
+      } as unknown as ReturnType<typeof trpc.deck.applyRevision.useMutation>);
+      renderDeckCardsPage();
+
+      const preview = screen.getByRole('dialog');
+      expect(within(preview).getByLabelText('Change 1 front')).toHaveValue(
+        'The capital of France',
+      );
+      await user.click(
+        within(preview).getByRole('button', { name: 'Apply 2 changes' }),
+      );
+
+      expect(apply).toHaveBeenCalledWith({
+        deckId: 'deck-1',
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'card-revision-v1',
+        edits: [{ cardId: 'card-1', front: 'The capital of France' }],
+        deletions: ['card-2'],
+      });
     });
   });
 });

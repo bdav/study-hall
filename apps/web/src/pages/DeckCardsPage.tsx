@@ -25,6 +25,7 @@ import { DeckCardsSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
+import { ReviseCards } from '@/components/ReviseCards';
 
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
@@ -156,6 +157,8 @@ export default function DeckCardsPage() {
     { deckId: deckId! },
     { enabled: !!deckId },
   );
+  const me = trpc.auth.me.useQuery();
+  const canUseAI = Boolean(me.data?.user?.canUseAI);
 
   const invalidateCards = () =>
     utils.card.listByDeck.invalidate({ deckId: deckId! });
@@ -306,7 +309,8 @@ export default function DeckCardsPage() {
           )}
         </p>
 
-        <div className="flex justify-end mr-4">
+        <div className="flex justify-end gap-4 mr-4">
+          {canUseAI && cards.length > 0 && <ReviseCards deckId={deckId} />}
           <ConfirmDialog
             title="Delete deck"
             description={`Are you sure you want to delete "${deck.name}"? This cannot be undone.`}
