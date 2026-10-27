@@ -763,18 +763,16 @@ export default function StudyPage() {
           ) : null}
 
           {/* Part of the editor, so Enter toggles it rather than moving on */}
-          {displayCard && (
+          {/* Gone in edit mode, which Cancel or Save ends */}
+          {displayCard && !isEditing && (
             <div className="absolute left-3 top-6 z-10" data-card-editor>
               <button
                 type="button"
                 aria-label="Edit card"
-                aria-pressed={isEditing}
                 disabled={!canEdit}
-                title={isEditing ? 'Stop editing' : 'Edit card'}
-                onClick={() =>
-                  isEditing ? setEditing(null) : startEditing(displayCard.id)
-                }
-                className={`rounded p-1 transition-colors hover:bg-white/10 hover:text-white/80 ${isEditing ? 'bg-white/15 text-white' : 'text-white/40'}`}
+                title="Edit card"
+                onClick={() => startEditing(displayCard.id)}
+                className="rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
               >
                 <Pencil className="h-4 w-4" />
               </button>

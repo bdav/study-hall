@@ -43,8 +43,11 @@
   );
 }
 
-button {
-  cursor: pointer;
+/* In the base layer, so utilities such as `cursor-default` win over it */
+@layer base {
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 @keyframes pulse-halo {

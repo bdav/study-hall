@@ -1106,10 +1106,10 @@ describe('StudyPage', () => {
 
       await user.click(screen.getByRole('button', answersOfCard));
 
-      expect(screen.getByRole('button', { name: 'Edit card' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      // In edit mode, with its toggle gone
+      expect(
+        screen.queryByRole('button', { name: 'Edit card' }),
+      ).not.toBeInTheDocument();
       expect(screen.getByLabelText('Answer 1')).toHaveValue('4');
       // The back is in view: its face is the one not inert
       expect(screen.getByLabelText('Answer 1').closest('[inert]')).toBeNull();
@@ -1308,10 +1308,10 @@ describe('StudyPage', () => {
         expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
       );
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
-      expect(screen.getByRole('button', { name: 'Edit card' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      // The toggle goes while editing; Cancel or Save ends it
+      expect(
+        screen.queryByRole('button', { name: 'Edit card' }),
+      ).not.toBeInTheDocument();
       const front = screen.getByRole('textbox', { name: 'Front' });
       expect(front).toHaveValue('What is 2+2?');
       await user.clear(front);
@@ -1329,10 +1329,9 @@ describe('StudyPage', () => {
       expect(
         screen.queryByRole('textbox', { name: 'Front' }),
       ).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Edit card' })).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Edit card' }),
+      ).toBeInTheDocument();
       expect(screen.getByText('What is 2+3?')).toBeInTheDocument();
       expect(mockInvalidateDeck).toHaveBeenCalledWith({ id: 'deck-1' });
     });
@@ -1404,13 +1403,13 @@ describe('StudyPage', () => {
       expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
     });
 
-    it('drops the edits when edit mode is turned off, starting afresh next time', async () => {
+    it('drops the edits on Cancel, starting afresh next time', async () => {
       const user = await startStudying();
 
       await editAnswers(user);
       await user.clear(screen.getByLabelText('Answer 1'));
       await user.type(screen.getByLabelText('Answer 1'), '5');
-      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
       expect(mockUpdateCard).not.toHaveBeenCalled();
       expect(screen.queryByLabelText('Answer 1')).not.toBeInTheDocument();
