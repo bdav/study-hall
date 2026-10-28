@@ -466,17 +466,13 @@ describe('LessonPage', () => {
         );
       });
 
-      it('can be collapsed and shown again', async () => {
-        const user = userEvent.setup();
+      it('is always shown on wide screens, with nothing to hide it', () => {
         renderPage({ query: written });
 
-        await user.click(screen.getByRole('button', { name: 'Hide outline' }));
-        expect(
-          screen.queryByRole('navigation', { name: 'Lesson outline' }),
-        ).not.toBeInTheDocument();
-
-        await user.click(screen.getByRole('button', { name: 'Show outline' }));
         expect(outline()).toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: /hide outline/i }),
+        ).not.toBeInTheDocument();
       });
 
       it('opens in a drawer from the menu, which closes on choosing a step', async () => {

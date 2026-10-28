@@ -12,8 +12,6 @@ import {
   Loader2,
   Menu,
   MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
@@ -799,7 +797,6 @@ function WrittenLesson({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const renderOutline = (onNavigate?: () => void) => (
     <LessonOutline
@@ -861,18 +858,6 @@ function WrittenLesson({
 
   const outlineToggles = (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOutlineCollapsed(!isOutlineCollapsed)}
-        aria-label={isOutlineCollapsed ? 'Show outline' : 'Hide outline'}
-        className={`hidden md:block ${ICON_BUTTON}`}
-      >
-        {isOutlineCollapsed ? (
-          <PanelLeftOpen className="size-5" />
-        ) : (
-          <PanelLeftClose className="size-5" />
-        )}
-      </button>
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
         <SheetTrigger
           aria-label="Open outline"
@@ -938,11 +923,11 @@ function WrittenLesson({
           }
         />
       }
-      outline={isOutlineCollapsed ? undefined : renderOutline()}
+      outline={renderOutline()}
     >
-      {/* Beside the outline while it's open; centred once it's collapsed */}
+      {/* Beside the outline */}
       <div
-        className={`w-full ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]} ${isOutlineCollapsed ? 'mx-auto' : ''}`}
+        className={`w-full ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]}`}
       >
         {isFullPage ? (
           <FullLesson steps={steps} version={version} />

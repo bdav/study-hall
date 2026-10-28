@@ -20,8 +20,9 @@ export function PinnedHeader({
   /** A line under the title, left out on narrow screens for room. */
   subtitle?: string;
   /**
-   * What goes before the title, such as a lesson outline's toggle, in a
-   * fixed 36px slot.
+   * What goes before the title, such as the button that opens a lesson's
+   * outline on narrow screens. Hidden, it takes no space, so titles line up
+   * on wide screens.
    */
   leading?: ReactNode;
   /** The page's actions, on the right. */
@@ -32,12 +33,7 @@ export function PinnedHeader({
       <div
         className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${PAGE_WIDTH}`}
       >
-        {leading && (
-          // A fixed slot, so titles line up whatever sits in it
-          <div className="flex size-9 shrink-0 items-center justify-center">
-            {leading}
-          </div>
-        )}
+        {leading}
         <div className="min-w-0 flex-1">
           <BackLink to={back.to}>{back.label}</BackLink>
           <h1

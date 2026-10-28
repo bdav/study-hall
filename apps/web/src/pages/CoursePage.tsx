@@ -4,13 +4,7 @@ import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
-import {
-  ChevronRight,
-  Circle,
-  CircleCheck,
-  CircleDot,
-  GraduationCap,
-} from 'lucide-react';
+import { ChevronRight, Circle, CircleCheck, CircleDot } from 'lucide-react';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
@@ -142,16 +136,30 @@ function Syllabus({
                 <span className="sr-only sm:not-sr-only">{status.label}</span>
               </span>
             </div>
-            {isOpen && (
-              <ul
-                id={objectivesId}
-                className="mt-2 mb-1 ml-16 list-disc space-y-0.5 text-sm text-white/70"
+            {/* Slides open and shut: the row's height animates from none
+                to the list's, unless the learner prefers less motion.
+                Closed, the list stays in the page but out of reach */}
+            <div
+              className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+                isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+              }`}
+            >
+              <div
+                className="overflow-hidden"
+                inert={!isOpen}
+                aria-hidden={!isOpen}
               >
-                {lesson.objectives.map((objective, objectiveIndex) => (
-                  <li key={objectiveIndex}>{objective}</li>
-                ))}
-              </ul>
-            )}
+                <ul
+                  id={objectivesId}
+                  aria-label="Objectives"
+                  className="mt-2 mb-1 ml-16 list-disc space-y-0.5 text-sm text-white/70"
+                >
+                  {lesson.objectives.map((objective, objectiveIndex) => (
+                    <li key={objectiveIndex}>{objective}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </li>
         );
       })}
@@ -259,9 +267,6 @@ export default function CoursePage() {
         back={{ to: '/courses', label: 'Courses' }}
         title={course.title}
         subtitle={course.goal}
-        // In the slot the lesson page's outline toggle takes, so the title
-        // sits in the same place on both pages
-        leading={<GraduationCap aria-hidden className="size-5 text-white/50" />}
       >
         {!isProposal &&
           (course.continueLesson ? (

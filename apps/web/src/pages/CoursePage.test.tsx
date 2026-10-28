@@ -268,41 +268,56 @@ describe('CoursePage', () => {
       expect(within(rows()[1]).queryByText('Up next')).not.toBeInTheDocument();
     });
 
+    /** A lesson's objectives, while open; hidden ones are out of reach. */
+    const objectivesOf = (row: HTMLElement) =>
+      within(row).queryByRole('list', { name: 'Objectives' });
+    const toggle = (row: HTMLElement) =>
+      within(row).getByRole('button', { name: /objectives/i });
+
     it("keeps each lesson's objectives collapsed until opened", async () => {
       const user = userEvent.setup();
       renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
-      const toggle = (row: HTMLElement) =>
-        within(row).getByRole('button', { name: /objectives/i });
 
-      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+      expect(objectivesOf(rows()[0])).not.toBeInTheDocument();
       expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'false');
 
       await user.click(toggle(rows()[0]));
-      expect(within(rows()[0]).getByText('Say your name')).toBeInTheDocument();
+      expect(objectivesOf(rows()[0])).toHaveTextContent('Say your name');
       expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'true');
-      expect(
-        screen.queryByText('Order food and drinks'),
-      ).not.toBeInTheDocument();
+      expect(objectivesOf(rows()[1])).not.toBeInTheDocument();
 
       await user.click(toggle(rows()[0]));
-      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+      expect(objectivesOf(rows()[0])).not.toBeInTheDocument();
     });
 
     it("shows one lesson's objectives at a time: opening another closes the first", async () => {
       const user = userEvent.setup();
       renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
-      const toggle = (row: HTMLElement) =>
-        within(row).getByRole('button', { name: /objectives/i });
 
       await user.click(toggle(rows()[0]));
       await user.click(toggle(rows()[1]));
 
-      expect(
-        within(rows()[1]).getByText('Order food and drinks'),
-      ).toBeInTheDocument();
-      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+      expect(objectivesOf(rows()[1])).toHaveTextContent(
+        'Order food and drinks',
+      );
+      expect(objectivesOf(rows()[0])).not.toBeInTheDocument();
       expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'false');
     });
+
+    it('keeps closed objectives out of reach of the keyboard and screen readers', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      // Kept in the page so they can slide open
+      const closed = within(rows()[0]).getByText('Say your name');
+      expect(closed.closest('[inert]')).not.toBeNull();
+    });
+  });
+
+  it('has no icon before the title', () => {
+    renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+    const banner = screen.getByRole('banner');
+    expect(banner.querySelector('svg.lucide-graduation-cap')).toBeNull();
   });
 
   describe('Review', () => {
