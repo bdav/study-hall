@@ -4,3 +4,6 @@ import '@testing-library/jest-dom';
 Element.prototype.hasPointerCapture ??= () => false;
 Element.prototype.releasePointerCapture ??= () => {};
 Element.prototype.scrollIntoView ??= () => {};
+
+// jsdom doesn't scroll; the lesson page scrolls to the top of each new step
+window.scrollTo = () => {};

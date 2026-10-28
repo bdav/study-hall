@@ -1,6 +1,22 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  Loader2,
+  Menu,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
@@ -9,8 +25,29 @@ import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { LessonExercise } from '@/components/LessonExercise';
+import { LessonFrame } from '@/components/LessonFrame';
+import { LessonOutline } from '@/components/LessonOutline';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
+import {
+  currentStepIndex,
+  lessonSteps,
+  stepSearch,
+  type LessonStep,
+} from '@/lib/lessonSteps';
 
 /** How often to check on a lesson another open is writing. */
 const GENERATING_POLL_MS = 3000;
@@ -18,21 +55,12 @@ const GENERATING_POLL_MS = 3000;
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 type LessonVersion = NonNullable<Lesson['version']>;
 
-function LessonHeader({
-  lesson,
-  actions,
-}: {
-  lesson: Lesson;
-  actions?: ReactNode;
-}) {
+function LessonHeader({ lesson }: { lesson: Lesson }) {
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <BackLink to={`/courses/${lesson.course.id}`}>
-          {lesson.course.title}
-        </BackLink>
-        {actions}
-      </div>
+      <BackLink to={`/courses/${lesson.course.id}`}>
+        {lesson.course.title}
+      </BackLink>
       <h1 className="mt-2 text-2xl font-bold">{lesson.title}</h1>
     </>
   );
@@ -41,9 +69,17 @@ function LessonHeader({
 /**
  * Starts the lesson over, so its exercises can be practised from scratch.
  * The lesson then shows only answers given from now on; earlier ones are
- * still saved.
+ * still saved. Opened from the header's ⋯ menu, so it's out of the way.
  */
-function StartOver({ lesson }: { lesson: Lesson }) {
+function StartOverDialog({
+  lesson,
+  open,
+  onOpenChange,
+}: {
+  lesson: Lesson;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const utils = trpc.useUtils();
   const startOver = trpc.lesson.startOver.useMutation({
     onSuccess: async () => {
@@ -62,20 +98,76 @@ function StartOver({ lesson }: { lesson: Lesson }) {
 
   return (
     <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
       title="Start this lesson over?"
       description="Your answers are cleared from the lesson so you can practise its exercises from scratch, and it's no longer marked complete. Your earlier answers are still saved."
       confirmLabel="Start over"
       onConfirm={() => startOver.mutate({ id: lesson.id })}
-      trigger={
-        <button
-          type="button"
-          disabled={startOver.isPending}
-          className="text-sm text-white/60 hover:text-white disabled:opacity-50"
-        >
-          Start over
-        </button>
-      }
     />
+  );
+}
+
+/** The header's icon-only buttons. */
+const ICON_BUTTON =
+  'rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white';
+
+/**
+ * The written lesson's header, pinned to the top: the way back to the
+ * course, the title, Lesson Completion and a ⋯ menu of rarely used actions.
+ */
+function WrittenLessonHeader({
+  lesson,
+  leading,
+}: {
+  lesson: Lesson;
+  /** Controls before the title, such as the outline's toggles. */
+  leading?: ReactNode;
+}) {
+  const [isStartingOver, setIsStartingOver] = useState(false);
+
+  return (
+    <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 px-4 py-3 backdrop-blur-md md:px-8">
+      <div className="flex items-center gap-3">
+        {leading}
+        <div className="min-w-0 flex-1">
+          <BackLink to={`/courses/${lesson.course.id}`}>
+            {lesson.course.title}
+          </BackLink>
+          <h1
+            title={lesson.title}
+            className="line-clamp-2 text-lg font-bold md:line-clamp-1 md:text-xl"
+          >
+            {lesson.title}
+          </h1>
+        </div>
+        <CompletionToggle lesson={lesson} />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="More actions"
+            className={ICON_BUTTON}
+          >
+            <MoreHorizontal className="size-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
+          >
+            <DropdownMenuItem
+              onSelect={() => setIsStartingOver(true)}
+              className="focus:bg-white/10 focus:text-white"
+            >
+              Start over
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <StartOverDialog
+        lesson={lesson}
+        open={isStartingOver}
+        onOpenChange={setIsStartingOver}
+      />
+    </header>
   );
 }
 
@@ -99,14 +191,10 @@ function NotWrittenYet({
   );
 }
 
-/**
- * Lesson Completion: the learner's own mark that they're done with the
- * lesson, set and undone in any order. It records where they are in the
- * syllabus, never how well they know the material.
- */
-function LessonCompletion({ lesson }: { lesson: Lesson }) {
+/** Sets or undoes Lesson Completion, refreshing what shows it. */
+function useSetCompleted(lesson: Lesson) {
   const utils = trpc.useUtils();
-  const setCompleted = trpc.lesson.setCompleted.useMutation({
+  return trpc.lesson.setCompleted.useMutation({
     onSuccess: () => {
       utils.lesson.getById.invalidate({ id: lesson.id });
       // The syllabus shows the lesson's status and where to continue
@@ -116,6 +204,41 @@ function LessonCompletion({ lesson }: { lesson: Lesson }) {
       toast.error("Couldn't save the lesson's completion");
     },
   });
+}
+
+/** Lesson Completion as a compact toggle, for the header. */
+function CompletionToggle({ lesson }: { lesson: Lesson }) {
+  const setCompleted = useSetCompleted(lesson);
+  const complete = lesson.completedAt !== null;
+  const Icon = complete ? CircleCheck : Circle;
+
+  return (
+    <button
+      type="button"
+      aria-pressed={complete}
+      onClick={() =>
+        setCompleted.mutate({ id: lesson.id, completed: !complete })
+      }
+      disabled={setCompleted.isPending}
+      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 ${
+        complete
+          ? 'bg-white/20 text-white'
+          : 'text-white/70 hover:bg-white/10 hover:text-white'
+      }`}
+    >
+      <Icon className="size-4" />
+      Complete
+    </button>
+  );
+}
+
+/**
+ * Lesson Completion: the learner's own mark that they're done with the
+ * lesson, set and undone in any order. It records where they are in the
+ * syllabus, never how well they know the material.
+ */
+function LessonCompletion({ lesson }: { lesson: Lesson }) {
+  const setCompleted = useSetCompleted(lesson);
   const complete = lesson.completedAt !== null;
 
   return (
@@ -166,7 +289,7 @@ function MakeReviewCards({ lessonId }: { lessonId: string }) {
 
   return (
     <section className="mt-8">
-      <h2 className="text-lg font-semibold">Review</h2>
+      <h3 className="text-lg font-semibold">Review</h3>
       <p className="mt-2 text-white/70">
         Turn this lesson into flashcards for spaced review, with extra cards on
         the exercises you got wrong. You choose which ones to keep.
@@ -206,78 +329,246 @@ function MakeReviewCards({ lessonId }: { lessonId: string }) {
   );
 }
 
-function LessonContent({
-  lessonId,
+/**
+ * Whether a key press should move between steps: a bare ← or →, never while
+ * the learner is typing, or in a dialog or menu that has its own use for
+ * the arrows.
+ */
+function isStepKey(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return false;
+  if (event.defaultPrevented) return false;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    return false;
+  }
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return true;
+  return !(
+    target.isContentEditable ||
+    target.closest(
+      'input, textarea, select, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+    )
+  );
+}
+
+/** Prose keeps a comfortable reading width; examples may use more. */
+const STEP_WIDTHS: Record<LessonStep['kind'], string> = {
+  section: 'max-w-[70ch]',
+  examples: 'max-w-4xl',
+  practice: 'max-w-3xl',
+  'wrap-up': 'max-w-[70ch]',
+};
+
+/** What one step of a written lesson shows. */
+function StepContent({
+  step,
+  lesson,
   version,
-  resetAt,
   canUseAI,
 }: {
-  lessonId: string;
+  step: LessonStep;
+  lesson: Lesson;
   version: LessonVersion;
-  resetAt: Lesson['resetAt'];
   canUseAI: boolean;
 }) {
-  return (
-    <>
-      {version.content.map((block, index) => (
-        <section key={index} className="mt-8">
-          <h2 className="text-lg font-semibold">{block.heading}</h2>
+  switch (step.kind) {
+    case 'section': {
+      const block = version.content[step.sectionIndex];
+      return (
+        <section>
+          <h2 className="text-xl font-semibold">{block.heading}</h2>
           {block.paragraphs.map((paragraph, paragraphIndex) => (
-            <p key={paragraphIndex} className="mt-2 text-white/80">
+            <p key={paragraphIndex} className="mt-3 text-white/80">
               {paragraph}
             </p>
           ))}
         </section>
-      ))}
+      );
+    }
+    case 'examples':
+      return (
+        <section>
+          <h2 className="text-xl font-semibold">Examples</h2>
+          <ul className="mt-4 space-y-3">
+            {version.examples.map((example, index) => (
+              <li
+                key={index}
+                className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
+              >
+                <p className="font-medium">{example.example}</p>
+                <p className="mt-1 text-sm text-white/70">
+                  {example.explanation}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case 'practice':
+      return (
+        <section>
+          <h2 className="text-xl font-semibold">Practice</h2>
+          <ol aria-label="Exercises" className="mt-4 space-y-3">
+            {version.exercises.map((exercise, index) => (
+              <LessonExercise
+                // Starting over gives every exercise a fresh start
+                key={`${exercise.id}:${lesson.resetAt ?? ''}`}
+                exercise={exercise}
+                index={index}
+                lessonId={lesson.id}
+              />
+            ))}
+          </ol>
+          {/* Open Exercises can need AI to check, so the API hides them from
+              learners without AI access (ADR-0005) */}
+          {version.hiddenExerciseCount > 0 && (
+            <p className="mt-3 text-sm text-white/50">
+              {version.hiddenExerciseCount === 1
+                ? '1 more exercise needs'
+                : `${version.hiddenExerciseCount} more exercises need`}{' '}
+              AI to check your answers, and your account doesn&apos;t have
+              access to AI features.
+            </p>
+          )}
+        </section>
+      );
+    case 'wrap-up':
+      return (
+        <section>
+          <h2 className="text-xl font-semibold">Wrap up</h2>
+          {/* Proposing cards is an AI call */}
+          {canUseAI && <MakeReviewCards lessonId={lesson.id} />}
+          <LessonCompletion lesson={lesson} />
+        </section>
+      );
+  }
+}
 
-      <section className="mt-8">
-        <h2 className="text-lg font-semibold">Examples</h2>
-        <ul className="mt-3 space-y-3">
-          {version.examples.map((example, index) => (
-            <li
-              key={index}
-              className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-            >
-              <p className="font-medium">{example.example}</p>
-              <p className="mt-1 text-sm text-white/70">
-                {example.explanation}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
+/** A written lesson, read one step at a time. */
+function WrittenLesson({
+  lesson,
+  version,
+  canUseAI,
+}: {
+  lesson: Lesson;
+  version: LessonVersion;
+  canUseAI: boolean;
+}) {
+  const steps = lessonSteps(version);
+  // The step is in the URL, so reloading, going back and links land on it.
+  // A step the lesson doesn't have opens the first
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const currentIndex = currentStepIndex(steps, searchParams);
+  const goTo = (step: LessonStep) => navigate(stepSearch(step));
+  const current = steps[currentIndex];
+  const previous = steps[currentIndex - 1];
+  const next = steps[currentIndex + 1];
 
-      <section className="mt-8">
-        <h2 id="lesson-exercises" className="text-lg font-semibold">
-          Exercises
-        </h2>
-        <ol aria-labelledby="lesson-exercises" className="mt-3 space-y-3">
-          {version.exercises.map((exercise, index) => (
-            <LessonExercise
-              // Starting over gives every exercise a fresh start
-              key={`${exercise.id}:${resetAt ?? ''}`}
-              exercise={exercise}
-              index={index}
-              lessonId={lessonId}
-            />
-          ))}
-        </ol>
-        {/* Open Exercises can need AI to check, so the API hides them from
-            learners without AI access (ADR-0005) */}
-        {version.hiddenExerciseCount > 0 && (
-          <p className="mt-3 text-sm text-white/50">
-            {version.hiddenExerciseCount === 1
-              ? '1 more exercise needs'
-              : `${version.hiddenExerciseCount} more exercises need`}{' '}
-            AI to check your answers, and your account doesn&apos;t have access
-            to AI features.
-          </p>
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (!isStepKey(event)) return;
+    const target = event.key === 'ArrowLeft' ? previous : next;
+    if (target) {
+      event.preventDefault();
+      goTo(target);
+    }
+  });
+  useEffect(() => {
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const renderOutline = (onNavigate?: () => void) => (
+    <LessonOutline
+      steps={steps}
+      currentId={current.id}
+      answeredCount={
+        version.exercises.filter((exercise) => exercise.latestAttempt).length
+      }
+      exerciseCount={version.exercises.length}
+      onNavigate={onNavigate}
+    />
+  );
+
+  // A new step starts at its top, as a new page would
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [current.id]);
+
+  const outlineToggles = (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOutlineCollapsed(!isOutlineCollapsed)}
+        aria-label={isOutlineCollapsed ? 'Show outline' : 'Hide outline'}
+        className={`hidden md:block ${ICON_BUTTON}`}
+      >
+        {isOutlineCollapsed ? (
+          <PanelLeftOpen className="size-5" />
+        ) : (
+          <PanelLeftClose className="size-5" />
         )}
-      </section>
-
-      {/* Proposing cards is an AI call */}
-      {canUseAI && <MakeReviewCards lessonId={lessonId} />}
+      </button>
+      <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+        <SheetTrigger
+          aria-label="Open outline"
+          className={`md:hidden ${ICON_BUTTON}`}
+        >
+          <Menu className="size-5" />
+        </SheetTrigger>
+        <SheetContent className="border-r border-white/20 bg-[oklch(0.25_0.08_230)] text-white">
+          <SheetTitle>Lesson outline</SheetTitle>
+          <SheetDescription className="sr-only">
+            The steps of {lesson.title}
+          </SheetDescription>
+          {renderOutline(() => setIsDrawerOpen(false))}
+        </SheetContent>
+      </Sheet>
     </>
+  );
+
+  return (
+    <LessonFrame
+      header={<WrittenLessonHeader lesson={lesson} leading={outlineToggles} />}
+      outline={isOutlineCollapsed ? undefined : renderOutline()}
+    >
+      <div className={`mx-auto w-full ${STEP_WIDTHS[current.kind]}`}>
+        <StepContent
+          step={current}
+          lesson={lesson}
+          version={version}
+          canUseAI={canUseAI}
+        />
+        <nav
+          aria-label="Lesson steps"
+          className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/20 pt-6"
+        >
+          {previous ? (
+            <button
+              type="button"
+              onClick={() => goTo(previous)}
+              className="flex items-center gap-1 rounded-lg px-3 py-2 text-white/70 hover:text-white"
+            >
+              <ChevronLeft className="size-4" />
+              Previous: {previous.title}
+            </button>
+          ) : (
+            <span />
+          )}
+          {next && (
+            <button
+              type="button"
+              onClick={() => goTo(next)}
+              className="flex items-center gap-1 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
+            >
+              Next: {next.title}
+              <ChevronRight className="size-4" />
+            </button>
+          )}
+        </nav>
+      </div>
+    </LessonFrame>
   );
 }
 
@@ -343,21 +634,11 @@ export default function LessonPage() {
 
   if (lesson.version) {
     return (
-      <CenteredPage>
-        <article className="w-full max-w-2xl text-white">
-          <LessonHeader
-            lesson={lesson}
-            actions={<StartOver lesson={lesson} />}
-          />
-          <LessonContent
-            lessonId={lesson.id}
-            version={lesson.version}
-            resetAt={lesson.resetAt}
-            canUseAI={canUseAI}
-          />
-          <LessonCompletion lesson={lesson} />
-        </article>
-      </CenteredPage>
+      <WrittenLesson
+        lesson={lesson}
+        version={lesson.version}
+        canUseAI={canUseAI}
+      />
     );
   }
 

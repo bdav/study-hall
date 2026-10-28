@@ -2,7 +2,14 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import LessonPage from './LessonPage';
 import { trpc } from '@/lib/trpc';
@@ -121,6 +128,30 @@ const generatedLesson = {
   },
 };
 
+/** A lesson with two sections, so there's a step between the first and Examples. */
+const twoSectionLesson = {
+  ...generatedLesson,
+  version: {
+    ...generatedLesson.version,
+    content: [
+      ...generatedLesson.version.content,
+      {
+        heading: 'Saying goodbye',
+        paragraphs: ['Arrivederci works almost everywhere.'],
+      },
+    ],
+  },
+};
+
+const practice = '/lessons/lesson-1?step=practice';
+const wrapUp = '/lessons/lesson-1?step=wrap-up';
+
+/** Shows the current URL's query, so tests can see the step in the URL. */
+function LocationProbe() {
+  const { search } = useLocation();
+  return <output aria-label="Current search">{search}</output>;
+}
+
 const mockGenerate = vi.fn();
 const mockPropose = vi.fn();
 const mockResetProposal = vi.fn();
@@ -138,7 +169,12 @@ function renderPage({
   create = {},
   setCompleted = {},
   startOver = {},
+  path = '/lessons/lesson-1',
+  extra,
 }: {
+  path?: string;
+  /** More elements to render inside the router. */
+  extra?: ReactNode;
   query?: Partial<LessonQuery>;
   mutation?: Partial<GenerateMutation>;
   canUseAI?: boolean;
@@ -196,9 +232,18 @@ function renderPage({
   } as unknown as StartOverMutation);
 
   const page = (
-    <MemoryRouter initialEntries={['/lessons/lesson-1']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/lessons/:lessonId" element={<LessonPage />} />
+        <Route
+          path="/lessons/:lessonId"
+          element={
+            <>
+              <LessonPage />
+              <LocationProbe />
+              {extra}
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>
   );
@@ -210,6 +255,293 @@ beforeEach(() => {
 });
 
 describe('LessonPage', () => {
+  describe('lesson steps', () => {
+    const written = { data: twoSectionLesson } as Partial<LessonQuery>;
+    const currentStep = () =>
+      screen.getByRole('heading', { level: 2 }).textContent;
+
+    it('opens on the first section, alone', () => {
+      renderPage({ query: written });
+
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { level: 2, name: 'Saying goodbye' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Ciao, Marco!')).not.toBeInTheDocument();
+    });
+
+    it('moves through the sections, then Examples, Practice and Wrap up with Next', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      expect(currentStep()).toBe('Saying hello');
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      expect(currentStep()).toBe('Saying goodbye');
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      expect(currentStep()).toBe('Examples');
+      expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      expect(currentStep()).toBe('Practice');
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      expect(currentStep()).toBe('Wrap up');
+      expect(
+        screen.queryByRole('button', { name: /^next/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('has no Examples step when the lesson has no examples', async () => {
+      const user = userEvent.setup();
+      renderPage({
+        query: {
+          data: {
+            ...generatedLesson,
+            version: { ...generatedLesson.version, examples: [] },
+          },
+        } as Partial<LessonQuery>,
+      });
+
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+
+      expect(currentStep()).toBe('Practice');
+    });
+
+    it('moves back with Previous, which the first step has none of', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+      expect(
+        screen.queryByRole('button', { name: /^previous/i }),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^previous/i }));
+
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+      ).toBeInTheDocument();
+    });
+
+    it('names the step Next and Previous go to', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      expect(
+        screen.getByRole('button', { name: 'Next: Saying goodbye' }),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /^next/i }));
+      expect(
+        screen.getByRole('button', { name: 'Previous: Saying hello' }),
+      ).toBeInTheDocument();
+    });
+
+    describe('with the arrow keys', () => {
+      it('moves to the next step with → and back with ←', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.keyboard('{ArrowRight}');
+        expect(currentStep()).toBe('Saying goodbye');
+        await user.keyboard('{ArrowRight}');
+        expect(currentStep()).toBe('Examples');
+        await user.keyboard('{ArrowLeft}');
+        expect(currentStep()).toBe('Saying goodbye');
+      });
+
+      it('stays put past the first and last steps', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.keyboard('{ArrowLeft}');
+        expect(currentStep()).toBe('Saying hello');
+        expect(screen.getByLabelText('Current search')).toHaveTextContent('');
+      });
+
+      it('never changes step while the learner types an answer', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written, path: practice });
+
+        await user.click(screen.getAllByLabelText('Your answer')[0]);
+        await user.keyboard('Ciao{ArrowLeft}{ArrowRight}');
+        expect(currentStep()).toBe('Practice');
+
+        // An explanation is answered in a multi-line field
+        await user.click(screen.getByLabelText('Your explanation'));
+        await user.keyboard('{ArrowLeft}');
+        expect(currentStep()).toBe('Practice');
+      });
+
+      it('leaves the keys to the browser when a modifier is held', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        // Alt+← is the browser's Back
+        await user.keyboard('{Alt>}{ArrowRight}{/Alt}');
+        await user.keyboard('{Meta>}{ArrowRight}{/Meta}');
+        expect(currentStep()).toBe('Saying hello');
+      });
+    });
+
+    describe('the outline', () => {
+      const outline = () =>
+        screen.getByRole('navigation', { name: 'Lesson outline' });
+
+      it('lists the steps and marks the current one', () => {
+        renderPage({
+          query: written,
+          path: '/lessons/lesson-1?step=section-2',
+        });
+
+        const items = within(outline()).getAllByRole('link');
+        expect(items.map((item) => item.textContent)).toEqual([
+          'Saying hello',
+          'Saying goodbye',
+          'Examples',
+          expect.stringMatching(/^Practice/),
+          'Wrap up',
+        ]);
+        expect(
+          within(outline()).getByRole('link', { name: 'Saying goodbye' }),
+        ).toHaveAttribute('aria-current', 'step');
+        expect(
+          within(outline()).getByRole('link', { name: 'Saying hello' }),
+        ).not.toHaveAttribute('aria-current');
+      });
+
+      it('shows how many exercises have been answered', () => {
+        const answeredOne = {
+          ...twoSectionLesson,
+          version: {
+            ...twoSectionLesson.version,
+            exercises: twoSectionLesson.version.exercises.map(
+              (exercise, index) =>
+                index === 1
+                  ? {
+                      ...exercise,
+                      latestAttempt: {
+                        exerciseId: exercise.id,
+                        answer: 'Ciao',
+                        evaluation: 'CORRECT',
+                        accentCorrection: null,
+                        feedback: null,
+                        createdAt: '2026-10-24T09:00:00.000Z',
+                      },
+                    }
+                  : exercise,
+            ),
+          },
+        };
+        renderPage({ query: { data: answeredOne } as Partial<LessonQuery> });
+
+        expect(
+          within(outline()).getByRole('link', { name: /practice/i }),
+        ).toHaveTextContent('1 of 3 answered');
+      });
+
+      it('jumps to a step when clicked', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(
+          within(outline()).getByRole('link', { name: /practice/i }),
+        );
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Practice' }),
+        ).toBeInTheDocument();
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice',
+        );
+      });
+
+      it('can be collapsed and shown again', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(screen.getByRole('button', { name: 'Hide outline' }));
+        expect(
+          screen.queryByRole('navigation', { name: 'Lesson outline' }),
+        ).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Show outline' }));
+        expect(outline()).toBeInTheDocument();
+      });
+
+      it('opens in a drawer from the menu, which closes on choosing a step', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(screen.getByRole('button', { name: 'Open outline' }));
+        const drawer = screen.getByRole('dialog', { name: 'Lesson outline' });
+        await user.click(
+          within(drawer).getByRole('link', { name: 'Examples' }),
+        );
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Examples' }),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+    });
+
+    describe('in the URL', () => {
+      it('puts the current step in the URL', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(screen.getByRole('button', { name: /^next/i }));
+
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=section-2',
+        );
+        await user.click(screen.getByRole('button', { name: /^next/i }));
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples',
+        );
+      });
+
+      it('opens the step the URL names, so a reload or link lands on it', () => {
+        renderPage({ query: written, path: '/lessons/lesson-1?step=practice' });
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Practice' }),
+        ).toBeInTheDocument();
+      });
+
+      it('opens the first step when the URL names a step the lesson lacks', () => {
+        renderPage({
+          query: written,
+          path: '/lessons/lesson-1?step=section-9',
+        });
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+        ).toBeInTheDocument();
+      });
+
+      it('goes back to the previous step with the browser', async () => {
+        const user = userEvent.setup();
+        function BrowserBack() {
+          const navigate = useNavigate();
+          return (
+            <button type="button" onClick={() => navigate(-1)}>
+              Browser back
+            </button>
+          );
+        }
+        renderPage({ query: written, extra: <BrowserBack /> });
+
+        await user.click(screen.getByRole('button', { name: /^next/i }));
+        await user.click(screen.getByRole('button', { name: /^next/i }));
+        await user.click(screen.getByRole('button', { name: 'Browser back' }));
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Saying goodbye' }),
+        ).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('a generated lesson', () => {
     it('loads the lesson from the route', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
@@ -227,7 +559,7 @@ describe('LessonPage', () => {
       );
     });
 
-    it('renders the content blocks and examples', () => {
+    it('renders a content section', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
 
       expect(
@@ -239,12 +571,23 @@ describe('LessonPage', () => {
       expect(
         screen.getByText('Use buongiorno with strangers.'),
       ).toBeInTheDocument();
+    });
+
+    it('renders the examples on their step', () => {
+      renderPage({
+        query: { data: generatedLesson } as Partial<LessonQuery>,
+        path: '/lessons/lesson-1?step=examples',
+      });
+
       expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
       expect(screen.getByText('An informal hello.')).toBeInTheDocument();
     });
 
-    it('lists the exercises in order with their type', () => {
-      renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
+    it('lists the exercises in order with their type on Practice', () => {
+      renderPage({
+        query: { data: generatedLesson } as Partial<LessonQuery>,
+        path: practice,
+      });
 
       const exercises = within(
         screen.getByRole('list', { name: /exercises/i }),
@@ -271,13 +614,17 @@ describe('LessonPage', () => {
             },
           },
         } as Partial<LessonQuery>,
+        path: practice,
       });
 
       expect(screen.getByText(/1 more exercise needs AI/i)).toBeInTheDocument();
     });
 
     it('mentions no hidden exercises when none are hidden', () => {
-      renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
+      renderPage({
+        query: { data: generatedLesson } as Partial<LessonQuery>,
+        path: practice,
+      });
 
       expect(screen.queryByText(/needs? AI/i)).not.toBeInTheDocument();
     });
@@ -295,9 +642,37 @@ describe('LessonPage', () => {
       data: { ...generatedLesson, completedAt: '2026-10-24T09:00:00.000Z' },
     } as Partial<LessonQuery>;
 
-    it('marks the lesson complete', async () => {
+    it('can be toggled from the header on any step', async () => {
       const user = userEvent.setup();
       renderPage({ query: written });
+
+      const toggle = screen.getByRole('button', { name: 'Complete' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+      await user.click(toggle);
+
+      expect(mockSetCompleted).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        completed: true,
+      });
+    });
+
+    it('shows a complete lesson as complete in the header, and undoes it', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: completed });
+
+      const toggle = screen.getByRole('button', { name: 'Complete' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      await user.click(toggle);
+
+      expect(mockSetCompleted).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        completed: false,
+      });
+    });
+
+    it('marks the lesson complete from Wrap up', async () => {
+      const user = userEvent.setup();
+      renderPage({ path: wrapUp, query: written });
 
       await user.click(
         screen.getByRole('button', { name: 'Mark lesson complete' }),
@@ -311,7 +686,7 @@ describe('LessonPage', () => {
 
     it('shows a complete lesson as complete, and undoes it', async () => {
       const user = userEvent.setup();
-      renderPage({ query: completed });
+      renderPage({ path: wrapUp, query: completed });
 
       expect(
         screen.getByText(/you marked this lesson complete/i),
@@ -327,7 +702,7 @@ describe('LessonPage', () => {
     });
 
     it('needs no AI access', () => {
-      renderPage({ query: written, canUseAI: false });
+      renderPage({ path: wrapUp, query: written, canUseAI: false });
 
       expect(
         screen.getByRole('button', { name: 'Mark lesson complete' }),
@@ -347,7 +722,11 @@ describe('LessonPage', () => {
     });
 
     it('waits while the change is saved', () => {
-      renderPage({ query: written, setCompleted: { isPending: true } });
+      renderPage({
+        path: wrapUp,
+        query: written,
+        setCompleted: { isPending: true },
+      });
 
       expect(
         screen.getByRole('button', { name: 'Mark lesson complete' }),
@@ -355,7 +734,7 @@ describe('LessonPage', () => {
     });
 
     it('refreshes the lesson and its course once saved', () => {
-      renderPage({ query: written });
+      renderPage({ path: wrapUp, query: written });
       const [options] = vi.mocked(trpc.lesson.setCompleted.useMutation).mock
         .calls[0] as [SetCompletedOptions];
 
@@ -398,7 +777,8 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       renderPage({ query: { data: answered } as Partial<LessonQuery> });
 
-      await user.click(screen.getByRole('button', { name: 'Start over' }));
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Start over' }));
       const dialog = screen.getByRole('alertdialog');
       expect(dialog).toHaveTextContent(/earlier answers are still saved/i);
       expect(mockStartOver).not.toHaveBeenCalled();
@@ -438,6 +818,7 @@ describe('LessonPage', () => {
     it('shows every exercise empty once the lesson has started over', () => {
       const { rerender } = renderPage({
         query: { data: answered } as Partial<LessonQuery>,
+        path: practice,
       });
       expect(screen.getAllByLabelText('Your answer')[0]).toHaveValue(
         'Buonasera',
@@ -449,7 +830,7 @@ describe('LessonPage', () => {
         isError: false,
       } as unknown as LessonQuery);
       rerender(
-        <MemoryRouter initialEntries={['/lessons/lesson-1']}>
+        <MemoryRouter initialEntries={[practice]}>
           <Routes>
             <Route path="/lessons/:lessonId" element={<LessonPage />} />
           </Routes>
@@ -462,6 +843,9 @@ describe('LessonPage', () => {
     it("isn't offered before the lesson is written", () => {
       renderPage({ query: { data: lesson } as Partial<LessonQuery> });
 
+      expect(
+        screen.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: 'Start over' }),
       ).not.toBeInTheDocument();
@@ -496,7 +880,7 @@ describe('LessonPage', () => {
 
     it('proposes review cards for the lesson', async () => {
       const user = userEvent.setup();
-      renderPage({ query: written });
+      renderPage({ path: wrapUp, query: written });
 
       await user.click(
         screen.getByRole('button', { name: 'Make review cards' }),
@@ -506,7 +890,7 @@ describe('LessonPage', () => {
     });
 
     it('is offered only to learners who can use AI', () => {
-      renderPage({ query: written, canUseAI: false });
+      renderPage({ path: wrapUp, query: written, canUseAI: false });
 
       expect(
         screen.queryByRole('button', { name: 'Make review cards' }),
@@ -514,7 +898,11 @@ describe('LessonPage', () => {
     });
 
     it('shows that cards are being proposed', () => {
-      renderPage({ query: written, propose: { isPending: true } });
+      renderPage({
+        path: wrapUp,
+        query: written,
+        propose: { isPending: true },
+      });
 
       expect(
         screen.getByRole('button', { name: /proposing cards/i }),
@@ -523,6 +911,7 @@ describe('LessonPage', () => {
 
     it('says why proposing failed', () => {
       renderPage({
+        path: wrapUp,
         query: written,
         propose: {
           isError: true,
@@ -536,7 +925,7 @@ describe('LessonPage', () => {
     });
 
     it('opens the proposed cards in the preview, with Course Deck duplicates flagged', () => {
-      renderPage({ query: written, propose: { data: proposal } });
+      renderPage({ path: wrapUp, query: written, propose: { data: proposal } });
 
       expect(screen.getByLabelText('Card 1 front')).toHaveValue(
         'Translate: Good morning',
@@ -549,7 +938,7 @@ describe('LessonPage', () => {
 
     it('adds the confirmed cards to the Course Deck as Typed Recall cards from this proposal', async () => {
       const user = userEvent.setup();
-      renderPage({ query: written, propose: { data: proposal } });
+      renderPage({ path: wrapUp, query: written, propose: { data: proposal } });
 
       await user.click(screen.getByRole('button', { name: 'Add 1 card' }));
 
@@ -568,7 +957,7 @@ describe('LessonPage', () => {
     });
 
     it('closes the preview, refreshes the deck and confirms once the cards are added', () => {
-      renderPage({ query: written, propose: { data: proposal } });
+      renderPage({ path: wrapUp, query: written, propose: { data: proposal } });
       const [options] = vi.mocked(trpc.lesson.createReviewCards.useMutation)
         .mock.calls[0] as [CreateOptions];
 
@@ -589,7 +978,7 @@ describe('LessonPage', () => {
 
     it('closes the preview without adding anything on cancel', async () => {
       const user = userEvent.setup();
-      renderPage({ query: written, propose: { data: proposal } });
+      renderPage({ path: wrapUp, query: written, propose: { data: proposal } });
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
