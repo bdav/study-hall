@@ -1,12 +1,5 @@
 import { type ReactNode } from 'react';
-
-/**
- * The frame's content width: the outline and step stay together, centred,
- * with any extra width outside them. Fixed rather than fitted to the step,
- * so the step doesn't shift sideways between narrow and wide steps. The
- * header uses it too, so the title lines up with the outline.
- */
-export const LESSON_FRAME_WIDTH = 'mx-auto w-full max-w-7xl px-4 md:px-8';
+import { PAGE_WIDTH } from '@/lib/layout';
 
 /**
  * The written lesson's frame: a header pinned to the top, the outline on
@@ -29,7 +22,7 @@ export function LessonFrame({
   return (
     <div className="flex flex-1 flex-col text-white">
       {header}
-      <div className={`flex flex-1 gap-8 ${LESSON_FRAME_WIDTH}`}>
+      <div className={`flex flex-1 gap-8 ${PAGE_WIDTH}`}>
         {outline && (
           <aside className="hidden w-60 shrink-0 md:block">
             {/* Below the pinned header, scrolling on its own if it's long */}

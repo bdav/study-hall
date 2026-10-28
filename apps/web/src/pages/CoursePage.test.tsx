@@ -130,6 +130,54 @@ describe('CoursePage', () => {
     expect(screen.getByText('A2 by summer')).toBeInTheDocument();
   });
 
+  describe('the pinned header', () => {
+    const header = () => within(screen.getByRole('banner'));
+
+    it('holds the way back to Courses, the title, the goal and Continue', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      expect(header().getByRole('link', { name: 'Courses' })).toHaveAttribute(
+        'href',
+        '/courses',
+      );
+      expect(
+        header().getByRole('heading', { level: 1, name: 'Italian' }),
+      ).toBeInTheDocument();
+      expect(header().getByText('A2 by summer')).toBeInTheDocument();
+      expect(
+        header().getByRole('link', { name: 'Continue: Greetings' }),
+      ).toHaveAttribute('href', '/lessons/lesson-1');
+    });
+
+    it('says when every lesson is complete, in place of Continue', () => {
+      renderPage({
+        data: {
+          ...acceptedCourse,
+          lessons: acceptedCourse.lessons.map((lesson) => ({
+            ...lesson,
+            status: 'COMPLETE',
+          })),
+          continueLesson: null,
+        },
+      } as Partial<CourseQuery>);
+
+      expect(
+        header().getByText(/every lesson is complete/i),
+      ).toBeInTheDocument();
+      expect(
+        header().queryByRole('link', { name: /^continue/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('has no ⋯ menu while it would have nothing in it', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      expect(
+        screen.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe('with a Syllabus Proposal', () => {
     it("shows each lesson's title and learning objectives", () => {
       renderPage({ data: baseCourse } as Partial<CourseQuery>);
@@ -193,23 +241,51 @@ describe('CoursePage', () => {
   });
 
   describe('with an accepted Syllabus', () => {
-    it('shows the lessons in order with their objectives', () => {
+    const rows = () => screen.getAllByRole('listitem', { name: /lesson/i });
+
+    it('lists the lessons in order, one row each', () => {
       renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
 
       expect(
         screen.getByRole('heading', { name: /^syllabus$/i }),
       ).toBeInTheDocument();
-      const lessons = screen.getAllByRole('listitem', { name: /lesson/i });
-      expect(
-        lessons.map((lesson) => lesson.getAttribute('aria-label')),
-      ).toEqual(['Lesson 1: Greetings', 'Lesson 2: At the café']);
-      expect(screen.getByText('Say your name')).toBeInTheDocument();
+      expect(rows().map((row) => row.getAttribute('aria-label'))).toEqual([
+        'Lesson 1: Greetings',
+        'Lesson 2: At the café',
+      ]);
       expect(
         screen.queryByRole('button', { name: /accept syllabus/i }),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: /discard proposal/i }),
       ).not.toBeInTheDocument();
+    });
+
+    it('marks the lesson Continue goes to as up next', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      expect(within(rows()[0]).getByText('Up next')).toBeInTheDocument();
+      expect(within(rows()[1]).queryByText('Up next')).not.toBeInTheDocument();
+    });
+
+    it("keeps each lesson's objectives collapsed until its own control opens them", async () => {
+      const user = userEvent.setup();
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+      const toggle = (row: HTMLElement) =>
+        within(row).getByRole('button', { name: /objectives/i });
+
+      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+      expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'false');
+
+      await user.click(toggle(rows()[0]));
+      expect(within(rows()[0]).getByText('Say your name')).toBeInTheDocument();
+      expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'true');
+      expect(
+        screen.queryByText('Order food and drinks'),
+      ).not.toBeInTheDocument();
+
+      await user.click(toggle(rows()[0]));
+      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
     });
   });
 
@@ -304,9 +380,7 @@ describe('CoursePage', () => {
       expect(
         screen.queryByRole('link', { name: /^continue/i }),
       ).not.toBeInTheDocument();
-      expect(
-        screen.getByText(/you've completed every lesson/i),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/every lesson is complete/i)).toBeInTheDocument();
     });
 
     it('shows no progress while the syllabus is a proposal', () => {

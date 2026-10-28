@@ -44,7 +44,8 @@ import {
   LessonPractice,
   type PracticeSettings,
 } from '@/components/LessonPractice';
-import { LESSON_FRAME_WIDTH, LessonFrame } from '@/components/LessonFrame';
+import { LessonFrame } from '@/components/LessonFrame';
+import { PinnedHeader } from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
 import {
   Sheet,
@@ -262,20 +263,15 @@ function WrittenLessonHeader({
   const [isStartingOver, setIsStartingOver] = useState(false);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
-      <div className={`flex items-center gap-3 ${LESSON_FRAME_WIDTH}`}>
-        {leading}
-        <div className="min-w-0 flex-1">
-          <BackLink to={`/courses/${lesson.course.id}`}>
-            {lesson.course.title}
-          </BackLink>
-          <h1
-            title={lesson.title}
-            className="line-clamp-2 text-lg font-bold md:line-clamp-1 md:text-xl"
-          >
-            {lesson.title}
-          </h1>
-        </div>
+    <>
+      <PinnedHeader
+        back={{
+          to: `/courses/${lesson.course.id}`,
+          label: lesson.course.title,
+        }}
+        title={lesson.title}
+        leading={leading}
+      >
         {views
           .filter((view) => !view.menuOnly)
           .map((view) => (
@@ -369,13 +365,13 @@ function WrittenLessonHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </PinnedHeader>
       <StartOverDialog
         lesson={lesson}
         open={isStartingOver}
         onOpenChange={setIsStartingOver}
       />
-    </header>
+    </>
   );
 }
 

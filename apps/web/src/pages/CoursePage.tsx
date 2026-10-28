@@ -3,36 +3,50 @@ import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { BackLink } from '@/components/BackLink';
+import { useState } from 'react';
+import {
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  CircleDot,
+  GraduationCap,
+} from 'lucide-react';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
+import { PAGE_WIDTH } from '@/lib/layout';
+import { PinnedHeader } from '@/components/PinnedHeader';
 
-type LessonStatus =
-  inferRouterOutputs<AppRouter>['course']['getById']['lessons'][number]['status'];
+type SyllabusLesson =
+  inferRouterOutputs<AppRouter>['course']['getById']['lessons'][number];
+type LessonStatus = SyllabusLesson['status'];
+
+/** A proposed lesson: it doesn't exist yet, so it has no id or progress. */
+type ProposedLesson = { title: string; objectives: string[] };
+
+/** How each Lesson Completion status shows in a syllabus row. */
+const STATUSES: Record<
+  LessonStatus,
+  { label: string; Icon: typeof Circle; className: string }
+> = {
+  NOT_STARTED: {
+    label: 'Not started',
+    Icon: Circle,
+    className: 'text-white/60',
+  },
+  OPENED: { label: 'Opened', Icon: CircleDot, className: 'text-white/60' },
+  COMPLETE: { label: 'Complete', Icon: CircleCheck, className: 'text-white' },
+};
 
 /**
- * A lesson of the syllabus has an id and the learner's progress through
- * it; a proposed lesson doesn't exist yet.
+ * A Syllabus Proposal's lessons, objectives in full, since reading them is
+ * the point of reviewing it.
  */
-type LessonOutline = {
-  id?: string;
-  title: string;
-  objectives: string[];
-  status?: LessonStatus;
-};
-
-const STATUS_LABELS: Record<LessonStatus, string> = {
-  NOT_STARTED: 'Not started',
-  OPENED: 'Opened',
-  COMPLETE: 'Complete',
-};
-
-function LessonList({
+function ProposedLessons({
   lessons,
   labelledBy,
 }: {
-  lessons: LessonOutline[];
+  lessons: ProposedLesson[];
   labelledBy: string;
 }) {
   return (
@@ -43,32 +57,10 @@ function LessonList({
           aria-label={`Lesson ${index + 1}: ${lesson.title}`}
           className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
         >
-          <div className="flex items-start justify-between gap-3">
-            <p className="font-semibold">
-              <span className="mr-2 text-white/50">{index + 1}.</span>
-              {lesson.id ? (
-                <Link
-                  to={`/lessons/${lesson.id}`}
-                  className="underline-offset-2 hover:underline"
-                >
-                  {lesson.title}
-                </Link>
-              ) : (
-                lesson.title
-              )}
-            </p>
-            {lesson.status && (
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                  lesson.status === 'COMPLETE'
-                    ? 'bg-white/30 text-white'
-                    : 'text-white/60'
-                }`}
-              >
-                {STATUS_LABELS[lesson.status]}
-              </span>
-            )}
-          </div>
+          <p className="font-semibold">
+            <span className="mr-2 text-white/50">{index + 1}.</span>
+            {lesson.title}
+          </p>
           <ul className="mt-2 list-disc space-y-0.5 pl-10 text-sm text-white/70">
             {lesson.objectives.map((objective, objectiveIndex) => (
               <li key={objectiveIndex}>{objective}</li>
@@ -76,6 +68,96 @@ function LessonList({
           </ul>
         </li>
       ))}
+    </ol>
+  );
+}
+
+/**
+ * The accepted Syllabus as a compact list, like a table of contents: a row
+ * per lesson, its objectives collapsed until the learner opens them.
+ */
+function Syllabus({
+  lessons,
+  upNextId,
+  labelledBy,
+}: {
+  lessons: SyllabusLesson[];
+  /** The lesson Continue goes to, if any. */
+  upNextId: string | undefined;
+  labelledBy: string;
+}) {
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpenIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <ol
+      aria-labelledby={labelledBy}
+      className="mt-4 divide-y divide-white/10 rounded-xl border border-white/20 bg-white/5"
+    >
+      {lessons.map((lesson, index) => {
+        const isOpen = openIds.has(lesson.id);
+        const objectivesId = `objectives-${lesson.id}`;
+        const status = STATUSES[lesson.status];
+        return (
+          <li
+            key={lesson.id}
+            aria-label={`Lesson ${index + 1}: ${lesson.title}`}
+            className="px-3 py-2.5"
+          >
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={objectivesId}
+                aria-label={`Objectives: ${lesson.title}`}
+                onClick={() => toggle(lesson.id)}
+                className="shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <ChevronRight
+                  className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                />
+              </button>
+              <span className="w-6 shrink-0 text-white/50 tabular-nums">
+                {index + 1}.
+              </span>
+              <Link
+                to={`/lessons/${lesson.id}`}
+                className="min-w-0 flex-1 font-medium underline-offset-2 hover:underline"
+              >
+                {lesson.title}
+              </Link>
+              {lesson.id === upNextId && (
+                <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                  Up next
+                </span>
+              )}
+              <span
+                className={`flex shrink-0 items-center gap-1.5 text-xs ${status.className}`}
+              >
+                <status.Icon className="size-4" aria-hidden />
+                {/* The icon alone on narrow screens, for room */}
+                <span className="sr-only sm:not-sr-only">{status.label}</span>
+              </span>
+            </div>
+            {isOpen && (
+              <ul
+                id={objectivesId}
+                className="mt-2 mb-1 ml-16 list-disc space-y-0.5 text-sm text-white/70"
+              >
+                {lesson.objectives.map((objective, objectiveIndex) => (
+                  <li key={objectiveIndex}>{objective}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -100,27 +182,27 @@ function Review({
   return (
     <section
       aria-labelledby="review-heading"
-      className="mt-8 rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/20 bg-white/5 px-4 py-3"
     >
-      <h2 id="review-heading" className="text-lg font-semibold">
+      <h2 id="review-heading" className="font-semibold">
         Review
       </h2>
       {dueCount + newCount > 0 ? (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-white/80">
-            <span>{`${dueCount} ${cardWord(dueCount)} due`}</span>
+        <>
+          <p className="flex-1 text-white/80">
+            <span className="whitespace-nowrap">{`${dueCount} ${cardWord(dueCount)} due`}</span>
             <span className="mx-2 text-white/40">·</span>
-            <span>{`${newCount} new ${cardWord(newCount)}`}</span>
+            <span className="whitespace-nowrap">{`${newCount} new ${cardWord(newCount)}`}</span>
           </p>
           <Link
             to={`/decks/${deckId}`}
-            className="rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
+            className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30"
           >
             Study now
           </Link>
-        </div>
+        </>
       ) : (
-        <p className="mt-2 text-white/70">
+        <p className="flex-1 text-sm text-white/70">
           Nothing to review right now. Make review cards from a lesson, or come
           back when cards are due.
         </p>
@@ -175,80 +257,85 @@ export default function CoursePage() {
   const isProposal = proposal !== null && proposal.acceptedAt === null;
 
   return (
-    <CenteredPage>
-      <div className="w-full max-w-2xl text-white">
-        <BackLink to="/courses">Courses</BackLink>
-        <h1 className="mt-2 text-2xl font-bold">{course.title}</h1>
-        <p className="mt-1 text-white/70">{course.goal}</p>
-
-        {isProposal ? (
-          <section className="mt-8">
-            <h2 id="syllabus-heading" className="text-lg font-semibold">
-              Syllabus Proposal
-            </h2>
-            <p className="mt-1 text-sm text-white/60">
-              Review the lessons below. Accepting creates your course&apos;s
-              syllabus.
-            </p>
-            <LessonList
-              lessons={proposal.lessons}
-              labelledBy="syllabus-heading"
-            />
-            <button
-              type="button"
-              onClick={() => acceptProposal.mutate({ courseId })}
-              disabled={acceptProposal.isPending}
-              className="mt-6 w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
+    <div className="flex flex-1 flex-col text-white">
+      <PinnedHeader
+        back={{ to: '/courses', label: 'Courses' }}
+        title={course.title}
+        subtitle={course.goal}
+        // In the slot the lesson page's outline toggle takes, so the title
+        // sits in the same place on both pages
+        leading={<GraduationCap aria-hidden className="size-5 text-white/50" />}
+      >
+        {!isProposal &&
+          (course.continueLesson ? (
+            <Link
+              to={`/lessons/${course.continueLesson.id}`}
+              // A line of its own on narrow screens, so it's never squeezed
+              className="flex w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-white/25 px-4 py-2 font-medium text-white backdrop-blur-sm hover:bg-white/35 sm:w-auto"
             >
-              {acceptProposal.isPending ? 'Accepting…' : 'Accept syllabus'}
-            </button>
-            <ConfirmDialog
-              title="Discard proposal"
-              description={`Discard the proposed syllabus and remove "${course.title}"? You can create the course again later.`}
-              confirmLabel="Discard"
-              onConfirm={() => discardProposal.mutate({ courseId })}
-              trigger={
-                <button
-                  type="button"
-                  disabled={discardProposal.isPending}
-                  className="mt-3 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
-                >
-                  Discard proposal
-                </button>
-              }
-            />
-          </section>
-        ) : (
-          <section className="mt-8">
-            {course.continueLesson ? (
-              <Link
-                to={`/lessons/${course.continueLesson.id}`}
-                className="block rounded-lg bg-white/20 px-4 py-3 text-white backdrop-blur-sm hover:bg-white/30"
+              Continue: {course.continueLesson.title}
+              <ChevronRight className="size-4" />
+            </Link>
+          ) : (
+            course.lessons.length > 0 && (
+              <p className="text-sm text-white/70">Every lesson is complete</p>
+            )
+          ))}
+      </PinnedHeader>
+      <main className={`${PAGE_WIDTH} py-8`}>
+        <div className="max-w-3xl">
+          {isProposal ? (
+            <section>
+              <h2 id="syllabus-heading" className="text-lg font-semibold">
+                Syllabus Proposal
+              </h2>
+              <p className="mt-1 text-sm text-white/60">
+                Review the lessons below. Accepting creates your course&apos;s
+                syllabus.
+              </p>
+              <ProposedLessons
+                lessons={proposal.lessons}
+                labelledBy="syllabus-heading"
+              />
+              <button
+                type="button"
+                onClick={() => acceptProposal.mutate({ courseId })}
+                disabled={acceptProposal.isPending}
+                className="mt-6 w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
               >
-                Continue:{' '}
-                <span className="font-semibold">
-                  {course.continueLesson.title}
-                </span>
-              </Link>
-            ) : (
-              course.lessons.length > 0 && (
-                <p className="text-white/70">
-                  You&apos;ve completed every lesson. Open any of them to look
-                  back over it.
-                </p>
-              )
-            )}
-            {course.review && <Review {...course.review} />}
-            <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
-              Syllabus
-            </h2>
-            <LessonList
-              lessons={course.lessons}
-              labelledBy="syllabus-heading"
-            />
-          </section>
-        )}
-      </div>
-    </CenteredPage>
+                {acceptProposal.isPending ? 'Accepting…' : 'Accept syllabus'}
+              </button>
+              <ConfirmDialog
+                title="Discard proposal"
+                description={`Discard the proposed syllabus and remove "${course.title}"? You can create the course again later.`}
+                confirmLabel="Discard"
+                onConfirm={() => discardProposal.mutate({ courseId })}
+                trigger={
+                  <button
+                    type="button"
+                    disabled={discardProposal.isPending}
+                    className="mt-3 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
+                  >
+                    Discard proposal
+                  </button>
+                }
+              />
+            </section>
+          ) : (
+            <section>
+              {course.review && <Review {...course.review} />}
+              <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
+                Syllabus
+              </h2>
+              <Syllabus
+                lessons={course.lessons}
+                upNextId={course.continueLesson?.id}
+                labelledBy="syllabus-heading"
+              />
+            </section>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }
