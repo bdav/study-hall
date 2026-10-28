@@ -705,9 +705,23 @@ describe('LessonPage', () => {
       ).toBeInTheDocument();
     });
 
-    it('is offered on Examples too', () => {
+    it('leaves the Examples step to its own view in the header, offering the reading view in the ⋯ menu', async () => {
+      const user = userEvent.setup();
       renderPage({ query: written, path: '/lessons/lesson-1?step=examples' });
-      expect(view()).toBeInTheDocument();
+
+      const banner = within(screen.getByRole('banner'));
+      expect(
+        banner.queryByRole('group', { name: 'Reading view' }),
+      ).not.toBeInTheDocument();
+      expect(
+        banner.getByRole('group', { name: 'Examples view' }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(
+        screen.getByRole('menuitemradio', { name: 'Full lesson' }),
+      );
+      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
     });
 
     it("isn't offered on Practice or Wrap up", () => {
@@ -1122,15 +1136,18 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       examplesAt();
 
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
       await user.click(
-        within(
-          within(screen.getByRole('banner')).getByRole('group', {
-            name: 'Reading view',
-          }),
-        ).getByRole('button', { name: 'Full lesson' }),
+        screen.getByRole('menuitemradio', { name: 'Full lesson' }),
       );
 
       expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+      // On the full page, the header offers the reading view again
+      expect(
+        within(screen.getByRole('banner')).getByRole('group', {
+          name: 'Reading view',
+        }),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/example \d of 3/i)).not.toBeInTheDocument();
       expect(
         screen.queryByRole('group', { name: 'Examples view' }),

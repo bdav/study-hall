@@ -150,6 +150,11 @@ interface ViewChoice {
   options: readonly { value: string; label: string }[];
   value: string;
   onChange: (value: string) => void;
+  /**
+   * Kept out of the header, in the ⋯ menu at every width, so the header
+   * shows only the view of what's on screen.
+   */
+  menuOnly?: boolean;
 }
 
 function viewChoice<T extends string>(
@@ -157,9 +162,16 @@ function viewChoice<T extends string>(
   options: readonly { value: T; label: string }[],
   value: T,
   onChange: (value: T) => void,
+  { menuOnly = false } = {},
 ): ViewChoice {
   // Only the options' values are ever passed back
-  return { label, options, value, onChange: (v) => onChange(v as T) };
+  return {
+    label,
+    options,
+    value,
+    onChange: (v) => onChange(v as T),
+    menuOnly,
+  };
 }
 
 /** A pressed-or-not button, for a setting that's on or off. */
@@ -264,13 +276,15 @@ function WrittenLessonHeader({
             {lesson.title}
           </h1>
         </div>
-        {views.map((view) => (
-          <ViewControl
-            key={view.label}
-            choice={view}
-            className="hidden md:inline-flex"
-          />
-        ))}
+        {views
+          .filter((view) => !view.menuOnly)
+          .map((view) => (
+            <ViewControl
+              key={view.label}
+              choice={view}
+              className="hidden md:inline-flex"
+            />
+          ))}
         {practiceToggles && (
           <div
             role="group"
@@ -306,7 +320,10 @@ function WrittenLessonHeader({
             className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
           >
             {views.map((view) => (
-              <div key={view.label} className="md:hidden">
+              <div
+                key={view.label}
+                className={view.menuOnly ? undefined : 'md:hidden'}
+              >
                 <DropdownMenuLabel>{view.label}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={view.value}
@@ -887,11 +904,14 @@ function WrittenLesson({
           views={[
             ...(isReadingStep(current)
               ? [
+                  // The Examples step shows its own view; the reading view
+                  // stays reachable in the ⋯ menu
                   viewChoice(
                     'Reading view',
                     READING_VIEWS,
                     readingView,
                     setReadingView,
+                    { menuOnly: current.kind === 'examples' && !isFullPage },
                   ),
                 ]
               : []),
