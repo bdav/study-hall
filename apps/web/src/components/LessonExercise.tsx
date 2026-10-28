@@ -140,6 +140,55 @@ function Answers({
   );
 }
 
+/**
+ * An exercise's Check, which doesn't flash for a quick check. While one
+ * runs it's disabled at once, so it can't be checked twice, but it dims and
+ * says "Checking…" only after a moment, as a check that needs AI can take
+ * a few seconds. Both labels share the button's width, so it never changes
+ * size. `iconOnPhones`, it's a return arrow below sm.
+ */
+function CheckButton({
+  blank,
+  pending,
+  iconOnPhones = false,
+  className,
+}: {
+  blank: boolean;
+  pending: boolean;
+  iconOnPhones?: boolean;
+  className: string;
+}) {
+  // Each change waits a moment while a check runs, and none once it's done
+  const wait = pending ? 'delay-300' : '';
+  return (
+    <button
+      type="submit"
+      disabled={blank || pending}
+      aria-label={pending ? 'Checking…' : 'Check'}
+      className={`transition-opacity ${blank || pending ? 'opacity-50' : ''} ${blank ? '' : wait} ${className}`}
+    >
+      {iconOnPhones && (
+        <CornerDownLeft className="size-5 sm:hidden" aria-hidden />
+      )}
+      <span
+        aria-hidden
+        className={`grid ${iconOnPhones ? 'max-sm:hidden' : ''}`}
+      >
+        <span
+          className={`col-start-1 row-start-1 transition-opacity ${wait} ${pending ? 'opacity-0' : ''}`}
+        >
+          Check
+        </span>
+        <span
+          className={`col-start-1 row-start-1 transition-opacity ${wait} ${pending ? '' : 'opacity-0'}`}
+        >
+          Checking…
+        </span>
+      </span>
+    </button>
+  );
+}
+
 /** Errors from AI evaluation whose message tells the learner what to do. */
 const AI_ERROR_CODES = new Set([
   'FORBIDDEN',
@@ -182,19 +231,24 @@ export function LessonExercise({
   const shownAttempt = showMyAnswer ? exercise.latestAttempt : null;
   const [answer, setAnswer] = useState(shownAttempt?.answer ?? '');
 
+  // The last result checked here, kept while the next check runs, since the
+  // mutation forgets its result when one starts, so a result never blinks
+  // out and back
+  const [checked, setChecked] = useState<Attempt | null>(null);
   const submit = trpc.exercise.submitAttempt.useMutation({
-    onSuccess: () => {
+    onSuccess: (attempt) => {
+      setChecked(attempt);
       utils.lesson.getById.invalidate({ id: lessonId });
     },
   });
 
   // A result belongs to the answer it checked, not to later edits
-  const latest = submit.data ?? shownAttempt;
+  const latest = submit.data ?? checked ?? shownAttempt;
   const result = latest?.answer === answer.trim() ? latest : null;
 
   // Answers are fetched only after an attempt, hidden or not, and only
   // when the learner asks or has the answer key on
-  const attempted = Boolean(submit.data ?? exercise.latestAttempt);
+  const attempted = Boolean(submit.data ?? checked ?? exercise.latestAttempt);
   const [revealed, setRevealed] = useState(false);
   // The answer key shows or hides every exercise's answers, so turning it
   // either way also closes answers opened one at a time
@@ -220,18 +274,17 @@ export function LessonExercise({
     </p>
   );
 
-  const canCheck = answer.trim() !== '' && !submit.isPending;
+  const blank = answer.trim() === '';
+  const canCheck = !blank && !submit.isPending;
   const gap =
     exercise.type === 'FILL_IN_THE_BLANK' ? GAP.exec(exercise.prompt) : null;
 
   const checkButton = (
-    <button
-      type="submit"
-      disabled={!canCheck}
-      className="shrink-0 rounded-lg bg-white/20 px-4 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
-    >
-      {submit.isPending ? 'Checking…' : 'Check'}
-    </button>
+    <CheckButton
+      blank={blank}
+      pending={submit.isPending}
+      className="shrink-0 rounded-lg bg-white/20 px-4 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30"
+    />
   );
 
   // Check sits at the end of a gap's sentence, and below an explanation,
@@ -286,16 +339,12 @@ export function LessonExercise({
               />
               {/* On phones, a return arrow in the field's corner, so the
                   answer has the width; from sm, the Check button beside it */}
-              <button
-                type="submit"
-                disabled={!canCheck}
-                className="touch-target rounded-lg text-sm text-white disabled:opacity-50 max-sm:absolute max-sm:right-1.5 max-sm:bottom-1 max-sm:p-1 max-sm:text-white/70 sm:shrink-0 sm:bg-white/20 sm:px-4 sm:py-1.5 sm:backdrop-blur-sm sm:hover:bg-white/30"
-              >
-                <CornerDownLeft className="size-5 sm:hidden" aria-hidden />
-                <span className="max-sm:sr-only">
-                  {submit.isPending ? 'Checking…' : 'Check'}
-                </span>
-              </button>
+              <CheckButton
+                blank={blank}
+                pending={submit.isPending}
+                iconOnPhones
+                className="touch-target rounded-lg text-sm text-white max-sm:absolute max-sm:right-1.5 max-sm:bottom-1 max-sm:p-1 max-sm:text-white/70 sm:shrink-0 sm:bg-white/20 sm:px-4 sm:py-1.5 sm:backdrop-blur-sm sm:hover:bg-white/30"
+              />
             </div>
           </>
         )}

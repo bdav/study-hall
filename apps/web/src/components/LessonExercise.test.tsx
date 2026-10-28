@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { LessonExercise } from './LessonExercise';
@@ -311,6 +311,63 @@ describe('LessonExercise', () => {
     options.onSuccess();
 
     expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
+  });
+
+  it('keeps showing the result while the same answer is checked again', async () => {
+    const attempt = {
+      exerciseId: 'exercise-1',
+      answer: 'Buongiorno',
+      evaluation: 'CORRECT' as const,
+      accentCorrection: null,
+      feedback: null,
+      createdAt: '2026-10-23T09:00:00.000Z',
+    };
+    const mutation = (state: Partial<SubmitMutation>) =>
+      vi.mocked(trpc.exercise.submitAttempt.useMutation).mockReturnValue({
+        mutate: mockSubmit,
+        isPending: false,
+        isError: false,
+        data: undefined,
+        ...state,
+      } as unknown as SubmitMutation);
+    const exercise = () => (
+      <ol>
+        <LessonExercise
+          exercise={shortAnswer}
+          index={0}
+          lessonId="lesson-1"
+          showMyAnswer={false}
+          showAnswerKey={false}
+          view="one"
+          count={3}
+        />
+      </ol>
+    );
+    // With Show my answers off, there's no saved attempt to fall back on
+    const { rerender } = renderExercise(
+      shortAnswer,
+      {},
+      {},
+      {
+        showMyAnswer: false,
+      },
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/your answer/i), 'Buongiorno');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    const options = vi
+      .mocked(trpc.exercise.submitAttempt.useMutation)
+      .mock.calls.at(-1)![0] as { onSuccess: (data: typeof attempt) => void };
+    mutation({ data: attempt as SubmitMutation['data'] });
+    act(() => options.onSuccess(attempt));
+    rerender(exercise());
+    expect(screen.getByText(/correct/i)).toBeInTheDocument();
+
+    // A new check starts, which clears the mutation's data until it's done
+    mutation({ isPending: true });
+    rerender(exercise());
+
+    expect(screen.getByText(/correct/i)).toBeInTheDocument();
   });
 
   it("says when an answer couldn't be checked", () => {
