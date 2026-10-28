@@ -1,6 +1,7 @@
 import {
   useEffect,
   useEffectEvent,
+  useId,
   useRef,
   useState,
   type ReactNode,
@@ -183,6 +184,44 @@ function ToggleButton({
   );
 }
 
+/**
+ * An on-or-off setting as a switch, for settings that don't depend on each
+ * other, unlike the options of a view.
+ */
+function Switch({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-white/80 hover:text-white"
+    >
+      <span
+        aria-hidden
+        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-white/80' : 'bg-white/20'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 size-3 rounded-full transition-transform ${
+            checked ? 'translate-x-3 bg-[oklch(0.3_0.1_228)]' : 'bg-white/80'
+          }`}
+        />
+      </span>
+      {children}
+    </button>
+  );
+}
+
 const MENU_ITEM = 'focus:bg-white/10 focus:text-white';
 
 /**
@@ -207,6 +246,7 @@ function WrittenLessonHeader({
   practiceToggles?: StoredPracticeSettings;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
+  const showLabelId = useId();
 
   return (
     <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
@@ -229,21 +269,27 @@ function WrittenLessonHeader({
         {practiceToggles && (
           <div
             role="group"
-            aria-label="Show"
-            className={`hidden lg:inline-flex ${SEGMENTED}`}
+            aria-labelledby={showLabelId}
+            className="hidden shrink-0 items-center gap-1 lg:flex"
           >
-            <ToggleButton
-              pressed={practiceToggles.showMyAnswers}
+            <span
+              id={showLabelId}
+              className="mr-1 text-xs tracking-wide text-white/50 uppercase"
+            >
+              Show
+            </span>
+            <Switch
+              checked={practiceToggles.showMyAnswers}
               onChange={practiceToggles.setShowMyAnswers}
             >
               My answers
-            </ToggleButton>
-            <ToggleButton
-              pressed={practiceToggles.showAnswerKey}
+            </Switch>
+            <Switch
+              checked={practiceToggles.showAnswerKey}
               onChange={practiceToggles.setShowAnswerKey}
             >
               Answer key
-            </ToggleButton>
+            </Switch>
           </div>
         )}
         <CompletionToggle lesson={lesson} />

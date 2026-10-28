@@ -1131,8 +1131,8 @@ describe('LessonPage', () => {
         practiceOf();
 
         expect(
-          within(toggles()).getByRole('button', { name: 'My answers' }),
-        ).toHaveAttribute('aria-pressed', 'true');
+          within(toggles()).getByRole('switch', { name: 'My answers' }),
+        ).toBeChecked();
         expect(screen.getByLabelText('Your answer')).toHaveValue('Buonasera');
       });
 
@@ -1141,7 +1141,7 @@ describe('LessonPage', () => {
         practiceOf();
 
         await user.click(
-          within(toggles()).getByRole('button', { name: 'My answers' }),
+          within(toggles()).getByRole('switch', { name: 'My answers' }),
         );
 
         expect(screen.getByLabelText('Your answer')).toHaveValue('');
@@ -1154,8 +1154,8 @@ describe('LessonPage', () => {
         practiceOf();
 
         expect(
-          within(toggles()).getByRole('button', { name: 'Answer key' }),
-        ).toHaveAttribute('aria-pressed', 'false');
+          within(toggles()).getByRole('switch', { name: 'Answer key' }),
+        ).not.toBeChecked();
         expect(answersRequested('exercise-1')).toBe(false);
       });
 
@@ -1163,7 +1163,7 @@ describe('LessonPage', () => {
         const user = userEvent.setup();
         practiceOf();
         await user.click(
-          within(toggles()).getByRole('button', { name: 'Answer key' }),
+          within(toggles()).getByRole('switch', { name: 'Answer key' }),
         );
         expect(answersRequested('exercise-1')).toBe(true);
 
@@ -1183,10 +1183,10 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       practiceOf();
       await user.click(
-        within(toggles()).getByRole('button', { name: 'My answers' }),
+        within(toggles()).getByRole('switch', { name: 'My answers' }),
       );
       await user.click(
-        within(toggles()).getByRole('button', { name: 'Answer key' }),
+        within(toggles()).getByRole('switch', { name: 'Answer key' }),
       );
 
       expect(screen.getByLabelText('Your answer')).toHaveValue('');
@@ -1200,10 +1200,10 @@ describe('LessonPage', () => {
         within(practiceView()).getByRole('button', { name: 'All exercises' }),
       );
       await user.click(
-        within(toggles()).getByRole('button', { name: 'My answers' }),
+        within(toggles()).getByRole('switch', { name: 'My answers' }),
       );
       await user.click(
-        within(toggles()).getByRole('button', { name: 'Answer key' }),
+        within(toggles()).getByRole('switch', { name: 'Answer key' }),
       );
 
       expect(screen.getAllByLabelText('Your answer')[0]).toHaveValue('');
@@ -1239,10 +1239,10 @@ describe('LessonPage', () => {
           within(practiceView()).getByRole('button', { name: 'All exercises' }),
         );
         await user.click(
-          within(toggles()).getByRole('button', { name: 'My answers' }),
+          within(toggles()).getByRole('switch', { name: 'My answers' }),
         );
         await user.click(
-          within(toggles()).getByRole('button', { name: 'Answer key' }),
+          within(toggles()).getByRole('switch', { name: 'Answer key' }),
         );
         unmount();
 
@@ -1250,11 +1250,11 @@ describe('LessonPage', () => {
 
         expect(shownExercises()).toHaveLength(3);
         expect(
-          within(toggles()).getByRole('button', { name: 'My answers' }),
-        ).toHaveAttribute('aria-pressed', 'false');
+          within(toggles()).getByRole('switch', { name: 'My answers' }),
+        ).not.toBeChecked();
         expect(
-          within(toggles()).getByRole('button', { name: 'Answer key' }),
-        ).toHaveAttribute('aria-pressed', 'true');
+          within(toggles()).getByRole('switch', { name: 'Answer key' }),
+        ).toBeChecked();
       });
 
       it('still works when the browser has no storage', async () => {
@@ -1269,7 +1269,7 @@ describe('LessonPage', () => {
 
         expect(shownExercises()).toHaveLength(1);
         await user.click(
-          within(toggles()).getByRole('button', { name: 'My answers' }),
+          within(toggles()).getByRole('switch', { name: 'My answers' }),
         );
         expect(screen.getByLabelText('Your answer')).toHaveValue('');
       });
