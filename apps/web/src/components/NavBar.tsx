@@ -48,7 +48,9 @@ export function NavBar() {
   const linkClass = `${baseLinkClass} text-white/70`;
 
   return (
-    <nav className="flex items-center gap-2 px-4 py-2 sm:gap-4 sm:px-8 sm:py-4">
+    // The gutter switches where the page's does (PAGE_WIDTH), so Study Hall
+    // lines up with the page below it
+    <nav className="flex items-center gap-2 px-4 py-2 sm:gap-4 sm:py-4 md:px-8">
       <Link
         to="/"
         className="text-lg font-bold tracking-wide whitespace-nowrap text-white"
@@ -61,7 +63,8 @@ export function NavBar() {
           <Link
             key={to}
             to={to}
-            className={`${baseLinkClass} ${current ? 'text-white' : 'text-white/70'}`}
+            // An icon alone is marked by a soft background as well as colour
+            className={`${baseLinkClass} ${current ? 'bg-white/15 text-white sm:bg-transparent' : 'text-white/70'}`}
             aria-current={current ? 'page' : undefined}
           >
             <Icon className="h-4 w-4" aria-hidden />

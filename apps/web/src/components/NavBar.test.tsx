@@ -125,6 +125,18 @@ describe('NavBar', () => {
     );
   });
 
+  it('sets the current area on a soft background on narrow screens, where it is an icon alone', () => {
+    renderNavBar('/stats');
+
+    expect(screen.getByRole('link', { name: 'Stats' })).toHaveClass(
+      'bg-white/15',
+      'sm:bg-transparent',
+    );
+    expect(screen.getByRole('link', { name: 'Courses' })).not.toHaveClass(
+      'bg-white/15',
+    );
+  });
+
   it('keeps Study Hall on one line', () => {
     renderNavBar();
 
