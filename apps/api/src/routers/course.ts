@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
-import { lessonToContinue, lessonStatus } from '../services/syllabus.js';
+import { continueTarget, lessonStatus } from '../services/syllabus.js';
 import { countDueAndNewCards } from '../services/studySessions.js';
 import { generateStructured } from '../ai/generate.js';
 import {
@@ -82,10 +82,9 @@ export const courseRouter = router({
       }
 
       const { deck, proposal, lessons, ...rest } = course;
-      const next = lessonToContinue(lessons);
       return {
         ...rest,
-        continueLesson: next && { id: next.id, title: next.title },
+        continueLesson: continueTarget(lessons),
         lessons: lessons.map((lesson) => ({
           ...lesson,
           status: lessonStatus(lesson),

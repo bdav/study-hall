@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, XCircle } from 'lucide-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { exerciseElementId } from '@/lib/lessonSteps';
 import { Input } from '@/components/ui/input';
 
 type Exercise = NonNullable<
@@ -187,7 +188,10 @@ export function LessonExercise({
     exercise.type === 'FILL_IN_THE_BLANK' ? GAP.exec(exercise.prompt) : null;
 
   return (
-    <li className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm">
+    <li
+      id={exerciseElementId(exercise.id)}
+      className="scroll-mt-28 rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
+    >
       {label}
       <form onSubmit={handleSubmit}>
         {gap ? (

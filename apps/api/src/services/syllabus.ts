@@ -28,3 +28,11 @@ export function lessonToContinue<
       .find((lesson) => !lesson.completedAt) ?? null
   );
 }
+
+/** Where Continue goes, as the pages link to it, or null when nowhere. */
+export function continueTarget(
+  lessons: Pick<Lesson, 'id' | 'title' | 'position' | 'completedAt'>[],
+): { id: string; title: string } | null {
+  const next = lessonToContinue(lessons);
+  return next && { id: next.id, title: next.title };
+}

@@ -9,8 +9,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
-  Circle,
-  CircleCheck,
   Loader2,
   Menu,
   MoreHorizontal,
@@ -46,7 +44,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
+import {
+  CompletionToggle,
+  LessonCompletion,
+} from '@/components/LessonCompletion';
+import { LessonWrapUp } from '@/components/LessonWrapUp';
 import {
   adjacentSteps,
   currentStepIndex,
@@ -55,6 +57,8 @@ import {
   stepSearch,
   type LessonStep,
   READING_VIEWS,
+  currentExerciseId,
+  exerciseElementId,
   type ReadingView,
 } from '@/lib/lessonSteps';
 
@@ -236,144 +240,6 @@ function NotWrittenYet({
         <LessonCompletion lesson={lesson} />
       </div>
     </CenteredPage>
-  );
-}
-
-/** Sets or undoes Lesson Completion, refreshing what shows it. */
-function useSetCompleted(lesson: Lesson) {
-  const utils = trpc.useUtils();
-  return trpc.lesson.setCompleted.useMutation({
-    onSuccess: () => {
-      utils.lesson.getById.invalidate({ id: lesson.id });
-      // The syllabus shows the lesson's status and where to continue
-      utils.course.getById.invalidate({ id: lesson.course.id });
-    },
-    onError: () => {
-      toast.error("Couldn't save the lesson's completion");
-    },
-  });
-}
-
-/** Lesson Completion as a compact toggle, for the header. */
-function CompletionToggle({ lesson }: { lesson: Lesson }) {
-  const setCompleted = useSetCompleted(lesson);
-  const complete = lesson.completedAt !== null;
-  const Icon = complete ? CircleCheck : Circle;
-
-  return (
-    <button
-      type="button"
-      aria-pressed={complete}
-      onClick={() =>
-        setCompleted.mutate({ id: lesson.id, completed: !complete })
-      }
-      disabled={setCompleted.isPending}
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 ${
-        complete
-          ? 'bg-white/20 text-white'
-          : 'text-white/70 hover:bg-white/10 hover:text-white'
-      }`}
-    >
-      <Icon className="size-4" />
-      Complete
-    </button>
-  );
-}
-
-/**
- * Lesson Completion: the learner's own mark that they're done with the
- * lesson, set and undone in any order. It records where they are in the
- * syllabus, never how well they know the material.
- */
-function LessonCompletion({ lesson }: { lesson: Lesson }) {
-  const setCompleted = useSetCompleted(lesson);
-  const complete = lesson.completedAt !== null;
-
-  return (
-    <section className="mt-8 flex flex-wrap items-center gap-3 border-t border-white/20 pt-6">
-      {complete && (
-        <p className="text-white/80">You marked this lesson complete.</p>
-      )}
-      <button
-        type="button"
-        onClick={() =>
-          setCompleted.mutate({ id: lesson.id, completed: !complete })
-        }
-        disabled={setCompleted.isPending}
-        className={
-          complete
-            ? 'rounded-lg px-3 py-2 text-sm text-white/60 hover:text-white disabled:opacity-60'
-            : 'rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60'
-        }
-      >
-        {complete ? 'Mark as not complete' : 'Mark lesson complete'}
-      </button>
-    </section>
-  );
-}
-
-/**
- * Proposes review cards from the lesson, weighted toward the exercises the
- * learner got wrong, and opens them in the preview. Only the cards the
- * learner confirms join the Course Deck (ADR-0001).
- */
-function MakeReviewCards({ lessonId }: { lessonId: string }) {
-  const utils = trpc.useUtils();
-  const propose = trpc.lesson.proposeReviewCards.useMutation();
-  const create = trpc.lesson.createReviewCards.useMutation({
-    onSuccess: ({ deckId, createdCount }) => {
-      propose.reset();
-      utils.card.listByDeck.invalidate({ deckId });
-      utils.deck.list.invalidate();
-      toast.success(
-        `Added ${createdCount} review ${createdCount === 1 ? 'card' : 'cards'} to the course deck`,
-      );
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-  const proposal = propose.data;
-
-  return (
-    <section className="mt-8">
-      <h3 className="text-lg font-semibold">Review</h3>
-      <p className="mt-2 text-white/70">
-        Turn this lesson into flashcards for spaced review, with extra cards on
-        the exercises you got wrong. You choose which ones to keep.
-      </p>
-      <button
-        type="button"
-        onClick={() => propose.mutate({ id: lessonId })}
-        disabled={propose.isPending}
-        className="mt-3 flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60"
-      >
-        {propose.isPending && <Loader2 className="size-4 animate-spin" />}
-        {propose.isPending ? 'Proposing cards…' : 'Make review cards'}
-      </button>
-      {propose.isError && (
-        <p className="mt-2 text-sm text-destructive">{propose.error.message}</p>
-      )}
-
-      {proposal && (
-        <ReviewCardsDialog
-          open
-          onClose={() => propose.reset()}
-          onConfirm={(cards) =>
-            create.mutate({
-              id: lessonId,
-              model: proposal.model,
-              promptVersion: proposal.promptVersion,
-              // Typed Recall is the only card type the preview edits
-              cards: cards.map((card) => ({ type: 'TYPED_RECALL', ...card })),
-            })
-          }
-          isPending={create.isPending}
-          proposals={proposal.cards}
-          existingCards={proposal.existingCards}
-        />
-      )}
-    </section>
   );
 }
 
@@ -568,12 +434,7 @@ function StepContent({
       );
     case 'wrap-up':
       return (
-        <section>
-          <h2 className="text-xl font-semibold">Wrap up</h2>
-          {/* Proposing cards is an AI call */}
-          {canUseAI && <MakeReviewCards lessonId={lesson.id} />}
-          <LessonCompletion lesson={lesson} />
-        </section>
+        <LessonWrapUp lesson={lesson} version={version} canUseAI={canUseAI} />
       );
   }
 }
@@ -700,8 +561,12 @@ function WrittenLesson({
   // the learner's place
   const pageKey = isFullPage ? 'full-lesson' : current.id;
   const scrollToPlace = useEffectEvent(() => {
+    const exerciseId = currentExerciseId(searchParams);
     if (isFullPage && current !== steps.find(isReadingStep)) {
       jumpTo(current);
+    } else if (current.kind === 'practice' && exerciseId) {
+      // Such as a missed exercise linked from Wrap up
+      document.getElementById(exerciseElementId(exerciseId))?.scrollIntoView();
     } else {
       window.scrollTo({ top: 0 });
     }
@@ -888,6 +753,8 @@ export default function LessonPage() {
   if (lesson.version) {
     return (
       <WrittenLesson
+        // Continue opens another lesson, which starts afresh
+        key={lesson.id}
         lesson={lesson}
         version={lesson.version}
         canUseAI={canUseAI}

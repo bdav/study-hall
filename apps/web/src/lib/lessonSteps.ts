@@ -36,6 +36,21 @@ export function stepSearch(step: LessonStep) {
   return `?step=${step.id}`;
 }
 
+/** The query string that opens Practice at an exercise. */
+export function exerciseSearch(exerciseId: string) {
+  return `?step=practice&exercise=${exerciseId}`;
+}
+
+/** The exercise the URL's query opens Practice at, if any. */
+export function currentExerciseId(search: URLSearchParams) {
+  return search.get('exercise');
+}
+
+/** Where an exercise sits on the Practice step. */
+export function exerciseElementId(exerciseId: string) {
+  return `exercise-${exerciseId}`;
+}
+
 /** The step the URL's query names, or the first when it names none of them. */
 export function currentStepIndex(steps: LessonStep[], search: URLSearchParams) {
   return Math.max(

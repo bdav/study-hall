@@ -86,6 +86,7 @@ const lesson = {
   completedAt: null,
   resetAt: null,
   generating: false,
+  nextLesson: { id: 'lesson-2', title: 'At the café' },
   version: null,
 };
 
@@ -125,6 +126,7 @@ const generatedLesson = {
       },
     ],
     hiddenExerciseCount: 0,
+    missedExerciseCount: 0,
   },
 };
 
@@ -956,6 +958,229 @@ describe('LessonPage', () => {
       expect(
         screen.getByRole('heading', { level: 2, name: 'Practice' }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('Wrap up', () => {
+    /** An attempt at an exercise, judged as given. */
+    const attempt = (
+      exerciseId: string,
+      answer: string,
+      evaluation: string,
+    ) => ({
+      exerciseId,
+      answer,
+      evaluation,
+      accentCorrection: null,
+      feedback: null,
+      createdAt: '2026-10-24T09:00:00.000Z',
+    });
+    const withAttempts = (
+      evaluations: (string | null)[],
+      overrides: object = {},
+    ) => ({
+      ...generatedLesson,
+      ...overrides,
+      version: {
+        ...generatedLesson.version,
+        exercises: generatedLesson.version.exercises.map((exercise, index) => ({
+          ...exercise,
+          latestAttempt: evaluations[index]
+            ? attempt(exercise.id, 'An answer', evaluations[index])
+            : null,
+        })),
+      },
+    });
+    const wrapUpFor = (data: object, options = {}) =>
+      renderPage({
+        path: wrapUp,
+        query: { data } as Partial<LessonQuery>,
+        ...options,
+      });
+    const results = () => screen.getByRole('list', { name: 'Your results' });
+
+    describe('results', () => {
+      it("shows each exercise's latest result and how many were right", () => {
+        wrapUpFor(withAttempts(['CORRECT', 'INCORRECT', null]));
+
+        expect(screen.getByText('You got 1 of 3 right.')).toBeInTheDocument();
+        const items = within(results()).getAllByRole('listitem');
+        expect(items[0]).toHaveTextContent(/translate: good morning.*correct/i);
+        expect(items[1]).toHaveTextContent(/, marco!.*incorrect/i);
+        expect(items[2]).toHaveTextContent(
+          /when would you say buonasera\?.*not tried yet/i,
+        );
+      });
+
+      it('counts a partly right explanation as missed, not right', () => {
+        wrapUpFor(withAttempts(['CORRECT', 'CORRECT', 'PARTIALLY_CORRECT']));
+
+        expect(screen.getByText('You got 2 of 3 right.')).toBeInTheDocument();
+        expect(within(results()).getAllByRole('listitem')[2]).toHaveTextContent(
+          /partly right/i,
+        );
+      });
+
+      it('links each missed exercise to it in Practice', async () => {
+        const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+        const user = userEvent.setup();
+        wrapUpFor(withAttempts(['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT']));
+
+        const items = within(results()).getAllByRole('listitem');
+        expect(
+          within(items[0]).queryByRole('link', { name: /try again/i }),
+        ).not.toBeInTheDocument();
+        await user.click(
+          within(items[1]).getByRole('link', { name: /try again/i }),
+        );
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Practice' }),
+        ).toBeInTheDocument();
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice&exercise=exercise-2',
+        );
+        expect(
+          scroll.mock.contexts.map((element) =>
+            // The blank renders as a field, so the prompt reads ", Marco!"
+            /2\. fill in the blank.*, marco!/i.test(
+              (element as Element).textContent ?? '',
+            ),
+          ),
+        ).toContain(true);
+      });
+
+      it('needs no AI access', () => {
+        wrapUpFor(withAttempts(['CORRECT', null, null]), { canUseAI: false });
+
+        expect(screen.getByText('You got 1 of 3 right.')).toBeInTheDocument();
+        expect(
+          screen.getByRole('link', { name: 'Continue: At the café' }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    describe('making review cards', () => {
+      it('suggests trying the exercises first when none has been tried, but still offers it', () => {
+        wrapUpFor(withAttempts([null, null, null]));
+
+        expect(
+          screen.getByText(/try the exercises first/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: 'Make review cards' }),
+        ).toBeEnabled();
+      });
+
+      /** As the API counts them: ever got wrong on this version. */
+      const missed = (
+        data: ReturnType<typeof withAttempts>,
+        count: number,
+      ) => ({
+        ...data,
+        version: { ...data.version, missedExerciseCount: count },
+      });
+
+      it('says how many missed exercises the cards will focus on', () => {
+        wrapUpFor(
+          missed(withAttempts(['INCORRECT', 'PARTIALLY_CORRECT', null]), 2),
+        );
+
+        expect(
+          screen.getByText(/focus on the 2 exercises you missed/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: 'Make review cards' }),
+        ).toBeEnabled();
+      });
+
+      it('counts exercises missed before starting over, which the cards still focus on', () => {
+        wrapUpFor(missed(withAttempts([null, null, null]), 1));
+
+        expect(
+          screen.getByText(/focus on the 1 exercise you missed/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByText(/try the exercises first/i),
+        ).not.toBeInTheDocument();
+      });
+
+      it('counts an exercise missed and then put right, which the cards still focus on', () => {
+        wrapUpFor(missed(withAttempts(['CORRECT', 'CORRECT', null]), 1));
+
+        expect(
+          screen.getByText(/focus on the 1 exercise you missed/i),
+        ).toBeInTheDocument();
+      });
+
+      it('says so when nothing was missed', () => {
+        wrapUpFor(withAttempts(['CORRECT', 'CORRECT', null]));
+
+        expect(
+          screen.getByText(/you haven't missed any exercises/i),
+        ).toBeInTheDocument();
+      });
+    });
+
+    describe('suggesting completion', () => {
+      const suggestion = () =>
+        screen.queryByText(/you've tried every exercise/i);
+
+      it('suggests marking the lesson complete once every exercise has been tried', () => {
+        wrapUpFor(withAttempts(['CORRECT', 'INCORRECT', 'PARTIALLY_CORRECT']));
+
+        expect(suggestion()).toBeInTheDocument();
+        expect(mockSetCompleted).not.toHaveBeenCalled();
+      });
+
+      it("doesn't suggest it for a lesson with no exercises to try", () => {
+        wrapUpFor({
+          ...generatedLesson,
+          version: { ...generatedLesson.version, exercises: [] },
+        });
+
+        expect(suggestion()).not.toBeInTheDocument();
+      });
+
+      it('waits until every exercise has been tried', () => {
+        wrapUpFor(withAttempts(['CORRECT', 'INCORRECT', null]));
+
+        expect(suggestion()).not.toBeInTheDocument();
+      });
+
+      it("doesn't suggest it for a lesson already complete", () => {
+        wrapUpFor(
+          withAttempts(['CORRECT', 'CORRECT', 'CORRECT'], {
+            completedAt: '2026-10-24T09:00:00.000Z',
+          }),
+        );
+
+        expect(suggestion()).not.toBeInTheDocument();
+      });
+    });
+
+    describe('continuing', () => {
+      it('continues to the next lesson', () => {
+        wrapUpFor(withAttempts([null, null, null]));
+
+        expect(
+          screen.getByRole('link', { name: 'Continue: At the café' }),
+        ).toHaveAttribute('href', '/lessons/lesson-2');
+      });
+
+      it('says when every other lesson is complete, and links back to the course', () => {
+        wrapUpFor(withAttempts([null, null, null], { nextLesson: null }));
+
+        expect(
+          screen.getByText(/every other lesson in this course is complete/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('link', { name: 'Back to Italian' }),
+        ).toHaveAttribute('href', '/courses/course-1');
+        expect(
+          screen.queryByRole('link', { name: /^continue/i }),
+        ).not.toBeInTheDocument();
+      });
     });
   });
 

@@ -23,6 +23,7 @@ import {
   cardProposalSchema,
 } from '../ai/cardProposal.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
+import { continueTarget } from '../services/syllabus.js';
 import { userCanUseAI } from '../ai/access.js';
 import {
   createCards,
@@ -74,6 +75,11 @@ async function findOwnedLessonState(
   return lesson;
 }
 
+/** Attempts the learner got wrong, wholly or in part (ADR-0006). */
+const attemptGotWrong = {
+  evaluation: { in: ['INCORRECT', 'PARTIALLY_CORRECT'] },
+} satisfies Prisma.ExerciseAttemptWhereInput;
+
 /**
  * A lesson with its current version, and each exercise's latest attempt
  * since the learner last started the lesson over.
@@ -87,7 +93,22 @@ async function findOwnedLesson(
   return prisma.lesson.findUniqueOrThrow({
     where: { id },
     include: {
-      course: { select: { id: true, title: true } },
+      course: {
+        select: {
+          id: true,
+          title: true,
+          // For where to continue: the active syllabus
+          lessons: {
+            where: { archivedAt: null },
+            select: {
+              id: true,
+              title: true,
+              position: true,
+              completedAt: true,
+            },
+          },
+        },
+      },
       versions: {
         ...currentVersion,
         include: {
@@ -99,6 +120,8 @@ async function findOwnedLesson(
                 orderBy: { createdAt: 'desc' },
                 take: 1,
               },
+              // Ever got wrong, which review card proposals focus on
+              _count: { select: { attempts: { where: attemptGotWrong } } },
             },
           },
         },
@@ -120,11 +143,6 @@ async function findCourseDeck(prisma: PrismaClient, courseId: string) {
   return deck;
 }
 
-/** Attempts the learner got wrong, wholly or in part (ADR-0006). */
-const attemptGotWrong = {
-  evaluation: { in: ['INCORRECT', 'PARTIALLY_CORRECT'] },
-} satisfies Prisma.ExerciseAttemptWhereInput;
-
 /**
  * A lesson as the learner sees it. Exercises leave out their expected
  * answers and points, which the learner must not see before attempting.
@@ -140,6 +158,11 @@ function toLessonView(
     (exercise) => canUseAI || !exercise.open,
   );
   const { generationClaimedAt } = lesson;
+  const { lessons: syllabus, ...course } = lesson.course;
+  // Where Continue goes from here: never back to this lesson
+  const nextLesson = continueTarget(
+    syllabus.filter((other) => other.id !== lesson.id),
+  );
   return {
     id: lesson.id,
     title: lesson.title,
@@ -148,7 +171,8 @@ function toLessonView(
     completedAt: lesson.completedAt,
     // Exercises start afresh when it changes
     resetAt: lesson.resetAt,
-    course: lesson.course,
+    course,
+    nextLesson,
     // Another open is writing the lesson; the page waits for it to finish
     generating:
       !version &&
@@ -166,6 +190,12 @@ function toLessonView(
             latestAttempt: latest ? toAttemptView(latest) : null,
           })),
           hiddenExerciseCount: version.exercises.length - shown.length,
+          // The exercises review cards will focus on: any the learner got
+          // wrong on this version, whether since put right or before
+          // starting over, as proposeReviewCards picks them
+          missedExerciseCount: version.exercises.filter(
+            (exercise) => exercise._count.attempts > 0,
+          ).length,
         }
       : null,
   };

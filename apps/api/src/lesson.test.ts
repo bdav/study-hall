@@ -752,6 +752,119 @@ describe('Lesson Completion', () => {
   });
 });
 
+describe('The next lesson', () => {
+  /** Where the lesson's Continue goes, as opening the lesson gets it. */
+  async function nextAfter(lessonId: string) {
+    return (await createCaller().lesson.getById({ id: lessonId })).nextLesson;
+  }
+
+  it('is the first incomplete lesson in syllabus order other than this one', async () => {
+    const [greetings, cafe] = await createCourseWithLessons();
+
+    expect(await nextAfter(greetings.id)).toEqual({
+      id: cafe.id,
+      title: 'At the café',
+    });
+    // An earlier incomplete lesson comes first, even from a later one
+    expect(await nextAfter(cafe.id)).toEqual({
+      id: greetings.id,
+      title: 'Greetings',
+    });
+  });
+
+  it('skips complete lessons, whatever order they were completed in', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    const caller = createCaller();
+    await caller.lesson.setCompleted({ id: cafe.id, completed: true });
+    await caller.lesson.setCompleted({ id: greetings.id, completed: true });
+
+    expect(await nextAfter(greetings.id)).toEqual({
+      id: numbers.id,
+      title: 'Numbers',
+    });
+  });
+
+  it('follows the syllabus order, not the order lessons were created in', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    // Numbers moved to the front of the syllabus
+    await prisma.lesson.update({
+      where: { id: numbers.id },
+      data: { position: -1 },
+    });
+
+    expect(await nextAfter(cafe.id)).toEqual({
+      id: numbers.id,
+      title: 'Numbers',
+    });
+    expect(await nextAfter(numbers.id)).toEqual({
+      id: greetings.id,
+      title: 'Greetings',
+    });
+  });
+
+  it('skips archived lessons', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    await prisma.lesson.update({
+      where: { id: cafe.id },
+      data: { archivedAt: new Date() },
+    });
+
+    expect(await nextAfter(greetings.id)).toEqual({
+      id: numbers.id,
+      title: 'Numbers',
+    });
+  });
+
+  it('is none once every other lesson is complete, whether or not this one is', async () => {
+    const [greetings, cafe, numbers] = await createCourseWithLessons();
+    const caller = createCaller();
+    await caller.lesson.setCompleted({ id: cafe.id, completed: true });
+    await caller.lesson.setCompleted({ id: numbers.id, completed: true });
+
+    expect(await nextAfter(greetings.id)).toBeNull();
+    await caller.lesson.setCompleted({ id: greetings.id, completed: true });
+    expect(await nextAfter(greetings.id)).toBeNull();
+  });
+
+  it('comes with a lesson as it is written, too', async () => {
+    const [greetings, cafe] = await createCourseWithLessons();
+
+    ai.respondWith(lessonOutput());
+    const written = await createCaller().lesson.generate({ id: greetings.id });
+
+    expect(written.nextLesson).toEqual({ id: cafe.id, title: 'At the café' });
+  });
+});
+
+describe('Missed exercises', () => {
+  it('counts the exercises review cards will focus on: any got wrong on this version, even since put right or before starting over', async () => {
+    const [lesson] = await createCourseWithLessons();
+    const caller = createCaller();
+    ai.respondWith(lessonOutput());
+    const opened = await caller.lesson.generate({ id: lesson.id });
+    const [goodMorning, , blank] = opened.version!.exercises;
+    expect(opened.version!.missedExerciseCount).toBe(0);
+
+    // Missed, then put right
+    await caller.exercise.submitAttempt({
+      exerciseId: goodMorning.id,
+      answer: 'Buonasera',
+    });
+    await caller.exercise.submitAttempt({
+      exerciseId: goodMorning.id,
+      answer: 'Buongiorno',
+    });
+    await caller.exercise.submitAttempt({
+      exerciseId: blank.id,
+      answer: 'Addio',
+    });
+    await caller.lesson.startOver({ id: lesson.id });
+
+    const reopened = await caller.lesson.getById({ id: lesson.id });
+    expect(reopened.version!.missedExerciseCount).toBe(2);
+  });
+});
+
 describe('Starting a lesson over', () => {
   /** Opens the first lesson and answers its first exercise. */
   async function openAndAnswer(answer: string) {
