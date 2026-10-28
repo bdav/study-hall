@@ -43,3 +43,37 @@ export function currentStepIndex(steps: LessonStep[], search: URLSearchParams) {
     steps.findIndex((step) => step.id === search.get('step')),
   );
 }
+
+/**
+ * How the reading steps (the sections and Examples) are shown: one at a
+ * time, or all on one page so the browser's find works across the lesson.
+ */
+export const READING_VIEWS = [
+  { value: 'by-section', label: 'By section' },
+  { value: 'full', label: 'Full lesson' },
+] as const;
+
+export type ReadingView = (typeof READING_VIEWS)[number]['value'];
+
+export function isReadingStep(step: LessonStep) {
+  return step.kind === 'section' || step.kind === 'examples';
+}
+
+/**
+ * The steps Previous and Next go to. In Full lesson the reading steps are
+ * one page, so from any of them Next goes past them all.
+ */
+export function adjacentSteps(
+  steps: LessonStep[],
+  index: number,
+  view: ReadingView,
+) {
+  if (view === 'full' && isReadingStep(steps[index])) {
+    const firstReading = steps.findIndex(isReadingStep);
+    return {
+      previous: steps[firstReading - 1],
+      next: steps.find((step, i) => i > index && !isReadingStep(step)),
+    };
+  }
+  return { previous: steps[index - 1], next: steps[index + 1] };
+}

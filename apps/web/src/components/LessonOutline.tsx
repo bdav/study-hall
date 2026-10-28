@@ -17,7 +17,7 @@ export function LessonOutline({
   answeredCount: number;
   exerciseCount: number;
   /** Called when a step is chosen, such as to close the drawer. */
-  onNavigate?: () => void;
+  onNavigate?: (step: LessonStep) => void;
 }) {
   return (
     <nav aria-label="Lesson outline">
@@ -28,7 +28,7 @@ export function LessonOutline({
             <li key={step.id}>
               <Link
                 to={stepSearch(step)}
-                onClick={onNavigate}
+                onClick={() => onNavigate?.(step)}
                 aria-current={isCurrent ? 'step' : undefined}
                 className={`block rounded-lg border-l-2 px-3 py-1.5 text-sm ${
                   isCurrent

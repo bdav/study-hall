@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { useStoredChoice } from '@/hooks/useStoredChoice';
 import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -43,10 +44,14 @@ import {
 } from '@/components/ui/sheet';
 import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
 import {
+  adjacentSteps,
   currentStepIndex,
+  isReadingStep,
   lessonSteps,
   stepSearch,
   type LessonStep,
+  READING_VIEWS,
+  type ReadingView,
 } from '@/lib/lessonSteps';
 
 /** How often to check on a lesson another open is writing. */
@@ -358,6 +363,123 @@ const STEP_WIDTHS: Record<LessonStep['kind'], string> = {
   'wrap-up': 'max-w-[70ch]',
 };
 
+/** One content section of a lesson, at a comfortable reading width. */
+function SectionContent({
+  block,
+  id,
+}: {
+  block: LessonVersion['content'][number];
+  id?: string;
+}) {
+  return (
+    <section id={id} className="max-w-[70ch] scroll-mt-28">
+      <h2 className="text-xl font-semibold">{block.heading}</h2>
+      {block.paragraphs.map((paragraph, paragraphIndex) => (
+        <p key={paragraphIndex} className="mt-3 text-white/80">
+          {paragraph}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+function ExamplesContent({
+  examples,
+  id,
+}: {
+  examples: LessonVersion['examples'];
+  id?: string;
+}) {
+  return (
+    <section id={id} className="scroll-mt-28">
+      <h2 className="text-xl font-semibold">Examples</h2>
+      <ul className="mt-4 space-y-3">
+        {examples.map((example, index) => (
+          <li
+            key={index}
+            className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
+          >
+            <p className="font-medium">{example.example}</p>
+            <p className="mt-1 text-sm text-white/70">{example.explanation}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** By section or Full lesson, at the top of the reading steps. */
+function ReadingViewControl({
+  view,
+  onChange,
+}: {
+  view: ReadingView;
+  onChange: (view: ReadingView) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Reading view"
+      className="mb-6 inline-flex rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm"
+    >
+      {READING_VIEWS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={view === option.value}
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-3 py-1 ${
+            view === option.value
+              ? 'bg-white/20 text-white'
+              : 'text-white/70 hover:text-white'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Full lesson: every content section and the Examples on one page, so the
+ * browser's find works across the lesson.
+ */
+function FullLesson({
+  steps,
+  version,
+}: {
+  steps: LessonStep[];
+  version: LessonVersion;
+}) {
+  return (
+    <div className="space-y-12">
+      {steps.map((step) => {
+        const id = sectionElementId(step);
+        if (step.kind === 'section') {
+          return (
+            <SectionContent
+              key={step.id}
+              id={id}
+              block={version.content[step.sectionIndex]}
+            />
+          );
+        }
+        if (step.kind === 'examples') {
+          return (
+            <ExamplesContent
+              key={step.id}
+              id={id}
+              examples={version.examples}
+            />
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 /** What one step of a written lesson shows. */
 function StepContent({
   step,
@@ -371,38 +493,10 @@ function StepContent({
   canUseAI: boolean;
 }) {
   switch (step.kind) {
-    case 'section': {
-      const block = version.content[step.sectionIndex];
-      return (
-        <section>
-          <h2 className="text-xl font-semibold">{block.heading}</h2>
-          {block.paragraphs.map((paragraph, paragraphIndex) => (
-            <p key={paragraphIndex} className="mt-3 text-white/80">
-              {paragraph}
-            </p>
-          ))}
-        </section>
-      );
-    }
+    case 'section':
+      return <SectionContent block={version.content[step.sectionIndex]} />;
     case 'examples':
-      return (
-        <section>
-          <h2 className="text-xl font-semibold">Examples</h2>
-          <ul className="mt-4 space-y-3">
-            {version.examples.map((example, index) => (
-              <li
-                key={index}
-                className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-              >
-                <p className="font-medium">{example.example}</p>
-                <p className="mt-1 text-sm text-white/70">
-                  {example.explanation}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      );
+      return <ExamplesContent examples={version.examples} />;
     case 'practice':
       return (
         <section>
@@ -443,6 +537,43 @@ function StepContent({
   }
 }
 
+/** Where a reading step sits on the Full lesson page. */
+const sectionElementId = (step: LessonStep) => `step-${step.id}`;
+
+/**
+ * How far below the top of the viewport a section's top must be, at most,
+ * for it to be the one being read: just under the pinned header, where
+ * scrolling to a section puts it.
+ */
+const READING_LINE_PX = 150;
+
+/** How near the end of the page counts as at its end, for rounding. */
+const PAGE_END_SLACK_PX = 2;
+
+/**
+ * The section being read on the Full lesson page: the last whose top has
+ * passed the reading line, or the last of all once the page is scrolled to
+ * its end, since a short last section may never reach the line.
+ */
+function sectionBeingRead(readingSteps: LessonStep[]) {
+  const page = document.documentElement;
+  const scrollable = page.scrollHeight > window.innerHeight;
+  if (
+    scrollable &&
+    window.innerHeight + window.scrollY >= page.scrollHeight - PAGE_END_SLACK_PX
+  ) {
+    return readingSteps[readingSteps.length - 1];
+  }
+  return (
+    readingSteps.findLast(
+      (step) =>
+        (document
+          .getElementById(sectionElementId(step))
+          ?.getBoundingClientRect().top ?? Infinity) <= READING_LINE_PX,
+    ) ?? readingSteps[0]
+  );
+}
+
 /** A written lesson, read one step at a time. */
 function WrittenLesson({
   lesson,
@@ -459,10 +590,37 @@ function WrittenLesson({
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const currentIndex = currentStepIndex(steps, searchParams);
-  const goTo = (step: LessonStep) => navigate(stepSearch(step));
   const current = steps[currentIndex];
-  const previous = steps[currentIndex - 1];
-  const next = steps[currentIndex + 1];
+  // The step last navigated to, ahead of the render that shows it, so a
+  // scroll in between can't take the learner back to where they were
+  const navigatingTo = useRef(current.id);
+  useEffect(() => {
+    navigatingTo.current = current.id;
+  }, [current.id]);
+  // Scrolling to a section on the Full lesson page. A late section may only
+  // scroll as far as the page's end, so the jump's own scroll is left alone
+  // rather than taken as the learner reading the last section
+  const jumping = useRef(false);
+  const jumpTo = (step: LessonStep) => {
+    jumping.current = true;
+    document.getElementById(sectionElementId(step))?.scrollIntoView();
+    // A frame's scroll events come before its animation frames, so this
+    // only clears the mark when the jump didn't move the page at all
+    requestAnimationFrame(() => {
+      jumping.current = false;
+    });
+  };
+  const goTo = (step: LessonStep) => {
+    navigatingTo.current = step.id;
+    navigate(stepSearch(step));
+  };
+  const [readingView, setReadingView] = useStoredChoice<ReadingView>(
+    'study-hall:lesson-reading-view',
+    READING_VIEWS.map((view) => view.value),
+    'by-section',
+  );
+  const isFullPage = readingView === 'full' && isReadingStep(current);
+  const { previous, next } = adjacentSteps(steps, currentIndex, readingView);
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (!isStepKey(event)) return;
@@ -487,14 +645,51 @@ function WrittenLesson({
         version.exercises.filter((exercise) => exercise.latestAttempt).length
       }
       exerciseCount={version.exercises.length}
-      onNavigate={onNavigate}
+      onNavigate={(step) => {
+        navigatingTo.current = step.id;
+        onNavigate?.();
+        // Full lesson is one page, so a section in it is a place to scroll to
+        if (isFullPage && isReadingStep(step)) jumpTo(step);
+      }}
     />
   );
 
-  // A new step starts at its top, as a new page would
+  // A new page starts at its top, except that Full lesson opens at the
+  // section in the URL, so switching views, going back and reloading keep
+  // the learner's place
+  const pageKey = isFullPage ? 'full-lesson' : current.id;
+  const scrollToPlace = useEffectEvent(() => {
+    if (isFullPage && current !== steps.find(isReadingStep)) {
+      jumpTo(current);
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  });
   useEffect(() => {
-    window.scrollTo({ top: 0 });
-  }, [current.id]);
+    scrollToPlace();
+  }, [pageKey]);
+
+  // In Full lesson the URL follows the section being read. Replacing rather
+  // than pushing keeps scrolling out of the browser's history
+  const followReading = useEffectEvent(() => {
+    if (jumping.current) {
+      jumping.current = false;
+      return;
+    }
+    const target = steps.find((step) => step.id === navigatingTo.current);
+    // On its way to Practice or Wrap up, the learner has left the page
+    if (!target || !isReadingStep(target)) return;
+    const reading = sectionBeingRead(steps.filter(isReadingStep));
+    if (reading.id !== target.id) {
+      navigatingTo.current = reading.id;
+      navigate(stepSearch(reading), { replace: true });
+    }
+  });
+  useEffect(() => {
+    if (!isFullPage) return;
+    window.addEventListener('scroll', followReading, { passive: true });
+    return () => window.removeEventListener('scroll', followReading);
+  }, [isFullPage]);
 
   const outlineToggles = (
     <>
@@ -535,14 +730,21 @@ function WrittenLesson({
     >
       {/* Beside the outline while it's open; centred once it's collapsed */}
       <div
-        className={`w-full ${STEP_WIDTHS[current.kind]} ${isOutlineCollapsed ? 'mx-auto' : ''}`}
+        className={`w-full ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]} ${isOutlineCollapsed ? 'mx-auto' : ''}`}
       >
-        <StepContent
-          step={current}
-          lesson={lesson}
-          version={version}
-          canUseAI={canUseAI}
-        />
+        {isReadingStep(current) && (
+          <ReadingViewControl view={readingView} onChange={setReadingView} />
+        )}
+        {isFullPage ? (
+          <FullLesson steps={steps} version={version} />
+        ) : (
+          <StepContent
+            step={current}
+            lesson={lesson}
+            version={version}
+            canUseAI={canUseAI}
+          />
+        )}
         <nav
           aria-label="Lesson steps"
           className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/20 pt-6"

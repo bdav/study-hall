@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { vi } from 'vitest';
@@ -252,6 +252,8 @@ function renderPage({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 describe('LessonPage', () => {
@@ -633,6 +635,290 @@ describe('LessonPage', () => {
       renderPage({ query: { data: generatedLesson } as Partial<LessonQuery> });
 
       expect(mockGenerate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reading views', () => {
+    const written = { data: twoSectionLesson } as Partial<LessonQuery>;
+    const view = () => screen.getByRole('group', { name: 'Reading view' });
+    const openFullLesson = (user: ReturnType<typeof userEvent.setup>) =>
+      user.click(within(view()).getByRole('button', { name: 'Full lesson' }));
+
+    it('offers By section and Full lesson on the reading steps, By section first', () => {
+      renderPage({ query: written });
+
+      expect(
+        within(view()).getByRole('button', { name: 'By section' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        within(view()).getByRole('button', { name: 'Full lesson' }),
+      ).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('is offered on Examples too', () => {
+      renderPage({ query: written, path: '/lessons/lesson-1?step=examples' });
+      expect(view()).toBeInTheDocument();
+    });
+
+    it("isn't offered on Practice or Wrap up", () => {
+      const { unmount } = renderPage({ query: written, path: practice });
+      expect(
+        screen.queryByRole('group', { name: 'Reading view' }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      renderPage({ query: written, path: wrapUp });
+      expect(
+        screen.queryByRole('group', { name: 'Reading view' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows every section and the Examples on one page in Full lesson', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await openFullLesson(user);
+
+      expect(
+        screen
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Saying hello', 'Saying goodbye', 'Examples']);
+      expect(
+        screen.getByText('Arrivederci works almost everywhere.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
+      expect(
+        within(view()).getByRole('button', { name: 'Full lesson' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('keeps Practice and Wrap up as their own steps in Full lesson', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+      await openFullLesson(user);
+
+      expect(
+        screen.queryByRole('button', { name: /^previous/i }),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Next: Practice' }));
+
+      expect(
+        screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent),
+      ).toEqual(['Practice']);
+      await user.click(
+        screen.getByRole('button', { name: 'Previous: Examples' }),
+      );
+      expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+      ).toBeInTheDocument();
+    });
+
+    describe("keeping the learner's place", () => {
+      /** The sections `scrollIntoView` was called on, by their headings. */
+      function scrolledTo(scroll: { mock: { contexts: unknown[] } }) {
+        return scroll.mock.contexts.map(
+          (element) =>
+            (element as Element).querySelector('h2')?.textContent ?? null,
+        );
+      }
+
+      /** Places each section so its top is the given distance from the viewport's. */
+      function placeSections(tops: Record<string, number>) {
+        for (const [heading, top] of Object.entries(tops)) {
+          const section = screen
+            .getByRole('heading', { level: 2, name: heading })
+            .closest('section')!;
+          section.getBoundingClientRect = () => ({ top }) as DOMRect;
+        }
+      }
+
+      it('opens Full lesson at the section the learner was reading', async () => {
+        const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+        const user = userEvent.setup();
+        renderPage({
+          query: written,
+          path: '/lessons/lesson-1?step=section-2',
+        });
+
+        await openFullLesson(user);
+
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=section-2',
+        );
+        expect(scrolledTo(scroll)).toEqual(['Saying goodbye']);
+      });
+
+      it('follows the section being read as the learner scrolls Full lesson', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+        await openFullLesson(user);
+
+        placeSections({
+          'Saying hello': -600,
+          'Saying goodbye': 90,
+          Examples: 500,
+        });
+        fireEvent.scroll(window);
+
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=section-2',
+        );
+        expect(
+          within(
+            screen.getByRole('navigation', { name: 'Lesson outline' }),
+          ).getByRole('link', { name: 'Saying goodbye' }),
+        ).toHaveAttribute('aria-current', 'step');
+      });
+
+      it('opens By section at the section the learner scrolled to', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+        await openFullLesson(user);
+        placeSections({
+          'Saying hello': -600,
+          'Saying goodbye': 90,
+          Examples: 500,
+        });
+        fireEvent.scroll(window);
+
+        await user.click(
+          within(view()).getByRole('button', { name: 'By section' }),
+        );
+
+        expect(
+          screen
+            .getAllByRole('heading', { level: 2 })
+            .map((heading) => heading.textContent),
+        ).toEqual(['Saying goodbye']);
+      });
+
+      it('keeps a section the page can only scroll to its end for', async () => {
+        // A late section on a page too short to bring it up to the top
+        const page = document.documentElement;
+        vi.spyOn(page, 'scrollHeight', 'get').mockReturnValue(2000);
+        vi.spyOn(window, 'scrollY', 'get').mockReturnValue(2000 - innerHeight);
+        const user = userEvent.setup();
+        renderPage({
+          query: written,
+          path: '/lessons/lesson-1?step=section-2',
+        });
+        await openFullLesson(user);
+        placeSections({
+          'Saying hello': -600,
+          'Saying goodbye': 300,
+          Examples: 600,
+        });
+
+        // The jump's own scroll
+        fireEvent.scroll(window);
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=section-2',
+        );
+
+        // The learner's, at the end of the page
+        fireEvent.scroll(window);
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples',
+        );
+      });
+
+      it('never lets scrolling undo leaving Full lesson for Practice', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+        await openFullLesson(user);
+        placeSections({
+          'Saying hello': -600,
+          'Saying goodbye': 90,
+          Examples: 500,
+        });
+        // A scroll that lands after the click, before the page has moved on
+        const scrollAfterClick = () => fireEvent.scroll(window);
+        document.addEventListener('click', scrollAfterClick);
+
+        await user.click(
+          screen.getByRole('button', { name: 'Next: Practice' }),
+        );
+        document.removeEventListener('click', scrollAfterClick);
+
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice',
+        );
+      });
+
+      it('scrolls to a section chosen in the outline', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+        await openFullLesson(user);
+        const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+
+        await user.click(
+          within(
+            screen.getByRole('navigation', { name: 'Lesson outline' }),
+          ).getByRole('link', { name: 'Examples' }),
+        );
+
+        expect(scrolledTo(scroll)).toEqual(['Examples']);
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples',
+        );
+      });
+    });
+
+    describe('the remembered choice', () => {
+      it('opens lessons in the view the learner chose last', async () => {
+        const user = userEvent.setup();
+        const { unmount } = renderPage({ query: written });
+        await openFullLesson(user);
+        unmount();
+
+        renderPage({ query: written });
+
+        expect(
+          within(view()).getByRole('button', { name: 'Full lesson' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
+      });
+
+      it('still works when the browser has no storage to remember it in', async () => {
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+          throw new DOMException('Storage is disabled', 'SecurityError');
+        });
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+          throw new DOMException('Storage is disabled', 'SecurityError');
+        });
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        expect(
+          within(view()).getByRole('button', { name: 'By section' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        await openFullLesson(user);
+        expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
+      });
+
+      it("ignores a stored value it doesn't know", () => {
+        localStorage.setItem('study-hall:lesson-reading-view', 'sideways');
+
+        renderPage({ query: written });
+
+        expect(
+          within(view()).getByRole('button', { name: 'By section' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+      });
+    });
+
+    it('moves past the whole page with → in Full lesson', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+      await openFullLesson(user);
+
+      await user.keyboard('{ArrowRight}');
+
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Practice' }),
+      ).toBeInTheDocument();
     });
   });
 
