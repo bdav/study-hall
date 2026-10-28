@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -106,5 +106,30 @@ describe('NavBar', () => {
     await user.click(screen.getByRole('button', { name: /log out/i }));
 
     expect(mockMutate).toHaveBeenCalled();
+  });
+
+  it('shows the areas and Log out as icons alone on narrow screens, keeping their names', () => {
+    renderNavBar();
+
+    for (const name of ['Courses', 'Flashcards', 'Stats']) {
+      const link = screen.getByRole('link', { name });
+      expect(within(link).getByText(name)).toHaveClass(
+        'sr-only',
+        'sm:not-sr-only',
+      );
+    }
+    const logOut = screen.getByRole('button', { name: 'Log out' });
+    expect(within(logOut).getByText('Log out')).toHaveClass(
+      'sr-only',
+      'sm:not-sr-only',
+    );
+  });
+
+  it('keeps Study Hall on one line', () => {
+    renderNavBar();
+
+    expect(screen.getByRole('link', { name: 'Study Hall' })).toHaveClass(
+      'whitespace-nowrap',
+    );
   });
 });

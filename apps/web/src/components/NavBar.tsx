@@ -40,13 +40,19 @@ export function NavBar() {
     },
   });
 
+  // On narrow screens the links are icons alone, padded to be easy to tap,
+  // with their names kept for screen readers
   const baseLinkClass =
-    'flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-white';
+    'flex items-center gap-1.5 rounded-md p-2 text-sm font-medium transition-colors hover:text-white sm:p-0';
+  const labelClass = 'sr-only sm:not-sr-only';
   const linkClass = `${baseLinkClass} text-white/70`;
 
   return (
-    <nav className="flex items-center gap-4 px-8 py-4">
-      <Link to="/" className="text-lg font-bold tracking-wide text-white">
+    <nav className="flex items-center gap-2 px-4 py-2 sm:gap-4 sm:px-8 sm:py-4">
+      <Link
+        to="/"
+        className="text-lg font-bold tracking-wide whitespace-nowrap text-white"
+      >
         Study Hall
       </Link>
       {AREAS.map(({ to, label, icon: Icon, prefixes }) => {
@@ -58,8 +64,8 @@ export function NavBar() {
             className={`${baseLinkClass} ${current ? 'text-white' : 'text-white/70'}`}
             aria-current={current ? 'page' : undefined}
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4" aria-hidden />
+            <span className={labelClass}>{label}</span>
           </Link>
         );
       })}
@@ -68,10 +74,9 @@ export function NavBar() {
           onClick={() => logout.mutate()}
           disabled={logout.isPending}
           className={`${linkClass} cursor-pointer`}
-          aria-label="Log out"
         >
-          <LogOut className="h-4 w-4" />
-          Log out
+          <LogOut className="h-4 w-4" aria-hidden />
+          <span className={labelClass}>Log out</span>
         </button>
       </div>
     </nav>
