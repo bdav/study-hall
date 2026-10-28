@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { LessonExercise } from './LessonExercise';
 import { trpc } from '@/lib/trpc';
+import type { PagingView } from '@/lib/lessonSteps';
 
 const mockInvalidate = vi.fn();
 
@@ -51,7 +52,11 @@ function renderExercise(
   exercise: Exercise,
   mutation: Partial<SubmitMutation> = {},
   answers: Partial<AnswersQuery> = {},
-  { showMyAnswer = true, showAnswerKey = false } = {},
+  {
+    showMyAnswer = true,
+    showAnswerKey = false,
+    view = 'all' as PagingView,
+  } = {},
 ) {
   vi.mocked(trpc.exercise.answers.useQuery).mockReturnValue({
     data: undefined,
@@ -74,6 +79,8 @@ function renderExercise(
         lessonId="lesson-1"
         showMyAnswer={showMyAnswer}
         showAnswerKey={showAnswerKey}
+        view={view}
+        count={3}
       />
     </ol>,
   );
@@ -81,6 +88,21 @@ function renderExercise(
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+const attempted = (
+  exercise: Exercise,
+  evaluation: NonNullable<Exercise['latestAttempt']>['evaluation'],
+): Exercise => ({
+  ...exercise,
+  latestAttempt: {
+    exerciseId: exercise.id,
+    answer: 'Buongiorno',
+    evaluation,
+    accentCorrection: null,
+    feedback: 'Well done.',
+    createdAt: '2026-10-22T09:00:00.000Z',
+  },
 });
 
 describe('LessonExercise', () => {
@@ -556,6 +578,8 @@ describe('LessonExercise', () => {
             lessonId="lesson-1"
             showMyAnswer={false}
             showAnswerKey={false}
+            view="all"
+            count={3}
           />
         </ol>,
       );
@@ -633,6 +657,8 @@ describe('LessonExercise', () => {
             lessonId="lesson-1"
             showMyAnswer
             showAnswerKey={showAnswerKey}
+            view="all"
+            count={3}
           />
         </ol>
       );
@@ -669,6 +695,8 @@ describe('LessonExercise', () => {
             lessonId="lesson-1"
             showMyAnswer
             showAnswerKey={false}
+            view="all"
+            count={3}
           />
         </ol>,
       );
@@ -689,6 +717,74 @@ describe('LessonExercise', () => {
       expect(
         screen.getByText(/answer this exercise to see its answers/i),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('how it looks', () => {
+    it('marks how each exercise went down its side in All exercises', () => {
+      const result = () => screen.getByRole('listitem').dataset.result;
+
+      const { unmount } = renderExercise(shortAnswer);
+      expect(result()).toBe('unchecked');
+      unmount();
+
+      for (const [evaluation, expected] of [
+        ['CORRECT', 'correct'],
+        ['PARTIALLY_CORRECT', 'missed'],
+        ['INCORRECT', 'missed'],
+      ] as const) {
+        const { unmount } = renderExercise(attempted(freeForm, evaluation));
+        expect(result()).toBe(expected);
+        unmount();
+      }
+    });
+
+    it('leaves the side unmarked once the checked answer is edited', async () => {
+      renderExercise(attempted(shortAnswer, 'CORRECT'));
+      expect(screen.getByRole('listitem').dataset.result).toBe('correct');
+
+      await userEvent.setup().type(screen.getByLabelText(/your answer/i), '!');
+
+      expect(screen.getByRole('listitem').dataset.result).toBe('unchecked');
+    });
+
+    it('marks an exercise shown blank, with Show my answers off, as unchecked', () => {
+      renderExercise(
+        attempted(shortAnswer, 'CORRECT'),
+        {},
+        {},
+        {
+          showMyAnswer: false,
+        },
+      );
+
+      expect(screen.getByRole('listitem').dataset.result).toBe('unchecked');
+    });
+
+    it('shows a result as a banner one at a time, and as text in All exercises', () => {
+      const { unmount } = renderExercise(
+        attempted(shortAnswer, 'CORRECT'),
+        {},
+        {},
+        { view: 'one' },
+      );
+      const banner = screen.getByTestId('exercise-result');
+      expect(banner.dataset.presentation).toBe('banner');
+      expect(banner).toHaveTextContent('Correct!');
+      expect(banner).toHaveTextContent('Well done.');
+      unmount();
+
+      renderExercise(attempted(shortAnswer, 'CORRECT'));
+      expect(screen.getByTestId('exercise-result').dataset.presentation).toBe(
+        'text',
+      );
+    });
+
+    it('numbers an exercise in All exercises, beside its type', () => {
+      renderExercise(shortAnswer);
+
+      expect(screen.getByText('1')).toBeInTheDocument();
+      expect(screen.getByText('Short answer')).toBeInTheDocument();
     });
   });
 });

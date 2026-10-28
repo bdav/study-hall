@@ -1026,6 +1026,16 @@ describe('LessonPage', () => {
         ).not.toBeInTheDocument();
       });
 
+      it('shows the count as numbers only, read in full to screen readers', () => {
+        examplesAt('/lessons/lesson-1?step=examples&example=2');
+
+        expect(screen.getByText('2 / 3')).toHaveAttribute(
+          'aria-hidden',
+          'true',
+        );
+        expect(screen.getByText('Example 2 of 3')).toHaveClass('sr-only');
+      });
+
       it('walks the examples with the footer, reaching the steps either side only past the ends', async () => {
         const user = userEvent.setup();
         examplesAt();
@@ -1103,6 +1113,26 @@ describe('LessonPage', () => {
       expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
       expect(screen.queryByText(/example \d of 3/i)).not.toBeInTheDocument();
       expect(footer()).toEqual(['Previous: Saying goodbye', 'Next: Practice']);
+    });
+
+    it('lists every example beside its explanation, all at once', async () => {
+      const user = userEvent.setup();
+      examplesAt();
+
+      await user.click(
+        within(examplesView()).getByRole('button', { name: 'All examples' }),
+      );
+
+      expect(
+        screen.getAllByRole('term').map((term) => term.textContent),
+      ).toEqual(['Ciao, Marco!', 'Buongiorno, signora.', 'Buonasera a tutti.']);
+      expect(
+        screen.getAllByRole('definition').map((d) => d.textContent),
+      ).toEqual([
+        'An informal hello.',
+        'A formal hello.',
+        'Hello in the evening.',
+      ]);
     });
 
     it('shares its view with Practice, both ways', async () => {
@@ -1255,6 +1285,19 @@ describe('LessonPage', () => {
         expect(shownExercises()).toHaveLength(1);
         expect(shownExercises()[0]).toHaveTextContent(/good morning/i);
         expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
+      });
+
+      it('numbers the exercise once, in its corner, as numbers only', () => {
+        practiceOf();
+
+        const exercise = within(shownExercises()[0]);
+        expect(exercise.getByText('1 / 3')).toHaveAttribute(
+          'aria-hidden',
+          'true',
+        );
+        expect(exercise.getByText('Exercise 1 of 3')).toHaveClass('sr-only');
+        expect(exercise.getByText('Short answer')).toBeInTheDocument();
+        expect(exercise.queryByText(/^1\./)).not.toBeInTheDocument();
       });
 
       it('moves between exercises with the footer buttons, with each in the URL', async () => {
@@ -1626,7 +1669,7 @@ describe('LessonPage', () => {
         expect(
           scroll.mock.contexts.map((element) =>
             // The blank renders as a field, so the prompt reads ", Marco!"
-            /2\. fill in the blank.*, marco!/i.test(
+            /fill in the blank.*exercise 2 of 3.*, marco!/i.test(
               (element as Element).textContent ?? '',
             ),
           ),

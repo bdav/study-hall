@@ -3,8 +3,9 @@ import { CheckCircle2, CircleAlert, XCircle } from 'lucide-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
-import { exerciseElementId } from '@/lib/lessonSteps';
+import { exerciseElementId, type PagingView } from '@/lib/lessonSteps';
 import { Input } from '@/components/ui/input';
+import { ItemCount } from '@/components/ItemCount';
 
 type Exercise = NonNullable<
   inferRouterOutputs<AppRouter>['lesson']['getById']['version']
@@ -27,31 +28,52 @@ const glassInputClassName =
 
 type Attempt = NonNullable<Exercise['latestAttempt']>;
 
+/** How a result reads, and how it tints its banner and its exercise's rule. */
+const MISSED_TONES = {
+  color: 'text-amber-200',
+  banner: 'border-amber-200/40 bg-amber-300/15',
+  rule: 'border-amber-200',
+};
 const VERDICTS = {
-  CORRECT: { Icon: CheckCircle2, text: 'Correct!', color: 'text-emerald-300' },
+  CORRECT: {
+    Icon: CheckCircle2,
+    text: 'Correct!',
+    color: 'text-emerald-300',
+    banner: 'border-emerald-300/40 bg-emerald-400/15',
+    rule: 'border-emerald-300',
+  },
   // Free-form explanations only (ADR-0006)
   PARTIALLY_CORRECT: {
     Icon: CircleAlert,
     text: 'Partly right.',
-    color: 'text-amber-200',
+    ...MISSED_TONES,
   },
-  INCORRECT: {
-    Icon: XCircle,
-    text: 'Not quite. Try again.',
-    color: 'text-amber-200',
-  },
+  INCORRECT: { Icon: XCircle, text: 'Not quite. Try again.', ...MISSED_TONES },
 } satisfies Record<Attempt['evaluation'], unknown>;
 
 /**
- * An attempt's result, with the AI's feedback when it evaluated the answer.
- * An Accent Mismatch is correct but always shows the accented form
+ * An attempt's result, with the AI's feedback when it evaluated the answer:
+ * a tinted banner one at a time, coloured text in a list of exercises. An
+ * Accent Mismatch is correct but always shows the accented form
  * (ADR-0002).
  */
-function Result({ attempt }: { attempt: Attempt }) {
-  const { Icon, text, color } = VERDICTS[attempt.evaluation];
+function Result({
+  attempt,
+  asBanner,
+}: {
+  attempt: Attempt;
+  asBanner: boolean;
+}) {
+  const { Icon, text, color, banner } = VERDICTS[attempt.evaluation];
   return (
-    <>
-      <p className={`mt-2 flex items-center gap-1.5 text-sm ${color}`}>
+    <div
+      data-testid="exercise-result"
+      data-presentation={asBanner ? 'banner' : 'text'}
+      className={asBanner ? `mt-3 rounded-lg border p-3 ${banner}` : 'mt-2'}
+    >
+      <p
+        className={`flex items-center gap-1.5 text-sm ${color} ${asBanner ? 'font-medium' : ''}`}
+      >
         <Icon className="size-4" />
         {text}
       </p>
@@ -66,7 +88,7 @@ function Result({ attempt }: { attempt: Attempt }) {
       {attempt.feedback && (
         <p className="mt-1 text-sm text-white/80">{attempt.feedback}</p>
       )}
-    </>
+    </div>
   );
 }
 
@@ -141,7 +163,9 @@ const AI_ERROR_CODES = new Set([
 /**
  * One exercise of a lesson, checked on submit. The API checks
  * deterministically first and asks the AI only for answers to open
- * exercises it can't settle (ADR-0005).
+ * exercises it can't settle (ADR-0005). One at a time, it's on a light
+ * panel with its count; in a list, it's numbered in the margin, with a rule
+ * down its side saying how it went.
  */
 export function LessonExercise({
   exercise,
@@ -149,9 +173,15 @@ export function LessonExercise({
   lessonId,
   showMyAnswer,
   showAnswerKey,
+  view,
+  count,
 }: {
   exercise: Exercise;
   index: number;
+  /** Shown one at a time, or in the list of all the step's exercises. */
+  view: PagingView;
+  /** How many exercises the step has. */
+  count: number;
   lessonId: string;
   /**
    * Off, the exercise starts blank, as if never answered, so it can be
@@ -199,7 +229,7 @@ export function LessonExercise({
 
   const label = (
     <p className="text-xs uppercase tracking-wide text-white/50">
-      {index + 1}. {EXERCISE_LABELS[exercise.type]}
+      {EXERCISE_LABELS[exercise.type]}
     </p>
   );
 
@@ -207,12 +237,8 @@ export function LessonExercise({
   const gap =
     exercise.type === 'FILL_IN_THE_BLANK' ? GAP.exec(exercise.prompt) : null;
 
-  return (
-    <li
-      id={exerciseElementId(exercise.id)}
-      className="scroll-mt-28 rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-    >
-      {label}
+  const body = (
+    <>
       <form onSubmit={handleSubmit}>
         {gap ? (
           <p className="mt-1 flex flex-wrap items-center gap-1">
@@ -262,7 +288,7 @@ export function LessonExercise({
             : "We couldn't check your answer. Please try again."}
         </p>
       ) : (
-        result && <Result attempt={result} />
+        result && <Result attempt={result} asBanner={view === 'one'} />
       )}
       {/* Fetched answers stay cached, so they show only while wanted */}
       {wantsAnswers && answers.data ? (
@@ -289,6 +315,41 @@ export function LessonExercise({
           </button>
         )
       )}
+    </>
+  );
+
+  const id = exerciseElementId(exercise.id);
+  if (view === 'one') {
+    return (
+      <li id={id} className="scroll-mt-28 rounded-2xl bg-white/5 p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          {label}
+          <ItemCount noun="Exercise" index={index} count={count} />
+        </div>
+        {body}
+      </li>
+    );
+  }
+  // How the answer shown went, so editing it, like hiding answers, leaves
+  // it unchecked
+  const outcome = !result
+    ? 'unchecked'
+    : result.evaluation === 'CORRECT'
+      ? 'correct'
+      : 'missed';
+  return (
+    <li
+      id={id}
+      data-result={outcome}
+      className="grid scroll-mt-28 grid-cols-[2rem_minmax(0,1fr)] py-5 first:pt-0 last:pb-0"
+    >
+      <span className="pt-1 text-white/50 tabular-nums">{index + 1}</span>
+      <div
+        className={`border-l-4 py-1 pl-4 ${result ? VERDICTS[result.evaluation].rule : 'border-white/20'}`}
+      >
+        {label}
+        {body}
+      </div>
     </li>
   );
 }

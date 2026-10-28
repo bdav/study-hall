@@ -42,6 +42,7 @@ import {
   LessonPractice,
   type PracticeSettings,
 } from '@/components/LessonPractice';
+import { ItemCount } from '@/components/ItemCount';
 import { LessonFrame } from '@/components/LessonFrame';
 import { PinnedHeader } from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
@@ -442,7 +443,11 @@ function SectionContent({
   );
 }
 
-/** The lesson's examples, all of them or one at a time with a count. */
+/**
+ * The lesson's examples: one at a time like a textbook's, set off by a
+ * rule with its explanation beneath, or all of them as a table, each
+ * beside its explanation.
+ */
 function ExamplesContent({
   examples,
   id,
@@ -453,29 +458,37 @@ function ExamplesContent({
   /** The one example shown, one at a time; left out to show them all. */
   shownIndex?: number;
 }) {
-  const shown =
-    shownIndex === undefined
-      ? examples.map((example, index) => ({ example, index }))
-      : [{ example: examples[shownIndex], index: shownIndex }];
+  if (shownIndex === undefined) {
+    return (
+      <section id={id} className="scroll-mt-28">
+        <h2 className="text-xl font-semibold">Examples</h2>
+        <dl className="mt-4 divide-y divide-white/10 border-y border-white/10">
+          {examples.map(({ example, explanation }, index) => (
+            <div
+              key={index}
+              className="gap-6 py-3 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+            >
+              <dt className="font-medium">{example}</dt>
+              <dd className="mt-1 text-sm text-white/70 sm:mt-0">
+                {explanation}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    );
+  }
+  const { example, explanation } = examples[shownIndex];
   return (
     <section id={id} className="scroll-mt-28">
-      <h2 className="text-xl font-semibold">Examples</h2>
-      {shownIndex !== undefined && (
-        <p className="mt-4 text-sm text-white/60">
-          Example {shownIndex + 1} of {examples.length}
-        </p>
-      )}
-      <ul className={`space-y-3 ${shownIndex === undefined ? 'mt-4' : 'mt-3'}`}>
-        {shown.map(({ example, index }) => (
-          <li
-            key={index}
-            className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-          >
-            <p className="font-medium">{example.example}</p>
-            <p className="mt-1 text-sm text-white/70">{example.explanation}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-xl font-semibold">Examples</h2>
+        <ItemCount noun="Example" index={shownIndex} count={examples.length} />
+      </div>
+      <p className="mt-6 border-l-2 border-white/50 pl-4 text-2xl font-medium break-words">
+        {example}
+      </p>
+      <p className="mt-4 max-w-[70ch] text-white/80">{explanation}</p>
     </section>
   );
 }

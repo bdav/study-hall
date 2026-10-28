@@ -40,6 +40,8 @@ export function LessonPractice({
         lessonId={lesson.id}
         showMyAnswer={settings.showMyAnswers}
         showAnswerKey={settings.showAnswerKey}
+        view={settings.view}
+        count={exercises.length}
       />
     );
   };
@@ -49,16 +51,9 @@ export function LessonPractice({
       <h2 className="text-xl font-semibold">Practice</h2>
       <div className="mt-4">
         {settings.view === 'one' && exercises.length > 0 ? (
-          <>
-            <p className="mb-3 text-sm text-white/60">
-              Exercise {settings.exerciseIndex + 1} of {exercises.length}
-            </p>
-            <ol aria-label="Exercises">
-              {exerciseItem(settings.exerciseIndex)}
-            </ol>
-          </>
+          <ol aria-label="Exercises">{exerciseItem(settings.exerciseIndex)}</ol>
         ) : (
-          <ol aria-label="Exercises" className="space-y-3">
+          <ol aria-label="Exercises" className="divide-y divide-white/15">
             {exercises.map((_, index) => exerciseItem(index))}
           </ol>
         )}
