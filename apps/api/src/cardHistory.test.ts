@@ -421,6 +421,19 @@ describe('card.history', () => {
     expect(history.progress).toEqual({
       lifecycleState: 'LEARNING',
       dueAt: expect.any(Date),
+      isKnown: false,
+    });
+  });
+
+  it('says when the card is already known', async () => {
+    const { card } = await primeCard();
+    await createCaller().card.markKnown({ cardIds: [card.id] });
+
+    const history = await createCaller().card.history({ cardId: card.id });
+
+    expect(history.progress).toMatchObject({
+      lifecycleState: 'STABLE',
+      isKnown: true,
     });
   });
 

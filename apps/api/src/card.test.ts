@@ -106,6 +106,25 @@ describe('cardRouter', () => {
       expect(cards[1].front).toBe('Q2');
     });
 
+    it('says whether each card is already known', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
+        ],
+      });
+      const caller = createCaller();
+      await caller.card.markKnown({ cardIds: [deck.cards[1].id] });
+
+      const cards = await caller.card.listByDeck({ deckId: deck.id });
+
+      expect(cards.map(({ front, isKnown }) => ({ front, isKnown }))).toEqual([
+        { front: 'Q1', isKnown: false },
+        { front: 'Q2', isKnown: true },
+      ]);
+    });
+
     it('returns empty array for deck with no cards', async () => {
       const deck = await prisma.deck.create({
         data: { name: 'Empty Deck', userId },

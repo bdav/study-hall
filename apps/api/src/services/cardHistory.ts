@@ -1,6 +1,7 @@
 import { type PrismaClient, type RecallGrade } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { isCorrect } from './countedAttempts.js';
+import { isKnown } from './progressUpdater.js';
 import {
   asksTheSame,
   parseVariantsByAnswer,
@@ -35,8 +36,9 @@ function summarizeAttempts(attempts: Attempt[]) {
  * an earlier version (`restoredFromNumber`), and whether it can be restored
  * (#54): an earlier version that asks something the card doesn't now. An
  * attempt's grade is its final one, after "My answer was correct". The
- * card's progress is its lifecycle state and when it's next due; the mastery
- * score stays inside the scheduler. Only the deck's owner sees it.
+ * card's progress is its lifecycle state, when it's next due and whether
+ * it's known already (`isKnown`); the mastery score stays inside the
+ * scheduler. Only the deck's owner sees it.
  */
 export async function cardHistory(
   prisma: PrismaClient,
@@ -92,8 +94,12 @@ export async function cardHistory(
       }));
 
   const unversioned = attemptsOf(null);
+  const [progress] = card.progress;
   return {
-    progress: card.progress[0] ?? null,
+    progress: progress && {
+      ...progress,
+      isKnown: isKnown(progress.lifecycleState),
+    },
     versions: card.versions.map(({ acceptedVariants, ...version }, i) => {
       const isCurrent = i === 0;
       // The card's own answers and variants for the current version, those it

@@ -367,6 +367,13 @@ export default function StudyPage() {
     : isReviewing
       ? reviewEntry?.card
       : currentCard;
+  // Whether the card on screen is known already, when Mark known would do
+  // nothing (ADR-0009); the same query as its history below it
+  const displayProgress = trpc.card.history.useQuery(
+    { cardId: displayCard?.id ?? '' },
+    { enabled: !!displayCard, gcTime: 0 },
+  ).data?.progress;
+  const canMarkDisplayKnown = !!displayProgress && !displayProgress.isKnown;
   const displayResult =
     isReviewing && reviewEntry
       ? reviewEntry
@@ -661,6 +668,7 @@ export default function StudyPage() {
         card={card}
         queueLength={remainingCount}
         progress={progress}
+        canMarkKnown={canMarkDisplayKnown}
         isFlipped={editorShowsBack}
         onFlip={flipEditor}
         onEdited={replaceCard}
@@ -684,7 +692,9 @@ export default function StudyPage() {
         toggleFlip,
         editedAfterAnswer.has(card.id),
         acceptDisplayedAnswer,
-        () => markKnown.mutate({ cardIds: [card.id] }),
+        canMarkDisplayKnown
+          ? () => markKnown.mutate({ cardIds: [card.id] })
+          : undefined,
         knownCards.get(card.id),
       )
     );

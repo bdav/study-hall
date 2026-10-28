@@ -376,7 +376,11 @@ async function startStudyingWithVariants() {
 const DAY = 24 * 60 * 60 * 1000;
 
 type CardHistory = {
-  progress: { lifecycleState: string; dueAt: string | null } | null;
+  progress: {
+    lifecycleState: string;
+    dueAt: string | null;
+    isKnown: boolean;
+  } | null;
   versions: {
     id: string;
     number: number;
@@ -410,6 +414,7 @@ function historyOfCardOne(): CardHistory {
   return {
     progress: {
       lifecycleState: 'LEARNING',
+      isKnown: false,
       dueAt: new Date(Date.now() + 2 * DAY + 60 * 60 * 1000).toISOString(),
     },
     versions: [
@@ -482,7 +487,7 @@ function mockCardHistory(
     cardId === 'card-1'
       ? historyOfCardOne()
       : {
-          progress: { lifecycleState: 'NEW', dueAt: null },
+          progress: { lifecycleState: 'NEW', dueAt: null, isKnown: false },
           versions: [
             {
               ...historyOfCardOne().versions[0],
@@ -1982,6 +1987,27 @@ describe('StudyPage', () => {
       await user.click(screen.getByRole('button', { name: 'Mark known' }));
 
       expect(screen.getByText('Already known')).toBeInTheDocument();
+    });
+
+    it("doesn't offer Mark known on a card already known, below its grade or in edit mode", async () => {
+      mockCardHistory(() => ({
+        ...historyOfCardOne(),
+        progress: { lifecycleState: 'STABLE', dueAt: null, isKnown: true },
+      }));
+      const user = await startStudying();
+      await answerCard(user);
+
+      expect(screen.getByTestId('result')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Mark known' }),
+      ).not.toBeInTheDocument();
+      await startEditing(user);
+      expect(
+        screen.getByRole('button', { name: 'History' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Mark known' }),
+      ).not.toBeInTheDocument();
     });
 
     it("doesn't offer Mark known below the card before it's answered", async () => {

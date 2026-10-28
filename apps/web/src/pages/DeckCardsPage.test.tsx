@@ -69,6 +69,7 @@ const mockCards = [
     ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
+    isKnown: false,
   },
   {
     id: 'card-2',
@@ -85,6 +86,7 @@ const mockCards = [
     ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
+    isKnown: false,
   },
 ];
 
@@ -1099,6 +1101,7 @@ describe('DeckCardsPage', () => {
       ],
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-01T00:00:00.000Z',
+      isKnown: false,
     };
 
     function mockUpdate() {
@@ -1530,6 +1533,16 @@ describe('DeckCardsPage', () => {
       await user.click(screen.getAllByTitle('Mark known')[0]);
 
       expect(markKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    });
+
+    it("doesn't offer Mark known on a card already known", async () => {
+      setupMocks({
+        cards: [mockCards[0], { ...mockCards[1], isKnown: true }],
+      });
+      renderDeckCardsPage();
+
+      // Once on each face of the one card not yet known
+      expect(screen.getAllByTitle('Mark known')).toHaveLength(2);
     });
 
     it('marks the selected cards known, after a confirmation that says how many', async () => {

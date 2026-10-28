@@ -21,11 +21,12 @@ const flipButtonClasses =
  * keeps its attempts (ADR-0004), going to `onEdited`; a Save that resets
  * nothing, like choosing another primary or changing Accepted Variants,
  * goes to `onChanged`. Cancel drops the edits; Delete, once confirmed,
- * removes the card; Mark known marks it known (ADR-0009), going to
- * `onMarkedKnown`, and leaves edit mode. History opens the card's version
- * history (#54), where restoring an earlier version is an edit that resets
- * progress, going to `onEdited`, and leaves edit mode. Mounted each time edit mode turns
- * on, so it starts from the card as it is. Marked `data-card-editor`, so page
+ * removes the card; Mark known, there when `canMarkKnown` (not for a card
+ * known already), marks it known (ADR-0009), going to `onMarkedKnown`, and
+ * leaves edit mode. History opens the card's version history (#54), where
+ * restoring an earlier version is an edit that resets progress, going to
+ * `onEdited`, and leaves edit mode. Mounted each time edit mode turns on, so
+ * it starts from the card as it is. Marked `data-card-editor`, so page
  * shortcuts leave its keys alone.
  */
 export function StudyCardEditor({
@@ -33,6 +34,7 @@ export function StudyCardEditor({
   card,
   queueLength,
   progress,
+  canMarkKnown,
   isFlipped,
   onFlip,
   onEdited,
@@ -45,6 +47,7 @@ export function StudyCardEditor({
   card: Flashcard;
   queueLength: number;
   progress: string | undefined;
+  canMarkKnown: boolean;
   isFlipped: boolean;
   onFlip: () => void;
   onEdited: (card: Flashcard) => void;
@@ -132,17 +135,19 @@ export function StudyCardEditor({
         <Trash2 className="mr-1 h-4 w-4" />
         Delete
       </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        disabled={markKnown.isPending}
-        onClick={() => markKnown.mutate({ cardIds: [card.id] })}
-        className="text-white/70 hover:bg-white/10 hover:text-white"
-      >
-        <BadgeCheck className="mr-1 h-4 w-4" />
-        Mark known
-      </Button>
+      {canMarkKnown && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={markKnown.isPending}
+          onClick={() => markKnown.mutate({ cardIds: [card.id] })}
+          className="text-white/70 hover:bg-white/10 hover:text-white"
+        >
+          <BadgeCheck className="mr-1 h-4 w-4" />
+          Mark known
+        </Button>
+      )}
       <Button
         type="button"
         size="sm"

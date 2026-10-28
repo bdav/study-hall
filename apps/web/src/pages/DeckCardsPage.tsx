@@ -281,6 +281,10 @@ export default function DeckCardsPage() {
 
   const deck = deckQuery.data;
   const cards = (cardsQuery.data ?? []).map(toFlashcard);
+  // Cards known already, which Mark known would leave as they are
+  const knownCardIds = new Set(
+    (cardsQuery.data ?? []).filter((c) => c.isKnown).map((c) => c.id),
+  );
 
   function handleCsvUpload(file: File) {
     const reader = new FileReader();
@@ -655,7 +659,11 @@ export default function DeckCardsPage() {
                       })
                     }
                     onDelete={() => deleteCard.mutate({ cardId: card.id })}
-                    onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
+                    onMarkKnown={
+                      knownCardIds.has(card.id)
+                        ? undefined
+                        : () => markKnown.mutate({ cardIds: [card.id] })
+                    }
                     onShowHistory={() => setHistoryCardId(card.id)}
                     isSelecting={selection !== null}
                     isSaving={

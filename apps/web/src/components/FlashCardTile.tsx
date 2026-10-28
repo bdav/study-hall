@@ -17,8 +17,8 @@ interface FlashCardTileProps {
   /** `keepVariantIds` comes with a changed answer that had variants. */
   onSave: (front: string, back: string, keepVariantIds?: string[]) => void;
   onDelete: () => void;
-  /** Marks the card known (ADR-0009). */
-  onMarkKnown: () => void;
+  /** Marks the card known (ADR-0009); none for a card known already. */
+  onMarkKnown?: () => void;
   /** Opens the card's version history (#54). */
   onShowHistory: () => void;
   /**
@@ -262,16 +262,18 @@ export function FlashCardTile({
                 >
                   <History className="h-3.5 w-3.5" />
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMarkKnown();
-                  }}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
-                  title="Mark known"
-                >
-                  <BadgeCheck className="h-3.5 w-3.5" />
-                </button>
+                {onMarkKnown && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkKnown();
+                    }}
+                    className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                    title="Mark known"
+                  >
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <ConfirmDialog
                   title="Delete card"
                   description="Are you sure you want to delete this card? This cannot be undone."
@@ -352,16 +354,18 @@ export function FlashCardTile({
                 >
                   <History className="h-3.5 w-3.5" />
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMarkKnown();
-                  }}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
-                  title="Mark known"
-                >
-                  <BadgeCheck className="h-3.5 w-3.5" />
-                </button>
+                {onMarkKnown && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkKnown();
+                    }}
+                    className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                    title="Mark known"
+                  >
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <ConfirmDialog
                   title="Delete card"
                   description="Are you sure you want to delete this card? This cannot be undone."

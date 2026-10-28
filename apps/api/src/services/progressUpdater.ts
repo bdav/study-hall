@@ -245,6 +245,14 @@ function stableIntervalDays(
 const KNOWN_MIN_MASTERY = 3;
 
 /**
+ * Whether a card is known already, so marking it known would leave it as it
+ * is (ADR-0009): STABLE or RETIRED.
+ */
+export function isKnown(lifecycleState: CardLifecycleState) {
+  return lifecycleState === 'STABLE' || lifecycleState === 'RETIRED';
+}
+
+/**
  * A card's progress once the learner marks it known (ADR-0009): a timing
  * adjustment, not an answer. A NEW or LEARNING card becomes STABLE as if it
  * had just graduated, its mastery raised to at least 3, and is next due a
@@ -255,12 +263,7 @@ export function markKnown(
   progress: ScheduledProgress,
   now: Date,
 ): ScheduledProgress | null {
-  if (
-    progress.lifecycleState !== 'NEW' &&
-    progress.lifecycleState !== 'LEARNING'
-  ) {
-    return null;
-  }
+  if (isKnown(progress.lifecycleState)) return null;
   const masteryScore = Math.max(progress.masteryScore, KNOWN_MIN_MASTERY);
   const intervalDays = STABLE_INTERVAL_DAYS[masteryBand(masteryScore)].GOOD;
   return {

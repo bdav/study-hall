@@ -10,6 +10,7 @@ import {
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
+import { isKnown } from '../services/progressUpdater.js';
 import { type Context } from '../context.js';
 
 const front = z.string().trim().min(1);
@@ -200,11 +201,22 @@ export const cardRouter = router({
         });
       }
 
-      return ctx.prisma.card.findMany({
+      const cards = await ctx.prisma.card.findMany({
         where: { deckId: input.deckId },
         orderBy: deckOrder,
-        include: withCanonicalAnswers,
+        include: {
+          ...withCanonicalAnswers,
+          progress: {
+            where: { userId: ctx.userId },
+            select: { lifecycleState: true },
+          },
+        },
       });
+      // Whether each card is known already, so marking it known does nothing
+      return cards.map(({ progress: [progress], ...card }) => ({
+        ...card,
+        isKnown: progress ? isKnown(progress.lifecycleState) : false,
+      }));
     }),
 
   importCards: protectedProcedure
