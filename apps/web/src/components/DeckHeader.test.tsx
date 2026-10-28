@@ -66,4 +66,25 @@ describe('DeckHeader', () => {
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  it('takes a title in place of the deck name, such as an editable one', () => {
+    render(
+      <MemoryRouter>
+        <DeckHeader
+          deckName="World Capitals"
+          deckId="deck-1"
+          activeTab="cards"
+          title={<h1>Edit World Capitals</h1>}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'Edit World Capitals' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /cards/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
 });

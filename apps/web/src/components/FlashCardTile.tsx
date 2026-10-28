@@ -11,6 +11,14 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 import { type AcceptedVariant } from '@/lib/cards';
 
+/**
+ * A tile's History, Mark known and Delete actions: shown on hovering the
+ * tile, or faintly on touch screens, which have no hover.
+ */
+const tileActionClassName =
+  'relative touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60 pointer-coarse:text-white/40';
+const tileDeleteClassName =
+  'relative touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400 pointer-coarse:text-white/40';
 interface FlashCardTileProps {
   front: string;
   back: string;
@@ -85,7 +93,7 @@ function TileField({
           tabIndex={-1}
           aria-label={`Edit ${label.toLowerCase()}`}
           title={`Edit ${label.toLowerCase()}`}
-          className="shrink-0 rounded p-0.5 text-white/40 transition-colors hover:text-white/70"
+          className="relative touch-target shrink-0 rounded p-0.5 text-white/40 transition-colors hover:text-white/70"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
@@ -215,7 +223,7 @@ export function FlashCardTile({
           style={{ backfaceVisibility: 'hidden' }}
         >
           <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+            <span className="text-xs font-medium uppercase tracking-wider text-white/40">
               Front
             </span>
             {!isSelecting && (
@@ -223,18 +231,18 @@ export function FlashCardTile({
                 {isDirty && (
                   <button
                     onClick={handleRevert}
-                    className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                     title="Revert changes"
                   >
                     <Undo2 className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {isSaving && (
-                  <span className="text-[10px] text-white/40">Saving...</span>
+                  <span className="text-xs text-white/40">Saving...</span>
                 )}
                 <button
                   onClick={() => setIsFlipped(true)}
-                  className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                  className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                   title="Flip to back"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -257,7 +265,7 @@ export function FlashCardTile({
                     e.stopPropagation();
                     onShowHistory();
                   }}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  className={tileActionClassName}
                   title="History"
                 >
                   <History className="h-3.5 w-3.5" />
@@ -268,7 +276,7 @@ export function FlashCardTile({
                       e.stopPropagation();
                       onMarkKnown();
                     }}
-                    className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                    className={tileActionClassName}
                     title="Mark known"
                   >
                     <BadgeCheck className="h-3.5 w-3.5" />
@@ -282,7 +290,7 @@ export function FlashCardTile({
                   trigger={
                     <button
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
+                      className={tileDeleteClassName}
                       title="Delete card"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -303,7 +311,7 @@ export function FlashCardTile({
           }}
         >
           <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+            <span className="text-xs font-medium uppercase tracking-wider text-white/40">
               Back
             </span>
             {!isSelecting && (
@@ -314,18 +322,18 @@ export function FlashCardTile({
                     // Keeps focus in the answer, so leaving it doesn't ask
                     // about variants of an answer being reverted
                     onMouseDown={(e) => e.preventDefault()}
-                    className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                     title="Revert changes"
                   >
                     <Undo2 className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {isSaving && (
-                  <span className="text-[10px] text-white/40">Saving...</span>
+                  <span className="text-xs text-white/40">Saving...</span>
                 )}
                 <button
                   onClick={() => setIsFlipped(false)}
-                  className="rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                  className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                   title="Flip to front"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -349,7 +357,7 @@ export function FlashCardTile({
                     e.stopPropagation();
                     onShowHistory();
                   }}
-                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  className={tileActionClassName}
                   title="History"
                 >
                   <History className="h-3.5 w-3.5" />
@@ -360,7 +368,7 @@ export function FlashCardTile({
                       e.stopPropagation();
                       onMarkKnown();
                     }}
-                    className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                    className={tileActionClassName}
                     title="Mark known"
                   >
                     <BadgeCheck className="h-3.5 w-3.5" />
@@ -374,7 +382,7 @@ export function FlashCardTile({
                   trigger={
                     <button
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400"
+                      className={tileDeleteClassName}
                       title="Delete card"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

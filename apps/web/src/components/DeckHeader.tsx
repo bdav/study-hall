@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react';
 import { BackLink } from '@/components/BackLink';
 import { DeckTabs } from '@/components/DeckTabs';
 
@@ -7,22 +8,38 @@ interface DeckHeaderProps {
   activeTab: 'study' | 'cards' | 'stats';
   /** A Course Deck's course, which reviewing it links back to. */
   course?: { id: string; title: string } | null;
+  /** Shown in place of the deck name, such as an editable title. */
+  title?: ReactNode;
 }
 
+/**
+ * A deck page's title and its tabs: the tabs below the title on narrow
+ * screens, and beside it from md, where a long title wraps rather than
+ * running under them.
+ */
 export function DeckHeader({
   deckName,
   deckId,
   activeTab,
   course,
+  title,
 }: DeckHeaderProps) {
   return (
-    <div className="relative w-full max-w-4xl">
+    <div className="w-full max-w-4xl">
       {course && (
         <BackLink to={`/courses/${course.id}`}>{course.title}</BackLink>
       )}
-      <h1 className="text-3xl font-bold text-white">{deckName}</h1>
-      <div className="absolute right-0 top-1/2 -translate-y-1/2">
-        <DeckTabs deckId={deckId} activeTab={activeTab} />
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-6">
+        <div className="min-w-0">
+          {title ?? (
+            <h1 className="text-3xl font-bold break-words text-white">
+              {deckName}
+            </h1>
+          )}
+        </div>
+        <div className="shrink-0">
+          <DeckTabs deckId={deckId} activeTab={activeTab} />
+        </div>
       </div>
     </div>
   );

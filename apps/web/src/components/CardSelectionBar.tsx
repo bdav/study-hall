@@ -57,7 +57,8 @@ export function CardSelectionBar({
   });
 
   return (
-    <div className="mr-4 flex items-center justify-end gap-4 text-sm">
+    // Wraps rather than running off the left or squeezing its actions
+    <div className="mr-4 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm whitespace-nowrap">
       <span className="text-white/70">{count} selected</span>
       <button
         type="button"

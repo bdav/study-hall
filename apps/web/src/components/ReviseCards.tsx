@@ -140,7 +140,7 @@ export function ReviseCards({ deckId }: { deckId: string }) {
               maxLength={MAX_INSTRUCTION_LENGTH}
               rows={4}
               autoFocus
-              className={`w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+              className={`w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
             />
             <p className="mt-1 text-right text-xs text-white/50">
               {instruction.length}/{MAX_INSTRUCTION_LENGTH}

@@ -6,11 +6,13 @@ interface DeckCardProps {
   className?: string;
   onClick?: () => void;
   autoFocus?: boolean;
+  /** Wider than tall below sm, as a row in a one-column list. */
+  wideOnPhones?: boolean;
 }
 
 export const DeckCard = forwardRef<HTMLDivElement, DeckCardProps>(
   function DeckCard(
-    { stackCount, children, className, onClick, autoFocus },
+    { stackCount, children, className, onClick, autoFocus, wideOnPhones },
     ref,
   ) {
     const innerRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +48,9 @@ export const DeckCard = forwardRef<HTMLDivElement, DeckCardProps>(
         {stackCount > 1 && (
           <div className="absolute inset-x-1 top-1.5 h-4 rounded-t-xl border border-b-0 border-white/30 bg-white/10" />
         )}
-        <div className="relative flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm">
+        <div
+          className={`relative flex w-full flex-col ${wideOnPhones ? 'aspect-2/1 sm:aspect-3/2' : 'aspect-3/2'} items-center justify-center rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm`}
+        >
           {children}
         </div>
       </div>

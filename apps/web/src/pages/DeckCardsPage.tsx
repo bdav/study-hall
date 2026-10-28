@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ImportPreviewDialog } from '@/components/ImportPreviewDialog';
 import { CenteredPage } from '@/components/CenteredPage';
-import { DeckTabs } from '@/components/DeckTabs';
+import { DeckHeader } from '@/components/DeckHeader';
 import { DeckCardsSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
@@ -321,12 +321,12 @@ export default function DeckCardsPage() {
   return (
     <CenteredPage>
       <div className="w-full max-w-4xl text-white">
-        <div className="relative w-full max-w-4xl">
-          <EditableDeckTitle deckId={deckId} name={deck.name} />
-          <div className="absolute right-0 top-1/2 -translate-y-1/2">
-            <DeckTabs deckId={deckId} activeTab="cards" />
-          </div>
-        </div>
+        <DeckHeader
+          deckName={deck.name}
+          deckId={deckId}
+          activeTab="cards"
+          title={<EditableDeckTitle deckId={deckId} name={deck.name} />}
+        />
 
         <p className="mt-2 text-sm text-white/50">
           {cards.length} {cards.length === 1 ? 'card' : 'cards'}
@@ -346,7 +346,8 @@ export default function DeckCardsPage() {
             onDone={() => setSelection(null)}
           />
         ) : (
-          <div className="flex justify-end gap-4 mr-4">
+          // Wraps rather than squeezing each action onto two lines
+          <div className="mr-4 flex flex-wrap justify-end gap-x-4 gap-y-2 whitespace-nowrap">
             {cards.length > 0 && (
               <button
                 type="button"
@@ -379,7 +380,8 @@ export default function DeckCardsPage() {
 
         {/* Card Grid */}
         <LayoutGroup>
-          <div className="mt-2 grid grid-cols-2 gap-6 sm:grid-cols-3">
+          {/* One column on the narrowest phones, where two break words */}
+          <div className="mt-2 grid grid-cols-1 gap-6 min-[360px]:grid-cols-2 sm:grid-cols-3">
             {/* New Card button / form */}
             <AnimatePresence mode="popLayout" initial={false}>
               {isCreating ? (

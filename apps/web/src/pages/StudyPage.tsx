@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useSwipe } from '@/hooks/useSwipe';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,8 +49,12 @@ const summaryGradeOrder: RecallGrade[] = [
 const answerInputClasses =
   'h-auto flex-1 rounded-none border-0 border-b-2 border-white/40 bg-transparent py-2 text-center text-3xl font-bold uppercase tracking-wide text-white shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-white/30';
 
+// Below md, in a row under the card, since beside it they'd be off screen
 const navButtonClasses =
-  'absolute top-1/2 h-16 w-16 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 focus-visible:border-transparent focus-visible:ring-0';
+  'h-12 w-12 text-white/50 disabled:opacity-40 focus-visible:border-transparent focus-visible:ring-0 md:absolute md:top-1/2 md:h-16 md:w-16 md:-translate-y-1/2 md:active:translate-y-[-50%]';
+
+/** Holds Previous and Next: a row below md, nothing of its own from md. */
+const navRowClasses = 'mt-2 flex justify-between md:contents';
 
 /** Whether a key belongs to a dialog or the card's editor, not the page. */
 function isInDialog(target: EventTarget | null) {
@@ -504,6 +509,17 @@ export default function StudyPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [studyState.phase, isEditing, slideToNext]);
 
+  // Next and Previous, as buttons and as swipes across the card. A session
+  // that's complete has only Previous
+  const canGoForward =
+    studyState.phase !== 'answering' && studyState.phase !== 'complete';
+  const canGoPrevious = !isAtTitle && canGoBack;
+  const swipe = useSwipe((direction) => {
+    if (isEditing) return;
+    if (direction === 'left' && canGoForward) slideToNext();
+    if (direction === 'right' && canGoPrevious) slideToPrev();
+  });
+
   if (deckQuery.isLoading) {
     return <StudySkeleton />;
   }
@@ -577,7 +593,11 @@ export default function StudyPage() {
           course={deck.course}
         />
         <div className="flex w-full flex-1 flex-col items-center justify-center">
-          <div className="relative w-full max-w-md pt-3">
+          <div
+            className="relative w-full max-w-md pt-3"
+            onTouchStart={swipe.onTouchStart}
+            onTouchEnd={swipe.onTouchEnd}
+          >
             <div className="relative flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm">
               <h2 className="text-2xl font-bold text-white">
                 Session complete!
@@ -596,15 +616,17 @@ export default function StudyPage() {
                 ))}
               </div>
             </div>
-            <Button
-              onClick={slideToPrev}
-              variant="ghost"
-              size="icon"
-              aria-label="Previous"
-              className={`-left-20 ${navButtonClasses}`}
-            >
-              <ChevronLeft className="size-14" />
-            </Button>
+            <div className={navRowClasses}>
+              <Button
+                onClick={slideToPrev}
+                variant="ghost"
+                size="icon"
+                aria-label="Previous"
+                className={`md:-left-20 ${navButtonClasses}`}
+              >
+                <ChevronLeft className="size-10 md:size-14" />
+              </Button>
+            </div>
           </div>
           <div className="mt-6">
             <button
@@ -711,7 +733,11 @@ export default function StudyPage() {
       {error && <p className="mb-4 text-destructive">{error}</p>}
 
       <div className="flex w-full flex-1 flex-col items-center justify-center">
-        <div className="relative w-full max-w-md">
+        <div
+          className="relative w-full max-w-md"
+          onTouchStart={swipe.onTouchStart}
+          onTouchEnd={swipe.onTouchEnd}
+        >
           {exitingCard && slideDirection ? (
             <div className="overflow-hidden">
               <div className="relative">
@@ -782,38 +808,40 @@ export default function StudyPage() {
                 disabled={!canEdit}
                 title="Edit card"
                 onClick={() => startEditing(displayCard.id)}
-                className="rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
+                className="relative touch-target rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
               >
                 <Pencil className="h-4 w-4" />
               </button>
             </div>
           )}
 
-          {!isAtTitle && (
+          <div className={navRowClasses}>
+            {!isAtTitle && (
+              <Button
+                ref={backButtonRef}
+                onClick={slideToPrev}
+                disabled={!canGoPrevious}
+                variant="ghost"
+                size="icon"
+                aria-label="Previous"
+                className={`md:-left-20 ${navButtonClasses} ${studyState.phase !== 'answering' && lastNavDirection === 'back' && canGoBack ? 'animate-pulse-halo' : ''}`}
+              >
+                <ChevronLeft className="size-10 md:size-14" />
+              </Button>
+            )}
+
             <Button
-              ref={backButtonRef}
-              onClick={slideToPrev}
-              disabled={!canGoBack}
+              ref={forwardButtonRef}
+              onClick={slideToNext}
+              disabled={!canGoForward}
               variant="ghost"
               size="icon"
-              aria-label="Previous"
-              className={`-left-20 ${navButtonClasses} ${studyState.phase !== 'answering' && lastNavDirection === 'back' && canGoBack ? 'animate-pulse-halo' : ''}`}
+              aria-label="Next"
+              className={`ml-auto md:-right-20 ${navButtonClasses} ${studyState.phase !== 'answering' && (lastNavDirection === 'forward' || isAtTitle) ? 'animate-pulse-halo' : ''}`}
             >
-              <ChevronLeft className="size-14" />
+              <ChevronRight className="size-10 md:size-14" />
             </Button>
-          )}
-
-          <Button
-            ref={forwardButtonRef}
-            onClick={slideToNext}
-            disabled={studyState.phase === 'answering'}
-            variant="ghost"
-            size="icon"
-            aria-label="Next"
-            className={`-right-20 ${navButtonClasses} ${studyState.phase !== 'answering' && (lastNavDirection === 'forward' || isAtTitle) ? 'animate-pulse-halo' : ''}`}
-          >
-            <ChevronRight className="size-14" />
-          </Button>
+          </div>
         </div>
 
         <div className="mt-6 w-full max-w-md">

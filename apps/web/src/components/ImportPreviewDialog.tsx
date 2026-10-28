@@ -26,7 +26,31 @@ import {
 } from '@/components/ui/tooltip';
 import type { NewCard, UpdateCard, SkippedRow } from '@/lib/csvDiff';
 import { isSameAnswer, splitAnswers } from '@/lib/cards';
-import { glassInputClassName } from '@/lib/utils';
+import {
+  glassDialogClassName,
+  glassInputClassName,
+  tallDialogBodyClassName,
+  tallDialogClassName,
+} from '@/lib/utils';
+
+/**
+ * Below sm, a table too wide for the dialog stacks each row instead: the
+ * header row is hidden, and each cell takes the width with its column's
+ * name above it (`stackedCell`).
+ */
+const STACKED_TABLE =
+  'max-sm:[&_thead]:hidden max-sm:[&_tr]:flex max-sm:[&_tr]:flex-wrap max-sm:[&_tr]:py-2';
+
+/** A cell of a `STACKED_TABLE`, named `label` when stacked. */
+function stackedCell(label: string, className = '') {
+  return {
+    'data-label': label,
+    className: `py-2 max-sm:block max-sm:w-full max-sm:max-w-none max-sm:py-1 max-sm:whitespace-normal max-sm:before:block max-sm:before:text-xs max-sm:before:text-white/50 max-sm:before:content-[attr(data-label)] ${className}`,
+  };
+}
+
+/** A stacked row's remove button, at the row's end. */
+const STACKED_REMOVE_CELL = 'py-2 max-sm:ml-auto max-sm:block';
 
 function TruncatedCell({
   children,
@@ -165,7 +189,7 @@ export function ImportPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
-        className="sm:max-w-2xl max-h-[80vh] flex flex-col border border-white/20 bg-[oklch(0.25_0.08_230)] text-white backdrop-blur-md"
+        className={`sm:max-w-2xl ${tallDialogClassName} ${glassDialogClassName}`}
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -177,14 +201,14 @@ export function ImportPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-6 py-2">
+        <div className={`space-y-6 py-2 ${tallDialogBodyClassName}`}>
           {/* New Cards Section */}
           {newCards.length > 0 && (
             <section>
               <h3 className="text-sm font-semibold mb-1">
                 New cards ({newCards.length})
               </h3>
-              <Table>
+              <Table className={STACKED_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Front</TableHead>
@@ -195,7 +219,7 @@ export function ImportPreviewDialog({
                 <TableBody>
                   {newCards.map((card, i) => (
                     <TableRow key={i} data-testid="new-card-row">
-                      <TableCell className="py-2">
+                      <TableCell {...stackedCell('Front')}>
                         <Input
                           value={card.front}
                           onChange={(e) =>
@@ -205,7 +229,7 @@ export function ImportPreviewDialog({
                           className={glassInputClassName}
                         />
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell {...stackedCell('Back')}>
                         <Input
                           value={card.back}
                           onChange={(e) =>
@@ -216,7 +240,7 @@ export function ImportPreviewDialog({
                         />
                         <ParsedAnswers back={card.back} />
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className={STACKED_REMOVE_CELL}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -240,7 +264,7 @@ export function ImportPreviewDialog({
               <h3 className="text-sm font-semibold mb-1">
                 Updating ({updateCards.length})
               </h3>
-              <Table>
+              <Table className={STACKED_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Question</TableHead>
@@ -252,18 +276,18 @@ export function ImportPreviewDialog({
                 <TableBody>
                   {updateCards.map((card, i) => (
                     <TableRow key={card.cardId} data-testid="update-card-row">
-                      <TableCell className="py-2 max-w-[10rem]">
+                      <TableCell {...stackedCell('Question', 'max-w-[10rem]')}>
                         <TruncatedCell className="font-medium text-white/80">
                           {card.front}
                         </TruncatedCell>
                       </TableCell>
-                      <TableCell className="py-2 max-w-[8rem]">
+                      <TableCell {...stackedCell('Old Answer', 'max-w-[8rem]')}>
                         <TruncatedCell className="text-white/60 line-through">
                           {card.oldBack}
                         </TruncatedCell>
                         <ClearedVariants card={card} />
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell {...stackedCell('New Answer')}>
                         <Input
                           value={card.newBack}
                           onChange={(e) =>
@@ -274,7 +298,7 @@ export function ImportPreviewDialog({
                         />
                         <ParsedAnswers back={card.newBack} />
                       </TableCell>
-                      <TableCell className="py-2">
+                      <TableCell className={STACKED_REMOVE_CELL}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -298,7 +322,7 @@ export function ImportPreviewDialog({
               <h3 className="text-sm font-semibold text-white/70 mb-1">
                 Skipped ({skippedRows.length})
               </h3>
-              <Table>
+              <Table className={STACKED_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Front</TableHead>
@@ -313,17 +337,22 @@ export function ImportPreviewDialog({
                       className="hover:bg-transparent"
                       data-testid="skipped-row"
                     >
-                      <TableCell className="py-2 max-w-[10rem]">
+                      <TableCell {...stackedCell('Front', 'max-w-[10rem]')}>
                         <TruncatedCell className="text-white/60">
                           {row.front}
                         </TruncatedCell>
                       </TableCell>
-                      <TableCell className="py-2 max-w-[8rem]">
+                      <TableCell {...stackedCell('Back', 'max-w-[8rem]')}>
                         <TruncatedCell className="text-white/60">
                           {row.back}
                         </TruncatedCell>
                       </TableCell>
-                      <TableCell className="py-2 text-white/70 text-xs italic">
+                      <TableCell
+                        {...stackedCell(
+                          'Reason',
+                          'text-xs text-white/70 italic',
+                        )}
+                      >
                         {row.reason}
                       </TableCell>
                     </TableRow>

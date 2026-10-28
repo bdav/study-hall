@@ -259,7 +259,7 @@ export function LessonExercise({
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               rows={3}
-              className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+              className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
             />
           </>
         ) : (

@@ -4,7 +4,11 @@ import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { answeredLine, formatDay } from '@/lib/format';
-import { glassDialogClassName } from '@/lib/utils';
+import {
+  glassDialogClassName,
+  tallDialogBodyClassName,
+  tallDialogClassName,
+} from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Dialog,
@@ -70,7 +74,7 @@ export function CardVersionsDialog({
   return (
     <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
-        className={`sm:max-w-lg max-h-[80vh] flex flex-col ${glassDialogClassName}`}
+        className={`sm:max-w-lg ${tallDialogClassName} ${glassDialogClassName}`}
       >
         <DialogHeader>
           <DialogTitle className="text-white">Card history</DialogTitle>
@@ -86,7 +90,7 @@ export function CardVersionsDialog({
           </p>
         )}
         {history && (
-          <div className="-mx-1 flex-1 space-y-3 overflow-y-auto px-1">
+          <div className={`-mx-1 space-y-3 px-1 ${tallDialogBodyClassName}`}>
             {history.versions.map((version) => {
               const name = `Version ${version.number}${
                 version.isCurrent ? ' (current)' : ''

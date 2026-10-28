@@ -11,7 +11,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
+import {
+  glassDialogClassName,
+  glassInputClassName,
+  tallDialogBodyClassName,
+  tallDialogClassName,
+} from '@/lib/utils';
 
 /** A proposed change to one card, with the card as it is. */
 export type CardChange =
@@ -118,7 +123,7 @@ function AfterField(props: {
         if (e.key === 'Enter') e.preventDefault();
       }}
       aria-label={props.label}
-      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-sm outline-none ${glassInputClassName}`}
+      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none md:text-sm ${glassInputClassName}`}
     />
   );
 }
@@ -183,7 +188,7 @@ export function ReviseCardsDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
-        className={`sm:max-w-2xl max-h-[80vh] flex flex-col ${glassDialogClassName}`}
+        className={`sm:max-w-2xl ${tallDialogClassName} ${glassDialogClassName}`}
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -214,7 +219,7 @@ export function ReviseCardsDialog({
         </div>
         {note && <p className="text-sm text-white/80">{note}</p>}
 
-        <ol className="flex-1 space-y-3 overflow-y-auto py-2">
+        <ol className={`space-y-3 py-2 ${tallDialogBodyClassName}`}>
           {rows.map((row, i) => {
             const n = i + 1;
             const { action, cardId, before } = row.change;
@@ -316,7 +321,7 @@ export function ReviseCardsDialog({
               rows={2}
               autoFocus
               placeholder="Say what to change about these changes"
-              className={`w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+              className={`w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
             />
             <div className="mt-1 flex items-center justify-between gap-3">
               <p className="text-sm text-destructive">{refineError}</p>

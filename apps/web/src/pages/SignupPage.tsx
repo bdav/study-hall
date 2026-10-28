@@ -50,7 +50,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="bg-ocean-gradient flex min-h-screen items-center justify-center">
+    <div className="bg-ocean-gradient flex min-h-dvh items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6 rounded-2xl border border-white/10 bg-white/5 px-6 py-8 shadow-xl backdrop-blur-md">
         <h1 className="text-center text-2xl font-bold text-white">Sign Up</h1>
 

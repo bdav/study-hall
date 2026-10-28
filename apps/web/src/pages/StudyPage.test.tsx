@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -2577,6 +2583,116 @@ describe('StudyPage', () => {
           screen.getByRole('heading', { name: /session complete/i }),
         ).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('swiping the card', () => {
+    /** A touch drag from the middle of `element` by `dx`, `dy`. */
+    function swipe(element: Element, dx: number, dy = 0) {
+      fireEvent.touchStart(element, {
+        touches: [{ clientX: 200, clientY: 300 }],
+      });
+      fireEvent.touchEnd(element, {
+        changedTouches: [{ clientX: 200 + dx, clientY: 300 + dy }],
+      });
+    }
+
+    async function answerFirstCard(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.type(screen.getByRole('textbox'), '4');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      await waitFor(() =>
+        expect(screen.getByTestId('result')).toBeInTheDocument(),
+      );
+    }
+
+    it('starts the session with a swipe left on the title card', async () => {
+      setupMocksWithStartSession();
+      renderStudyPage();
+
+      swipe(screen.getByRole('button', { name: /test deck/i }), -120);
+
+      await waitFor(() =>
+        expect(screen.getByRole('textbox')).toBeInTheDocument(),
+      );
+    });
+
+    it('moves to the next card with a swipe left once answered, and back with a swipe right', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await answerFirstCard(user);
+
+      swipe(screen.getAllByText('What is 2+2?')[0], -120);
+      await waitFor(() =>
+        expect(screen.getByText('Capital of France?')).toBeInTheDocument(),
+      );
+
+      swipe(screen.getAllByText('Capital of France?')[0], 120);
+      await waitFor(() =>
+        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
+          'What is 2+2?',
+        ),
+      );
+    });
+
+    it("doesn't move on while the card waits for an answer", async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('textbox')).toBeInTheDocument(),
+      );
+
+      swipe(screen.getAllByText('What is 2+2?')[0], -120);
+
+      expect(screen.getByRole('textbox')).toBeInTheDocument();
+      expect(screen.queryByTestId('result')).not.toBeInTheDocument();
+    });
+
+    it('has nothing to go back to from the title card', () => {
+      setupMocksWithStartSession();
+      renderStudyPage();
+
+      swipe(screen.getByRole('button', { name: /test deck/i }), 120);
+
+      expect(
+        screen.getByRole('button', { name: /test deck/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
+
+    it('ignores a short drag, a mostly vertical one, and one that starts on a button', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await answerFirstCard(user);
+
+      swipe(screen.getAllByText('What is 2+2?')[0], -30);
+      swipe(screen.getAllByText('What is 2+2?')[0], -80, -200);
+      swipe(screen.getByRole('button', { name: 'Edit card' }), -120);
+
+      expect(screen.getByTestId('result')).toBeInTheDocument();
+      expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
+    });
+
+    it("doesn't swipe while the card is being edited", async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await answerFirstCard(user);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+
+      swipe(
+        screen.getByRole('button', { name: /cancel/i }).parentElement!,
+        -120,
+      );
+
+      expect(screen.queryByText('Capital of France?')).not.toBeInTheDocument();
     });
   });
 

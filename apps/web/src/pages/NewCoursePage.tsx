@@ -161,7 +161,7 @@ export default function NewCoursePage() {
                   id="depth"
                   value={form.depth}
                   onChange={(e) => update('depth', e.target.value)}
-                  className={`h-8 w-full rounded-lg border px-2.5 text-sm outline-none ${glassInputClassName}`}
+                  className={`h-8 w-full rounded-lg border px-2.5 text-base outline-none md:text-sm ${glassInputClassName}`}
                 >
                   {DEPTHS.map((depth) => (
                     <option key={depth} value={depth} className="text-black">
@@ -178,7 +178,7 @@ export default function NewCoursePage() {
                 onChange={(e) => update('notes', e.target.value)}
                 placeholder="Anything else: what you'll use it for, what to focus on or skip"
                 rows={3}
-                className={`w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none ${glassInputClassName}`}
+                className={`w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
               />
             </Field>
           </fieldset>

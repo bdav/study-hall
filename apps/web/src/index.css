@@ -43,6 +43,25 @@
   );
 }
 
+/*
+ * On touch screens, a small control's tap area grows to at least 40px,
+ * centred on it, without changing how it looks. The control must be
+ * positioned, such as with `relative`.
+ */
+@utility touch-target {
+  @media (pointer: coarse) {
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 40px);
+      height: max(100%, 40px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 /* In the base layer, so utilities such as `cursor-default` win over it */
 @layer base {
   button:not(:disabled) {

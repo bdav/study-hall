@@ -18,7 +18,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { duplicateFinder, type ExistingCard } from '@/lib/csvDiff';
-import { glassInputClassName } from '@/lib/utils';
+import {
+  glassDialogClassName,
+  glassInputClassName,
+  tallDialogBodyClassName,
+  tallDialogClassName,
+} from '@/lib/utils';
 
 /** A proposed Typed Recall card, as the learner confirms it. */
 export interface ReviewCard {
@@ -80,7 +85,7 @@ export function ReviewCardsDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent
-        className="sm:max-w-2xl max-h-[80vh] flex flex-col border border-white/20 bg-[oklch(0.25_0.08_230)] text-white backdrop-blur-md"
+        className={`sm:max-w-2xl ${tallDialogClassName} ${glassDialogClassName}`}
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -91,7 +96,7 @@ export function ReviewCardsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto py-2">
+        <div className={`py-2 ${tallDialogBodyClassName}`}>
           <Table>
             <TableHeader>
               <TableRow>

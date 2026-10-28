@@ -6,9 +6,12 @@ export function DeckListSkeleton() {
     <CenteredPage>
       <div className="w-full max-w-4xl" role="status" aria-label="Loading">
         <Skeleton className="h-8 w-40" />
-        <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
           {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="aspect-3/2 w-full rounded-xl" />
+            <Skeleton
+              key={i}
+              className="aspect-2/1 w-full rounded-xl sm:aspect-3/2"
+            />
           ))}
         </div>
       </div>

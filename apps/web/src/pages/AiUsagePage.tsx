@@ -17,6 +17,9 @@ import { formatUsd } from '@/lib/format';
 type AiPurpose =
   inferRouterOutputs<AppRouter>['aiUsage']['report']['breakdown'][number]['purpose'];
 
+/** The token columns, shown from sm. */
+const TOKEN_COLUMN = 'max-sm:hidden';
+
 const PURPOSE_LABELS: Record<AiPurpose, string> = {
   SYLLABUS_GENERATION: 'Syllabus generation',
   LESSON_GENERATION: 'Lesson generation',
@@ -102,8 +105,13 @@ export default function AiUsagePage() {
                     <TableHead>Purpose</TableHead>
                     <TableHead>Model</TableHead>
                     <TableHead className="text-right">Calls</TableHead>
-                    <TableHead className="text-right">Input tokens</TableHead>
-                    <TableHead className="text-right">Output tokens</TableHead>
+                    {/* Token counts are detail a phone has no room for */}
+                    <TableHead className={`text-right ${TOKEN_COLUMN}`}>
+                      Input tokens
+                    </TableHead>
+                    <TableHead className={`text-right ${TOKEN_COLUMN}`}>
+                      Output tokens
+                    </TableHead>
                     <TableHead className="text-right">Est. cost</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -113,10 +121,10 @@ export default function AiUsagePage() {
                       <TableCell>{PURPOSE_LABELS[row.purpose]}</TableCell>
                       <TableCell>{row.model}</TableCell>
                       <TableCell className="text-right">{row.calls}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${TOKEN_COLUMN}`}>
                         {formatTokens(row.inputTokens)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${TOKEN_COLUMN}`}>
                         {formatTokens(row.outputTokens)}
                       </TableCell>
                       <TableCell className="text-right">

@@ -676,10 +676,13 @@ function TargetButton({
   direction,
   target,
   onClick,
+  alone,
 }: {
   direction: 'Previous' | 'Next';
   target: Target;
   onClick: () => void;
+  /** The footer's only button, which may take its whole width. */
+  alone: boolean;
 }) {
   const toStep = 'step' in target;
   const Arrow = direction === 'Previous' ? ChevronLeft : ChevronRight;
@@ -697,7 +700,10 @@ function TargetButton({
       className={`flex items-start gap-1 rounded-lg px-3 py-2 text-white/70 hover:text-white ${
         direction === 'Previous'
           ? 'justify-self-start text-left'
-          : 'col-start-2 justify-self-end text-right'
+          : 'justify-self-end text-right'
+      } ${
+        // Alone, the whole footer, room for a long title on a phone
+        alone ? 'col-span-2' : direction === 'Next' ? 'col-start-2' : ''
       }`}
     >
       {direction === 'Previous' && arrow}
@@ -1068,6 +1074,7 @@ function WrittenLesson({
               direction="Previous"
               target={back}
               onClick={() => goToTarget(back)}
+              alone={!forward}
             />
           )}
           {forward && (
@@ -1075,6 +1082,7 @@ function WrittenLesson({
               direction="Next"
               target={forward}
               onClick={() => goToTarget(forward)}
+              alone={!back}
             />
           )}
         </nav>

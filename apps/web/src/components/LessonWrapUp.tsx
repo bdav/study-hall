@@ -132,9 +132,10 @@ function Results({ exercises }: { exercises: Exercise[] }) {
           return (
             <li
               key={exercise.id}
-              className="flex items-baseline gap-3 rounded-lg bg-white/5 px-3 py-2 text-sm"
+              // On phones the result goes below the exercise, not beside it
+              className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg bg-white/5 px-3 py-2 text-sm"
             >
-              <span className="min-w-0 flex-1 text-white/80">
+              <span className="min-w-0 flex-1 text-white/80 max-sm:basis-full">
                 {index + 1}. {exercise.prompt}
               </span>
               <span

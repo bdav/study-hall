@@ -108,7 +108,7 @@ function Syllabus({
                 aria-controls={objectivesId}
                 aria-label={`Objectives: ${lesson.title}`}
                 onClick={() => toggle(lesson.id)}
-                className="shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+                className="relative touch-target shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
               >
                 <ChevronRight
                   className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}

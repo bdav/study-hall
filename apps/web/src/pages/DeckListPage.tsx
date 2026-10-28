@@ -66,7 +66,8 @@ export default function DeckListPage() {
         ) : null}
 
         <LayoutGroup>
-          <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
+          {/* One deck per row on phones */}
+          <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
             {/* Create new deck card */}
             <AnimatePresence mode="popLayout" initial={false}>
               {isCreating ? (
@@ -77,7 +78,7 @@ export default function DeckListPage() {
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <DeckCard stackCount={0}>
+                  <DeckCard stackCount={0} wideOnPhones>
                     <button
                       type="button"
                       aria-label="Cancel"
@@ -136,6 +137,7 @@ export default function DeckListPage() {
                 >
                   <DeckCard
                     stackCount={0}
+                    wideOnPhones
                     className="cursor-pointer transition-shadow hover:shadow-lg"
                     onClick={() => setIsCreating(true)}
                   >
@@ -157,7 +159,7 @@ export default function DeckListPage() {
                 to={`/decks/${deck.id}`}
                 className="group/deck block transition-shadow hover:shadow-lg"
               >
-                <DeckCard stackCount={Math.min(deck.cardCount, 3)}>
+                <DeckCard stackCount={Math.min(deck.cardCount, 3)} wideOnPhones>
                   <p className="text-center text-lg font-bold uppercase tracking-wide text-white">
                     {deck.name}
                   </p>
@@ -181,7 +183,8 @@ export default function DeckListPage() {
                     </p>
                   )}
                   <div
-                    className="absolute bottom-2 right-2 opacity-0 transition-opacity group-hover/deck:opacity-100"
+                    // Shown on hover, or always on touch screens, which have none
+                    className="absolute bottom-2 right-2 opacity-0 transition-opacity group-hover/deck:opacity-100 pointer-coarse:opacity-100"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -200,7 +203,7 @@ export default function DeckListPage() {
                         <button
                           type="button"
                           aria-label={`Delete ${deck.name}`}
-                          className="rounded p-1 text-white/40 hover:text-destructive transition-colors"
+                          className="relative touch-target rounded p-1 text-white/40 hover:text-destructive transition-colors"
                         >
                           <Trash2 className="size-4" />
                         </button>
