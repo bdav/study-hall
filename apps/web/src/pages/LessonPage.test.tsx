@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { vi } from 'vitest';
@@ -333,6 +339,34 @@ describe('LessonPage', () => {
       ).toBeInTheDocument();
     });
 
+    it('leaves focus on Next when it is clicked, so Enter keeps moving on', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
+      expect(
+        screen.getByRole('button', { name: 'Next: Examples' }),
+      ).toHaveFocus();
+
+      await user.keyboard('{Enter}');
+      expect(currentStep()).toBe('Examples');
+    });
+
+    it('labels a button to a step on two lines: its direction, then the title', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
+
+      const previous = screen.getByRole('button', {
+        name: 'Previous: Saying hello',
+      });
+      expect(within(previous).getByText('Previous')).toBeInTheDocument();
+      expect(within(previous).getByText('Saying hello')).toBeInTheDocument();
+      const next = screen.getByRole('button', { name: 'Next: Examples' });
+      expect(within(next).getByText('Next')).toBeInTheDocument();
+      expect(within(next).getByText('Examples')).toBeInTheDocument();
+    });
+
     it('names the step Next and Previous go to', async () => {
       const user = userEvent.setup();
       renderPage({ query: written });
@@ -357,6 +391,16 @@ describe('LessonPage', () => {
         expect(currentStep()).toBe('Examples');
         await user.keyboard('{ArrowLeft}');
         expect(currentStep()).toBe('Saying goodbye');
+      });
+
+      it("moves focus to the new step's heading", async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.keyboard('{ArrowRight}');
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Saying goodbye' }),
+        ).toHaveFocus();
       });
 
       it('stays put past the first and last steps', async () => {
@@ -489,6 +533,55 @@ describe('LessonPage', () => {
           screen.getByRole('heading', { level: 2, name: 'Examples' }),
         ).toBeInTheDocument();
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+
+      it('leaves focus on Next after choosing the step already shown', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(
+          within(outline()).getByRole('link', { name: 'Saying hello' }),
+        );
+        await user.click(screen.getByRole('button', { name: /^next:/i }));
+
+        expect(
+          screen.getByRole('button', { name: 'Next: Examples' }),
+        ).toHaveFocus();
+      });
+
+      it("moves focus to the chosen step's heading, so moving on leaves none behind", async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(
+          within(outline()).getByRole('link', { name: 'Saying goodbye' }),
+        );
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Saying goodbye' }),
+        ).toHaveFocus();
+
+        await user.keyboard('{ArrowRight}');
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Examples' }),
+        ).toHaveFocus();
+      });
+
+      it('moves focus to the heading of a step chosen from the drawer', async () => {
+        const user = userEvent.setup();
+        renderPage({ query: written });
+
+        await user.click(screen.getByRole('button', { name: 'Open outline' }));
+        await user.click(
+          within(
+            screen.getByRole('dialog', { name: 'Lesson outline' }),
+          ).getByRole('link', { name: 'Examples' }),
+        );
+
+        await waitFor(() =>
+          expect(
+            screen.getByRole('heading', { level: 2, name: 'Examples' }),
+          ).toHaveFocus(),
+        );
       });
     });
 
@@ -1006,7 +1099,7 @@ describe('LessonPage', () => {
     const footer = () =>
       within(screen.getByRole('navigation', { name: 'Lesson steps' }))
         .getAllByRole('button')
-        .map((button) => button.textContent);
+        .map((button) => button.getAttribute('aria-label'));
     const examplesView = () =>
       within(screen.getByRole('banner')).getByRole('group', {
         name: 'Examples view',
@@ -1058,6 +1151,9 @@ describe('LessonPage', () => {
 
         await user.keyboard('{ArrowRight}');
         expect(screen.getByText('Example 2 of 3')).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Examples' }),
+        ).toHaveFocus();
         await user.keyboard('{ArrowLeft}{ArrowLeft}');
         expect(
           screen.getByRole('heading', { level: 2, name: 'Saying goodbye' }),
@@ -1323,7 +1419,7 @@ describe('LessonPage', () => {
         const buttons = () =>
           within(screen.getByRole('navigation', { name: 'Lesson steps' }))
             .getAllByRole('button')
-            .map((button) => button.textContent);
+            .map((button) => button.getAttribute('aria-label'));
 
         expect(buttons()).toEqual(['Previous: Examples', 'Next exercise']);
         await user.click(screen.getByRole('button', { name: 'Next exercise' }));

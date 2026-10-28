@@ -31,7 +31,7 @@ export function LessonFrame({
             </div>
           </aside>
         )}
-        <main className="min-w-0 flex-1 py-8">{children}</main>
+        <main className="flex min-w-0 flex-1 flex-col py-8">{children}</main>
         {tutor && (
           <aside aria-label="Tutor" className="hidden w-80 shrink-0 lg:block">
             <div className="sticky top-20 py-8">{tutor}</div>

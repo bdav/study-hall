@@ -666,6 +666,53 @@ function targetLabel(direction: 'Previous' | 'Next', target: Target) {
     : `${direction} ${target.noun}`;
 }
 
+/**
+ * A footer button: to a step, its direction above the step's title, which
+ * wraps within the button's half of the footer; to an item, one line. The
+ * arrow lines up with the title's first line.
+ */
+function TargetButton({
+  direction,
+  target,
+  onClick,
+}: {
+  direction: 'Previous' | 'Next';
+  target: Target;
+  onClick: () => void;
+}) {
+  const toStep = 'step' in target;
+  const Arrow = direction === 'Previous' ? ChevronLeft : ChevronRight;
+  const arrow = (
+    // As tall as a line of the title, below the direction's line
+    <span className={`flex h-6 shrink-0 items-center ${toStep ? 'mt-4' : ''}`}>
+      <Arrow className="size-4" />
+    </span>
+  );
+  return (
+    <button
+      type="button"
+      aria-label={targetLabel(direction, target)}
+      onClick={onClick}
+      className={`flex items-start gap-1 rounded-lg px-3 py-2 text-white/70 hover:text-white ${
+        direction === 'Previous'
+          ? 'justify-self-start text-left'
+          : 'col-start-2 justify-self-end text-right'
+      }`}
+    >
+      {direction === 'Previous' && arrow}
+      {toStep ? (
+        <span className="min-w-0">
+          <span className="block text-xs opacity-70">{direction}</span>
+          <span className="block">{target.step.title}</span>
+        </span>
+      ) : (
+        targetLabel(direction, target)
+      )}
+      {direction === 'Next' && arrow}
+    </button>
+  );
+}
+
 /** A written lesson, read one step at a time. */
 function WrittenLesson({
   lesson,
@@ -797,11 +844,39 @@ function WrittenLesson({
     else moveToItem(target.itemIndex);
   };
 
+  // Moving on from the outline or with the keys takes focus to the new
+  // step's heading, so none is left on the link that was clicked (the
+  // browser shows its ring once a key is pressed), and screen readers say
+  // where the learner is. The footer's buttons keep focus, so Enter keeps
+  // moving on
+  const stepRef = useRef<HTMLDivElement>(null);
+  const focusOnArrival = useRef(false);
+  const focusStepHeading = () => {
+    const heading = (
+      isFullPage
+        ? document.getElementById(sectionElementId(current))
+        : stepRef.current
+    )?.querySelector('h2');
+    if (!heading) return;
+    // Focusable by script only, and with no ring: it isn't a control
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  };
+  const takeFocusOnArrival = useEffectEvent(() => {
+    if (!focusOnArrival.current) return;
+    focusOnArrival.current = false;
+    focusStepHeading();
+  });
+  useEffect(() => {
+    takeFocusOnArrival();
+  }, [current.id, paging?.index]);
+
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (!isStepKey(event)) return;
     const target = event.key === 'ArrowLeft' ? back : forward;
     if (target) {
       event.preventDefault();
+      focusOnArrival.current = true;
       goToTarget(target);
     }
   });
@@ -811,7 +886,9 @@ function WrittenLesson({
   }, []);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const renderOutline = (onNavigate?: () => void) => (
+  const choseInDrawer = useRef(false);
+  /** The outline, beside the step or, `inDrawer`, in the drawer. */
+  const renderOutline = (inDrawer = false) => (
     <LessonOutline
       steps={steps}
       currentId={current.id}
@@ -821,7 +898,13 @@ function WrittenLesson({
       exerciseCount={version.exercises.length}
       onNavigate={(step) => {
         navigatingTo.current = step.id;
-        onNavigate?.();
+        // The step already shown doesn't change, so it would leave the flag
+        // for a later move, such as a footer click
+        focusOnArrival.current = step.id !== current.id;
+        if (inDrawer) {
+          choseInDrawer.current = true;
+          setIsDrawerOpen(false);
+        }
         // Full lesson is one page, so a section in it is a place to scroll to
         if (isFullPage && isReadingStep(step)) jumpTo(step);
       }}
@@ -878,12 +961,22 @@ function WrittenLesson({
         >
           <Menu className="size-5" />
         </SheetTrigger>
-        <SheetContent className="border-r border-white/20 bg-[oklch(0.25_0.08_230)] text-white">
+        <SheetContent
+          className="border-r border-white/20 bg-[oklch(0.25_0.08_230)] text-white"
+          // The drawer holds focus until it has closed, so a step chosen in
+          // it takes focus to its heading then, not back to the menu button
+          onCloseAutoFocus={(event) => {
+            if (!choseInDrawer.current) return;
+            choseInDrawer.current = false;
+            event.preventDefault();
+            focusStepHeading();
+          }}
+        >
           <SheetTitle>Lesson outline</SheetTitle>
           <SheetDescription className="sr-only">
             The steps of {lesson.title}
           </SheetDescription>
-          {renderOutline(() => setIsDrawerOpen(false))}
+          {renderOutline(true)}
         </SheetContent>
       </Sheet>
     </>
@@ -940,46 +1033,48 @@ function WrittenLesson({
     >
       {/* Beside the outline */}
       <div
-        className={`w-full ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]}`}
+        ref={stepRef}
+        // At least as tall as the frame, so a short step's footer rests at
+        // the bottom of the screen, staying put while paging through items
+        className={`flex w-full flex-1 flex-col [&_h2:focus]:outline-none ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]}`}
       >
-        {isFullPage ? (
-          <FullLesson steps={steps} version={version} />
-        ) : (
-          <StepContent
-            step={current}
-            lesson={lesson}
-            version={version}
-            canUseAI={canUseAI}
-            practice={practice}
-            exampleIndex={paging?.noun === 'example' ? paging.index : undefined}
-          />
-        )}
+        <div className="flex-1">
+          {isFullPage ? (
+            <FullLesson steps={steps} version={version} />
+          ) : (
+            <StepContent
+              step={current}
+              lesson={lesson}
+              version={version}
+              canUseAI={canUseAI}
+              practice={practice}
+              exampleIndex={
+                paging?.noun === 'example' ? paging.index : undefined
+              }
+            />
+          )}
+        </div>
+        {/* Two halves, so long titles wrap within them rather than
+            stacking the buttons, and a row tall enough for a two-line
+            button, so paging between steps and items doesn't move it. The
+            buttons' tops line up */}
         <nav
           aria-label="Lesson steps"
-          className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/20 pt-6"
+          className="mt-10 grid auto-rows-[minmax(3.5rem,auto)] grid-cols-2 items-start gap-3 border-t border-white/20 pt-6"
         >
-          {back ? (
-            <button
-              type="button"
+          {back && (
+            <TargetButton
+              direction="Previous"
+              target={back}
               onClick={() => goToTarget(back)}
-              className="flex items-center gap-1 rounded-lg px-3 py-2 text-white/70 hover:text-white"
-            >
-              <ChevronLeft className="size-4" />
-              {targetLabel('Previous', back)}
-            </button>
-          ) : (
-            <span />
+            />
           )}
           {forward && (
-            <button
-              type="button"
+            <TargetButton
+              direction="Next"
+              target={forward}
               onClick={() => goToTarget(forward)}
-              // Stays on the right when a long Previous wraps the footer
-              className="ml-auto flex items-center gap-1 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
-            >
-              {targetLabel('Next', forward)}
-              <ChevronRight className="size-4" />
-            </button>
+            />
           )}
         </nav>
       </div>
