@@ -533,7 +533,10 @@ function WrittenLesson({
       header={<WrittenLessonHeader lesson={lesson} leading={outlineToggles} />}
       outline={isOutlineCollapsed ? undefined : renderOutline()}
     >
-      <div className={`mx-auto w-full ${STEP_WIDTHS[current.kind]}`}>
+      {/* Beside the outline while it's open; centred once it's collapsed */}
+      <div
+        className={`w-full ${STEP_WIDTHS[current.kind]} ${isOutlineCollapsed ? 'mx-auto' : ''}`}
+      >
         <StepContent
           step={current}
           lesson={lesson}
