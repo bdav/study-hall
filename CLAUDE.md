@@ -73,6 +73,8 @@ When picking the next ticket, work the first unchecked ticket in this list whose
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
+Commit subjects stay plain sentences, with no issue-number prefix. Link a commit to its ticket with a trailer in the body: `Closes #N` on the commit that finishes it, and `Refs #N` on every other commit for it, including fixes after it's closed and planning commits (one `Refs` per issue).
+
 ## Commands
 
 ### Development
