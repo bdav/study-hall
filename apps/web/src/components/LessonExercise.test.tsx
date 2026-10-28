@@ -51,6 +51,7 @@ function renderExercise(
   exercise: Exercise,
   mutation: Partial<SubmitMutation> = {},
   answers: Partial<AnswersQuery> = {},
+  { showMyAnswer = true, showAnswerKey = false } = {},
 ) {
   vi.mocked(trpc.exercise.answers.useQuery).mockReturnValue({
     data: undefined,
@@ -67,7 +68,13 @@ function renderExercise(
 
   return render(
     <ol>
-      <LessonExercise exercise={exercise} index={0} lessonId="lesson-1" />
+      <LessonExercise
+        exercise={exercise}
+        index={0}
+        lessonId="lesson-1"
+        showMyAnswer={showMyAnswer}
+        showAnswerKey={showAnswerKey}
+      />
     </ol>,
   );
 }
@@ -306,14 +313,19 @@ describe('LessonExercise', () => {
     });
 
     it('lists the accepted answers', () => {
-      renderExercise(attempted, {}, {
-        data: {
-          expectedAnswers: ['Buongiorno', 'Buon giorno'],
-          essentialPoints: [],
-          supplementaryPoints: [],
-          expectedPoints: [],
-        },
-      } as Partial<AnswersQuery>);
+      renderExercise(
+        attempted,
+        {},
+        {
+          data: {
+            expectedAnswers: ['Buongiorno', 'Buon giorno'],
+            essentialPoints: [],
+            supplementaryPoints: [],
+            expectedPoints: [],
+          },
+        } as Partial<AnswersQuery>,
+        { showAnswerKey: true },
+      );
 
       expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
       expect(screen.getByText('Buongiorno')).toBeInTheDocument();
@@ -346,6 +358,7 @@ describe('LessonExercise', () => {
           expectedPoints: ['In the evening', 'As a greeting'],
         },
       } as Partial<AnswersQuery>,
+      { showAnswerKey: true },
     );
 
     expect(screen.getByText(/points a good answer makes/i)).toBeInTheDocument();
@@ -375,6 +388,7 @@ describe('LessonExercise', () => {
           expectedPoints: [],
         },
       } as Partial<AnswersQuery>,
+      { showAnswerKey: true },
     );
 
     const covers = screen.getByRole('list', {
@@ -403,6 +417,7 @@ describe('LessonExercise', () => {
       },
       {},
       { isError: true } as Partial<AnswersQuery>,
+      { showAnswerKey: true },
     );
 
     expect(screen.getByText(/couldn't load the answers/i)).toBeInTheDocument();
@@ -490,4 +505,190 @@ describe('LessonExercise', () => {
       expect(screen.getByText(message)).toBeInTheDocument();
     },
   );
+
+  describe('with Show my answers off', () => {
+    const answered: Exercise = {
+      ...shortAnswer,
+      latestAttempt: {
+        exerciseId: 'exercise-1',
+        answer: 'Buonasera',
+        evaluation: 'INCORRECT',
+        accentCorrection: null,
+        feedback: null,
+        createdAt: '2026-10-22T09:00:00.000Z',
+      },
+    };
+    const hidden = { showMyAnswer: false };
+
+    it('shows a blank answer and no result, so the exercise can be retaken', () => {
+      renderExercise(answered, {}, {}, hidden);
+
+      expect(screen.getByLabelText(/your answer/i)).toHaveValue('');
+      expect(screen.queryByText(/not quite/i)).not.toBeInTheDocument();
+    });
+
+    it('makes a new attempt and shows its result', async () => {
+      const user = userEvent.setup();
+      const { rerender } = renderExercise(answered, {}, {}, hidden);
+
+      await user.type(screen.getByLabelText(/your answer/i), 'Buongiorno');
+      await user.click(screen.getByRole('button', { name: 'Check' }));
+      expect(mockSubmit).toHaveBeenCalledWith({
+        exerciseId: 'exercise-1',
+        answer: 'Buongiorno',
+      });
+
+      vi.mocked(trpc.exercise.submitAttempt.useMutation).mockReturnValue({
+        mutate: mockSubmit,
+        isPending: false,
+        isError: false,
+        data: {
+          ...answered.latestAttempt!,
+          answer: 'Buongiorno',
+          evaluation: 'CORRECT',
+        },
+      } as unknown as SubmitMutation);
+      rerender(
+        <ol>
+          <LessonExercise
+            exercise={answered}
+            index={0}
+            lessonId="lesson-1"
+            showMyAnswer={false}
+            showAnswerKey={false}
+          />
+        </ol>,
+      );
+      expect(screen.getByText('Correct!')).toBeInTheDocument();
+    });
+
+    it('still offers the answers of an exercise tried before', () => {
+      renderExercise(answered, {}, {}, hidden);
+
+      expect(
+        screen.getByRole('button', { name: /show answers/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('with Show answer key on', () => {
+    const key = { showAnswerKey: true };
+    const answered: Exercise = {
+      ...shortAnswer,
+      latestAttempt: {
+        exerciseId: 'exercise-1',
+        answer: 'Buonasera',
+        evaluation: 'INCORRECT',
+        accentCorrection: null,
+        feedback: null,
+        createdAt: '2026-10-22T09:00:00.000Z',
+      },
+    };
+
+    it('fetches and shows the answers of an attempted exercise', () => {
+      renderExercise(
+        answered,
+        {},
+        {
+          data: {
+            expectedAnswers: ['Buongiorno'],
+            essentialPoints: [],
+            supplementaryPoints: [],
+            expectedPoints: [],
+          },
+        } as Partial<AnswersQuery>,
+        key,
+      );
+
+      expect(trpc.exercise.answers.useQuery).toHaveBeenLastCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: true },
+      );
+      expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
+    });
+
+    it('fetches them even with Show my answers off', () => {
+      renderExercise(answered, {}, {}, { ...key, showMyAnswer: false });
+
+      expect(trpc.exercise.answers.useQuery).toHaveBeenLastCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: true },
+      );
+    });
+
+    it('hides answers opened one at a time once it is turned off, too', async () => {
+      const fetched = {
+        data: {
+          expectedAnswers: ['Buongiorno'],
+          essentialPoints: [],
+          supplementaryPoints: [],
+          expectedPoints: [],
+        },
+      } as Partial<AnswersQuery>;
+      const exerciseWith = (showAnswerKey: boolean) => (
+        <ol>
+          <LessonExercise
+            exercise={answered}
+            index={0}
+            lessonId="lesson-1"
+            showMyAnswer
+            showAnswerKey={showAnswerKey}
+          />
+        </ol>
+      );
+      const { rerender } = renderExercise(answered, {}, fetched);
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: /show answers/i }));
+      expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
+
+      rerender(exerciseWith(true));
+      rerender(exerciseWith(false));
+
+      expect(screen.queryByText(/accepted answers/i)).not.toBeInTheDocument();
+    });
+
+    it('hides the answers again once it is turned off, though they were fetched', () => {
+      const fetched = {
+        data: {
+          expectedAnswers: ['Buongiorno'],
+          essentialPoints: [],
+          supplementaryPoints: [],
+          expectedPoints: [],
+        },
+      } as Partial<AnswersQuery>;
+      const { rerender } = renderExercise(answered, {}, fetched, key);
+      expect(screen.getByText(/accepted answers/i)).toBeInTheDocument();
+
+      // The fetched answers stay cached after the key is turned off
+      rerender(
+        <ol>
+          <LessonExercise
+            exercise={answered}
+            index={0}
+            lessonId="lesson-1"
+            showMyAnswer
+            showAnswerKey={false}
+          />
+        </ol>,
+      );
+
+      expect(screen.queryByText(/accepted answers/i)).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /show answers/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('never requests the answers of an exercise not yet tried, and says to answer it first', () => {
+      renderExercise(shortAnswer, {}, {}, key);
+
+      expect(trpc.exercise.answers.useQuery).toHaveBeenLastCalledWith(
+        { exerciseId: 'exercise-1' },
+        { enabled: false },
+      );
+      expect(
+        screen.getByText(/answer this exercise to see its answers/i),
+      ).toBeInTheDocument();
+    });
+  });
 });

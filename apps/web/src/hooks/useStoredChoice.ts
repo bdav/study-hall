@@ -30,3 +30,13 @@ export function useStoredChoice<T extends string>(
 
   return [choice, choose] as const;
 }
+
+/** A setting that's on or off, remembered by the browser as above. */
+export function useStoredFlag(key: string, fallback: boolean) {
+  const [choice, choose] = useStoredChoice(
+    key,
+    ['on', 'off'],
+    fallback ? 'on' : 'off',
+  );
+  return [choice === 'on', (on: boolean) => choose(on ? 'on' : 'off')] as const;
+}

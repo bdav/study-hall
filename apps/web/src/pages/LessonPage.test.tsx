@@ -146,6 +146,11 @@ const twoSectionLesson = {
 };
 
 const practice = '/lessons/lesson-1?step=practice';
+
+/** Practice shows every exercise on one page, rather than one at a time. */
+function showAllExercises() {
+  localStorage.setItem('study-hall:paging-view', 'all');
+}
 const wrapUp = '/lessons/lesson-1?step=wrap-up';
 
 /** Shows the current URL's query, so tests can see the step in the URL. */
@@ -281,17 +286,17 @@ describe('LessonPage', () => {
       renderPage({ query: written });
 
       expect(currentStep()).toBe('Saying hello');
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
       expect(currentStep()).toBe('Saying goodbye');
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
       expect(currentStep()).toBe('Examples');
       expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
       expect(currentStep()).toBe('Practice');
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
       expect(currentStep()).toBe('Wrap up');
       expect(
-        screen.queryByRole('button', { name: /^next/i }),
+        screen.queryByRole('button', { name: /^next:/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -306,7 +311,7 @@ describe('LessonPage', () => {
         } as Partial<LessonQuery>,
       });
 
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
 
       expect(currentStep()).toBe('Practice');
     });
@@ -315,11 +320,11 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       renderPage({ query: written });
       expect(
-        screen.queryByRole('button', { name: /^previous/i }),
+        screen.queryByRole('button', { name: /^previous:/i }),
       ).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /^next/i }));
-      await user.click(screen.getByRole('button', { name: /^previous/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
+      await user.click(screen.getByRole('button', { name: /^previous:/i }));
 
       expect(
         screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
@@ -333,7 +338,7 @@ describe('LessonPage', () => {
       expect(
         screen.getByRole('button', { name: 'Next: Saying goodbye' }),
       ).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: /^next/i }));
+      await user.click(screen.getByRole('button', { name: /^next:/i }));
       expect(
         screen.getByRole('button', { name: 'Previous: Saying hello' }),
       ).toBeInTheDocument();
@@ -362,6 +367,7 @@ describe('LessonPage', () => {
       });
 
       it('never changes step while the learner types an answer', async () => {
+        showAllExercises();
         const user = userEvent.setup();
         renderPage({ query: written, path: practice });
 
@@ -493,12 +499,12 @@ describe('LessonPage', () => {
         const user = userEvent.setup();
         renderPage({ query: written });
 
-        await user.click(screen.getByRole('button', { name: /^next/i }));
+        await user.click(screen.getByRole('button', { name: /^next:/i }));
 
         expect(screen.getByLabelText('Current search')).toHaveTextContent(
           '?step=section-2',
         );
-        await user.click(screen.getByRole('button', { name: /^next/i }));
+        await user.click(screen.getByRole('button', { name: /^next:/i }));
         expect(screen.getByLabelText('Current search')).toHaveTextContent(
           '?step=examples',
         );
@@ -535,8 +541,8 @@ describe('LessonPage', () => {
         }
         renderPage({ query: written, extra: <BrowserBack /> });
 
-        await user.click(screen.getByRole('button', { name: /^next/i }));
-        await user.click(screen.getByRole('button', { name: /^next/i }));
+        await user.click(screen.getByRole('button', { name: /^next:/i }));
+        await user.click(screen.getByRole('button', { name: /^next:/i }));
         await user.click(screen.getByRole('button', { name: 'Browser back' }));
 
         expect(
@@ -588,6 +594,7 @@ describe('LessonPage', () => {
     });
 
     it('lists the exercises in order with their type on Practice', () => {
+      showAllExercises();
       renderPage({
         query: { data: generatedLesson } as Partial<LessonQuery>,
         path: practice,
@@ -688,7 +695,9 @@ describe('LessonPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'More actions' }));
 
-      expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitemradio', { name: 'By section' }),
+      ).not.toBeInTheDocument();
       expect(
         screen.getByRole('menuitem', { name: 'Start over' }),
       ).toBeInTheDocument();
@@ -738,7 +747,7 @@ describe('LessonPage', () => {
       await openFullLesson(user);
 
       expect(
-        screen.queryByRole('button', { name: /^previous/i }),
+        screen.queryByRole('button', { name: /^previous:/i }),
       ).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Next: Practice' }));
 
@@ -958,6 +967,312 @@ describe('LessonPage', () => {
       expect(
         screen.getByRole('heading', { level: 2, name: 'Practice' }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('Practice', () => {
+    const answeredFirst = {
+      ...generatedLesson,
+      version: {
+        ...generatedLesson.version,
+        exercises: generatedLesson.version.exercises.map((exercise, index) =>
+          index === 0
+            ? {
+                ...exercise,
+                latestAttempt: {
+                  exerciseId: exercise.id,
+                  answer: 'Buonasera',
+                  evaluation: 'INCORRECT',
+                  accentCorrection: null,
+                  feedback: null,
+                  createdAt: '2026-10-24T09:00:00.000Z',
+                },
+              }
+            : exercise,
+        ),
+      },
+    };
+    const practiceOf = (data: object = answeredFirst, path = practice) =>
+      renderPage({ query: { data } as Partial<LessonQuery>, path });
+    const shownExercises = () =>
+      within(screen.getByRole('list', { name: 'Exercises' })).getAllByRole(
+        'listitem',
+      );
+    const banner = () => screen.getByRole('banner');
+    const practiceView = () =>
+      within(banner()).getByRole('group', { name: 'Practice view' });
+    const toggles = () => within(banner()).getByRole('group', { name: 'Show' });
+    /** Whether the answers of the exercise were last asked for. */
+    const answersRequested = (exerciseId: string) =>
+      vi
+        .mocked(trpc.exercise.answers.useQuery)
+        .mock.calls.filter(
+          ([input]) =>
+            (input as { exerciseId: string }).exerciseId === exerciseId,
+        )
+        .at(-1)?.[1]?.enabled;
+
+    describe('one at a time', () => {
+      it('is the default: one exercise, with a count', () => {
+        practiceOf();
+
+        expect(
+          within(practiceView()).getByRole('button', { name: 'One at a time' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        expect(shownExercises()).toHaveLength(1);
+        expect(shownExercises()[0]).toHaveTextContent(/good morning/i);
+        expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
+      });
+
+      it('moves between exercises, with each in the URL', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+        expect(
+          screen.getByRole('button', { name: 'Previous exercise' }),
+        ).toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+        expect(screen.getByText('Exercise 2 of 3')).toBeInTheDocument();
+        expect(shownExercises()[0]).toHaveTextContent(/fill in the blank/i);
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice&exercise=exercise-2',
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+        expect(
+          screen.getByRole('button', { name: 'Next exercise' }),
+        ).toBeDisabled();
+        await user.click(
+          screen.getByRole('button', { name: 'Previous exercise' }),
+        );
+        expect(screen.getByText('Exercise 2 of 3')).toBeInTheDocument();
+      });
+
+      it('puts the first exercise in the URL on arriving, so the exercise on screen is always named', () => {
+        practiceOf();
+
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice&exercise=exercise-1',
+        );
+      });
+
+      it('opens the exercise the URL names, or the first for one it lacks', () => {
+        const { unmount } = practiceOf(
+          answeredFirst,
+          '/lessons/lesson-1?step=practice&exercise=exercise-3',
+        );
+        expect(screen.getByText('Exercise 3 of 3')).toBeInTheDocument();
+        unmount();
+
+        practiceOf(
+          answeredFirst,
+          '/lessons/lesson-1?step=practice&exercise=exercise-9',
+        );
+        expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
+      });
+
+      it('moves between exercises with the arrow keys, then on past them to the next or previous step', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+
+        await user.keyboard('{ArrowRight}');
+        expect(screen.getByText('Exercise 2 of 3')).toBeInTheDocument();
+        await user.keyboard('{ArrowRight}{ArrowRight}');
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Wrap up' }),
+        ).toBeInTheDocument();
+      });
+
+      it('goes back past the first exercise to the previous step with ←', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+
+        await user.keyboard('{ArrowLeft}');
+
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Examples' }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    describe('all exercises', () => {
+      it('shows every exercise on one page, with no count', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+
+        await user.click(
+          within(practiceView()).getByRole('button', { name: 'All exercises' }),
+        );
+
+        expect(shownExercises()).toHaveLength(3);
+        expect(screen.queryByText(/exercise \d of 3/i)).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'Next exercise' }),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("isn't offered on the other steps", () => {
+      renderPage({
+        query: { data: answeredFirst } as Partial<LessonQuery>,
+        path: wrapUp,
+      });
+
+      expect(
+        screen.queryByRole('group', { name: 'Practice view' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('group', { name: 'Show' }),
+      ).not.toBeInTheDocument();
+    });
+
+    describe('Show my answers', () => {
+      it('is on by default, showing the latest answer', () => {
+        practiceOf();
+
+        expect(
+          within(toggles()).getByRole('button', { name: 'My answers' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByLabelText('Your answer')).toHaveValue('Buonasera');
+      });
+
+      it('hides answers when off, so exercises can be retaken', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+
+        await user.click(
+          within(toggles()).getByRole('button', { name: 'My answers' }),
+        );
+
+        expect(screen.getByLabelText('Your answer')).toHaveValue('');
+        expect(screen.queryByText(/not quite/i)).not.toBeInTheDocument();
+      });
+    });
+
+    describe('Show answer key', () => {
+      it('is off by default, requesting no answers', () => {
+        practiceOf();
+
+        expect(
+          within(toggles()).getByRole('button', { name: 'Answer key' }),
+        ).toHaveAttribute('aria-pressed', 'false');
+        expect(answersRequested('exercise-1')).toBe(false);
+      });
+
+      it('requests the answers of attempted exercises only, in both views', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+        await user.click(
+          within(toggles()).getByRole('button', { name: 'Answer key' }),
+        );
+        expect(answersRequested('exercise-1')).toBe(true);
+
+        await user.click(
+          within(practiceView()).getByRole('button', { name: 'All exercises' }),
+        );
+        expect(answersRequested('exercise-1')).toBe(true);
+        expect(answersRequested('exercise-2')).toBe(false);
+        expect(answersRequested('exercise-3')).toBe(false);
+        expect(
+          screen.getAllByText(/answer this exercise to see its answers/i),
+        ).toHaveLength(2);
+      });
+    });
+
+    it('combines both toggles: blank answers with the answer key, a revision sheet to retake', async () => {
+      const user = userEvent.setup();
+      practiceOf();
+      await user.click(
+        within(toggles()).getByRole('button', { name: 'My answers' }),
+      );
+      await user.click(
+        within(toggles()).getByRole('button', { name: 'Answer key' }),
+      );
+
+      expect(screen.getByLabelText('Your answer')).toHaveValue('');
+      expect(answersRequested('exercise-1')).toBe(true);
+    });
+
+    it('applies both toggles in All exercises too', async () => {
+      const user = userEvent.setup();
+      practiceOf();
+      await user.click(
+        within(practiceView()).getByRole('button', { name: 'All exercises' }),
+      );
+      await user.click(
+        within(toggles()).getByRole('button', { name: 'My answers' }),
+      );
+      await user.click(
+        within(toggles()).getByRole('button', { name: 'Answer key' }),
+      );
+
+      expect(screen.getAllByLabelText('Your answer')[0]).toHaveValue('');
+      expect(answersRequested('exercise-1')).toBe(true);
+      expect(answersRequested('exercise-2')).toBe(false);
+    });
+
+    it('offers the view and both toggles in the ⋯ menu too, for narrow screens', async () => {
+      const user = userEvent.setup();
+      practiceOf();
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(
+        screen.getByRole('menuitemcheckbox', { name: 'Show my answers' }),
+      );
+      expect(screen.getByLabelText('Your answer')).toHaveValue('');
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      expect(
+        screen.getByRole('menuitemcheckbox', { name: 'Show answer key' }),
+      ).not.toBeChecked();
+      await user.click(
+        screen.getByRole('menuitemradio', { name: 'All exercises' }),
+      );
+      expect(shownExercises()).toHaveLength(3);
+    });
+
+    describe('remembered choices', () => {
+      it('keeps the view and both toggles for next time', async () => {
+        const user = userEvent.setup();
+        const { unmount } = practiceOf();
+        await user.click(
+          within(practiceView()).getByRole('button', { name: 'All exercises' }),
+        );
+        await user.click(
+          within(toggles()).getByRole('button', { name: 'My answers' }),
+        );
+        await user.click(
+          within(toggles()).getByRole('button', { name: 'Answer key' }),
+        );
+        unmount();
+
+        practiceOf();
+
+        expect(shownExercises()).toHaveLength(3);
+        expect(
+          within(toggles()).getByRole('button', { name: 'My answers' }),
+        ).toHaveAttribute('aria-pressed', 'false');
+        expect(
+          within(toggles()).getByRole('button', { name: 'Answer key' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+      });
+
+      it('still works when the browser has no storage', async () => {
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+          throw new DOMException('Storage is disabled', 'SecurityError');
+        });
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+          throw new DOMException('Storage is disabled', 'SecurityError');
+        });
+        const user = userEvent.setup();
+        practiceOf();
+
+        expect(shownExercises()).toHaveLength(1);
+        await user.click(
+          within(toggles()).getByRole('button', { name: 'My answers' }),
+        );
+        expect(screen.getByLabelText('Your answer')).toHaveValue('');
+      });
     });
   });
 

@@ -20,12 +20,17 @@ import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
+import {
+  useStoredPracticeSettings,
+  type StoredPracticeSettings,
+} from '@/hooks/useStoredPracticeSettings';
 import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -34,7 +39,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LessonExercise } from '@/components/LessonExercise';
+import {
+  LessonPractice,
+  type PracticeSettings,
+} from '@/components/LessonPractice';
 import { LESSON_FRAME_WIDTH, LessonFrame } from '@/components/LessonFrame';
 import { LessonOutline } from '@/components/LessonOutline';
 import {
@@ -58,7 +66,10 @@ import {
   type LessonStep,
   READING_VIEWS,
   currentExerciseId,
+  currentExerciseIndex,
   exerciseElementId,
+  exerciseSearch,
+  PRACTICE_VIEWS,
   type ReadingView,
 } from '@/lib/lessonSteps';
 
@@ -125,28 +136,75 @@ function StartOverDialog({
 const ICON_BUTTON =
   'rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white';
 
-/** The reading view and how to change it, while on a reading step. */
-interface ReadingViewChoice {
-  view: ReadingView;
-  onChange: (view: ReadingView) => void;
+/**
+ * A choice between a few ways of showing a step, such as the reading view
+ * on the reading steps or Practice's view. Built with `viewChoice`, which
+ * keeps the options and the setter's type in step.
+ */
+interface ViewChoice {
+  /** What the choice is called, such as "Reading view". */
+  label: string;
+  options: readonly { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
 }
+
+function viewChoice<T extends string>(
+  label: string,
+  options: readonly { value: T; label: string }[],
+  value: T,
+  onChange: (value: T) => void,
+): ViewChoice {
+  // Only the options' values are ever passed back
+  return { label, options, value, onChange: (v) => onChange(v as T) };
+}
+
+/** A pressed-or-not button, for a setting that's on or off. */
+function ToggleButton({
+  pressed,
+  onChange,
+  children,
+}: {
+  pressed: boolean;
+  onChange: (pressed: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={() => onChange(!pressed)}
+      className={`rounded-md px-3 py-1 ${
+        pressed ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+const MENU_ITEM = 'focus:bg-white/10 focus:text-white';
 
 /**
  * The written lesson's header, pinned to the top: the way back to the
- * course, the title, the reading view on the reading steps, Lesson
- * Completion and a ⋯ menu of rarely used actions. On narrow screens the
- * reading view moves into the ⋯ menu, for room.
+ * course, the title, the step's view (the reading view on the reading
+ * steps, Practice's on Practice), Practice's toggles, Lesson Completion and
+ * a ⋯ menu of rarely used actions. Where the header has no room, on
+ * narrower screens, the view and toggles move into the ⋯ menu.
  */
 function WrittenLessonHeader({
   lesson,
   leading,
-  readingView,
+  view,
+  practiceToggles,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
-  /** Left out on steps other than the reading steps. */
-  readingView?: ReadingViewChoice;
+  /** Left out on a step with only one way of showing it. */
+  view?: ViewChoice;
+  /** Practice's toggles; left out on steps other than Practice. */
+  practiceToggles?: StoredPracticeSettings;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
 
@@ -165,11 +223,28 @@ function WrittenLessonHeader({
             {lesson.title}
           </h1>
         </div>
-        {readingView && (
-          <ReadingViewControl
-            {...readingView}
-            className="hidden md:inline-flex"
-          />
+        {view && (
+          <ViewControl choice={view} className="hidden md:inline-flex" />
+        )}
+        {practiceToggles && (
+          <div
+            role="group"
+            aria-label="Show"
+            className={`hidden lg:inline-flex ${SEGMENTED}`}
+          >
+            <ToggleButton
+              pressed={practiceToggles.showMyAnswers}
+              onChange={practiceToggles.setShowMyAnswers}
+            >
+              My answers
+            </ToggleButton>
+            <ToggleButton
+              pressed={practiceToggles.showAnswerKey}
+              onChange={practiceToggles.setShowAnswerKey}
+            >
+              Answer key
+            </ToggleButton>
+          </div>
         )}
         <CompletionToggle lesson={lesson} />
         <DropdownMenu>
@@ -183,20 +258,18 @@ function WrittenLessonHeader({
             align="end"
             className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
           >
-            {readingView && (
+            {view && (
               <div className="md:hidden">
-                <DropdownMenuLabel>Reading view</DropdownMenuLabel>
+                <DropdownMenuLabel>{view.label}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
-                  value={readingView.view}
-                  onValueChange={(value) =>
-                    readingView.onChange(value as ReadingView)
-                  }
+                  value={view.value}
+                  onValueChange={view.onChange}
                 >
-                  {READING_VIEWS.map((option) => (
+                  {view.options.map((option) => (
                     <DropdownMenuRadioItem
                       key={option.value}
                       value={option.value}
-                      className="focus:bg-white/10 focus:text-white"
+                      className={MENU_ITEM}
                     >
                       {option.label}
                     </DropdownMenuRadioItem>
@@ -205,9 +278,28 @@ function WrittenLessonHeader({
                 <DropdownMenuSeparator />
               </div>
             )}
+            {practiceToggles && (
+              <div className="lg:hidden">
+                <DropdownMenuCheckboxItem
+                  checked={practiceToggles.showMyAnswers}
+                  onCheckedChange={practiceToggles.setShowMyAnswers}
+                  className={MENU_ITEM}
+                >
+                  Show my answers
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={practiceToggles.showAnswerKey}
+                  onCheckedChange={practiceToggles.setShowAnswerKey}
+                  className={MENU_ITEM}
+                >
+                  Show answer key
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+              </div>
+            )}
             <DropdownMenuItem
               onSelect={() => setIsStartingOver(true)}
-              className="focus:bg-white/10 focus:text-white"
+              className={MENU_ITEM}
             >
               Start over
             </DropdownMenuItem>
@@ -317,32 +409,32 @@ function ExamplesContent({
   );
 }
 
-/** By section or Full lesson, for the reading steps. */
-function ReadingViewControl({
-  view,
-  onChange,
+/** The look of the header's segmented controls. */
+const SEGMENTED =
+  'shrink-0 rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm';
+
+/** A view choice as a segmented control, one button per option. */
+function ViewControl({
+  choice,
   className = '',
-}: ReadingViewChoice & { className?: string }) {
+}: {
+  choice: ViewChoice;
+  className?: string;
+}) {
   return (
     <div
       role="group"
-      aria-label="Reading view"
-      className={`shrink-0 rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm ${className}`}
+      aria-label={choice.label}
+      className={`${SEGMENTED} ${className}`}
     >
-      {READING_VIEWS.map((option) => (
-        <button
+      {choice.options.map((option) => (
+        <ToggleButton
           key={option.value}
-          type="button"
-          aria-pressed={view === option.value}
-          onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1 ${
-            view === option.value
-              ? 'bg-white/20 text-white'
-              : 'text-white/70 hover:text-white'
-          }`}
+          pressed={choice.value === option.value}
+          onChange={() => choice.onChange(option.value)}
         >
           {option.label}
-        </button>
+        </ToggleButton>
       ))}
     </div>
   );
@@ -393,11 +485,13 @@ function StepContent({
   lesson,
   version,
   canUseAI,
+  practice,
 }: {
   step: LessonStep;
   lesson: Lesson;
   version: LessonVersion;
   canUseAI: boolean;
+  practice: PracticeSettings;
 }) {
   switch (step.kind) {
     case 'section':
@@ -406,31 +500,7 @@ function StepContent({
       return <ExamplesContent examples={version.examples} />;
     case 'practice':
       return (
-        <section>
-          <h2 className="text-xl font-semibold">Practice</h2>
-          <ol aria-label="Exercises" className="mt-4 space-y-3">
-            {version.exercises.map((exercise, index) => (
-              <LessonExercise
-                // Starting over gives every exercise a fresh start
-                key={`${exercise.id}:${lesson.resetAt ?? ''}`}
-                exercise={exercise}
-                index={index}
-                lessonId={lesson.id}
-              />
-            ))}
-          </ol>
-          {/* Open Exercises can need AI to check, so the API hides them from
-              learners without AI access (ADR-0005) */}
-          {version.hiddenExerciseCount > 0 && (
-            <p className="mt-3 text-sm text-white/50">
-              {version.hiddenExerciseCount === 1
-                ? '1 more exercise needs'
-                : `${version.hiddenExerciseCount} more exercises need`}{' '}
-              AI to check your answers, and your account doesn&apos;t have
-              access to AI features.
-            </p>
-          )}
-        </section>
+        <LessonPractice lesson={lesson} version={version} settings={practice} />
       );
     case 'wrap-up':
       return (
@@ -524,8 +594,47 @@ function WrittenLesson({
   const isFullPage = readingView === 'full' && isReadingStep(current);
   const { previous, next } = adjacentSteps(steps, currentIndex, readingView);
 
+  const practiceSettings = useStoredPracticeSettings();
+  const exerciseIds = version.exercises.map((exercise) => exercise.id);
+  const exerciseIndex = currentExerciseIndex(exerciseIds, searchParams);
+  const isPagingExercises =
+    current.kind === 'practice' &&
+    practiceSettings.view === 'one' &&
+    exerciseIds.length > 0;
+  const moveToExercise = (index: number) => {
+    navigatingTo.current = current.id;
+    navigate(exerciseSearch(exerciseIds[index]));
+  };
+  // One at a time, the exercise on screen is always in the URL, for the
+  // tutor (#24); replacing keeps arriving to one history entry
+  const namesNoExercise =
+    isPagingExercises && currentExerciseId(searchParams) === null;
+  const nameFirstExercise = useEffectEvent(() => {
+    navigate(exerciseSearch(exerciseIds[0]), { replace: true });
+  });
+  useEffect(() => {
+    if (namesNoExercise) nameFirstExercise();
+  }, [namesNoExercise]);
+
+  const practice: PracticeSettings = {
+    view: practiceSettings.view,
+    showMyAnswers: practiceSettings.showMyAnswers,
+    showAnswerKey: practiceSettings.showAnswerKey,
+    exerciseIndex,
+    onMoveExercise: moveToExercise,
+  };
+
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (!isStepKey(event)) return;
+    // One at a time, the keys page through the exercises, then on past them
+    if (isPagingExercises) {
+      const targetIndex = exerciseIndex + (event.key === 'ArrowLeft' ? -1 : 1);
+      if (targetIndex >= 0 && targetIndex < exerciseIds.length) {
+        event.preventDefault();
+        moveToExercise(targetIndex);
+        return;
+      }
+    }
     const target = event.key === 'ArrowLeft' ? previous : next;
     if (target) {
       event.preventDefault();
@@ -635,10 +744,25 @@ function WrittenLesson({
         <WrittenLessonHeader
           lesson={lesson}
           leading={outlineToggles}
-          readingView={
+          view={
             isReadingStep(current)
-              ? { view: readingView, onChange: setReadingView }
-              : undefined
+              ? viewChoice(
+                  'Reading view',
+                  READING_VIEWS,
+                  readingView,
+                  setReadingView,
+                )
+              : current.kind === 'practice'
+                ? viewChoice(
+                    'Practice view',
+                    PRACTICE_VIEWS,
+                    practiceSettings.view,
+                    practiceSettings.setView,
+                  )
+                : undefined
+          }
+          practiceToggles={
+            current.kind === 'practice' ? practiceSettings : undefined
           }
         />
       }
@@ -656,6 +780,7 @@ function WrittenLesson({
             lesson={lesson}
             version={version}
             canUseAI={canUseAI}
+            practice={practice}
           />
         )}
         <nav

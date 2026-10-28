@@ -147,13 +147,23 @@ export function LessonExercise({
   exercise,
   index,
   lessonId,
+  showMyAnswer,
+  showAnswerKey,
 }: {
   exercise: Exercise;
   index: number;
   lessonId: string;
+  /**
+   * Off, the exercise starts blank, as if never answered, so it can be
+   * retaken; answering makes a new attempt and earlier ones are kept.
+   */
+  showMyAnswer: boolean;
+  /** On, an attempted exercise shows its answers without being asked. */
+  showAnswerKey: boolean;
 }) {
   const utils = trpc.useUtils();
-  const [answer, setAnswer] = useState(exercise.latestAttempt?.answer ?? '');
+  const shownAttempt = showMyAnswer ? exercise.latestAttempt : null;
+  const [answer, setAnswer] = useState(shownAttempt?.answer ?? '');
 
   const submit = trpc.exercise.submitAttempt.useMutation({
     onSuccess: () => {
@@ -162,14 +172,24 @@ export function LessonExercise({
   });
 
   // A result belongs to the answer it checked, not to later edits
-  const latest = submit.data ?? exercise.latestAttempt;
+  const latest = submit.data ?? shownAttempt;
   const result = latest?.answer === answer.trim() ? latest : null;
 
-  // Answers are fetched only when the learner asks, after trying
+  // Answers are fetched only after an attempt, hidden or not, and only
+  // when the learner asks or has the answer key on
+  const attempted = Boolean(submit.data ?? exercise.latestAttempt);
   const [revealed, setRevealed] = useState(false);
+  // The answer key shows or hides every exercise's answers, so turning it
+  // either way also closes answers opened one at a time
+  const [keyWhenRevealed, setKeyWhenRevealed] = useState(showAnswerKey);
+  if (keyWhenRevealed !== showAnswerKey) {
+    setKeyWhenRevealed(showAnswerKey);
+    setRevealed(false);
+  }
+  const wantsAnswers = attempted && (revealed || showAnswerKey);
   const answers = trpc.exercise.answers.useQuery(
     { exerciseId: exercise.id },
-    { enabled: revealed },
+    { enabled: wantsAnswers },
   );
 
   function handleSubmit(e: FormEvent) {
@@ -244,23 +264,28 @@ export function LessonExercise({
       ) : (
         result && <Result attempt={result} />
       )}
-      {answers.data ? (
+      {/* Fetched answers stay cached, so they show only while wanted */}
+      {wantsAnswers && answers.data ? (
         <div className="mt-3 text-sm text-white/70">
           <Answers type={exercise.type} answers={answers.data} />
         </div>
-      ) : answers.isError ? (
+      ) : wantsAnswers && answers.isError ? (
         <p className="mt-3 text-sm text-destructive">
           We couldn&apos;t load the answers. Please try again later.
         </p>
+      ) : showAnswerKey && !attempted ? (
+        <p className="mt-3 text-sm text-white/50">
+          Answer this exercise to see its answers.
+        </p>
       ) : (
-        latest && (
+        attempted && (
           <button
             type="button"
             onClick={() => setRevealed(true)}
-            disabled={revealed}
+            disabled={revealed || showAnswerKey}
             className="mt-3 text-sm text-white/60 underline underline-offset-2 hover:text-white disabled:opacity-50"
           >
-            {revealed ? 'Loading answers…' : 'Show answers'}
+            {revealed || showAnswerKey ? 'Loading answers…' : 'Show answers'}
           </button>
         )
       )}

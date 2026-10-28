@@ -92,3 +92,22 @@ export function adjacentSteps(
   }
   return { previous: steps[index - 1], next: steps[index + 1] };
 }
+
+/**
+ * How Practice shows its exercises: one at a time, with a count, or all on
+ * one page. Examples will share the setting (#55).
+ */
+export const PRACTICE_VIEWS = [
+  { value: 'one', label: 'One at a time' },
+  { value: 'all', label: 'All exercises' },
+] as const;
+
+export type PracticeView = (typeof PRACTICE_VIEWS)[number]['value'];
+
+/** The exercise the URL names among these, or the first when none is. */
+export function currentExerciseIndex(
+  exerciseIds: string[],
+  search: URLSearchParams,
+) {
+  return Math.max(0, exerciseIds.indexOf(currentExerciseId(search) ?? ''));
+}
