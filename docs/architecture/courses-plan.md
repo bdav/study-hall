@@ -16,7 +16,7 @@
 > | C2  | #25           |
 > | C3  | #26, #27      |
 >
-> The lesson page layout (**Lesson layout** below, decided 2026-10-25) is tracked as #37–#42, #55 and #56, also sub-issues of #1.
+> The lesson page layout (**Lesson layout** below, decided 2026-10-25) is tracked as #37–#42 and #55–#57, also sub-issues of #1.
 
 ## Overview
 
