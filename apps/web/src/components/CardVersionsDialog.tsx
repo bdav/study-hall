@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { answeredLine, formatDay } from '@/lib/format';
@@ -12,6 +14,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+/** A card as a restore leaves it. */
+type RestoredCard = inferRouterOutputs<AppRouter>['card']['restoreVersion'];
+
 const blockClassName =
   'rounded-lg border border-white/20 bg-white/5 p-3 text-sm text-white/80';
 
@@ -22,16 +27,19 @@ const blockClassName =
  * answered and how many were right, whether a revision of the deck started
  * it or it restored an earlier one; then the answers from before versions
  * were recorded. An earlier version that asks something else can be
- * restored, after a confirmation, as a new version.
+ * restored, after a confirmation, as a new version, the restored card going
+ * to `onRestored`.
  */
 export function CardVersionsDialog({
   deckId,
   cardId,
   onClose,
+  onRestored,
 }: {
   deckId: string;
   cardId: string;
   onClose: () => void;
+  onRestored?: (card: RestoredCard) => void;
 }) {
   const utils = trpc.useUtils();
   const query = trpc.card.history.useQuery({ cardId });
@@ -44,11 +52,12 @@ export function CardVersionsDialog({
   const [isConfirming, setIsConfirming] = useState(false);
 
   const restore = trpc.card.restoreVersion.useMutation({
-    onSuccess: (_, { versionId }) => {
+    onSuccess: (card, { versionId }) => {
       utils.card.listByDeck.invalidate({ deckId });
       utils.card.history.invalidate({ cardId });
       const restored = history?.versions.find((v) => v.id === versionId);
       toast.success(`Restored version ${restored?.number}`);
+      onRestored?.(card);
     },
     onError: (error) => {
       toast.error(error.message);

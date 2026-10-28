@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { BadgeCheck, RefreshCw, Trash2 } from 'lucide-react';
+import { BadgeCheck, History, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { markedKnownMessage, toFlashcard, type Flashcard } from '@/lib/cards';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { CardStack } from '@/components/CardStack';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AnswersEditor } from '@/components/AnswersEditor';
+import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 
 const flipButtonClasses =
   'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
@@ -21,7 +22,9 @@ const flipButtonClasses =
  * nothing, like choosing another primary or changing Accepted Variants,
  * goes to `onChanged`. Cancel drops the edits; Delete, once confirmed,
  * removes the card; Mark known marks it known (ADR-0009), going to
- * `onMarkedKnown`, and leaves edit mode. Mounted each time edit mode turns
+ * `onMarkedKnown`, and leaves edit mode. History opens the card's version
+ * history (#54), where restoring an earlier version is an edit that resets
+ * progress, going to `onEdited`, and leaves edit mode. Mounted each time edit mode turns
  * on, so it starts from the card as it is. Marked `data-card-editor`, so page
  * shortcuts leave its keys alone.
  */
@@ -53,6 +56,7 @@ export function StudyCardEditor({
   const utils = trpc.useUtils();
   const [front, setFront] = useState(card.front);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isShowingHistory, setIsShowingHistory] = useState(false);
   const form = useAnswersForm(card);
   const frontId = useId();
   const frontChanged = front.trim() !== card.front;
@@ -116,7 +120,8 @@ export function StudyCardEditor({
 
   // On the face in view only, so each button is there once
   const actions = (
-    <div className="mt-6 flex w-full items-center justify-between gap-2">
+    // Wraps where the card is too narrow, Cancel and Save going below
+    <div className="mt-6 flex w-full flex-wrap items-center justify-between gap-2">
       <Button
         type="button"
         size="sm"
@@ -133,12 +138,22 @@ export function StudyCardEditor({
         variant="ghost"
         disabled={markKnown.isPending}
         onClick={() => markKnown.mutate({ cardIds: [card.id] })}
-        className="mr-auto text-white/70 hover:bg-white/10 hover:text-white"
+        className="text-white/70 hover:bg-white/10 hover:text-white"
       >
         <BadgeCheck className="mr-1 h-4 w-4" />
         Mark known
       </Button>
-      <div className="flex gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => setIsShowingHistory(true)}
+        className="mr-auto text-white/70 hover:bg-white/10 hover:text-white"
+      >
+        <History className="mr-1 h-4 w-4" />
+        History
+      </Button>
+      <div className="ml-auto flex gap-2">
         <Button
           type="button"
           size="sm"
@@ -230,6 +245,19 @@ export function StudyCardEditor({
         confirmLabel="Delete"
         onConfirm={() => remove.mutate({ cardId: card.id })}
       />
+
+      {isShowingHistory && (
+        <CardVersionsDialog
+          deckId={deckId}
+          cardId={card.id}
+          onClose={() => setIsShowingHistory(false)}
+          onRestored={(restored) => {
+            onEdited(toFlashcard(restored));
+            refreshDeck();
+            onDone();
+          }}
+        />
+      )}
     </>
   );
 }

@@ -24,6 +24,7 @@ vi.mock('@/lib/trpc', () => ({
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
       markKnown: { useMutation: vi.fn() },
+      restoreVersion: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
     },
     deck: {
@@ -190,10 +191,14 @@ function setupBasicMocks() {
 const mockUpdateCard = vi.fn();
 const mockDeleteCard = vi.fn();
 const mockMarkKnown = vi.fn();
+const mockRestoreVersion = vi.fn();
 
 type UpdateOptions = Parameters<typeof trpc.card.update.useMutation>[0];
 type DeleteOptions = Parameters<typeof trpc.card.delete.useMutation>[0];
 type MarkKnownOptions = Parameters<typeof trpc.card.markKnown.useMutation>[0];
+type RestoreOptions = Parameters<
+  typeof trpc.card.restoreVersion.useMutation
+>[0];
 
 /** card-1, the "What is 2+2?" card, with the given variants of its answer. */
 function cardOneWithVariants(variants: { id: string; text: string }[]) {
@@ -271,6 +276,38 @@ function mockCardMutations() {
     ),
     isPending: false,
   })) as unknown as typeof trpc.card.markKnown.useMutation);
+  // Restores card-1's version 1, "What is two plus two?", answers 4 and four
+  vi.mocked(trpc.card.restoreVersion.useMutation).mockImplementation(((
+    opts?: RestoreOptions,
+  ) => ({
+    mutate: mockRestoreVersion.mockImplementation(
+      (input: { cardId: string; versionId: string }) =>
+        opts?.onSuccess?.(
+          {
+            id: input.cardId,
+            front: 'What is two plus two?',
+            canonicalAnswers: [
+              {
+                id: 'answer-4',
+                text: '4',
+                isPrimary: true,
+                acceptedVariants: [],
+              },
+              {
+                id: 'answer-four',
+                text: 'four',
+                isPrimary: false,
+                acceptedVariants: [],
+              },
+            ],
+          } as never,
+          input as never,
+          undefined,
+          {} as never,
+        ),
+    ),
+    isPending: false,
+  })) as unknown as typeof trpc.card.restoreVersion.useMutation);
 }
 
 const mockAcceptAnswer = vi.fn();
@@ -346,8 +383,12 @@ type CardHistory = {
     front: string;
     canonicalAnswers: string[];
     acceptedVariants: string[][] | null;
+    sourceModel: string | null;
+    restoredFromNumber: number | null;
     startedAt: string;
+    endedAt: string | null;
     isCurrent: boolean;
+    canRestore: boolean;
     attempts: {
       id: string;
       userAnswer: string | null;
@@ -378,8 +419,12 @@ function historyOfCardOne(): CardHistory {
         front: 'What is 2+2?',
         canonicalAnswers: ['4'],
         acceptedVariants: [[]],
+        sourceModel: null,
+        restoredFromNumber: null,
         startedAt: '2026-10-20T12:00:00.000Z',
+        endedAt: null,
         isCurrent: true,
+        canRestore: false,
         attempts: [
           {
             id: 'attempt-3',
@@ -409,8 +454,12 @@ function historyOfCardOne(): CardHistory {
         front: 'What is two plus two?',
         canonicalAnswers: ['4', 'four'],
         acceptedVariants: [['IV'], []],
+        sourceModel: null,
+        restoredFromNumber: null,
         startedAt: '2026-10-01T12:00:00.000Z',
+        endedAt: '2026-10-20T12:00:00.000Z',
         isCurrent: false,
+        canRestore: true,
         attempts: [
           {
             id: 'attempt-0',
@@ -1941,6 +1990,55 @@ describe('StudyPage', () => {
       expect(
         screen.queryByRole('button', { name: 'Mark known' }),
       ).not.toBeInTheDocument();
+    });
+
+    it("opens the card's version history from edit mode", async () => {
+      const user = await startStudying();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+
+      await user.click(screen.getByRole('button', { name: 'History' }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Card history')).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole('group', { name: 'Version 1' }),
+      ).toBeInTheDocument();
+    });
+
+    it('goes on studying the restored card after a restore from edit mode', async () => {
+      const user = await startStudying();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole('button', { name: 'Edit card' }));
+      await user.click(screen.getByRole('button', { name: 'History' }));
+
+      await user.click(
+        within(screen.getByRole('group', { name: 'Version 1' })).getByRole(
+          'button',
+          { name: 'Restore' },
+        ),
+      );
+      await user.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', {
+          name: 'Restore',
+        }),
+      );
+
+      expect(mockRestoreVersion).toHaveBeenCalledWith({
+        cardId: 'card-1',
+        versionId: 'version-1',
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.queryByRole('textbox', { name: 'Front' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText('What is two plus two?')).toBeInTheDocument();
     });
 
     it('finishes the session when its last card is deleted', async () => {
