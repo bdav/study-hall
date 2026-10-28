@@ -1,7 +1,6 @@
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import type { PracticeView } from '@/lib/lessonSteps';
-import { ItemPager } from '@/components/ItemPager';
 import { LessonExercise } from '@/components/LessonExercise';
 
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
@@ -12,9 +11,8 @@ export interface PracticeSettings {
   view: PracticeView;
   showMyAnswers: boolean;
   showAnswerKey: boolean;
-  /** The exercise shown one at a time. */
+  /** The exercise shown one at a time; the lesson's steps move between them. */
   exerciseIndex: number;
-  onMoveExercise: (index: number) => void;
 }
 
 /**
@@ -51,16 +49,14 @@ export function LessonPractice({
       <h2 className="text-xl font-semibold">Practice</h2>
       <div className="mt-4">
         {settings.view === 'one' && exercises.length > 0 ? (
-          <ItemPager
-            noun="exercise"
-            index={settings.exerciseIndex}
-            count={exercises.length}
-            onMove={settings.onMoveExercise}
-          >
+          <>
+            <p className="mb-3 text-sm text-white/60">
+              Exercise {settings.exerciseIndex + 1} of {exercises.length}
+            </p>
             <ol aria-label="Exercises">
               {exerciseItem(settings.exerciseIndex)}
             </ol>
-          </ItemPager>
+          </>
         ) : (
           <ol aria-label="Exercises" className="space-y-3">
             {exercises.map((_, index) => exerciseItem(index))}

@@ -282,6 +282,8 @@ describe('LessonPage', () => {
     });
 
     it('moves through the sections, then Examples, Practice and Wrap up with Next', async () => {
+      // One at a time, Next would walk Practice's exercises first
+      showAllExercises();
       const user = userEvent.setup();
       renderPage({ query: written });
 
@@ -1024,12 +1026,9 @@ describe('LessonPage', () => {
         expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
       });
 
-      it('moves between exercises, with each in the URL', async () => {
+      it('moves between exercises with the footer buttons, with each in the URL', async () => {
         const user = userEvent.setup();
         practiceOf();
-        expect(
-          screen.getByRole('button', { name: 'Previous exercise' }),
-        ).toBeDisabled();
 
         await user.click(screen.getByRole('button', { name: 'Next exercise' }));
         expect(screen.getByText('Exercise 2 of 3')).toBeInTheDocument();
@@ -1038,14 +1037,38 @@ describe('LessonPage', () => {
           '?step=practice&exercise=exercise-2',
         );
 
-        await user.click(screen.getByRole('button', { name: 'Next exercise' }));
-        expect(
-          screen.getByRole('button', { name: 'Next exercise' }),
-        ).toBeDisabled();
         await user.click(
           screen.getByRole('button', { name: 'Previous exercise' }),
         );
-        expect(screen.getByText('Exercise 2 of 3')).toBeInTheDocument();
+        expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
+      });
+
+      it('offers the steps either side only past the first and last exercises', async () => {
+        const user = userEvent.setup();
+        practiceOf();
+        const buttons = () =>
+          within(screen.getByRole('navigation', { name: 'Lesson steps' }))
+            .getAllByRole('button')
+            .map((button) => button.textContent);
+
+        expect(buttons()).toEqual(['Previous: Examples', 'Next exercise']);
+        await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+        expect(buttons()).toEqual(['Previous exercise', 'Next exercise']);
+        await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+        expect(buttons()).toEqual(['Previous exercise', 'Next: Wrap up']);
+
+        await user.click(screen.getByRole('button', { name: 'Next: Wrap up' }));
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Wrap up' }),
+        ).toBeInTheDocument();
+      });
+
+      it('has no Previous and Next of its own above the exercise', () => {
+        practiceOf();
+
+        expect(
+          screen.getAllByRole('button', { name: /exercise$/i }),
+        ).toHaveLength(1);
       });
 
       it('puts the first exercise in the URL on arriving, so the exercise on screen is always named', () => {

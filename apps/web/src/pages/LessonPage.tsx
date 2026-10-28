@@ -586,6 +586,15 @@ function sectionBeingRead(readingSteps: LessonStep[]) {
   );
 }
 
+/** Where Previous or Next goes: a step, or an exercise shown one at a time. */
+type Target = { step: LessonStep } | { exerciseIndex: number };
+
+function targetLabel(direction: 'Previous' | 'Next', target: Target) {
+  return 'step' in target
+    ? `${direction}: ${target.step.title}`
+    : `${direction} exercise`;
+}
+
 /** A written lesson, read one step at a time. */
 function WrittenLesson({
   lesson,
@@ -661,24 +670,30 @@ function WrittenLesson({
     showMyAnswers: practiceSettings.showMyAnswers,
     showAnswerKey: practiceSettings.showAnswerKey,
     exerciseIndex,
-    onMoveExercise: moveToExercise,
+  };
+
+  // Where the footer's buttons and the arrow keys go. One at a time, they
+  // walk Practice's exercises, and only past the first or last reach the
+  // steps either side
+  const back: Target | undefined =
+    isPagingExercises && exerciseIndex > 0
+      ? { exerciseIndex: exerciseIndex - 1 }
+      : previous && { step: previous };
+  const forward: Target | undefined =
+    isPagingExercises && exerciseIndex < exerciseIds.length - 1
+      ? { exerciseIndex: exerciseIndex + 1 }
+      : next && { step: next };
+  const goToTarget = (target: Target) => {
+    if ('step' in target) goTo(target.step);
+    else moveToExercise(target.exerciseIndex);
   };
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (!isStepKey(event)) return;
-    // One at a time, the keys page through the exercises, then on past them
-    if (isPagingExercises) {
-      const targetIndex = exerciseIndex + (event.key === 'ArrowLeft' ? -1 : 1);
-      if (targetIndex >= 0 && targetIndex < exerciseIds.length) {
-        event.preventDefault();
-        moveToExercise(targetIndex);
-        return;
-      }
-    }
-    const target = event.key === 'ArrowLeft' ? previous : next;
+    const target = event.key === 'ArrowLeft' ? back : forward;
     if (target) {
       event.preventDefault();
-      goTo(target);
+      goToTarget(target);
     }
   });
   useEffect(() => {
@@ -827,25 +842,25 @@ function WrittenLesson({
           aria-label="Lesson steps"
           className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/20 pt-6"
         >
-          {previous ? (
+          {back ? (
             <button
               type="button"
-              onClick={() => goTo(previous)}
+              onClick={() => goToTarget(back)}
               className="flex items-center gap-1 rounded-lg px-3 py-2 text-white/70 hover:text-white"
             >
               <ChevronLeft className="size-4" />
-              Previous: {previous.title}
+              {targetLabel('Previous', back)}
             </button>
           ) : (
             <span />
           )}
-          {next && (
+          {forward && (
             <button
               type="button"
-              onClick={() => goTo(next)}
+              onClick={() => goToTarget(forward)}
               className="flex items-center gap-1 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
             >
-              Next: {next.title}
+              {targetLabel('Next', forward)}
               <ChevronRight className="size-4" />
             </button>
           )}
