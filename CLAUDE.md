@@ -81,7 +81,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 
 ### Development
 
-- `pnpm dev` — start both API (port 3001) and web (port 5173) concurrently
+- `pnpm dev` — start both API (port 3001) and web (port 5173) concurrently; the API restarts on changes (`tsx watch`), and web hot-reloads. A restart while a lesson is being written leaves its generation claim held for up to 15 minutes
 - `pnpm dev:op` — same, but the API runs under `op run` with secrets from the gitignored `.env.1password` (optional; see README)
 - `pnpm dev:api` — start API server only
 - `pnpm dev:web` — start web dev server only
