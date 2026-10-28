@@ -655,6 +655,43 @@ describe('LessonPage', () => {
       ).toHaveAttribute('aria-pressed', 'false');
     });
 
+    it('stays in the pinned header, so it never scrolls out of view', () => {
+      renderPage({ query: written, path: '/lessons/lesson-1?step=section-2' });
+
+      expect(
+        within(screen.getByRole('banner')).getByRole('group', {
+          name: 'Reading view',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it('is offered in the ⋯ menu too, for narrow screens', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      expect(
+        screen.getByRole('menuitemradio', { name: 'By section' }),
+      ).toBeChecked();
+      await user.click(
+        screen.getByRole('menuitemradio', { name: 'Full lesson' }),
+      );
+
+      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
+    });
+
+    it('leaves the ⋯ menu without it on Practice', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written, path: practice });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+
+      expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: 'Start over' }),
+      ).toBeInTheDocument();
+    });
+
     it('is offered on Examples too', () => {
       renderPage({ query: written, path: '/lessons/lesson-1?step=examples' });
       expect(view()).toBeInTheDocument();

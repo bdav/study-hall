@@ -30,6 +30,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LessonExercise } from '@/components/LessonExercise';
@@ -117,17 +121,28 @@ function StartOverDialog({
 const ICON_BUTTON =
   'rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white';
 
+/** The reading view and how to change it, while on a reading step. */
+interface ReadingViewChoice {
+  view: ReadingView;
+  onChange: (view: ReadingView) => void;
+}
+
 /**
  * The written lesson's header, pinned to the top: the way back to the
- * course, the title, Lesson Completion and a ⋯ menu of rarely used actions.
+ * course, the title, the reading view on the reading steps, Lesson
+ * Completion and a ⋯ menu of rarely used actions. On narrow screens the
+ * reading view moves into the ⋯ menu, for room.
  */
 function WrittenLessonHeader({
   lesson,
   leading,
+  readingView,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
+  /** Left out on steps other than the reading steps. */
+  readingView?: ReadingViewChoice;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
 
@@ -146,6 +161,12 @@ function WrittenLessonHeader({
             {lesson.title}
           </h1>
         </div>
+        {readingView && (
+          <ReadingViewControl
+            {...readingView}
+            className="hidden md:inline-flex"
+          />
+        )}
         <CompletionToggle lesson={lesson} />
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -158,6 +179,28 @@ function WrittenLessonHeader({
             align="end"
             className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
           >
+            {readingView && (
+              <div className="md:hidden">
+                <DropdownMenuLabel>Reading view</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={readingView.view}
+                  onValueChange={(value) =>
+                    readingView.onChange(value as ReadingView)
+                  }
+                >
+                  {READING_VIEWS.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                      className="focus:bg-white/10 focus:text-white"
+                    >
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+              </div>
+            )}
             <DropdownMenuItem
               onSelect={() => setIsStartingOver(true)}
               className="focus:bg-white/10 focus:text-white"
@@ -408,19 +451,17 @@ function ExamplesContent({
   );
 }
 
-/** By section or Full lesson, at the top of the reading steps. */
+/** By section or Full lesson, for the reading steps. */
 function ReadingViewControl({
   view,
   onChange,
-}: {
-  view: ReadingView;
-  onChange: (view: ReadingView) => void;
-}) {
+  className = '',
+}: ReadingViewChoice & { className?: string }) {
   return (
     <div
       role="group"
       aria-label="Reading view"
-      className="mb-6 inline-flex rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm"
+      className={`shrink-0 rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm ${className}`}
     >
       {READING_VIEWS.map((option) => (
         <button
@@ -725,16 +766,23 @@ function WrittenLesson({
 
   return (
     <LessonFrame
-      header={<WrittenLessonHeader lesson={lesson} leading={outlineToggles} />}
+      header={
+        <WrittenLessonHeader
+          lesson={lesson}
+          leading={outlineToggles}
+          readingView={
+            isReadingStep(current)
+              ? { view: readingView, onChange: setReadingView }
+              : undefined
+          }
+        />
+      }
       outline={isOutlineCollapsed ? undefined : renderOutline()}
     >
       {/* Beside the outline while it's open; centred once it's collapsed */}
       <div
         className={`w-full ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]} ${isOutlineCollapsed ? 'mx-auto' : ''}`}
       >
-        {isReadingStep(current) && (
-          <ReadingViewControl view={readingView} onChange={setReadingView} />
-        )}
         {isFullPage ? (
           <FullLesson steps={steps} version={version} />
         ) : (
