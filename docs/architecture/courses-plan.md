@@ -16,7 +16,7 @@
 > | C2  | #25           |
 > | C3  | #26, #27      |
 >
-> The lesson page layout (**Lesson layout** below, decided 2026-10-25) is tracked as #37–#42, also sub-issues of #1.
+> The lesson page layout (**Lesson layout** below, decided 2026-10-25) is tracked as #37–#42 and #55, also sub-issues of #1.
 
 ## Overview
 
@@ -163,6 +163,7 @@ The lesson page is an interactive textbook: neither one long document nor a slid
   - One at a time (the default) or All exercises. In One at a time, the exercise on screen is the tutor's current exercise.
   - Show my answers shows or hides the learner's latest answers and results, so exercises can be retaken.
   - Show answer key shows expected answers or points for attempted exercises only: an exercise's answers are never shown before an attempt.
+- **Examples:** One at a time (the default) or All examples, sharing Practice's setting, so examples can be paged through like flashcards.
 - **Wrap up:** the learner's results, with links to missed exercises, then Make review cards, Lesson Completion and Continue to the next lesson. Completion is suggested once every exercise has been tried, never set automatically.
 - **Content and presentation stay separate:** steps and views render straight from the Lesson Version, so a new view needs no data change. Later, generation can tie concept checks and examples to sections, and produce typed content blocks with their own components. Older versions keep their lesson-level examples, exercises and prose (ADR-0003).
 
