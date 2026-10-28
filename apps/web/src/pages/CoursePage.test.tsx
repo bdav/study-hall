@@ -268,7 +268,7 @@ describe('CoursePage', () => {
       expect(within(rows()[1]).queryByText('Up next')).not.toBeInTheDocument();
     });
 
-    it("keeps each lesson's objectives collapsed until its own control opens them", async () => {
+    it("keeps each lesson's objectives collapsed until opened", async () => {
       const user = userEvent.setup();
       renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
       const toggle = (row: HTMLElement) =>
@@ -286,6 +286,22 @@ describe('CoursePage', () => {
 
       await user.click(toggle(rows()[0]));
       expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+    });
+
+    it("shows one lesson's objectives at a time: opening another closes the first", async () => {
+      const user = userEvent.setup();
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+      const toggle = (row: HTMLElement) =>
+        within(row).getByRole('button', { name: /objectives/i });
+
+      await user.click(toggle(rows()[0]));
+      await user.click(toggle(rows()[1]));
+
+      expect(
+        within(rows()[1]).getByText('Order food and drinks'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Say your name')).not.toBeInTheDocument();
+      expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'false');
     });
   });
 

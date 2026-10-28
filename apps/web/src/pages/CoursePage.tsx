@@ -74,7 +74,8 @@ function ProposedLessons({
 
 /**
  * The accepted Syllabus as a compact list, like a table of contents: a row
- * per lesson, its objectives collapsed until the learner opens them.
+ * per lesson, its objectives collapsed until the learner opens them, one
+ * lesson's at a time.
  */
 function Syllabus({
   lessons,
@@ -86,14 +87,10 @@ function Syllabus({
   upNextId: string | undefined;
   labelledBy: string;
 }) {
-  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
+  // One lesson's objectives at a time, like an accordion
+  const [openId, setOpenId] = useState<string | null>(null);
   const toggle = (id: string) =>
-    setOpenIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setOpenId((previous) => (previous === id ? null : id));
 
   return (
     <ol
@@ -101,7 +98,7 @@ function Syllabus({
       className="mt-4 divide-y divide-white/10 rounded-xl border border-white/20 bg-white/5"
     >
       {lessons.map((lesson, index) => {
-        const isOpen = openIds.has(lesson.id);
+        const isOpen = openId === lesson.id;
         const objectivesId = `objectives-${lesson.id}`;
         const status = STATUSES[lesson.status];
         return (
@@ -283,7 +280,8 @@ export default function CoursePage() {
           ))}
       </PinnedHeader>
       <main className={`${PAGE_WIDTH} py-8`}>
-        <div className="max-w-3xl">
+        {/* Centred: unlike a lesson, there's no outline beside it */}
+        <div className="mx-auto max-w-3xl">
           {isProposal ? (
             <section>
               <h2 id="syllabus-heading" className="text-lg font-semibold">
