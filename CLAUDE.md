@@ -10,7 +10,7 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ## Implementation Order
 
-**Completed: 43/53 planned issues**
+**Completed: 43/54 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, then Study Sessions.
 
@@ -62,6 +62,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #57 Lighter lesson items: examples and exercises
    - [x] #59 Lesson step navigation polish
    - [x] #58 Site navigation fits on phones
+   - [ ] #60 Finish mobile responsiveness
 6. Tutor
    - [ ] #23 Ask the Tutor about a lesson
    - [ ] #31 Price prompt-cache tokens in the AI cost estimate
