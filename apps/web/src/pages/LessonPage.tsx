@@ -1,7 +1,6 @@
 import {
   useEffect,
   useEffectEvent,
-  useId,
   useRef,
   useState,
   type ReactNode,
@@ -246,7 +245,6 @@ function WrittenLessonHeader({
   practiceToggles?: StoredPracticeSettings;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
-  const showLabelId = useId();
 
   return (
     <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
@@ -269,15 +267,11 @@ function WrittenLessonHeader({
         {practiceToggles && (
           <div
             role="group"
-            aria-labelledby={showLabelId}
-            className="hidden shrink-0 items-center gap-1 lg:flex"
+            // The switches' own labels say what they show; the group's name
+            // gives screen readers the same context
+            aria-label="Show"
+            className="mx-2 hidden shrink-0 items-center lg:flex"
           >
-            <span
-              id={showLabelId}
-              className="mr-1 text-xs tracking-wide text-white/50 uppercase"
-            >
-              Show
-            </span>
             <Switch
               checked={practiceToggles.showMyAnswers}
               onChange={practiceToggles.setShowMyAnswers}
