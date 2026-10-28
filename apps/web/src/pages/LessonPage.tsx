@@ -21,9 +21,10 @@ import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
 import {
-  useStoredPracticeSettings,
-  type StoredPracticeSettings,
-} from '@/hooks/useStoredPracticeSettings';
+  useStoredPagingView,
+  useStoredPracticeToggles,
+  type PracticeToggles,
+} from '@/hooks/useStoredLessonSettings';
 import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -66,10 +67,12 @@ import {
   type LessonStep,
   READING_VIEWS,
   currentExerciseId,
-  currentExerciseIndex,
+  namedExerciseIndex,
   exerciseElementId,
   exerciseSearch,
-  PRACTICE_VIEWS,
+  namedExampleIndex,
+  exampleSearch,
+  pagingViews,
   type ReadingView,
 } from '@/lib/lessonSteps';
 
@@ -233,16 +236,16 @@ const MENU_ITEM = 'focus:bg-white/10 focus:text-white';
 function WrittenLessonHeader({
   lesson,
   leading,
-  view,
+  views,
   practiceToggles,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
-  /** Left out on a step with only one way of showing it. */
-  view?: ViewChoice;
+  /** The step's views, if it can be shown more than one way. */
+  views: ViewChoice[];
   /** Practice's toggles; left out on steps other than Practice. */
-  practiceToggles?: StoredPracticeSettings;
+  practiceToggles?: PracticeToggles;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
 
@@ -261,9 +264,13 @@ function WrittenLessonHeader({
             {lesson.title}
           </h1>
         </div>
-        {view && (
-          <ViewControl choice={view} className="hidden md:inline-flex" />
-        )}
+        {views.map((view) => (
+          <ViewControl
+            key={view.label}
+            choice={view}
+            className="hidden md:inline-flex"
+          />
+        ))}
         {practiceToggles && (
           <div
             role="group"
@@ -298,8 +305,8 @@ function WrittenLessonHeader({
             align="end"
             className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
           >
-            {view && (
-              <div className="md:hidden">
+            {views.map((view) => (
+              <div key={view.label} className="md:hidden">
                 <DropdownMenuLabel>{view.label}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={view.value}
@@ -317,7 +324,7 @@ function WrittenLessonHeader({
                 </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
               </div>
-            )}
+            ))}
             {practiceToggles && (
               <div className="lg:hidden">
                 <DropdownMenuCheckboxItem
@@ -424,18 +431,31 @@ function SectionContent({
   );
 }
 
+/** The lesson's examples, all of them or one at a time with a count. */
 function ExamplesContent({
   examples,
   id,
+  shownIndex,
 }: {
   examples: LessonVersion['examples'];
   id?: string;
+  /** The one example shown, one at a time; left out to show them all. */
+  shownIndex?: number;
 }) {
+  const shown =
+    shownIndex === undefined
+      ? examples.map((example, index) => ({ example, index }))
+      : [{ example: examples[shownIndex], index: shownIndex }];
   return (
     <section id={id} className="scroll-mt-28">
       <h2 className="text-xl font-semibold">Examples</h2>
-      <ul className="mt-4 space-y-3">
-        {examples.map((example, index) => (
+      {shownIndex !== undefined && (
+        <p className="mt-4 text-sm text-white/60">
+          Example {shownIndex + 1} of {examples.length}
+        </p>
+      )}
+      <ul className={`space-y-3 ${shownIndex === undefined ? 'mt-4' : 'mt-3'}`}>
+        {shown.map(({ example, index }) => (
           <li
             key={index}
             className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
@@ -526,18 +546,26 @@ function StepContent({
   version,
   canUseAI,
   practice,
+  exampleIndex,
 }: {
   step: LessonStep;
   lesson: Lesson;
   version: LessonVersion;
   canUseAI: boolean;
   practice: PracticeSettings;
+  /** The example shown one at a time; left out to show them all. */
+  exampleIndex?: number;
 }) {
   switch (step.kind) {
     case 'section':
       return <SectionContent block={version.content[step.sectionIndex]} />;
     case 'examples':
-      return <ExamplesContent examples={version.examples} />;
+      return (
+        <ExamplesContent
+          examples={version.examples}
+          shownIndex={exampleIndex}
+        />
+      );
     case 'practice':
       return (
         <LessonPractice lesson={lesson} version={version} settings={practice} />
@@ -586,13 +614,32 @@ function sectionBeingRead(readingSteps: LessonStep[]) {
   );
 }
 
-/** Where Previous or Next goes: a step, or an exercise shown one at a time. */
-type Target = { step: LessonStep } | { exerciseIndex: number };
+/**
+ * A step whose items are shown one at a time: which item is on screen, of
+ * how many, and the query string that opens each.
+ */
+interface Paging {
+  noun: 'example' | 'exercise';
+  index: number;
+  count: number;
+  /** Whether the URL names the item, rather than leaving the first implied. */
+  named: boolean;
+  search: (index: number) => string;
+}
+
+/**
+ * Where Previous or Next goes: a step, or another item of the step shown
+ * one at a time. A step reached going back opens at its end, its last item
+ * when it's shown one at a time, as a stack of cards would.
+ */
+type Target =
+  | { step: LessonStep; atEnd: boolean }
+  | { itemIndex: number; noun: Paging['noun'] };
 
 function targetLabel(direction: 'Previous' | 'Next', target: Target) {
   return 'step' in target
     ? `${direction}: ${target.step.title}`
-    : `${direction} exercise`;
+    : `${direction} ${target.noun}`;
 }
 
 /** A written lesson, read one step at a time. */
@@ -631,9 +678,9 @@ function WrittenLesson({
       jumping.current = false;
     });
   };
-  const goTo = (step: LessonStep) => {
+  const goTo = (step: LessonStep, atEnd = false) => {
     navigatingTo.current = step.id;
-    navigate(stepSearch(step));
+    navigate((atEnd && lastItemSearch(step)) || stepSearch(step));
   };
   const [readingView, setReadingView] = useStoredChoice<ReadingView>(
     'study-hall:lesson-reading-view',
@@ -643,49 +690,87 @@ function WrittenLesson({
   const isFullPage = readingView === 'full' && isReadingStep(current);
   const { previous, next } = adjacentSteps(steps, currentIndex, readingView);
 
-  const practiceSettings = useStoredPracticeSettings();
+  const [pagingView, setPagingView] = useStoredPagingView();
+  const practiceToggles = useStoredPracticeToggles();
   const exerciseIds = version.exercises.map((exercise) => exercise.id);
-  const exerciseIndex = currentExerciseIndex(exerciseIds, searchParams);
-  const isPagingExercises =
-    current.kind === 'practice' &&
-    practiceSettings.view === 'one' &&
-    exerciseIds.length > 0;
-  const moveToExercise = (index: number) => {
+  const exampleCount = version.examples.length;
+  // The item the URL names, if any it has; one it lacks opens the first
+  const namedExercise = namedExerciseIndex(exerciseIds, searchParams);
+  const exerciseIndex = namedExercise ?? 0;
+  const namedExample = namedExampleIndex(exampleCount, searchParams);
+
+  // The step on screen, when its items are shown one at a time. In Full
+  // lesson, Examples are part of the one page, so all are shown
+  const paging: Paging | null =
+    pagingView !== 'one' || isFullPage
+      ? null
+      : current.kind === 'practice' && exerciseIds.length > 0
+        ? {
+            noun: 'exercise',
+            index: exerciseIndex,
+            count: exerciseIds.length,
+            named: namedExercise !== null,
+            search: (index) => exerciseSearch(exerciseIds[index]),
+          }
+        : current.kind === 'examples' && exampleCount > 0
+          ? {
+              noun: 'example',
+              index: namedExample ?? 0,
+              count: exampleCount,
+              named: namedExample !== null,
+              search: exampleSearch,
+            }
+          : null;
+  // A step's last item, for arriving at it going back, when it's shown one
+  // at a time; null when it isn't
+  function lastItemSearch(step: LessonStep) {
+    if (pagingView !== 'one') return null;
+    if (step.kind === 'practice' && exerciseIds.length > 0) {
+      return exerciseSearch(exerciseIds[exerciseIds.length - 1]);
+    }
+    if (step.kind === 'examples' && readingView !== 'full' && exampleCount) {
+      return exampleSearch(exampleCount - 1);
+    }
+    return null;
+  }
+  const moveToItem = (index: number) => {
     navigatingTo.current = current.id;
-    navigate(exerciseSearch(exerciseIds[index]));
+    if (paging) navigate(paging.search(index));
   };
-  // One at a time, the exercise on screen is always in the URL, for the
-  // tutor (#24); replacing keeps arriving to one history entry
-  const namesNoExercise =
-    isPagingExercises && currentExerciseId(searchParams) === null;
-  const nameFirstExercise = useEffectEvent(() => {
-    navigate(exerciseSearch(exerciseIds[0]), { replace: true });
+  // One at a time, the item on screen is always in the URL, so the tutor
+  // (#24) knows the exercise: the first is written on arriving, or in place
+  // of one the step lacks. Replacing keeps it to one history entry. Moving
+  // between two paged steps keeps namesNoItem true, so the step is a
+  // dependency too
+  const namesNoItem = paging !== null && !paging.named;
+  const nameFirstItem = useEffectEvent(() => {
+    if (paging) navigate(paging.search(0), { replace: true });
   });
   useEffect(() => {
-    if (namesNoExercise) nameFirstExercise();
-  }, [namesNoExercise]);
+    if (namesNoItem) nameFirstItem();
+  }, [namesNoItem, current.id]);
 
   const practice: PracticeSettings = {
-    view: practiceSettings.view,
-    showMyAnswers: practiceSettings.showMyAnswers,
-    showAnswerKey: practiceSettings.showAnswerKey,
+    view: pagingView,
+    showMyAnswers: practiceToggles.showMyAnswers,
+    showAnswerKey: practiceToggles.showAnswerKey,
     exerciseIndex,
   };
 
   // Where the footer's buttons and the arrow keys go. One at a time, they
-  // walk Practice's exercises, and only past the first or last reach the
-  // steps either side
+  // walk the step's items, and only past the first or last reach the steps
+  // either side
   const back: Target | undefined =
-    isPagingExercises && exerciseIndex > 0
-      ? { exerciseIndex: exerciseIndex - 1 }
-      : previous && { step: previous };
+    paging && paging.index > 0
+      ? { itemIndex: paging.index - 1, noun: paging.noun }
+      : previous && { step: previous, atEnd: true };
   const forward: Target | undefined =
-    isPagingExercises && exerciseIndex < exerciseIds.length - 1
-      ? { exerciseIndex: exerciseIndex + 1 }
-      : next && { step: next };
+    paging && paging.index < paging.count - 1
+      ? { itemIndex: paging.index + 1, noun: paging.noun }
+      : next && { step: next, atEnd: false };
   const goToTarget = (target: Target) => {
-    if ('step' in target) goTo(target.step);
-    else moveToExercise(target.exerciseIndex);
+    if ('step' in target) goTo(target.step, target.atEnd);
+    else moveToItem(target.itemIndex);
   };
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
@@ -799,25 +884,41 @@ function WrittenLesson({
         <WrittenLessonHeader
           lesson={lesson}
           leading={outlineToggles}
-          view={
-            isReadingStep(current)
-              ? viewChoice(
-                  'Reading view',
-                  READING_VIEWS,
-                  readingView,
-                  setReadingView,
-                )
-              : current.kind === 'practice'
-                ? viewChoice(
+          views={[
+            ...(isReadingStep(current)
+              ? [
+                  viewChoice(
+                    'Reading view',
+                    READING_VIEWS,
+                    readingView,
+                    setReadingView,
+                  ),
+                ]
+              : []),
+            // In Full lesson the examples are all on the one page
+            ...(current.kind === 'examples' && !isFullPage
+              ? [
+                  viewChoice(
+                    'Examples view',
+                    pagingViews('examples'),
+                    pagingView,
+                    setPagingView,
+                  ),
+                ]
+              : []),
+            ...(current.kind === 'practice'
+              ? [
+                  viewChoice(
                     'Practice view',
-                    PRACTICE_VIEWS,
-                    practiceSettings.view,
-                    practiceSettings.setView,
-                  )
-                : undefined
-          }
+                    pagingViews('exercises'),
+                    pagingView,
+                    setPagingView,
+                  ),
+                ]
+              : []),
+          ]}
           practiceToggles={
-            current.kind === 'practice' ? practiceSettings : undefined
+            current.kind === 'practice' ? practiceToggles : undefined
           }
         />
       }
@@ -836,6 +937,7 @@ function WrittenLesson({
             version={version}
             canUseAI={canUseAI}
             practice={practice}
+            exampleIndex={paging?.noun === 'example' ? paging.index : undefined}
           />
         )}
         <nav
@@ -858,7 +960,8 @@ function WrittenLesson({
             <button
               type="button"
               onClick={() => goToTarget(forward)}
-              className="flex items-center gap-1 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
+              // Stays on the right when a long Previous wraps the footer
+              className="ml-auto flex items-center gap-1 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30"
             >
               {targetLabel('Next', forward)}
               <ChevronRight className="size-4" />

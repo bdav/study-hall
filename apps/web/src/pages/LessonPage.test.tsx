@@ -972,6 +972,224 @@ describe('LessonPage', () => {
     });
   });
 
+  describe('Examples', () => {
+    /** Three examples, after two sections, so there's a middle one. */
+    const threeExamples = {
+      ...twoSectionLesson,
+      version: {
+        ...twoSectionLesson.version,
+        examples: [
+          { example: 'Ciao, Marco!', explanation: 'An informal hello.' },
+          { example: 'Buongiorno, signora.', explanation: 'A formal hello.' },
+          {
+            example: 'Buonasera a tutti.',
+            explanation: 'Hello in the evening.',
+          },
+        ],
+      },
+    };
+    const examplesAt = (path = '/lessons/lesson-1?step=examples') =>
+      renderPage({
+        query: { data: threeExamples } as Partial<LessonQuery>,
+        path,
+      });
+    const footer = () =>
+      within(screen.getByRole('navigation', { name: 'Lesson steps' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent);
+    const examplesView = () =>
+      within(screen.getByRole('banner')).getByRole('group', {
+        name: 'Examples view',
+      });
+
+    describe('one at a time', () => {
+      it('is the default: one example, with a count', () => {
+        examplesAt();
+
+        expect(
+          within(examplesView()).getByRole('button', { name: 'One at a time' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText('Example 1 of 3')).toBeInTheDocument();
+        expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
+        expect(
+          screen.queryByText('Buongiorno, signora.'),
+        ).not.toBeInTheDocument();
+      });
+
+      it('walks the examples with the footer, reaching the steps either side only past the ends', async () => {
+        const user = userEvent.setup();
+        examplesAt();
+
+        expect(footer()).toEqual(['Previous: Saying goodbye', 'Next example']);
+        await user.click(screen.getByRole('button', { name: 'Next example' }));
+        expect(screen.getByText('Buongiorno, signora.')).toBeInTheDocument();
+        expect(footer()).toEqual(['Previous example', 'Next example']);
+        await user.click(screen.getByRole('button', { name: 'Next example' }));
+        expect(footer()).toEqual(['Previous example', 'Next: Practice']);
+        await user.click(
+          screen.getByRole('button', { name: 'Previous example' }),
+        );
+        expect(screen.getByText('Example 2 of 3')).toBeInTheDocument();
+      });
+
+      it('walks the examples with the arrow keys, then on to the steps either side', async () => {
+        const user = userEvent.setup();
+        examplesAt();
+
+        await user.keyboard('{ArrowRight}');
+        expect(screen.getByText('Example 2 of 3')).toBeInTheDocument();
+        await user.keyboard('{ArrowLeft}{ArrowLeft}');
+        expect(
+          screen.getByRole('heading', { level: 2, name: 'Saying goodbye' }),
+        ).toBeInTheDocument();
+      });
+
+      it('keeps the example in the URL, so reloading, going back and links open it', async () => {
+        const user = userEvent.setup();
+        const { unmount } = examplesAt();
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples&example=1',
+        );
+        await user.click(screen.getByRole('button', { name: 'Next example' }));
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples&example=2',
+        );
+        unmount();
+
+        examplesAt('/lessons/lesson-1?step=examples&example=3');
+        expect(screen.getByText('Example 3 of 3')).toBeInTheDocument();
+      });
+
+      it('opens the first example for one the lesson lacks, and says so in the URL', () => {
+        examplesAt('/lessons/lesson-1?step=examples&example=9');
+
+        expect(screen.getByText('Example 1 of 3')).toBeInTheDocument();
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=examples&example=1',
+        );
+      });
+
+      it('arrives back from Practice at the last example, walking backwards', async () => {
+        const user = userEvent.setup();
+        examplesAt('/lessons/lesson-1?step=practice');
+
+        await user.keyboard('{ArrowLeft}');
+
+        expect(screen.getByText('Example 3 of 3')).toBeInTheDocument();
+        await user.keyboard('{ArrowLeft}');
+        expect(screen.getByText('Example 2 of 3')).toBeInTheDocument();
+      });
+    });
+
+    it('shows every example on one page in All examples, with no count', async () => {
+      const user = userEvent.setup();
+      examplesAt();
+
+      await user.click(
+        within(examplesView()).getByRole('button', { name: 'All examples' }),
+      );
+
+      expect(screen.getByText('Ciao, Marco!')).toBeInTheDocument();
+      expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+      expect(screen.queryByText(/example \d of 3/i)).not.toBeInTheDocument();
+      expect(footer()).toEqual(['Previous: Saying goodbye', 'Next: Practice']);
+    });
+
+    it('shares its view with Practice, both ways', async () => {
+      const user = userEvent.setup();
+      examplesAt();
+      await user.click(
+        within(examplesView()).getByRole('button', { name: 'All examples' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Next: Practice' }));
+
+      expect(
+        within(
+          within(screen.getByRole('banner')).getByRole('group', {
+            name: 'Practice view',
+          }),
+        ).getByRole('button', { name: 'All exercises' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+
+      await user.click(screen.getByRole('button', { name: 'One at a time' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Previous: Examples' }),
+      );
+      expect(screen.getByText(/example \d of 3/i)).toBeInTheDocument();
+    });
+
+    it('shows every example in Full lesson, with no examples view to choose', async () => {
+      const user = userEvent.setup();
+      examplesAt();
+
+      await user.click(
+        within(
+          within(screen.getByRole('banner')).getByRole('group', {
+            name: 'Reading view',
+          }),
+        ).getByRole('button', { name: 'Full lesson' }),
+      );
+
+      expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+      expect(screen.queryByText(/example \d of 3/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('group', { name: 'Examples view' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers the examples view in the ⋯ menu too, for narrow screens', async () => {
+      const user = userEvent.setup();
+      examplesAt();
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(
+        screen.getByRole('menuitemradio', { name: 'All examples' }),
+      );
+
+      expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+    });
+
+    it('remembers the view chosen in either step, for next time', async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderPage({
+        query: { data: threeExamples } as Partial<LessonQuery>,
+        path: practice,
+      });
+      await user.click(
+        within(
+          within(screen.getByRole('banner')).getByRole('group', {
+            name: 'Practice view',
+          }),
+        ).getByRole('button', { name: 'All exercises' }),
+      );
+      unmount();
+
+      examplesAt();
+
+      expect(
+        within(examplesView()).getByRole('button', { name: 'All examples' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+    });
+
+    it('still works when the browser has no storage', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new DOMException('Storage is disabled', 'SecurityError');
+      });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('Storage is disabled', 'SecurityError');
+      });
+      const user = userEvent.setup();
+      examplesAt();
+
+      expect(screen.getByText('Example 1 of 3')).toBeInTheDocument();
+      await user.click(
+        within(examplesView()).getByRole('button', { name: 'All examples' }),
+      );
+      expect(screen.getByText('Buonasera a tutti.')).toBeInTheDocument();
+    });
+  });
+
   describe('Practice', () => {
     const answeredFirst = {
       ...generatedLesson,
@@ -1092,6 +1310,9 @@ describe('LessonPage', () => {
           '/lessons/lesson-1?step=practice&exercise=exercise-9',
         );
         expect(screen.getByText('Exercise 1 of 3')).toBeInTheDocument();
+        expect(screen.getByLabelText('Current search')).toHaveTextContent(
+          '?step=practice&exercise=exercise-1',
+        );
       });
 
       it('moves between exercises with the arrow keys, then on past them to the next or previous step', async () => {
@@ -1104,6 +1325,17 @@ describe('LessonPage', () => {
         expect(
           screen.getByRole('heading', { level: 2, name: 'Wrap up' }),
         ).toBeInTheDocument();
+      });
+
+      it('arrives back from Wrap up at the last exercise', async () => {
+        const user = userEvent.setup();
+        practiceOf(answeredFirst, wrapUp);
+
+        await user.click(
+          screen.getByRole('button', { name: 'Previous: Practice' }),
+        );
+
+        expect(screen.getByText('Exercise 3 of 3')).toBeInTheDocument();
       });
 
       it('goes back past the first exercise to the previous step with ←', async () => {

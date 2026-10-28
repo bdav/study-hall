@@ -1,6 +1,6 @@
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
-import type { PracticeView } from '@/lib/lessonSteps';
+import type { PagingView } from '@/lib/lessonSteps';
 import { LessonExercise } from '@/components/LessonExercise';
 
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
@@ -8,7 +8,7 @@ type LessonVersion = NonNullable<Lesson['version']>;
 
 /** How the learner has Practice set up, and the exercise on screen. */
 export interface PracticeSettings {
-  view: PracticeView;
+  view: PagingView;
   showMyAnswers: boolean;
   showAnswerKey: boolean;
   /** The exercise shown one at a time; the lesson's steps move between them. */

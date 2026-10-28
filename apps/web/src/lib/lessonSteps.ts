@@ -94,20 +94,42 @@ export function adjacentSteps(
 }
 
 /**
- * How Practice shows its exercises: one at a time, with a count, or all on
- * one page. Examples will share the setting (#55).
+ * How Examples and Practice show their items: one at a time, with a count,
+ * or all on one page. The two steps share the setting.
  */
-export const PRACTICE_VIEWS = [
-  { value: 'one', label: 'One at a time' },
-  { value: 'all', label: 'All exercises' },
-] as const;
+export const PAGING_VIEW_VALUES = ['one', 'all'] as const;
 
-export type PracticeView = (typeof PRACTICE_VIEWS)[number]['value'];
+export type PagingView = (typeof PAGING_VIEW_VALUES)[number];
 
-/** The exercise the URL names among these, or the first when none is. */
-export function currentExerciseIndex(
+/** The paging views as options, worded for the step's items. */
+export function pagingViews(items: 'examples' | 'exercises') {
+  return [
+    { value: 'one', label: 'One at a time' },
+    { value: 'all', label: `All ${items}` },
+  ] as const satisfies readonly { value: PagingView; label: string }[];
+}
+
+/** The query string that opens Examples at an example, by its position. */
+export function exampleSearch(index: number) {
+  return `?step=examples&example=${index + 1}`;
+}
+
+/**
+ * The example the URL's query names, by its position from 1 since examples
+ * have no ids, or null when it names none the lesson has.
+ */
+export function namedExampleIndex(count: number, search: URLSearchParams) {
+  const number = Number(search.get('example'));
+  return Number.isInteger(number) && number >= 1 && number <= count
+    ? number - 1
+    : null;
+}
+
+/** The exercise the URL's query names among these, or null for none. */
+export function namedExerciseIndex(
   exerciseIds: string[],
   search: URLSearchParams,
 ) {
-  return Math.max(0, exerciseIds.indexOf(currentExerciseId(search) ?? ''));
+  const index = exerciseIds.indexOf(currentExerciseId(search) ?? '');
+  return index >= 0 ? index : null;
 }
