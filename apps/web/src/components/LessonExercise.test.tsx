@@ -120,6 +120,35 @@ describe('LessonExercise', () => {
     });
   });
 
+  it('checks a short answer on Enter, which never starts a new line', async () => {
+    renderExercise(shortAnswer);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/your answer/i), 'Buongiorno{Enter}');
+
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('Buongiorno');
+    expect(mockSubmit).toHaveBeenCalledWith({
+      exerciseId: 'exercise-1',
+      answer: 'Buongiorno',
+    });
+  });
+
+  it("labels a phone keyboard's return key Go, since it checks the answer", () => {
+    renderExercise(shortAnswer);
+
+    expect(screen.getByLabelText(/your answer/i)).toHaveAttribute(
+      'enterkeyhint',
+      'go',
+    );
+    expect(screen.getAllByRole('button', { name: 'Check' })).toHaveLength(1);
+  });
+
+  it('wraps a long short answer onto more lines rather than scrolling it', () => {
+    renderExercise(shortAnswer);
+
+    expect(screen.getByLabelText(/your answer/i).tagName).toBe('TEXTAREA');
+  });
+
   it('puts the input in the gap of a fill-in-the-blank prompt', async () => {
     renderExercise(fillInTheBlank);
     const user = userEvent.setup();
@@ -759,25 +788,6 @@ describe('LessonExercise', () => {
       );
 
       expect(screen.getByRole('listitem').dataset.result).toBe('unchecked');
-    });
-
-    it('shows a result as a banner one at a time, and as text in All exercises', () => {
-      const { unmount } = renderExercise(
-        attempted(shortAnswer, 'CORRECT'),
-        {},
-        {},
-        { view: 'one' },
-      );
-      const banner = screen.getByTestId('exercise-result');
-      expect(banner.dataset.presentation).toBe('banner');
-      expect(banner).toHaveTextContent('Correct!');
-      expect(banner).toHaveTextContent('Well done.');
-      unmount();
-
-      renderExercise(attempted(shortAnswer, 'CORRECT'));
-      expect(screen.getByTestId('exercise-result').dataset.presentation).toBe(
-        'text',
-      );
     });
 
     it('numbers an exercise in All exercises, beside its type', () => {

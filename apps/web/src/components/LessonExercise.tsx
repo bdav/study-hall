@@ -1,5 +1,10 @@
 import { useId, useState, type FormEvent } from 'react';
-import { CheckCircle2, CircleAlert, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  CircleAlert,
+  CornerDownLeft,
+  XCircle,
+} from 'lucide-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
@@ -28,18 +33,13 @@ const glassInputClassName =
 
 type Attempt = NonNullable<Exercise['latestAttempt']>;
 
-/** How a result reads, and how it tints its banner and its exercise's rule. */
-const MISSED_TONES = {
-  color: 'text-amber-200',
-  banner: 'border-amber-200/40 bg-amber-300/15',
-  rule: 'border-amber-200',
-};
+/** How a result reads, and how it marks its exercise's rule. */
+const MISSED_TONES = { color: 'text-amber-200', rule: 'border-amber-200' };
 const VERDICTS = {
   CORRECT: {
     Icon: CheckCircle2,
     text: 'Correct!',
     color: 'text-emerald-300',
-    banner: 'border-emerald-300/40 bg-emerald-400/15',
     rule: 'border-emerald-300',
   },
   // Free-form explanations only (ADR-0006)
@@ -52,28 +52,15 @@ const VERDICTS = {
 } satisfies Record<Attempt['evaluation'], unknown>;
 
 /**
- * An attempt's result, with the AI's feedback when it evaluated the answer:
- * a tinted banner one at a time, coloured text in a list of exercises. An
- * Accent Mismatch is correct but always shows the accented form
+ * An attempt's result, with the AI's feedback when it evaluated the answer.
+ * An Accent Mismatch is correct but always shows the accented form
  * (ADR-0002).
  */
-function Result({
-  attempt,
-  asBanner,
-}: {
-  attempt: Attempt;
-  asBanner: boolean;
-}) {
-  const { Icon, text, color, banner } = VERDICTS[attempt.evaluation];
+function Result({ attempt }: { attempt: Attempt }) {
+  const { Icon, text, color } = VERDICTS[attempt.evaluation];
   return (
-    <div
-      data-testid="exercise-result"
-      data-presentation={asBanner ? 'banner' : 'text'}
-      className={asBanner ? `mt-3 rounded-lg border p-3 ${banner}` : 'mt-2'}
-    >
-      <p
-        className={`flex items-center gap-1.5 text-sm ${color} ${asBanner ? 'font-medium' : ''}`}
-      >
+    <div className="mt-2">
+      <p className={`flex items-center gap-1.5 text-sm ${color}`}>
         <Icon className="size-4" />
         {text}
       </p>
@@ -237,6 +224,18 @@ export function LessonExercise({
   const gap =
     exercise.type === 'FILL_IN_THE_BLANK' ? GAP.exec(exercise.prompt) : null;
 
+  const checkButton = (
+    <button
+      type="submit"
+      disabled={!canCheck}
+      className="shrink-0 rounded-lg bg-white/20 px-4 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
+    >
+      {submit.isPending ? 'Checking…' : 'Check'}
+    </button>
+  );
+
+  // Check sits at the end of a gap's sentence, and below an explanation,
+  // whose field it would otherwise narrow; a short answer has its own
   const body = (
     <>
       <form onSubmit={handleSubmit}>
@@ -250,6 +249,7 @@ export function LessonExercise({
               className={`inline-block h-8 w-40 ${glassInputClassName}`}
             />
             <span>{exercise.prompt.slice(gap.index + gap[0].length)}</span>
+            <span className="ml-2">{checkButton}</span>
           </p>
         ) : exercise.type === 'FREE_FORM_EXPLANATION' ? (
           <>
@@ -261,25 +261,44 @@ export function LessonExercise({
               rows={3}
               className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
             />
+            <div className="mt-3">{checkButton}</div>
           </>
         ) : (
           <>
             <p className="mt-1">{exercise.prompt}</p>
-            <Input
-              aria-label="Your answer"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className={`mt-2 ${glassInputClassName}`}
-            />
+            <div className="relative mt-2 flex items-start gap-2">
+              {/* One line that grows taller as a long answer wraps, rather
+                  than scrolling it sideways on a narrow screen. Still one
+                  line of text: Enter checks it and a pasted line break is a
+                  space */}
+              <textarea
+                aria-label="Your answer"
+                rows={1}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value.replace(/\n/g, ' '))}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  if (canCheck) e.currentTarget.form?.requestSubmit();
+                }}
+                enterKeyHint="go"
+                className={`field-sizing-content min-w-0 flex-1 resize-none rounded-lg border px-2.5 py-1 text-base outline-none max-sm:pr-9 md:text-sm ${glassInputClassName}`}
+              />
+              {/* On phones, a return arrow in the field's corner, so the
+                  answer has the width; from sm, the Check button beside it */}
+              <button
+                type="submit"
+                disabled={!canCheck}
+                className="touch-target rounded-lg text-sm text-white disabled:opacity-50 max-sm:absolute max-sm:right-1.5 max-sm:bottom-1 max-sm:p-1 max-sm:text-white/70 sm:shrink-0 sm:bg-white/20 sm:px-4 sm:py-1.5 sm:backdrop-blur-sm sm:hover:bg-white/30"
+              >
+                <CornerDownLeft className="size-5 sm:hidden" aria-hidden />
+                <span className="max-sm:sr-only">
+                  {submit.isPending ? 'Checking…' : 'Check'}
+                </span>
+              </button>
+            </div>
           </>
         )}
-        <button
-          type="submit"
-          disabled={!canCheck}
-          className="mt-3 rounded-lg bg-white/20 px-4 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
-        >
-          {submit.isPending ? 'Checking…' : 'Check'}
-        </button>
       </form>
       {submit.isError ? (
         <p className="mt-2 text-sm text-destructive">
@@ -288,7 +307,7 @@ export function LessonExercise({
             : "We couldn't check your answer. Please try again."}
         </p>
       ) : (
-        result && <Result attempt={result} asBanner={view === 'one'} />
+        result && <Result attempt={result} />
       )}
       {/* Fetched answers stay cached, so they show only while wanted */}
       {wantsAnswers && answers.data ? (
