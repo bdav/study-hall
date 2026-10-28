@@ -167,6 +167,8 @@ model CardVersion {
   // and prompt version that proposed the edit
   sourceModel         String?
   sourcePromptVersion String?
+  // Set on a version restoring an earlier one (#54): that version's number
+  restoredFromNumber  Int?
   startedAt           DateTime      @default(now())
   card                Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
   attempts            CardAttempt[]

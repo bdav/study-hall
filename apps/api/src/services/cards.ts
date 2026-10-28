@@ -233,7 +233,8 @@ export async function createCards(
  * variants go with it, and an unlisted variant that is now one of the
  * card's answers is dropped, as listing it would be refused.
  * An edit from a revision of the deck (ADR-0007) records its model and
- * prompt version on the Card Version it starts.
+ * prompt version on the Card Version it starts, and one restoring an
+ * earlier version (#54) that version's number.
  */
 export async function editCard(
   db: Db,
@@ -242,11 +243,13 @@ export async function editCard(
     front,
     canonicalAnswers,
     source,
+    restoredFromNumber,
   }: {
     cardId: string;
     front?: string;
     canonicalAnswers?: AnswerEdit[];
     source?: Omit<CardSource, 'lessonId'>;
+    restoredFromNumber?: number;
   },
 ) {
   const card = await db.card.findUniqueOrThrow({
@@ -293,11 +296,65 @@ export async function editCard(
         startedAt: resetAt,
         sourceModel: source?.model,
         sourcePromptVersion: source?.promptVersion,
+        restoredFromNumber,
       },
     });
   }
 
   return edited;
+}
+
+/**
+ * Whether a Card Version asks what a card, loaded with
+ * `withCanonicalAnswers`, asks: the same front and answers, in any order, as
+ * an edit that changes only the primary starts no version.
+ */
+export function asksTheSame(
+  version: { front: string; canonicalAnswers: string[] },
+  card: { front: string; canonicalAnswers: { text: string }[] },
+) {
+  const sorted = (list: string[]) => [...list].sort().join('\n');
+  return (
+    version.front === card.front &&
+    sorted(version.canonicalAnswers) ===
+      sorted(card.canonicalAnswers.map((answer) => answer.text))
+  );
+}
+
+/**
+ * Restores an earlier Card Version of a card (#54): an edit like any other
+ * (`editCard`), setting the card's front and Canonical Answers to the
+ * version's, and starting a new version that names it. When it recorded
+ * its Accepted Variants, its answers come back as it ended with them,
+ * primary first, with their variants; otherwise in the order it started
+ * with, an answer whose text is unchanged keeping its variants and the
+ * others having none.
+ */
+export async function restoreCardVersion(
+  db: Db,
+  { cardId, versionId }: { cardId: string; versionId: string },
+) {
+  const version = await db.cardVersion.findFirst({
+    where: { id: versionId, cardId },
+  });
+  if (!version) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' });
+  }
+  const card = await cardWithAnswers(db, cardId);
+  if (asksTheSame(version, card)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'The card already asks what this version asks',
+    });
+  }
+  const recorded = parseVariantsByAnswer(version.acceptedVariants);
+  return editCard(db, {
+    cardId,
+    front: version.front,
+    canonicalAnswers:
+      recorded ?? version.canonicalAnswers.map((text) => ({ text })),
+    restoredFromNumber: version.number,
+  });
 }
 
 /** The id of a card's current Card Version, the latest. */

@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
+import { answeredLine, formatDay } from '@/lib/format';
 import {
   Select,
   SelectContent,
@@ -23,15 +24,7 @@ const lifecycleLabels: Record<
   RETIRED: 'Retired',
 };
 
-const dayFormat = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-});
 const relative = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' });
-
-function formatDay(date: string) {
-  return dayFormat.format(new Date(date));
-}
 
 /** "Next review in 2 days", or that it's due now; nothing when unscheduled. */
 function nextReview(dueAt: string | null) {
@@ -47,11 +40,6 @@ function nextReview(dueAt: string | null) {
     return `Next review ${relative.format(Math.round(hours), 'hour')}`;
   }
   return `Next review ${relative.format(Math.round(hours / 24), 'day')}`;
-}
-
-function answeredLine(answeredCount: number, rightCount: number) {
-  const times = answeredCount === 1 ? 'time' : 'times';
-  return `Answered ${answeredCount} ${times} · ${rightCount} right`;
 }
 
 // The picker's choice for attempts from before versions were recorded

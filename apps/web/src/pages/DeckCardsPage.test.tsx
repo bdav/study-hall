@@ -47,6 +47,8 @@ vi.mock('@/lib/trpc', () => ({
       deleteMany: { useMutation: vi.fn() },
       markKnown: { useMutation: vi.fn() },
       importCards: { useMutation: vi.fn() },
+      history: { useQuery: vi.fn() },
+      restoreVersion: { useMutation: vi.fn() },
     },
   },
 }));
@@ -178,6 +180,15 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.card.markKnown.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.card.markKnown.useMutation>);
+
+  vi.mocked(trpc.card.restoreVersion.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.restoreVersion.useMutation>);
+
+  vi.mocked(trpc.card.history.useQuery).mockReturnValue({
+    data: undefined,
+    isError: false,
+  } as unknown as ReturnType<typeof trpc.card.history.useQuery>);
 
   vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
     ...defaultMutationReturn,
@@ -1741,6 +1752,34 @@ describe('DeckCardsPage', () => {
       for (const line of summary.querySelectorAll('p')) {
         expect(line).not.toHaveClass('truncate');
       }
+    });
+  });
+
+  describe("a card's version history", () => {
+    it("opens a card's history from its tile", async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      await user.click(screen.getAllByTitle('History')[0]);
+
+      expect(
+        within(screen.getByRole('dialog')).getByText('Card history'),
+      ).toBeInTheDocument();
+      expect(trpc.card.history.useQuery).toHaveBeenCalledWith({
+        cardId: 'card-1',
+      });
+    });
+
+    it('hides the History action while selecting cards', async () => {
+      setupMocks();
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(screen.getByRole('button', { name: 'Select cards' }));
+
+      expect(screen.queryByTitle('History')).not.toBeInTheDocument();
     });
   });
 });

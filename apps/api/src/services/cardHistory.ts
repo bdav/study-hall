@@ -2,21 +2,11 @@ import { type PrismaClient, type RecallGrade } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { isCorrect } from './countedAttempts.js';
 import {
+  asksTheSame,
   parseVariantsByAnswer,
   variantsByAnswer,
   withCanonicalAnswers,
-  type VariantsByAnswer,
 } from './cards.js';
-
-/**
- * Each of a version's answers' variants, in its answers' order, found by
- * text, since the primary may have changed without a new version.
- */
-function variantsOf(canonicalAnswers: string[], byAnswer: VariantsByAnswer) {
-  return canonicalAnswers.map(
-    (text) => byAnswer.find((a) => a.text === text)?.acceptedVariants ?? [],
-  );
-}
 
 type Attempt = {
   id: string;
@@ -40,10 +30,13 @@ function summarizeAttempts(attempts: Attempt[]) {
  * attempts from before versions were recorded, as an earlier version. Each
  * version has its answers' Accepted Variants: the card's own for the current
  * one, those it ended with for an earlier one, or none (`null`) for one that
- * ended before they were recorded. An attempt's grade is its final one,
- * after "My answer was correct". The card's progress is its lifecycle state
- * and when it's next due; the mastery score stays inside the scheduler. Only
- * the deck's owner sees it.
+ * ended before they were recorded. Each says when it started and ended,
+ * whether a revision of the deck started it (`sourceModel`) or it restored
+ * an earlier version (`restoredFromNumber`), and whether it can be restored
+ * (#54): an earlier version that asks something the card doesn't now. An
+ * attempt's grade is its final one, after "My answer was correct". The
+ * card's progress is its lifecycle state and when it's next due; the mastery
+ * score stays inside the scheduler. Only the deck's owner sees it.
  */
 export async function cardHistory(
   prisma: PrismaClient,
@@ -60,9 +53,12 @@ export async function cardHistory(
           front: true,
           canonicalAnswers: true,
           acceptedVariants: true,
+          sourceModel: true,
+          restoredFromNumber: true,
           startedAt: true,
         },
       },
+      front: true,
       canonicalAnswers: withCanonicalAnswers.canonicalAnswers,
       progress: {
         where: { userId },
@@ -99,18 +95,23 @@ export async function cardHistory(
   return {
     progress: card.progress[0] ?? null,
     versions: card.versions.map(({ acceptedVariants, ...version }, i) => {
-      // The card's own for the current version, those it ended with for one
-      // that's over
-      const byAnswer =
-        i === 0
-          ? variantsByAnswer(card)
-          : parseVariantsByAnswer(acceptedVariants);
+      const isCurrent = i === 0;
+      // The card's own answers and variants for the current version, those it
+      // ended with for one that's over: primary first, as the primary may
+      // have changed without a new version
+      const byAnswer = isCurrent
+        ? variantsByAnswer(card)
+        : parseVariantsByAnswer(acceptedVariants);
       return {
         ...version,
-        isCurrent: i === 0,
-        acceptedVariants: byAnswer
-          ? variantsOf(version.canonicalAnswers, byAnswer)
-          : null,
+        canonicalAnswers:
+          byAnswer?.map((answer) => answer.text) ?? version.canonicalAnswers,
+        // When the next version started
+        endedAt: isCurrent ? null : card.versions[i - 1].startedAt,
+        isCurrent,
+        canRestore: !isCurrent && !asksTheSame(version, card),
+        acceptedVariants:
+          byAnswer?.map((answer) => answer.acceptedVariants) ?? null,
         ...summarizeAttempts(attemptsOf(version.id)),
       };
     }),

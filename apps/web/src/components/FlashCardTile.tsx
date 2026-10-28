@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Pencil, RefreshCw, Undo2, Trash2 } from 'lucide-react';
+import {
+  BadgeCheck,
+  History,
+  Pencil,
+  RefreshCw,
+  Undo2,
+  Trash2,
+} from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 import { type AcceptedVariant } from '@/lib/cards';
@@ -12,6 +19,8 @@ interface FlashCardTileProps {
   onDelete: () => void;
   /** Marks the card known (ADR-0009). */
   onMarkKnown: () => void;
+  /** Opens the card's version history (#54). */
+  onShowHistory: () => void;
   /**
    * While the Cards tab is selecting cards: the tile's buttons are hidden,
    * its rows keeping their height so the text doesn't move.
@@ -91,6 +100,7 @@ export function FlashCardTile({
   onSave,
   onDelete,
   onMarkKnown,
+  onShowHistory,
   isSelecting = false,
   isSaving,
   variants,
@@ -245,6 +255,16 @@ export function FlashCardTile({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    onShowHistory();
+                  }}
+                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  title="History"
+                >
+                  <History className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onMarkKnown();
                   }}
                   className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
@@ -322,6 +342,16 @@ export function FlashCardTile({
           <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
             {!isSelecting && (
               <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowHistory();
+                  }}
+                  className="rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60"
+                  title="History"
+                >
+                  <History className="h-3.5 w-3.5" />
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

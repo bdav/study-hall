@@ -30,6 +30,7 @@ import { DeckCardsSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
+import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 import { ReviseCards } from '@/components/ReviseCards';
 import {
   CardSelectionBar,
@@ -135,6 +136,8 @@ export default function DeckCardsPage() {
   );
   // The card whose answers are open below it
   const [answersCardId, setAnswersCardId] = useState<string | null>(null);
+  // The card whose version history is open
+  const [historyCardId, setHistoryCardId] = useState<string | null>(null);
   // The selected cards while selecting, none otherwise
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -653,6 +656,7 @@ export default function DeckCardsPage() {
                     }
                     onDelete={() => deleteCard.mutate({ cardId: card.id })}
                     onMarkKnown={() => markKnown.mutate({ cardIds: [card.id] })}
+                    onShowHistory={() => setHistoryCardId(card.id)}
                     isSelecting={selection !== null}
                     isSaving={
                       updateCard.isPending &&
@@ -686,6 +690,14 @@ export default function DeckCardsPage() {
           </div>
         </LayoutGroup>
       </div>
+
+      {historyCardId && (
+        <CardVersionsDialog
+          deckId={deckId}
+          cardId={historyCardId}
+          onClose={() => setHistoryCardId(null)}
+        />
+      )}
 
       {previewOpen && (
         <ImportPreviewDialog

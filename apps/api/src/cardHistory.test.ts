@@ -125,6 +125,82 @@ describe('card.history', () => {
     expect(history.versions[1].startedAt).toBeInstanceOf(Date);
   });
 
+  it('gives each earlier version when it ended, as the next one started', async () => {
+    const { card } = await primeCard();
+    await createCaller().card.update({
+      cardId: card.id,
+      canonicalAnswers: [{ text: '17' }],
+    });
+
+    const [current, first] = (
+      await createCaller().card.history({ cardId: card.id })
+    ).versions;
+
+    expect(current.endedAt).toBeNull();
+    expect(first.endedAt).toEqual(current.startedAt);
+  });
+
+  it("lists the current version's answers primary first, as the card has them", async () => {
+    const { card } = await primeCard();
+    const [eleven, thirteen] = card.canonicalAnswers;
+    // 13 made primary, which starts no version
+    await createCaller().card.update({
+      cardId: card.id,
+      canonicalAnswers: [
+        { id: thirteen.id, text: '13', acceptedVariants: ['thirteen'] },
+        { id: eleven.id, text: '11' },
+      ],
+    });
+
+    const history = await createCaller().card.history({ cardId: card.id });
+
+    expect(history.versions[0]).toMatchObject({
+      canonicalAnswers: ['13', '11'],
+      acceptedVariants: [['thirteen'], []],
+    });
+  });
+
+  it('names the model behind a version a revision of the deck started', async () => {
+    const { card } = await primeCard();
+    await createCaller().card.update({
+      cardId: card.id,
+      canonicalAnswers: [{ text: '17' }],
+    });
+    // As `deck.applyRevision` records it
+    await prisma.cardVersion.updateMany({
+      where: { cardId: card.id, number: 2 },
+      data: { sourceModel: 'claude-sonnet-5-5', sourcePromptVersion: 'v1' },
+    });
+
+    const history = await createCaller().card.history({ cardId: card.id });
+
+    expect(history.versions).toMatchObject([
+      { number: 2, sourceModel: 'claude-sonnet-5-5' },
+      { number: 1, sourceModel: null },
+    ]);
+  });
+
+  it('offers to restore only an earlier version that asks something else', async () => {
+    const { card } = await primeCard();
+    await createCaller().card.update({
+      cardId: card.id,
+      canonicalAnswers: [{ text: '17' }],
+    });
+    // Back to 11 and 13, primary changed: what version 1 asked
+    await createCaller().card.update({
+      cardId: card.id,
+      canonicalAnswers: [{ text: '13' }, { text: '11' }],
+    });
+
+    const history = await createCaller().card.history({ cardId: card.id });
+
+    expect(history.versions).toMatchObject([
+      { number: 3, canRestore: false },
+      { number: 2, canRestore: true },
+      { number: 1, canRestore: false },
+    ]);
+  });
+
   describe("a version's Accepted Variants", () => {
     /** Gives the prime card's answers these variants, which starts no version. */
     function setVariants(
@@ -184,7 +260,7 @@ describe('card.history', () => {
       });
     });
 
-    it("lines the recorded variants up with the version's answers, primary changed since or not", async () => {
+    it("lists an earlier version's answers as it ended with them, primary first, each with its variants", async () => {
       const { card } = await primeCard();
       const [eleven, thirteen] = card.canonicalAnswers;
       // 13 made primary, which starts no version
@@ -203,8 +279,8 @@ describe('card.history', () => {
 
       const history = await createCaller().card.history({ cardId: card.id });
       expect(history.versions[1]).toMatchObject({
-        canonicalAnswers: ['11', '13'],
-        acceptedVariants: [[], ['thirteen']],
+        canonicalAnswers: ['13', '11'],
+        acceptedVariants: [['thirteen'], []],
       });
     });
 

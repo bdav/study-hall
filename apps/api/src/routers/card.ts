@@ -6,6 +6,7 @@ import {
   deckOrder,
   editCard,
   markCardsKnown,
+  restoreCardVersion,
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
@@ -176,6 +177,14 @@ export const cardRouter = router({
     .query(({ ctx, input }) =>
       cardHistory(ctx.prisma, { userId: ctx.userId, cardId: input.cardId }),
     ),
+
+  /** Puts a card back to asking what an earlier Card Version asked (#54). */
+  restoreVersion: protectedProcedure
+    .input(z.object({ cardId: z.string(), versionId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwnsCards(ctx, [input.cardId]);
+      return ctx.prisma.$transaction((tx) => restoreCardVersion(tx, input));
+    }),
 
   listByDeck: protectedProcedure
     .input(z.object({ deckId: z.string() }))
