@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LessonExercise } from '@/components/LessonExercise';
-import { LessonFrame } from '@/components/LessonFrame';
+import { LESSON_FRAME_WIDTH, LessonFrame } from '@/components/LessonFrame';
 import { LessonOutline } from '@/components/LessonOutline';
 import {
   Sheet,
@@ -127,8 +127,8 @@ function WrittenLessonHeader({
   const [isStartingOver, setIsStartingOver] = useState(false);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 px-4 py-3 backdrop-blur-md md:px-8">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
+      <div className={`flex items-center gap-3 ${LESSON_FRAME_WIDTH}`}>
         {leading}
         <div className="min-w-0 flex-1">
           <BackLink to={`/courses/${lesson.course.id}`}>
