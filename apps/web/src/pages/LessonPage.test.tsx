@@ -1916,7 +1916,7 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       renderPage({ query: written });
 
-      const toggle = screen.getByRole('button', { name: 'Complete' });
+      const toggle = screen.getByRole('button', { name: 'Mark complete' });
       expect(toggle).toHaveAttribute('aria-pressed', 'false');
       await user.click(toggle);
 
@@ -1930,9 +1930,29 @@ describe('LessonPage', () => {
       const user = userEvent.setup();
       renderPage({ query: completed });
 
-      const toggle = screen.getByRole('button', { name: 'Complete' });
+      const toggle = screen.getByRole('button', { name: 'Mark complete' });
       expect(toggle).toHaveAttribute('aria-pressed', 'true');
       await user.click(toggle);
+
+      expect(mockSetCompleted).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        completed: false,
+      });
+    });
+
+    it('offers it in the ⋯ menu on narrow screens, where the header has no room', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: completed });
+
+      expect(screen.getByRole('button', { name: 'Mark complete' })).toHaveClass(
+        'max-sm:hidden',
+      );
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      const item = screen.getByRole('menuitemcheckbox', {
+        name: 'Mark complete',
+      });
+      expect(item).toHaveAttribute('aria-checked', 'true');
+      await user.click(item);
 
       expect(mockSetCompleted).toHaveBeenCalledWith({
         id: 'lesson-1',
@@ -1945,7 +1965,9 @@ describe('LessonPage', () => {
       renderPage({ path: wrapUp, query: written });
 
       await user.click(
-        screen.getByRole('button', { name: 'Mark lesson complete' }),
+        within(screen.getByRole('main')).getByRole('button', {
+          name: 'Mark complete',
+        }),
       );
 
       expect(mockSetCompleted).toHaveBeenCalledWith({
@@ -1975,7 +1997,9 @@ describe('LessonPage', () => {
       renderPage({ path: wrapUp, query: written, canUseAI: false });
 
       expect(
-        screen.getByRole('button', { name: 'Mark lesson complete' }),
+        within(screen.getByRole('main')).getByRole('button', {
+          name: 'Mark complete',
+        }),
       ).toBeInTheDocument();
     });
 
@@ -1987,7 +2011,9 @@ describe('LessonPage', () => {
 
       expect(screen.getByText(/hasn't been written yet/i)).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'Mark lesson complete' }),
+        within(screen.getByRole('main')).getByRole('button', {
+          name: 'Mark complete',
+        }),
       ).toBeInTheDocument();
     });
 
@@ -1999,7 +2025,9 @@ describe('LessonPage', () => {
       });
 
       expect(
-        screen.getByRole('button', { name: 'Mark lesson complete' }),
+        within(screen.getByRole('main')).getByRole('button', {
+          name: 'Mark complete',
+        }),
       ).toBeDisabled();
     });
 

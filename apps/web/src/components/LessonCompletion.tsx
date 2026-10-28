@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
 
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 
@@ -22,7 +23,10 @@ function useSetCompleted(lesson: Lesson) {
   });
 }
 
-/** Lesson Completion as a compact toggle, for the header. */
+/**
+ * Lesson Completion as a compact toggle, for the header from sm; on
+ * narrower screens it's in the ⋯ menu instead (`CompletionMenuItem`).
+ */
 export function CompletionToggle({ lesson }: { lesson: Lesson }) {
   const setCompleted = useSetCompleted(lesson);
   const complete = lesson.completedAt !== null;
@@ -36,15 +40,40 @@ export function CompletionToggle({ lesson }: { lesson: Lesson }) {
         setCompleted.mutate({ id: lesson.id, completed: !complete })
       }
       disabled={setCompleted.isPending}
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 ${
+      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 max-sm:hidden ${
         complete
           ? 'bg-white/20 text-white'
           : 'text-white/70 hover:bg-white/10 hover:text-white'
       }`}
     >
       <Icon className="size-4" />
-      Complete
+      Mark complete
     </button>
+  );
+}
+
+/** Lesson Completion as a checkbox in the header's ⋯ menu. */
+export function CompletionMenuItem({
+  lesson,
+  className,
+}: {
+  lesson: Lesson;
+  className?: string;
+}) {
+  const setCompleted = useSetCompleted(lesson);
+  const complete = lesson.completedAt !== null;
+
+  return (
+    <DropdownMenuCheckboxItem
+      checked={complete}
+      onCheckedChange={(checked) =>
+        setCompleted.mutate({ id: lesson.id, completed: checked })
+      }
+      disabled={setCompleted.isPending}
+      className={className}
+    >
+      Mark complete
+    </DropdownMenuCheckboxItem>
   );
 }
 
@@ -84,7 +113,7 @@ export function LessonCompletion({
             : 'rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60'
         }
       >
-        {complete ? 'Mark as not complete' : 'Mark lesson complete'}
+        {complete ? 'Mark as not complete' : 'Mark complete'}
       </button>
     </section>
   );

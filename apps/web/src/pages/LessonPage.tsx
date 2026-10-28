@@ -54,6 +54,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import {
+  CompletionMenuItem,
   CompletionToggle,
   LessonCompletion,
 } from '@/components/LessonCompletion';
@@ -314,6 +315,11 @@ function WrittenLessonHeader({
             align="end"
             className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
           >
+            {/* The header has no room for the toggle on narrow screens */}
+            <div className="sm:hidden">
+              <CompletionMenuItem lesson={lesson} className={MENU_ITEM} />
+              <DropdownMenuSeparator />
+            </div>
             {views.map((view) => (
               <div
                 key={view.label}
