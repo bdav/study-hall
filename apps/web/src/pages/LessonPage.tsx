@@ -668,8 +668,9 @@ function targetLabel(direction: 'Previous' | 'Next', target: Target) {
 
 /**
  * A footer button: to a step, its direction above the step's title, which
- * wraps within the button's half of the footer; to an item, one line. The
- * arrow lines up with the title's first line.
+ * wraps within the button's half of the footer; to an item, one line, below
+ * an empty line where the direction would be, so the two buttons' main
+ * text lines up. The arrow lines up with the main text's first line.
  */
 function TargetButton({
   direction,
@@ -683,8 +684,8 @@ function TargetButton({
   const toStep = 'step' in target;
   const Arrow = direction === 'Previous' ? ChevronLeft : ChevronRight;
   const arrow = (
-    // As tall as a line of the title, below the direction's line
-    <span className={`flex h-6 shrink-0 items-center ${toStep ? 'mt-4' : ''}`}>
+    // As tall as a line of the main text, below the direction's line
+    <span className="mt-4 flex h-6 shrink-0 items-center">
       <Arrow className="size-4" />
     </span>
   );
@@ -700,14 +701,14 @@ function TargetButton({
       }`}
     >
       {direction === 'Previous' && arrow}
-      {toStep ? (
-        <span className="min-w-0">
-          <span className="block text-xs opacity-70">{direction}</span>
-          <span className="block">{target.step.title}</span>
+      <span className="min-w-0">
+        <span className="block h-4 text-xs opacity-70">
+          {toStep && direction}
         </span>
-      ) : (
-        targetLabel(direction, target)
-      )}
+        <span className="block">
+          {toStep ? target.step.title : targetLabel(direction, target)}
+        </span>
+      </span>
       {direction === 'Next' && arrow}
     </button>
   );
