@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const SYLLABUS_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const SYLLABUS_PROMPT_VERSION = 'syllabus-v2';
+export const SYLLABUS_PROMPT_VERSION = 'syllabus-v3';
 
 const text = z.string().trim().min(1);
 
@@ -68,7 +68,9 @@ A syllabus is an ordered list of lessons. Its order is the teaching sequence: ea
 
 For each lesson give a short title and two to five learning objectives. A learning objective is a short statement of what the lesson should enable the learner to do, starting with a verb, such as "Order food and drinks in a café".
 
-Fit the number and size of lessons to the learner's goal, prior knowledge, available time and preferred depth. Skip material the learner already knows.`;
+Fit the number and size of lessons to the learner's goal, prior knowledge, available time and preferred depth. Skip material the learner already knows.
+
+Settle any choice the whole course depends on, such as which variety of a language or which version of a framework to learn: take it from what the learner said, or else choose the most common option, and name it in the first lesson's objectives, so every lesson follows it. Never make such a choice an objective for the learner to make: later lessons are written without knowing what they chose.`;
 
 /** The setup answers as prompt lines, for every course generation call. */
 export function formatCourseSetup(setup: CourseSetup): string[] {

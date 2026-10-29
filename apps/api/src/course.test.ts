@@ -293,7 +293,7 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v2',
+        promptVersion: 'syllabus-v3',
         acceptedAt: null,
         feedback: [],
       });
@@ -724,7 +724,7 @@ describe('courseRouter', () => {
         lessons: regenerated.lessons,
         feedback: ['More focus on the past tense'],
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v2',
+        promptVersion: 'syllabus-v3',
         acceptedAt: null,
       });
     });
