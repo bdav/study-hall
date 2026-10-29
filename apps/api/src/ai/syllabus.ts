@@ -30,18 +30,28 @@ export const proposalLessonsSchema = z
   .min(1);
 
 /**
+ * The most lessons a proposal or Syllabus holds, since every lesson goes to
+ * the model with each regeneration, lesson and tutor reply.
+ */
+export const MAX_LESSONS = 100;
+
+/** A lesson's title and learning objectives as the learner edits them. */
+export const lessonTitleSchema = text.max(200);
+export const objectivesSchema = z.array(text.max(500)).max(20);
+
+/**
  * The learner's edits to a proposal's lessons, bounded, since every lesson
  * is stored and sent to the model when the proposal is regenerated.
  */
 export const proposalEditSchema = z
   .array(
     z.object({
-      title: text.max(200),
-      objectives: z.array(text.max(500)).max(20),
+      title: lessonTitleSchema,
+      objectives: objectivesSchema,
     }),
   )
   .min(1)
-  .max(100);
+  .max(MAX_LESSONS);
 
 /** Reads the lessons stored on a Syllabus Proposal. */
 export function parseProposalLessons(lessons: unknown) {

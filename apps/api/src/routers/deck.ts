@@ -84,7 +84,7 @@ export const deckRouter = router({
             include: withCanonicalAnswers,
           },
           // Set on a Course Deck
-          course: { select: { id: true, title: true } },
+          course: { select: { id: true, title: true, archivedAt: true } },
         },
       });
 
@@ -103,7 +103,7 @@ export const deckRouter = router({
       where: { userId: ctx.userId },
       orderBy: { createdAt: 'desc' },
       include: {
-        course: { select: { id: true, title: true } },
+        course: { select: { id: true, title: true, archivedAt: true } },
         _count: { select: { cards: true } },
         studySessions: {
           orderBy: { startedAt: 'desc' },

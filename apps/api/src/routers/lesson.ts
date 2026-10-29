@@ -98,6 +98,7 @@ async function findOwnedLesson(
         select: {
           id: true,
           title: true,
+          archivedAt: true,
           // For where to continue: the active syllabus
           lessons: {
             where: { archivedAt: null },
@@ -225,10 +226,11 @@ export const lessonRouter = router({
       const lesson = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
       if (lesson.versions.length > 0) return toLessonView(lesson, access);
 
-      if (lesson.archivedAt) {
+      if (lesson.archivedAt || lesson.course.archivedAt) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
-          message: "An archived lesson can't be written.",
+          message:
+            "An archived lesson, or one of an archived course, can't be written.",
         });
       }
 

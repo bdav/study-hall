@@ -8,7 +8,14 @@ import { ChevronRight, Circle, CircleCheck, CircleDot } from 'lucide-react';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { PAGE_WIDTH } from '@/lib/layout';
-import { PinnedHeader } from '@/components/PinnedHeader';
+import {
+  HEADER_MENU_ITEM,
+  HeaderMenu,
+  PinnedHeader,
+} from '@/components/PinnedHeader';
+import { SyllabusEditor } from '@/components/SyllabusEditor';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ProposalEditor } from '@/components/ProposalEditor';
 
 type SyllabusLesson =
@@ -190,6 +197,8 @@ export default function CoursePage() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const courseQuery = trpc.course.getById.useQuery({ id: courseId });
+  const [isEditing, setIsEditing] = useState(false);
+  const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
 
   const acceptProposal = trpc.course.acceptProposal.useMutation({
     onSuccess: () => {
@@ -211,6 +220,17 @@ export default function CoursePage() {
     },
   });
 
+  const archive = trpc.course.archive.useMutation({
+    onSuccess: () => {
+      utils.course.list.invalidate();
+      utils.deck.list.invalidate();
+      navigate('/courses');
+    },
+    onError: () => {
+      toast.error('Failed to archive the course');
+    },
+  });
+
   if (courseQuery.isLoading) {
     return <CourseSkeleton />;
   }
@@ -229,6 +249,10 @@ export default function CoursePage() {
 
   const proposal = course.proposal;
   const isProposal = proposal !== null && proposal.acceptedAt === null;
+  const isArchived = course.archivedAt !== null;
+  // A proposal has its own actions, and an archived course is kept as it
+  // was, with nowhere to continue
+  const isActive = !isProposal && !isArchived;
 
   return (
     <div className="flex flex-1 flex-col text-white">
@@ -237,7 +261,7 @@ export default function CoursePage() {
         title={course.title}
         subtitle={course.goal}
       >
-        {!isProposal &&
+        {isActive &&
           (course.continueLesson ? (
             <Link
               to={`/lessons/${course.continueLesson.id}`}
@@ -252,7 +276,33 @@ export default function CoursePage() {
               <p className="text-sm text-white/70">Every lesson is complete</p>
             )
           ))}
+        {isActive && (
+          <HeaderMenu triggerClassName="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white">
+            <DropdownMenuItem
+              onSelect={() => setIsEditing(true)}
+              className={HEADER_MENU_ITEM}
+            >
+              Edit syllabus
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => setIsConfirmingArchive(true)}
+              className={HEADER_MENU_ITEM}
+            >
+              Archive course
+            </DropdownMenuItem>
+          </HeaderMenu>
+        )}
       </PinnedHeader>
+      <ConfirmDialog
+        open={isConfirmingArchive}
+        onOpenChange={setIsConfirmingArchive}
+        title="Archive course"
+        description={`Archive "${course.title}"? It leaves Courses. Its lessons and your work in them are kept, and its cards stay in Flashcards.`}
+        confirmLabel="Archive"
+        onConfirm={() => {
+          if (!archive.isPending) archive.mutate({ courseId });
+        }}
+      />
       <main className={`${PAGE_WIDTH} py-8`}>
         {/* Centred: unlike a lesson, there's no outline beside it */}
         <div className="mx-auto max-w-3xl">
@@ -279,15 +329,29 @@ export default function CoursePage() {
             </section>
           ) : (
             <section>
+              {isArchived && (
+                <p className="mb-6 rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white/80">
+                  This course is archived. Its lessons and your work in them are
+                  kept, and its cards stay in Flashcards.
+                </p>
+              )}
               {course.review && <Review {...course.review} />}
               <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
                 Syllabus
               </h2>
-              <Syllabus
-                lessons={course.lessons}
-                upNextId={course.continueLesson?.id}
-                labelledBy="syllabus-heading"
-              />
+              {isEditing && isActive ? (
+                <SyllabusEditor
+                  courseId={courseId}
+                  lessons={course.lessons}
+                  onDone={() => setIsEditing(false)}
+                />
+              ) : (
+                <Syllabus
+                  lessons={course.lessons}
+                  upNextId={course.continueLesson?.id}
+                  labelledBy="syllabus-heading"
+                />
+              )}
             </section>
           )}
         </div>

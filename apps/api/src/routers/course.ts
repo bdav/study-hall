@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { type Prisma, type PrismaClient } from '@prisma/client';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { continueTarget, lessonStatus } from '../services/syllabus.js';
 import { countDueAndNewCards } from '../services/studySessions.js';
@@ -9,6 +10,9 @@ import {
   courseSetupSchema,
   parseProposalLessons,
   proposalEditSchema,
+  lessonTitleSchema,
+  MAX_LESSONS,
+  objectivesSchema,
   SYLLABUS_MODEL,
   SYLLABUS_PROMPT_VERSION,
   SYLLABUS_SYSTEM_PROMPT,
@@ -20,6 +24,74 @@ const MAX_FEEDBACK_LENGTH = 1000;
 
 const ACCEPTED_MESSAGE =
   'This syllabus has been accepted, so it is no longer a proposal';
+
+const ARCHIVED_MESSAGE = 'Archived lessons and courses cannot be edited';
+
+/**
+ * Locks a course's row until the transaction ends, so changes to its
+ * Syllabus that check it first, such as archiving all but one lesson or
+ * placing a new lesson after the last, take turns. An update takes the
+ * lock (and marks the course updated, as its Syllabus is), through Prisma
+ * so it reaches the course's own schema.
+ */
+async function lockCourse(tx: Prisma.TransactionClient, courseId: string) {
+  await tx.course.update({
+    where: { id: courseId },
+    data: { updatedAt: new Date() },
+  });
+}
+
+/**
+ * A lesson of the user's accepted Syllabus they can still edit: not
+ * archived, in a course that isn't. Throws NOT_FOUND for anyone else's.
+ */
+async function findEditableLesson(
+  prisma: PrismaClient,
+  userId: string,
+  lessonId: string,
+) {
+  const lesson = await prisma.lesson.findFirst({
+    where: { id: lessonId, course: { userId } },
+    include: { course: { select: { archivedAt: true } } },
+  });
+
+  if (!lesson) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
+  }
+  if (lesson.archivedAt || lesson.course.archivedAt) {
+    throw new TRPCError({ code: 'CONFLICT', message: ARCHIVED_MESSAGE });
+  }
+  return lesson;
+}
+
+/**
+ * A course of the user's whose accepted Syllabus they can still edit: not
+ * archived. Throws NOT_FOUND for anyone else's.
+ */
+async function findEditableCourse(
+  prisma: PrismaClient,
+  userId: string,
+  courseId: string,
+) {
+  const course = await prisma.course.findUnique({
+    where: { id: courseId, userId },
+    include: { proposal: { select: { acceptedAt: true } } },
+  });
+
+  if (!course) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
+  }
+  if (course.archivedAt) {
+    throw new TRPCError({ code: 'CONFLICT', message: ARCHIVED_MESSAGE });
+  }
+  if (!course.proposal?.acceptedAt) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Accept the syllabus proposal first',
+    });
+  }
+  return course;
+}
 
 export const courseRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -258,6 +330,161 @@ export const courseRouter = router({
       if (updated.count === 0) {
         throw new TRPCError({ code: 'CONFLICT', message: ACCEPTED_MESSAGE });
       }
+
+      return { success: true };
+    }),
+
+  /** Renames a lesson of an accepted Syllabus or edits its objectives. */
+  updateLesson: protectedProcedure
+    .input(
+      z
+        .object({
+          lessonId: z.string(),
+          title: lessonTitleSchema.optional(),
+          objectives: objectivesSchema.optional(),
+        })
+        .refine(
+          (input) =>
+            input.title !== undefined || input.objectives !== undefined,
+          { message: 'Give a title or objectives' },
+        ),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await findEditableLesson(ctx.prisma, ctx.userId, input.lessonId);
+
+      await ctx.prisma.lesson.update({
+        where: { id: input.lessonId },
+        data: { title: input.title, objectives: input.objectives },
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Puts an accepted Syllabus's lessons in the order given. Lessons it
+   * leaves out, such as one added as the learner dragged, go at the end in
+   * their order, and ones no longer in the Syllabus, such as one archived
+   * meanwhile, are ignored. Archived lessons keep their places, out of it.
+   */
+  reorderLessons: protectedProcedure
+    .input(z.object({ courseId: z.string(), lessonIds: z.array(z.string()) }))
+    .mutation(async ({ ctx, input }) => {
+      if (new Set(input.lessonIds).size !== input.lessonIds.length) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Name each lesson once',
+        });
+      }
+      await findEditableCourse(ctx.prisma, ctx.userId, input.courseId);
+
+      await ctx.prisma.$transaction(async (tx) => {
+        await lockCourse(tx, input.courseId);
+        const lessons = await tx.lesson.findMany({
+          where: { courseId: input.courseId, archivedAt: null },
+          orderBy: { position: 'asc' },
+          select: { id: true },
+        });
+
+        const inSyllabus = new Set(lessons.map((lesson) => lesson.id));
+        const named = input.lessonIds.filter((id) => inSyllabus.has(id));
+        const left = lessons
+          .map((lesson) => lesson.id)
+          .filter((id) => !named.includes(id));
+
+        for (const [position, id] of [...named, ...left].entries()) {
+          await tx.lesson.update({ where: { id }, data: { position } });
+        }
+      });
+
+      return { success: true };
+    }),
+
+  /** Adds a lesson by its title alone to the end of an accepted Syllabus. */
+  addLesson: protectedProcedure
+    .input(z.object({ courseId: z.string(), title: lessonTitleSchema }))
+    .mutation(async ({ ctx, input }) => {
+      await findEditableCourse(ctx.prisma, ctx.userId, input.courseId);
+
+      const lesson = await ctx.prisma.$transaction(async (tx) => {
+        await lockCourse(tx, input.courseId);
+        const inSyllabus = await tx.lesson.count({
+          where: { courseId: input.courseId, archivedAt: null },
+        });
+        if (inSyllabus >= MAX_LESSONS) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `A syllabus holds at most ${MAX_LESSONS} lessons`,
+          });
+        }
+
+        const { _max } = await tx.lesson.aggregate({
+          where: { courseId: input.courseId },
+          _max: { position: true },
+        });
+        return tx.lesson.create({
+          data: {
+            courseId: input.courseId,
+            title: input.title,
+            objectives: [],
+            position: (_max.position ?? -1) + 1,
+          },
+        });
+      });
+
+      return { id: lesson.id };
+    }),
+
+  /**
+   * Archives a lesson: it leaves the Syllabus and navigation, while its
+   * versions, attempts, tutor threads and cards stay (ADR-0003). A Syllabus
+   * keeps at least one lesson; archiving the course is for the rest.
+   */
+  archiveLesson: protectedProcedure
+    .input(z.object({ lessonId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const lesson = await findEditableLesson(
+        ctx.prisma,
+        ctx.userId,
+        input.lessonId,
+      );
+
+      await ctx.prisma.$transaction(async (tx) => {
+        await lockCourse(tx, lesson.courseId);
+        const inSyllabus = await tx.lesson.count({
+          where: { courseId: lesson.courseId, archivedAt: null },
+        });
+        if (inSyllabus <= 1) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message:
+              'A syllabus keeps at least one lesson. Archive the course instead.',
+          });
+        }
+
+        // Only if still in the Syllabus: two archives of it count once
+        await tx.lesson.updateMany({
+          where: { id: lesson.id, archivedAt: null },
+          data: { archivedAt: new Date() },
+        });
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Archives a course: it leaves Courses, while its lessons, learning
+   * history and Course Deck stay (ADR-0003); the deck stays in Flashcards.
+   * A course still at its proposal has no history, and is discarded instead.
+   */
+  archive: protectedProcedure
+    .input(z.object({ courseId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await findEditableCourse(ctx.prisma, ctx.userId, input.courseId);
+
+      await ctx.prisma.course.update({
+        where: { id: input.courseId },
+        data: { archivedAt: new Date() },
+      });
 
       return { success: true };
     }),

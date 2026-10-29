@@ -61,6 +61,28 @@ describe('DeckHeader', () => {
     );
   });
 
+  it('names an archived course without linking to it', () => {
+    render(
+      <MemoryRouter>
+        <DeckHeader
+          deckName="Italian"
+          deckId="deck-1"
+          activeTab="study"
+          course={{
+            id: 'course-1',
+            title: 'Italian',
+            archivedAt: '2026-10-29T00:00:00Z',
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('From the archived course Italian'),
+    ).toBeInTheDocument();
+  });
+
   it('has no back link on a standalone deck', () => {
     renderDeckHeader('World Capitals', 'deck-1', 'study');
 

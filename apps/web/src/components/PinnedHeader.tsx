@@ -1,5 +1,11 @@
 import { type ReactNode } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import { BackLink } from '@/components/BackLink';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { HEADER_BESIDE_PANEL, PAGE_WIDTH } from '@/lib/layout';
 
 /**
@@ -59,5 +65,34 @@ export function PinnedHeader({
         {panelToggle}
       </div>
     </header>
+  );
+}
+
+/** An item of a header's ⋯ menu. */
+export const HEADER_MENU_ITEM = 'focus:bg-white/10 focus:text-white';
+
+/** A pinned header's ⋯ menu, holding the page's less common actions. */
+export function HeaderMenu({
+  triggerClassName,
+  children,
+}: {
+  triggerClassName: string;
+  children: ReactNode;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="More actions"
+        className={triggerClassName}
+      >
+        <MoreHorizontal className="size-5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
+      >
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

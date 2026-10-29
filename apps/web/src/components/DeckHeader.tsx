@@ -6,8 +6,15 @@ interface DeckHeaderProps {
   deckName: string;
   deckId: string;
   activeTab: 'study' | 'cards' | 'stats';
-  /** A Course Deck's course, which reviewing it links back to. */
-  course?: { id: string; title: string } | null;
+  /**
+   * A Course Deck's course, which reviewing it links back to, unless the
+   * course is archived: then the deck only names it.
+   */
+  course?: {
+    id: string;
+    title: string;
+    archivedAt?: Date | string | null;
+  } | null;
   /** Shown in place of the deck name, such as an editable title. */
   title?: ReactNode;
 }
@@ -26,9 +33,14 @@ export function DeckHeader({
 }: DeckHeaderProps) {
   return (
     <div className="w-full max-w-4xl">
-      {course && (
-        <BackLink to={`/courses/${course.id}`}>{course.title}</BackLink>
-      )}
+      {course &&
+        (course.archivedAt ? (
+          <p className="text-sm text-white/60">
+            From the archived course {course.title}
+          </p>
+        ) : (
+          <BackLink to={`/courses/${course.id}`}>{course.title}</BackLink>
+        ))}
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-6">
         <div className="min-w-0">
           {title ?? (

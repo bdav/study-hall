@@ -23,6 +23,7 @@ vi.mock('@/lib/trpc', () => ({
         },
         list: { invalidate: vi.fn() },
       },
+      deck: { list: { invalidate: vi.fn() } },
     })),
     course: {
       getById: { useQuery: vi.fn() },
@@ -30,6 +31,11 @@ vi.mock('@/lib/trpc', () => ({
       discardProposal: { useMutation: vi.fn() },
       updateProposal: { useMutation: vi.fn() },
       regenerateProposal: { useMutation: vi.fn() },
+      archive: { useMutation: vi.fn() },
+      updateLesson: { useMutation: vi.fn() },
+      reorderLessons: { useMutation: vi.fn() },
+      addLesson: { useMutation: vi.fn() },
+      archiveLesson: { useMutation: vi.fn() },
     },
   },
 }));
@@ -57,6 +63,7 @@ const baseCourse = {
   title: 'Italian',
   topic: 'Italian',
   goal: 'A2 by summer',
+  archivedAt: null,
   deckId: 'deck-1',
   lessons: [],
   continueLesson: null,
@@ -95,6 +102,7 @@ const acceptedCourse = {
 
 const mockAccept = vi.fn();
 const mockDiscard = vi.fn();
+const mockArchive = vi.fn();
 
 function renderPage(
   query: Partial<CourseQuery>,
@@ -119,6 +127,21 @@ function renderPage(
     mutate: vi.fn(),
     isPending: false,
   } as unknown as UpdateMutation);
+  vi.mocked(trpc.course.archive.useMutation).mockReturnValue({
+    mutate: mockArchive,
+    isPending: false,
+  } as never);
+  for (const editing of [
+    trpc.course.updateLesson,
+    trpc.course.reorderLessons,
+    trpc.course.addLesson,
+    trpc.course.archiveLesson,
+  ]) {
+    vi.mocked(editing.useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as never);
+  }
   vi.mocked(trpc.course.regenerateProposal.useMutation).mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
@@ -190,11 +213,73 @@ describe('CoursePage', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('has no ⋯ menu while it would have nothing in it', () => {
-      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+    it('has no ⋯ menu while the syllabus is a proposal, which has its own actions', () => {
+      renderPage({ data: baseCourse } as Partial<CourseQuery>);
 
       expect(
         screen.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('editing the Syllabus', () => {
+    it('edits the syllabus from the ⋯ menu, until Done', async () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Edit syllabus' }));
+
+      expect(
+        screen.getByRole('textbox', { name: 'Lesson 1 title' }),
+      ).toHaveValue('Greetings');
+      expect(screen.queryByRole('link', { name: 'Greetings' })).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      expect(
+        screen.queryByRole('textbox', { name: 'Lesson 1 title' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('archiving the course', () => {
+    it('archives it after confirmation', async () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(
+        screen.getByRole('menuitem', { name: 'Archive course' }),
+      );
+      expect(mockArchive).not.toHaveBeenCalled();
+      await user.click(
+        await screen.findByRole('button', { name: /^archive$/i }),
+      );
+
+      expect(mockArchive).toHaveBeenCalledWith({ courseId: 'course-1' });
+    });
+
+    it('returns to Courses once the course is archived', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      const options = vi.mocked(trpc.course.archive.useMutation).mock
+        .calls[0][0] as { onSuccess: () => void };
+      options.onSuccess();
+
+      expect(mockNavigate).toHaveBeenCalledWith('/courses');
+    });
+
+    it('says an archived course is archived, with nothing to edit', () => {
+      renderPage({
+        data: { ...acceptedCourse, archivedAt: '2026-10-29T00:00:00Z' },
+      } as Partial<CourseQuery>);
+
+      expect(screen.getByText(/this course is archived/i)).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: /^continue/i }),
       ).not.toBeInTheDocument();
     });
   });

@@ -375,6 +375,18 @@ describe('lessonRouter', () => {
       expect(ai.requests).toHaveLength(0);
     });
 
+    it("doesn't write a lesson of an archived course", async () => {
+      const [greetings] = await createCourseWithLessons();
+      await prisma.course.updateMany({ data: { archivedAt: new Date() } });
+
+      await expect(
+        createCaller().lesson.generate({ id: greetings.id }),
+      ).rejects.toThrow(
+        expect.objectContaining({ code: 'PRECONDITION_FAILED' }),
+      );
+      expect(ai.requests).toHaveLength(0);
+    });
+
     it('refuses a learner without AI access, without calling the model', async () => {
       const [lesson] = await createCourseWithLessons();
       vi.stubEnv('AI_ALLOWED_EMAILS', 'someone-else@example.com');

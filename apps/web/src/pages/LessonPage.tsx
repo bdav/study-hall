@@ -11,7 +11,6 @@ import {
   ChevronRight,
   Loader2,
   Menu,
-  MoreHorizontal,
   MessageCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,15 +29,12 @@ import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import {
-  DropdownMenu,
   DropdownMenuCheckboxItem,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
   LessonPractice,
@@ -46,7 +42,11 @@ import {
 } from '@/components/LessonPractice';
 import { ItemCount } from '@/components/ItemCount';
 import { LessonFrame } from '@/components/LessonFrame';
-import { PinnedHeader } from '@/components/PinnedHeader';
+import {
+  HEADER_MENU_ITEM,
+  HeaderMenu,
+  PinnedHeader,
+} from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
 import {
   Sheet,
@@ -242,8 +242,6 @@ function Switch({
   );
 }
 
-const MENU_ITEM = 'focus:bg-white/10 focus:text-white';
-
 /**
  * The written lesson's header, pinned to the top: the way back to the
  * course, the title, the step's view (the reading view on the reading
@@ -313,72 +311,61 @@ function WrittenLessonHeader({
           </div>
         )}
         <CompletionToggle lesson={lesson} />
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="More actions"
-            className={ICON_BUTTON}
-          >
-            <MoreHorizontal className="size-5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="border border-white/20 bg-[oklch(0.25_0.08_230)] text-white ring-0"
-          >
-            {/* The header has no room for the toggle on narrow screens */}
-            <div className="sm:hidden">
-              <CompletionMenuItem lesson={lesson} className={MENU_ITEM} />
+        <HeaderMenu triggerClassName={ICON_BUTTON}>
+          {/* The header has no room for the toggle on narrow screens */}
+          <div className="sm:hidden">
+            <CompletionMenuItem lesson={lesson} className={HEADER_MENU_ITEM} />
+            <DropdownMenuSeparator />
+          </div>
+          {views.map((view) => (
+            <div
+              key={view.label}
+              className={view.menuOnly ? undefined : 'md:hidden'}
+            >
+              <DropdownMenuLabel>{view.label}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={view.value}
+                onValueChange={view.onChange}
+              >
+                {view.options.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value}
+                    value={option.value}
+                    className={HEADER_MENU_ITEM}
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
             </div>
-            {views.map((view) => (
-              <div
-                key={view.label}
-                className={view.menuOnly ? undefined : 'md:hidden'}
+          ))}
+          {practiceToggles && (
+            <div className="lg:hidden">
+              <DropdownMenuCheckboxItem
+                checked={practiceToggles.showMyAnswers}
+                onCheckedChange={practiceToggles.setShowMyAnswers}
+                className={HEADER_MENU_ITEM}
               >
-                <DropdownMenuLabel>{view.label}</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={view.value}
-                  onValueChange={view.onChange}
-                >
-                  {view.options.map((option) => (
-                    <DropdownMenuRadioItem
-                      key={option.value}
-                      value={option.value}
-                      className={MENU_ITEM}
-                    >
-                      {option.label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-                <DropdownMenuSeparator />
-              </div>
-            ))}
-            {practiceToggles && (
-              <div className="lg:hidden">
-                <DropdownMenuCheckboxItem
-                  checked={practiceToggles.showMyAnswers}
-                  onCheckedChange={practiceToggles.setShowMyAnswers}
-                  className={MENU_ITEM}
-                >
-                  Show my answers
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={practiceToggles.showAnswerKey}
-                  onCheckedChange={practiceToggles.setShowAnswerKey}
-                  className={MENU_ITEM}
-                >
-                  Show answer key
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-              </div>
-            )}
-            <DropdownMenuItem
-              onSelect={() => setIsStartingOver(true)}
-              className={MENU_ITEM}
-            >
-              Start over
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                Show my answers
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={practiceToggles.showAnswerKey}
+                onCheckedChange={practiceToggles.setShowAnswerKey}
+                className={HEADER_MENU_ITEM}
+              >
+                Show answer key
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+            </div>
+          )}
+          <DropdownMenuItem
+            onSelect={() => setIsStartingOver(true)}
+            className={HEADER_MENU_ITEM}
+          >
+            Start over
+          </DropdownMenuItem>
+        </HeaderMenu>
       </PinnedHeader>
       <StartOverDialog
         lesson={lesson}

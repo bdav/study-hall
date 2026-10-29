@@ -954,6 +954,351 @@ describe('courseRouter', () => {
   });
 });
 
+describe('editing the Syllabus', () => {
+  /** A course with an accepted Syllabus, and its lessons in order. */
+  async function acceptedCourse(caller = createCaller()) {
+    const { id } = await createCourse(caller);
+    await caller.course.acceptProposal({ courseId: id });
+    const { lessons } = await caller.course.getById({ id });
+    return { id, lessons };
+  }
+
+  async function syllabusTitles(id: string) {
+    const { lessons } = await createCaller().course.getById({ id });
+    return lessons.map((lesson) => lesson.title);
+  }
+
+  it('renames a lesson', async () => {
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+
+    await caller.course.updateLesson({
+      lessonId: lessons[1].id,
+      title: 'Ordering a coffee',
+    });
+
+    expect(await syllabusTitles(id)).toEqual([
+      'Greetings',
+      'Ordering a coffee',
+      'Numbers',
+    ]);
+  });
+
+  it("edits a lesson's learning objectives", async () => {
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+
+    await caller.course.updateLesson({
+      lessonId: lessons[0].id,
+      objectives: ['Greet someone', 'Say goodbye'],
+    });
+
+    const course = await caller.course.getById({ id });
+    expect(course.lessons[0]).toMatchObject({
+      title: 'Greetings',
+      objectives: ['Greet someone', 'Say goodbye'],
+    });
+  });
+
+  it('reorders the lessons', async () => {
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+    const [greetings, cafe, numbers] = lessons;
+
+    await caller.course.reorderLessons({
+      courseId: id,
+      lessonIds: [numbers.id, greetings.id, cafe.id],
+    });
+
+    expect(await syllabusTitles(id)).toEqual([
+      'Numbers',
+      'Greetings',
+      'At the café',
+    ]);
+  });
+
+  it('puts lessons an order leaves out at the end, and ignores ones no longer in the Syllabus', async () => {
+    // As when a lesson is added or archived while a drag is saved
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+    const [greetings, cafe, numbers] = lessons;
+    await caller.course.archiveLesson({ lessonId: numbers.id });
+
+    await caller.course.reorderLessons({
+      courseId: id,
+      lessonIds: [numbers.id, cafe.id, 'not-a-lesson'],
+    });
+
+    expect(await syllabusTitles(id)).toEqual(['At the café', 'Greetings']);
+    expect(greetings.title).toBe('Greetings');
+  });
+
+  it('refuses an order naming a lesson twice', async () => {
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+    const [greetings, cafe] = lessons;
+
+    await expect(
+      caller.course.reorderLessons({
+        courseId: id,
+        lessonIds: [cafe.id, greetings.id, cafe.id],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+    expect(await syllabusTitles(id)).toEqual([
+      'Greetings',
+      'At the café',
+      'Numbers',
+    ]);
+  });
+
+  it('gives lessons added at once their own places', async () => {
+    const caller = createCaller();
+    const { id } = await acceptedCourse(caller);
+
+    await Promise.all(
+      ['Days', 'Months', 'Seasons'].map((title) =>
+        caller.course.addLesson({ courseId: id, title }),
+      ),
+    );
+
+    const { lessons } = await caller.course.getById({ id });
+    expect(new Set(lessons.map((lesson) => lesson.position)).size).toBe(6);
+  });
+
+  it('refuses a lesson past a hundred', async () => {
+    const caller = createCaller();
+    const { id } = await acceptedCourse(caller);
+    await prisma.lesson.createMany({
+      data: Array.from({ length: 97 }, (_, i) => ({
+        courseId: id,
+        title: `Extra ${i + 1}`,
+        position: 3 + i,
+      })),
+    });
+
+    await expect(
+      caller.course.addLesson({ courseId: id, title: 'One too many' }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+  });
+
+  it('adds a lesson by its title, at the end', async () => {
+    const caller = createCaller();
+    const { id } = await acceptedCourse(caller);
+
+    await caller.course.addLesson({ courseId: id, title: 'Days of the week' });
+
+    const course = await caller.course.getById({ id });
+    expect(course.lessons.at(-1)).toMatchObject({
+      title: 'Days of the week',
+      objectives: [],
+      status: 'NOT_STARTED',
+    });
+  });
+
+  describe('archiving a lesson', () => {
+    it('takes it out of the Syllabus and Continue, and keeps it readable', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings, cafe] = lessons;
+
+      await caller.course.archiveLesson({ lessonId: greetings.id });
+
+      const course = await caller.course.getById({ id });
+      expect(course.lessons.map((lesson) => lesson.title)).toEqual([
+        'At the café',
+        'Numbers',
+      ]);
+      expect(course.continueLesson?.id).toBe(cafe.id);
+      // History stays: the lesson itself can still be opened
+      await expect(
+        caller.lesson.getById({ id: greetings.id }),
+      ).resolves.toMatchObject({ title: 'Greetings' });
+    });
+
+    it('keeps the cards made from it, with it as their source', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const { deckId } = await caller.course.getById({ id });
+      await prisma.card.create({
+        data: {
+          deckId: deckId!,
+          front: 'Ciao',
+          sourceLessonId: lessons[0].id,
+        },
+      });
+
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+
+      const cards = await prisma.card.findMany({ where: { deckId: deckId! } });
+      expect(cards).toEqual([
+        expect.objectContaining({ sourceLessonId: lessons[0].id }),
+      ]);
+    });
+
+    it('counts only lessons still in the Syllabus on the Courses list', async () => {
+      const caller = createCaller();
+      const { lessons } = await acceptedCourse(caller);
+
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+
+      const [course] = await caller.course.list();
+      expect(course.lessonCount).toBe(2);
+    });
+
+    it('keeps a lesson when the last two are archived at once', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+
+      const results = await Promise.allSettled(
+        lessons
+          .slice(1)
+          .map((lesson) =>
+            caller.course.archiveLesson({ lessonId: lesson.id }),
+          ),
+      );
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(await syllabusTitles(id)).toHaveLength(1);
+    });
+
+    it("refuses to archive the Syllabus's only lesson", async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+      await caller.course.archiveLesson({ lessonId: lessons[1].id });
+
+      await expect(
+        caller.course.archiveLesson({ lessonId: lessons[2].id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(await syllabusTitles(id)).toEqual(['Numbers']);
+    });
+
+    it('leaves an archived lesson out of later orders, and refuses to edit it', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings, cafe, numbers] = lessons;
+      await caller.course.archiveLesson({ lessonId: cafe.id });
+
+      await caller.course.reorderLessons({
+        courseId: id,
+        lessonIds: [numbers.id, greetings.id],
+      });
+      await expect(
+        caller.course.updateLesson({ lessonId: cafe.id, title: 'Café' }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+
+      expect(await syllabusTitles(id)).toEqual(['Numbers', 'Greetings']);
+    });
+  });
+
+  describe('archiving a course', () => {
+    it('takes it out of Courses, keeping it readable', async () => {
+      const caller = createCaller();
+      const { id } = await acceptedCourse(caller);
+
+      await caller.course.archive({ courseId: id });
+
+      expect(await caller.course.list()).toEqual([]);
+      expect(await caller.course.getById({ id })).toMatchObject({
+        title: 'Italian',
+        archivedAt: expect.any(Date),
+      });
+    });
+
+    it('keeps its Course Deck in Flashcards, labelled with its course and reviewable', async () => {
+      const caller = createCaller();
+      const { id } = await acceptedCourse(caller);
+      const { deckId } = await caller.course.getById({ id });
+
+      await caller.course.archive({ courseId: id });
+
+      const decks = await caller.deck.list();
+      expect(decks).toEqual([
+        expect.objectContaining({
+          id: deckId,
+          course: { id, title: 'Italian', archivedAt: expect.any(Date) },
+        }),
+      ]);
+      await expect(
+        caller.study.queuePreview({ deckId: deckId! }),
+      ).resolves.toBeDefined();
+    });
+
+    it("refuses edits to an archived course's Syllabus", async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      await caller.course.archive({ courseId: id });
+
+      for (const edit of [
+        () => caller.course.addLesson({ courseId: id, title: 'More' }),
+        () =>
+          caller.course.reorderLessons({
+            courseId: id,
+            lessonIds: lessons.map((lesson) => lesson.id),
+          }),
+        () =>
+          caller.course.updateLesson({ lessonId: lessons[0].id, title: 'Hi' }),
+        () => caller.course.archiveLesson({ lessonId: lessons[0].id }),
+      ]) {
+        await expect(edit()).rejects.toThrow(
+          expect.objectContaining({ code: 'CONFLICT' }),
+        );
+      }
+    });
+
+    it('refuses to archive a course whose syllabus is still a proposal, which is discarded instead', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      await expect(caller.course.archive({ courseId: id })).rejects.toThrow(
+        expect.objectContaining({ code: 'PRECONDITION_FAILED' }),
+      );
+    });
+  });
+
+  it('needs no AI access', async () => {
+    const caller = createCaller();
+    const { id, lessons } = await acceptedCourse(caller);
+    vi.stubEnv('AI_ALLOWED_EMAILS', undefined);
+
+    await caller.course.updateLesson({ lessonId: lessons[0].id, title: 'Hi' });
+    await caller.course.addLesson({ courseId: id, title: 'More' });
+    await caller.course.archiveLesson({ lessonId: lessons[1].id });
+    await caller.course.archive({ courseId: id });
+
+    expect(await caller.course.list()).toEqual([]);
+  });
+
+  it("refuses to touch another learner's Syllabus", async () => {
+    const { id, lessons } = await acceptedCourse();
+    const stranger = createCaller(otherUserId);
+
+    for (const edit of [
+      () => stranger.course.addLesson({ courseId: id, title: 'More' }),
+      () =>
+        stranger.course.reorderLessons({
+          courseId: id,
+          lessonIds: lessons.map((lesson) => lesson.id).reverse(),
+        }),
+      () =>
+        stranger.course.updateLesson({ lessonId: lessons[0].id, title: 'Hi' }),
+      () => stranger.course.archiveLesson({ lessonId: lessons[0].id }),
+      () => stranger.course.archive({ courseId: id }),
+    ]) {
+      await expect(edit()).rejects.toThrow(
+        expect.objectContaining({ code: 'NOT_FOUND' }),
+      );
+    }
+    expect(await syllabusTitles(id)).toEqual([
+      'Greetings',
+      'At the café',
+      'Numbers',
+    ]);
+    expect(await createCaller().course.list()).toHaveLength(1);
+  });
+});
+
 describe('course review', () => {
   /** A course with an accepted syllabus and these cards in its Course Deck. */
   async function courseWithCards(fronts: string[]) {
@@ -1035,6 +1380,6 @@ describe('course review', () => {
 
     const deck = await createCaller().deck.getById({ id: deckId });
 
-    expect(deck.course).toEqual({ id, title: 'Italian' });
+    expect(deck.course).toEqual({ id, title: 'Italian', archivedAt: null });
   });
 });
