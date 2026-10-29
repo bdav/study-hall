@@ -180,6 +180,42 @@ describe('TutorPanel', () => {
     );
   });
 
+  it('sends the exercise the learner is on with the message, and says the tutor can see it', async () => {
+    const user = userEvent.setup();
+    mockThread([]);
+    const reply = controlledReply();
+    mockAsk.mockReturnValue(Promise.resolve(reply.stream));
+    render(
+      <TutorPanel
+        lessonId="lesson-1"
+        exercise={{ id: 'exercise-3', number: 3 }}
+      />,
+    );
+
+    expect(
+      screen.getByText('The tutor can see exercise 3 and your answers.'),
+    ).toBeVisible();
+
+    await user.type(
+      screen.getByLabelText('Message the tutor'),
+      'Why was mine wrong?{Enter}',
+    );
+
+    expect(mockAsk).toHaveBeenCalledWith({
+      lessonId: 'lesson-1',
+      message: 'Why was mine wrong?',
+      exerciseId: 'exercise-3',
+    });
+  });
+
+  it("doesn't mention an exercise when the learner isn't on one", () => {
+    mockThread([]);
+
+    render(<TutorPanel lessonId="lesson-1" />);
+
+    expect(screen.queryByText(/can see exercise/)).not.toBeInTheDocument();
+  });
+
   it('keeps a Shift+Enter line break in the message', async () => {
     const user = userEvent.setup();
     mockThread([]);

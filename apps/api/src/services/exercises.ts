@@ -57,6 +57,30 @@ export function checkDeterministically(
 }
 
 /**
+ * What an exercise is checked against: its expected answers, or a free-form
+ * explanation's essential and supplementary points (or, generated before
+ * that split, expected points, ADR-0006). The learner, and so the tutor,
+ * sees it only once they have attempted the exercise since they last
+ * started the lesson over: never before (courses-plan.md, Tutor).
+ */
+export type AnswerKey = Pick<
+  Exercise,
+  | 'expectedAnswers'
+  | 'essentialPoints'
+  | 'supplementaryPoints'
+  | 'expectedPoints'
+>;
+
+export function answerKey(exercise: AnswerKey): AnswerKey {
+  return {
+    expectedAnswers: exercise.expectedAnswers,
+    essentialPoints: exercise.essentialPoints,
+    supplementaryPoints: exercise.supplementaryPoints,
+    expectedPoints: exercise.expectedPoints,
+  };
+}
+
+/**
  * The Exercise Attempts a lesson shows: those since the learner last
  * started it over, or all of them if they never have. Earlier attempts are
  * kept (ADR-0003).

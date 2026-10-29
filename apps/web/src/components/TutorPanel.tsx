@@ -38,9 +38,18 @@ function Message({ role, children }: { role: Role; children: ReactNode }) {
 /**
  * The tutor beside a lesson: its Tutor Thread for the lesson's current
  * version, restored on reopening, and a box to ask in. The reply streams in
- * as it is written, and joins the stored thread once complete.
+ * as it is written, and joins the stored thread once complete. Each message
+ * goes with the exercise the learner is on, so the tutor can address it
+ * and their answers to it (#24).
  */
-export function TutorPanel({ lessonId }: { lessonId: string }) {
+export function TutorPanel({
+  lessonId,
+  exercise,
+}: {
+  lessonId: string;
+  /** The exercise on the learner's screen, numbered as the lesson shows it. */
+  exercise?: { id: string; number: number };
+}) {
   const utils = trpc.useUtils();
   const thread = trpc.tutor.thread.useQuery({ lessonId });
   const [draft, setDraft] = useState('');
@@ -61,6 +70,7 @@ export function TutorPanel({ lessonId }: { lessonId: string }) {
       const stream = await utils.client.tutor.ask.mutate({
         lessonId,
         message,
+        exerciseId: exercise?.id,
       });
       for await (const piece of stream) {
         setPending(
@@ -133,6 +143,11 @@ export function TutorPanel({ lessonId }: { lessonId: string }) {
         <p className="pb-4 text-sm text-white/60">
           Ask about anything in this lesson. The tutor will help you work it out
           rather than just tell you.
+        </p>
+      )}
+      {exercise && (
+        <p className="pb-2 text-xs text-white/50">
+          The tutor can see exercise {exercise.number} and your answers.
         </p>
       )}
       {error && (

@@ -2127,6 +2127,31 @@ describe('LessonPage', () => {
       ).toBeInTheDocument();
     });
 
+    it('tells the tutor the exercise on screen, practising one at a time', () => {
+      screenIsWide(true);
+      renderPage({
+        query: { data: generatedLesson } as Partial<LessonQuery>,
+        path: '/lessons/lesson-1?step=practice&exercise=exercise-2',
+      });
+
+      expect(
+        within(screen.getByRole('complementary', { name: 'Tutor' })).getByText(
+          'The tutor can see exercise 2 and your answers.',
+        ),
+      ).toBeVisible();
+    });
+
+    it('tells the tutor of no exercise away from Practice, or with all exercises shown', () => {
+      screenIsWide(true);
+      localStorage.setItem('study-hall:paging-view', 'all');
+      renderPage({
+        query: { data: generatedLesson } as Partial<LessonQuery>,
+        path: '/lessons/lesson-1?step=practice&exercise=exercise-2',
+      });
+
+      expect(screen.queryByText(/can see exercise/)).not.toBeInTheDocument();
+    });
+
     it('opens as a drawer on a narrower screen, starting closed', async () => {
       const user = userEvent.setup();
       screenIsWide(false);

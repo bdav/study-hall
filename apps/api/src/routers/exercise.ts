@@ -12,6 +12,7 @@ import {
   attemptsSinceReset,
   checkDeterministically,
   toAttemptView,
+  answerKey,
 } from '../services/exercises.js';
 
 /**
@@ -119,12 +120,6 @@ export const exerciseRouter = router({
         });
       }
 
-      return {
-        expectedAnswers: exercise.expectedAnswers,
-        essentialPoints: exercise.essentialPoints,
-        supplementaryPoints: exercise.supplementaryPoints,
-        // Explanations generated before the split (ADR-0006)
-        expectedPoints: exercise.expectedPoints,
-      };
+      return answerKey(exercise);
     }),
 });

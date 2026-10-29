@@ -112,9 +112,20 @@ async function createWrittenLesson() {
 }
 
 /** Asks the tutor and reads the whole streamed reply, piece by piece. */
-async function ask(lessonId: string, message: string, caller = createCaller()) {
+async function ask(
+  lessonId: string,
+  message: string,
+  {
+    caller = createCaller(),
+    exerciseId,
+  }: { caller?: ReturnType<typeof createCaller>; exerciseId?: string } = {},
+) {
   const pieces: string[] = [];
-  for await (const piece of await caller.tutor.ask({ lessonId, message })) {
+  for await (const piece of await caller.tutor.ask({
+    lessonId,
+    message,
+    exerciseId,
+  })) {
     pieces.push(piece);
   }
   return pieces;
@@ -151,7 +162,8 @@ describe('tutorRouter', () => {
       expect(request.messages).toEqual([
         { role: 'user', content: 'What does ciao mean?' },
         { role: 'assistant', content: 'What do you think it means?' },
-        { role: 'user', content: 'Hello?' },
+        // The learner's practice comes first in the new message
+        { role: 'user', content: expect.stringMatching(/\n\nHello\?$/) },
       ]);
       const lessonBlock = request.system.find((block) => block.cache);
       expect(lessonBlock?.text).toContain(
@@ -176,6 +188,61 @@ describe('tutorRouter', () => {
           inputTokens: 1500,
           outputTokens: 40,
         }),
+      );
+    });
+
+    it('tells the tutor the exercise the learner is on, their attempts and, once attempted, its answer', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      const { version } = await caller.lesson.getById({ id: lesson.id });
+      const [exercise] = version!.exercises;
+      await caller.exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'Buonasera',
+      });
+      ai.streamReply(['What time of day is it?']);
+
+      await ask(lesson.id, 'Why was that wrong?', {
+        caller,
+        exerciseId: exercise.id,
+      });
+
+      const latest = ai.chatRequests[0].messages.at(-1)!.content;
+      expect(latest).toMatch(/on exercise 1/);
+      expect(latest).toContain('Buonasera');
+      expect(latest).toContain('Buongiorno');
+    });
+
+    it('withholds the answer again once the learner starts the lesson over', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      const { version } = await caller.lesson.getById({ id: lesson.id });
+      const [exercise] = version!.exercises;
+      await caller.exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'Buonasera',
+      });
+      await caller.lesson.startOver({ id: lesson.id });
+      ai.streamReply(['Have a go first.']);
+
+      await ask(lesson.id, "What's the answer?", {
+        caller,
+        exerciseId: exercise.id,
+      });
+
+      const sent = JSON.stringify(ai.chatRequests[0]);
+      expect(sent).not.toContain('Buongiorno');
+      expect(sent).not.toContain('Buonasera');
+    });
+
+    it("doesn't take an exercise the lesson's version doesn't have as the current one", async () => {
+      const lesson = await createWrittenLesson();
+      ai.streamReply(['Ciao!']);
+
+      await ask(lesson.id, 'Hi', { exerciseId: 'not-an-exercise' });
+
+      expect(ai.chatRequests[0].messages.at(-1)!.content).toMatch(
+        /not on an exercise/i,
       );
     });
 
@@ -237,7 +304,7 @@ describe('tutorRouter', () => {
       await ask(lesson.id, 'Good morning?');
 
       expect(ai.chatRequests[1].messages).toEqual([
-        { role: 'user', content: 'Good morning?' },
+        { role: 'user', content: expect.stringMatching(/Good morning\?$/) },
       ]);
       expect(
         (await caller.tutor.thread({ lessonId: lesson.id })).messages,
@@ -368,7 +435,9 @@ describe('tutorRouter', () => {
       await expect(
         other.tutor.thread({ lessonId: lesson.id }),
       ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-      await expect(ask(lesson.id, 'Hi', other)).rejects.toMatchObject({
+      await expect(
+        ask(lesson.id, 'Hi', { caller: other }),
+      ).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
       expect(ai.chatRequests).toHaveLength(1);

@@ -983,6 +983,12 @@ function WrittenLesson({
   // start and remembered by the browser; otherwise it's a drawer, closed
   // until asked for so it doesn't cover the lesson
   const tutorBeside = useMediaQuery('(min-width: 1024px)');
+  // Practising one at a time, the exercise on screen is the one the tutor
+  // knows the learner is on (#24)
+  const tutorExercise =
+    paging?.noun === 'exercise'
+      ? { id: exerciseIds[paging.index], number: paging.index + 1 }
+      : undefined;
   const [isTutorBesideOpen, setIsTutorBesideOpen] = useStoredFlag(
     'study-hall:tutor-open',
     true,
@@ -1015,12 +1021,12 @@ function WrittenLesson({
         <SheetDescription className="sr-only">
           Ask about {lesson.title}
         </SheetDescription>
-        <TutorPanel lessonId={lesson.id} />
+        <TutorPanel lessonId={lesson.id} exercise={tutorExercise} />
       </SheetContent>
     </Sheet>
   );
   const tutorPanel = canUseAI && tutorBeside && (
-    <TutorPanel lessonId={lesson.id} />
+    <TutorPanel lessonId={lesson.id} exercise={tutorExercise} />
   );
 
   const outlineToggles = (

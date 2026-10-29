@@ -5,6 +5,7 @@ import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { generateStreamed } from '../ai/generate.js';
 import { parseLessonContent, parseLessonExamples } from '../ai/lesson.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
+import { attemptsSinceReset } from '../services/exercises.js';
 import {
   assembleTutorContext,
   buildTutorRequest,
@@ -68,7 +69,9 @@ export const tutorRouter = router({
     }),
 
   /**
-   * Asks the tutor about the lesson's current version. The reply streams
+   * Asks the tutor about the lesson's current version, and the exercise the
+   * learner is on, if any: the tutor sees their attempts, and an
+   * exercise's answers only once they have attempted it. The reply streams
    * back in pieces; once it is complete, the message and the reply join
    * the version's Tutor Thread together.
    */
@@ -77,6 +80,8 @@ export const tutorRouter = router({
       z.object({
         lessonId: z.string(),
         message: z.string().trim().min(1).max(4000),
+        // The exercise on the learner's screen, if any
+        exerciseId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -96,6 +101,11 @@ export const tutorRouter = router({
         where: { id: lesson.courseId },
         include: { lessons: true },
       });
+      // Its attempts since any Start over, as the lesson page shows them
+      const exercises = await ctx.prisma.exercise.findMany({
+        where: { lessonVersionId: version.id },
+        include: { attempts: { where: attemptsSinceReset(lesson.resetAt) } },
+      });
       const context = assembleTutorContext({
         setup: courseSetupSchema.parse(course),
         lessons: course.lessons,
@@ -104,6 +114,8 @@ export const tutorRouter = router({
           content: parseLessonContent(version.content),
           examples: parseLessonExamples(version.examples),
         },
+        exercises,
+        currentExerciseId: input.exerciseId ?? null,
         history: messages,
       });
 
