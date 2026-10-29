@@ -287,23 +287,31 @@ export function LessonExercise({
     />
   );
 
-  // Check sits at the end of a gap's sentence, and below an explanation,
-  // whose field it would otherwise narrow; a short answer has its own
+  // Check sits beside a gap's sentence, and below an explanation, whose
+  // field it would otherwise narrow; a short answer has its own
   const body = (
     <>
       <form onSubmit={handleSubmit}>
         {gap ? (
-          <p className="mt-1 flex flex-wrap items-center gap-1">
-            <span>{exercise.prompt.slice(0, gap.index)}</span>
-            <Input
-              aria-label="Fill in the blank"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className={`inline-block h-8 w-40 ${glassInputClassName}`}
-            />
-            <span>{exercise.prompt.slice(gap.index + gap[0].length)}</span>
-            <span className="ml-2">{checkButton}</span>
-          </p>
+          // The sentence flows as text, the field in its line, and Check
+          // keeps a column of its own: right after a sentence that fits on
+          // one line, and level with the last line of one that wraps
+          <div className="mt-1 flex items-end gap-3">
+            <p className="min-w-0 leading-relaxed">
+              {exercise.prompt.slice(0, gap.index)}
+              <Input
+                aria-label="Fill in the blank"
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                // A blank in the sentence, underlined as a flashcard's answer
+                // is, so it doesn't look like another button beside Check.
+                // On the text's baseline, as a written blank is
+                className="mx-1 inline-block h-auto w-40 rounded-none border-0 border-b-2 border-white/40 bg-transparent px-1 py-0 text-center align-baseline text-base leading-normal text-white shadow-none placeholder-white/40 focus-visible:border-white focus-visible:ring-0 md:text-base"
+              />
+              {exercise.prompt.slice(gap.index + gap[0].length)}
+            </p>
+            <div className="py-1">{checkButton}</div>
+          </div>
         ) : exercise.type === 'FREE_FORM_EXPLANATION' ? (
           <>
             <p className="mt-1">{exercise.prompt}</p>
