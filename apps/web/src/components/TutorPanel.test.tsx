@@ -6,6 +6,7 @@ import { trpc } from '@/lib/trpc';
 
 const mockAsk = vi.fn();
 const mockInvalidate = vi.fn();
+const mockStartThread = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -13,26 +14,63 @@ vi.mock('@/lib/trpc', () => ({
       client: { tutor: { ask: { mutate: mockAsk } } },
       tutor: { thread: { invalidate: mockInvalidate } },
     })),
-    tutor: { thread: { useQuery: vi.fn() } },
+    tutor: {
+      thread: { useQuery: vi.fn() },
+      startThread: { useMutation: vi.fn() },
+    },
   },
 }));
 
 type ThreadQuery = ReturnType<typeof trpc.tutor.thread.useQuery>;
+type StartThreadMutation = ReturnType<
+  typeof trpc.tutor.startThread.useMutation
+>;
+type StartThreadOptions = Parameters<
+  typeof trpc.tutor.startThread.useMutation
+>[0];
+type Messages = { role: 'LEARNER' | 'TUTOR'; content: string }[];
 
-function mockThread(
-  messages: { role: 'LEARNER' | 'TUTOR'; content: string }[],
-) {
-  vi.mocked(trpc.tutor.thread.useQuery).mockReturnValue({
+function threadData(threadId: string | null, messages: Messages) {
+  return {
     data: {
       messages: messages.map((message, index) => ({
-        id: `message-${index}`,
+        id: `${threadId}-message-${index}`,
         createdAt: '2026-10-28T09:00:00.000Z',
         ...message,
       })),
     },
     isLoading: false,
     isError: false,
+  };
+}
+
+/** The current thread, the version's only one, or none while it's empty. */
+function mockThread(messages: Messages) {
+  const threads =
+    messages.length > 0 ? [{ id: 'thread-1', number: 1, isCurrent: true }] : [];
+  const query = threadData(threads[0]?.id ?? null, messages);
+  vi.mocked(trpc.tutor.thread.useQuery).mockReturnValue({
+    ...query,
+    data: { ...query.data, threads },
   } as unknown as ThreadQuery);
+}
+
+/** Several threads, by id, the first the current one. */
+function mockThreads(byId: Record<string, Messages>) {
+  const ids = Object.keys(byId);
+  const threads = ids.map((id, index) => ({
+    id,
+    number: ids.length - index,
+    isCurrent: index === 0,
+  }));
+  vi.mocked(trpc.tutor.thread.useQuery).mockImplementation((input) => {
+    const id = (input as { threadId?: string }).threadId ?? ids[0];
+    const query = threadData(id, byId[id]);
+    return {
+      ...query,
+      data: { ...query.data, threads },
+    } as unknown as ThreadQuery;
+  });
 }
 
 type Deferred = {
@@ -77,6 +115,21 @@ function messageList() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockInvalidate.mockResolvedValue(undefined);
+  vi.mocked(trpc.tutor.startThread.useMutation).mockImplementation(
+    (options: StartThreadOptions) =>
+      ({
+        mutate: (input: { lessonId: string }) => {
+          mockStartThread(input);
+          options?.onSuccess?.(
+            { id: 'thread-new', number: 2 },
+            input,
+            undefined,
+            {} as never,
+          );
+        },
+        isPending: false,
+      }) as unknown as StartThreadMutation,
+  );
 });
 
 describe('TutorPanel', () => {
@@ -253,5 +306,102 @@ describe('TutorPanel', () => {
       'What does ciao mean?',
     );
     expect(messageList().queryByText('What do')).not.toBeInTheDocument();
+  });
+
+  describe('threads', () => {
+    it('starts a new thread, then shows it', async () => {
+      const user = userEvent.setup();
+      mockThread([
+        { role: 'LEARNER', content: 'What does ciao mean?' },
+        { role: 'TUTOR', content: 'What do you think it means?' },
+      ]);
+      render(<TutorPanel lessonId="lesson-1" />);
+
+      await user.click(screen.getByRole('button', { name: 'New thread' }));
+
+      expect(mockStartThread).toHaveBeenCalledWith({ lessonId: 'lesson-1' });
+      expect(mockInvalidate).toHaveBeenCalledWith({ lessonId: 'lesson-1' });
+    });
+
+    it("can't start a new thread while the current one is empty", () => {
+      mockThread([]);
+
+      render(<TutorPanel lessonId="lesson-1" />);
+
+      expect(screen.getByRole('button', { name: 'New thread' })).toBeDisabled();
+    });
+
+    it("doesn't offer a choice of threads while there is only one", () => {
+      mockThread([{ role: 'LEARNER', content: 'Hi' }]);
+
+      render(<TutorPanel lessonId="lesson-1" />);
+
+      expect(
+        screen.queryByRole('combobox', { name: 'Thread' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('reads an earlier thread, read only, and goes back to the current one', async () => {
+      const user = userEvent.setup();
+      mockThreads({
+        'thread-2': [{ role: 'LEARNER', content: 'Fresh start' }],
+        'thread-1': [
+          { role: 'LEARNER', content: 'What does ciao mean?' },
+          { role: 'TUTOR', content: 'What do you think it means?' },
+        ],
+      });
+      render(
+        <TutorPanel
+          lessonId="lesson-1"
+          exercise={{ id: 'exercise-3', number: 3 }}
+        />,
+      );
+      const picker = screen.getByRole('combobox', { name: 'Thread' });
+      expect(picker).toHaveTextContent('Thread 2 (current)');
+
+      await user.click(picker);
+      expect(
+        screen.getAllByRole('option').map((option) => option.textContent),
+      ).toEqual(['Thread 2 (current)', 'Thread 1']);
+      await user.click(screen.getByRole('option', { name: 'Thread 1' }));
+
+      expect(vi.mocked(trpc.tutor.thread.useQuery).mock.lastCall?.[0]).toEqual({
+        lessonId: 'lesson-1',
+        threadId: 'thread-1',
+      });
+      expect(
+        messageList().getByText('What do you think it means?'),
+      ).toBeVisible();
+      expect(messageList().queryByText('Fresh start')).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('Message the tutor'),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/can see exercise/)).not.toBeInTheDocument();
+      expect(screen.getByText(/the tutor doesn’t see it/i)).toBeVisible();
+
+      await user.click(
+        screen.getByRole('button', { name: 'Back to the current thread' }),
+      );
+
+      expect(messageList().getByText('Fresh start')).toBeVisible();
+      expect(screen.getByLabelText('Message the tutor')).toBeVisible();
+    });
+
+    it('shows the new thread after starting one from an earlier thread', async () => {
+      const user = userEvent.setup();
+      mockThreads({
+        'thread-2': [{ role: 'LEARNER', content: 'Fresh start' }],
+        'thread-1': [{ role: 'LEARNER', content: 'Long ago' }],
+      });
+      render(<TutorPanel lessonId="lesson-1" />);
+      await user.click(screen.getByRole('combobox', { name: 'Thread' }));
+      await user.click(screen.getByRole('option', { name: 'Thread 1' }));
+
+      await user.click(screen.getByRole('button', { name: 'New thread' }));
+
+      expect(vi.mocked(trpc.tutor.thread.useQuery).mock.lastCall?.[0]).toEqual({
+        lessonId: 'lesson-1',
+      });
+    });
   });
 });

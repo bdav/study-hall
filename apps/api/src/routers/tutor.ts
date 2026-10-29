@@ -6,6 +6,7 @@ import { generateStreamed } from '../ai/generate.js';
 import { parseLessonContent, parseLessonExamples } from '../ai/lesson.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
 import { attemptsSinceReset } from '../services/exercises.js';
+import { startTutorThread, threadToAskIn } from '../services/tutorThreads.js';
 import {
   assembleTutorContext,
   buildTutorRequest,
@@ -13,14 +14,18 @@ import {
 } from '../ai/tutor.js';
 
 /**
- * A lesson in the user's course with its current version and that
- * version's Tutor Thread, oldest message first; throws NOT_FOUND for
- * anyone else's lesson.
+ * A lesson in the user's course with its current version, that version's
+ * Tutor Threads, the current one first, and one thread's messages, oldest
+ * first: the current thread's, or those of the thread asked for, which must
+ * be one of the version's. Earlier threads with no messages, left by
+ * starting afresh before asking anything, are left out. Throws NOT_FOUND
+ * for anyone else's lesson.
  */
 async function findOwnedLessonThread(
   prisma: PrismaClient,
   userId: string,
   lessonId: string,
+  threadId?: string,
 ) {
   const lesson = await prisma.lesson.findFirst({
     where: { id: lessonId, course: { userId } },
@@ -30,8 +35,14 @@ async function findOwnedLessonThread(
         orderBy: { createdAt: 'desc' },
         take: 1,
         include: {
-          tutorThread: {
-            include: { messages: { orderBy: { createdAt: 'asc' } } },
+          // The highest-numbered thread is the version's current one
+          tutorThreads: {
+            orderBy: { number: 'desc' },
+            select: {
+              id: true,
+              number: true,
+              _count: { select: { messages: true } },
+            },
           },
         },
       },
@@ -42,23 +53,42 @@ async function findOwnedLessonThread(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
   }
   const [version] = lesson.versions;
-  return { lesson, version, messages: version?.tutorThread?.messages ?? [] };
+  const threads = (version?.tutorThreads ?? [])
+    .filter((thread, index) => index === 0 || thread._count.messages > 0)
+    .map(({ id, number }, index) => ({ id, number, isCurrent: index === 0 }));
+  const thread = threadId
+    ? threads.find((candidate) => candidate.id === threadId)
+    : threads[0];
+  if (threadId && !thread) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Thread not found' });
+  }
+  const messages = thread
+    ? await prisma.tutorMessage.findMany({
+        where: { threadId: thread.id },
+        orderBy: { createdAt: 'asc' },
+      })
+    : [];
+  return { lesson, version, threads, thread, messages };
 }
 
 export const tutorRouter = router({
   /**
-   * The Tutor Thread of the lesson's current version, oldest message
-   * first; empty until the learner first asks. Reading it needs no AI.
+   * The Tutor Threads of the lesson's current version, the current one
+   * first, and the messages of one, oldest first: the current thread's, or
+   * an earlier one's to read back. Empty until the learner first asks.
+   * Reading needs no AI.
    */
   thread: protectedProcedure
-    .input(z.object({ lessonId: z.string() }))
+    .input(z.object({ lessonId: z.string(), threadId: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const { messages } = await findOwnedLessonThread(
+      const { threads, messages } = await findOwnedLessonThread(
         ctx.prisma,
         ctx.userId,
         input.lessonId,
+        input.threadId,
       );
       return {
+        threads,
         messages: messages.map(({ id, role, content, createdAt }) => ({
           id,
           role,
@@ -66,6 +96,28 @@ export const tutorRouter = router({
           createdAt,
         })),
       };
+    }),
+
+  /**
+   * Starts a fresh Tutor Thread on the lesson's current version, for when
+   * the current one has grown long or gone off track. The tutor sees only
+   * the new thread from then on; the earlier ones are kept. Needs no AI.
+   */
+  startThread: protectedProcedure
+    .input(z.object({ lessonId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { version } = await findOwnedLessonThread(
+        ctx.prisma,
+        ctx.userId,
+        input.lessonId,
+      );
+      if (!version) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "This lesson hasn't been written yet.",
+        });
+      }
+      return startTutorThread(ctx.prisma, version.id);
     }),
 
   /**
@@ -85,7 +137,7 @@ export const tutorRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { lesson, version, messages } = await findOwnedLessonThread(
+      const { lesson, version, thread, messages } = await findOwnedLessonThread(
         ctx.prisma,
         ctx.userId,
         input.lessonId,
@@ -119,6 +171,9 @@ export const tutorRouter = router({
         history: messages,
       });
 
+      // The exchange joins the thread it was asked in, even if the learner
+      // starts another, or the lesson over, while the reply is under way
+      const threadId = await threadToAskIn(ctx.prisma, version.id, thread);
       const askedAt = new Date();
       return generateStreamed(ctx, {
         userId: ctx.userId,
@@ -139,18 +194,8 @@ export const tutorRouter = router({
               createdAt: new Date(),
             },
           ];
-          // Without nested writes the upsert is one statement, so two first
-          // messages at once can't both create the thread
-          const thread = await ctx.prisma.tutorThread.upsert({
-            where: { lessonVersionId: version.id },
-            create: { lessonVersionId: version.id },
-            update: {},
-          });
           await ctx.prisma.tutorMessage.createMany({
-            data: exchange.map((message) => ({
-              ...message,
-              threadId: thread.id,
-            })),
+            data: exchange.map((message) => ({ ...message, threadId })),
           });
         },
       });

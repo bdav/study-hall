@@ -24,6 +24,7 @@ type FakeResponse =
       usage: TokenUsage;
       refused: boolean;
       failAfter?: FakeFailure;
+      holdUntil?: Promise<void>;
     };
 
 const DEFAULT_USAGE: TokenUsage = { inputTokens: 100, outputTokens: 200 };
@@ -47,6 +48,7 @@ export function createFakeAiProvider() {
         usage?: TokenUsage;
         refused?: boolean;
         failAfter?: FakeFailure;
+        holdUntil?: Promise<void>;
       },
     ) => void;
     failWith: (failure: FakeFailure, usage?: TokenUsage) => void;
@@ -62,13 +64,14 @@ export function createFakeAiProvider() {
 
     /**
      * Queues a streamed reply, yielded in the pieces given. It can end in a
-     * refusal, or fail after its pieces, carrying the usage given.
+     * refusal, or fail after its pieces, carrying the usage given, and be
+     * held open after its pieces until `holdUntil` settles.
      */
     streamReply(
       chunks,
-      { usage = DEFAULT_USAGE, refused = false, failAfter } = {},
+      { usage = DEFAULT_USAGE, refused = false, failAfter, holdUntil } = {},
     ) {
-      queue.push({ chunks, usage, refused, failAfter });
+      queue.push({ chunks, usage, refused, failAfter, holdUntil });
     },
 
     /**
@@ -124,6 +127,7 @@ export function createFakeAiProvider() {
         await Promise.resolve();
         yield { type: 'text', text };
       }
+      await next.holdUntil;
       if (next.failAfter) throw fakeError(next.failAfter, next.usage);
       yield {
         type: 'done',

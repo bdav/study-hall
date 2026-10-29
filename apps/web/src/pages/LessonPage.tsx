@@ -114,8 +114,10 @@ function StartOverDialog({
   const utils = trpc.useUtils();
   const startOver = trpc.lesson.startOver.useMutation({
     onSuccess: async () => {
-      // Starting over clears Lesson Completion
+      // Starting over clears Lesson Completion and starts a fresh Tutor
+      // Thread
       utils.course.getById.invalidate({ id: lesson.course.id });
+      utils.tutor.thread.invalidate({ lessonId: lesson.id });
       // The refetched lesson remounts every exercise. Only then forget the
       // revealed answers, which now need a new attempt: a revealed exercise
       // still mounted would refetch them and fail
@@ -132,7 +134,7 @@ function StartOverDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Start this lesson over?"
-      description="Your answers are cleared from the lesson so you can practise its exercises from scratch, and it's no longer marked complete. Your earlier answers are still saved."
+      description="Your answers are cleared from the lesson so you can practise its exercises from scratch, it's no longer marked complete, and the tutor starts a new thread. Your earlier answers and threads are still saved."
       confirmLabel="Start over"
       onConfirm={() => startOver.mutate({ id: lesson.id })}
     />

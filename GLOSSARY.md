@@ -141,5 +141,5 @@ The AI assistant available alongside a lesson that answers questions, gives hint
 _Avoid_: Chatbot, assistant, coach
 
 **Tutor Thread**:
-The persistent conversation between the learner and the tutor about one lesson version. Regenerating a lesson starts a fresh thread; earlier threads remain as history of their versions.
+A persistent conversation between the learner and the tutor about one lesson version. A version can have several: the newest is its current thread, the only one the tutor sees. The learner starts a fresh one when the current one has grown long or gone off track, and starting the lesson over starts one too. Regenerating a lesson starts afresh on the new version. Earlier threads remain with their version, to read back.
 _Avoid_: Chat, conversation, session

@@ -312,7 +312,7 @@ describe('tutorRouter', () => {
         { role: 'LEARNER', content: 'Good morning?' },
         { role: 'TUTOR', content: 'Buongiorno!' },
       ]);
-      const oldThread = await prisma.tutorThread.findUniqueOrThrow({
+      const oldThread = await prisma.tutorThread.findFirstOrThrow({
         where: { lessonVersionId: oldVersion.id },
         include: { messages: true },
       });
@@ -425,15 +425,205 @@ describe('tutorRouter', () => {
     });
   });
 
-  describe('ownership', () => {
-    it("only lets the course's owner read or add to a thread", async () => {
+  describe('startThread', () => {
+    it('starts a fresh thread, and the tutor then sees only its messages', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      ai.streamReply(['Ciao!']);
+      await ask(lesson.id, 'Hi');
+
+      await caller.tutor.startThread({ lessonId: lesson.id });
+
+      expect(
+        (await caller.tutor.thread({ lessonId: lesson.id })).messages,
+      ).toEqual([]);
+      ai.streamReply(['Buongiorno!']);
+      await ask(lesson.id, 'Good morning?');
+      expect(ai.chatRequests[1].messages).toEqual([
+        { role: 'user', content: expect.stringMatching(/Good morning\?$/) },
+      ]);
+      expect(
+        (await caller.tutor.thread({ lessonId: lesson.id })).messages,
+      ).toMatchObject([
+        { role: 'LEARNER', content: 'Good morning?' },
+        { role: 'TUTOR', content: 'Buongiorno!' },
+      ]);
+    });
+
+    it('leaves earlier threads with no messages out of the list', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      ai.streamReply(['Ciao!']);
+      await ask(lesson.id, 'Hi');
+      await caller.tutor.startThread({ lessonId: lesson.id });
+      await caller.lesson.startOver({ id: lesson.id });
+
+      const { threads } = await caller.tutor.thread({ lessonId: lesson.id });
+      expect(threads).toMatchObject([
+        { number: 3, isCurrent: true },
+        { number: 1, isCurrent: false },
+      ]);
+    });
+
+    it('gives two threads started at once the same one', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      ai.streamReply(['Ciao!']);
+      await ask(lesson.id, 'Hi');
+
+      const [first, second] = await Promise.all([
+        caller.tutor.startThread({ lessonId: lesson.id }),
+        caller.tutor.startThread({ lessonId: lesson.id }),
+      ]);
+
+      expect(second).toEqual(first);
+    });
+
+    it('refuses a lesson that has not been written', async () => {
+      const caller = createCaller();
+      ai.respondWith(syllabus);
+      const { id } = await caller.course.create(courseForm);
+      await caller.course.acceptProposal({ courseId: id });
+      const [lesson] = (await caller.course.getById({ id })).lessons;
+
+      await expect(
+        caller.tutor.startThread({ lessonId: lesson.id }),
+      ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    });
+  });
+
+  describe('startOver', () => {
+    it("starts a fresh thread, so the tutor's earlier replies stop reaching it", async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      ai.streamReply(['The answer is Buongiorno.']);
+      await ask(lesson.id, 'What is the answer?');
+
+      await caller.lesson.startOver({ id: lesson.id });
+
+      ai.streamReply(['Have a go first.']);
+      await ask(lesson.id, 'And now?');
+      expect(JSON.stringify(ai.chatRequests[1])).not.toContain('Buongiorno');
+      const { threads, messages } = await caller.tutor.thread({
+        lessonId: lesson.id,
+      });
+      expect(threads).toMatchObject([{ number: 2 }, { number: 1 }]);
+      expect(messages).toMatchObject([
+        { role: 'LEARNER', content: 'And now?' },
+        { role: 'TUTOR', content: 'Have a go first.' },
+      ]);
+    });
+
+    it('keeps a reply under way out of the fresh thread', async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      let finish = () => {};
+      ai.streamReply(['The answer is Buongiorno.'], {
+        holdUntil: new Promise((resolve) => (finish = resolve)),
+      });
+      const reply = await caller.tutor.ask({
+        lessonId: lesson.id,
+        message: 'What is the answer?',
+      });
+
+      await caller.lesson.startOver({ id: lesson.id });
+      finish();
+      for await (const piece of reply) void piece;
+
+      const { threads, messages } = await caller.tutor.thread({
+        lessonId: lesson.id,
+      });
+      expect(messages).toEqual([]);
+      const earlier = await caller.tutor.thread({
+        lessonId: lesson.id,
+        threadId: threads[1].id,
+      });
+      expect(earlier.messages).toMatchObject([
+        { role: 'LEARNER', content: 'What is the answer?' },
+        { role: 'TUTOR', content: 'The answer is Buongiorno.' },
+      ]);
+    });
+  });
+
+  describe('thread', () => {
+    it("lists the version's threads, the current first, and reads an earlier one", async () => {
+      const lesson = await createWrittenLesson();
+      const caller = createCaller();
+      ai.streamReply(['Ciao!']);
+      await ask(lesson.id, 'Hi');
+      const second = await caller.tutor.startThread({ lessonId: lesson.id });
+
+      const current = await caller.tutor.thread({ lessonId: lesson.id });
+
+      expect(current.threads).toEqual([
+        { id: second.id, number: 2, isCurrent: true },
+        { id: expect.any(String), number: 1, isCurrent: false },
+      ]);
+      expect(current.messages).toEqual([]);
+      const earlier = await caller.tutor.thread({
+        lessonId: lesson.id,
+        threadId: current.threads[1].id,
+      });
+      expect(earlier.messages).toMatchObject([
+        { role: 'LEARNER', content: 'Hi' },
+        { role: 'TUTOR', content: 'Ciao!' },
+      ]);
+    });
+
+    it('has no threads until the learner first asks', async () => {
+      const lesson = await createWrittenLesson();
+
+      expect(
+        await createCaller().tutor.thread({ lessonId: lesson.id }),
+      ).toEqual({ threads: [], messages: [] });
+    });
+
+    it("doesn't read a thread of another Lesson Version", async () => {
       const lesson = await createWrittenLesson();
       ai.streamReply(['Ciao!']);
       await ask(lesson.id, 'Hi');
+      const {
+        threads: [{ id: threadId }],
+      } = await createCaller().tutor.thread({ lessonId: lesson.id });
+      // As regenerating the lesson would
+      await prisma.lessonVersion.create({
+        data: {
+          lessonId: lesson.id,
+          content: lessonOutput.content,
+          examples: lessonOutput.examples,
+          summary: lessonOutput.summary,
+          model: 'claude-sonnet-5-5',
+          promptVersion: 'lesson-v3',
+        },
+      });
+
+      await expect(
+        createCaller().tutor.thread({
+          lessonId: lesson.id,
+          threadId,
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+  });
+
+  describe('ownership', () => {
+    it("only lets the course's owner read, start or add to a thread", async () => {
+      const lesson = await createWrittenLesson();
+      ai.streamReply(['Ciao!']);
+      await ask(lesson.id, 'Hi');
+      const {
+        threads: [{ id: threadId }],
+      } = await createCaller().tutor.thread({ lessonId: lesson.id });
       const other = createCaller(otherUserId);
 
       await expect(
         other.tutor.thread({ lessonId: lesson.id }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(
+        other.tutor.thread({ lessonId: lesson.id, threadId }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(
+        other.tutor.startThread({ lessonId: lesson.id }),
       ).rejects.toMatchObject({ code: 'NOT_FOUND' });
       await expect(
         ask(lesson.id, 'Hi', { caller: other }),

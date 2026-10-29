@@ -394,7 +394,7 @@ model LessonVersion {
   lesson        Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   exercises     Exercise[]
   attempts      ExerciseAttempt[]
-  tutorThread   TutorThread?
+  tutorThreads  TutorThread[]
 
   @@index([lessonId, createdAt])
 }
@@ -457,14 +457,20 @@ model ExerciseAttempt {
   @@index([lessonVersionId])
 }
 
-// Learner state: the conversation with the tutor about one Lesson Version.
-// A new version starts a fresh thread; the old one stays with its version
+// Learner state: a conversation with the tutor about one Lesson Version.
+// A version can have several, numbered from 1, the highest its current one
+// and the only one the tutor sees: the learner starts a fresh one, as Start
+// over does (#62), and a new version starts with none. Earlier threads stay
+// with their version, read only
 model TutorThread {
   id              String         @id @default(cuid())
-  lessonVersionId String         @unique
+  lessonVersionId String
+  number          Int
   createdAt       DateTime       @default(now())
   lessonVersion   LessonVersion  @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
   messages        TutorMessage[]
+
+  @@unique([lessonVersionId, number])
 }
 
 // One message in a Tutor Thread. A learner's message is stored with the

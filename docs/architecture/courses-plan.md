@@ -85,7 +85,7 @@ Course ──1:1 (v1 convention)── Course Deck ── Cards (existing v2 mod
                     ├── Exercises                         ├ learning content
                     ├── Lesson Summary                    ┘
                     ├── Exercise Attempts   ┐
-                    └── Tutor Thread        ┘ learner state about the version
+                    └── Tutor Threads       ┘ learner state about the version
 ```
 
 **Learning content vs learner state:**
@@ -94,7 +94,7 @@ Course ──1:1 (v1 convention)── Course Deck ── Cards (existing v2 mod
 | -------------------------------------------------------- | ------------------------------------------------- |
 | Course (setup answers, goal)                             | Lesson first-opened time, Lesson Completion       |
 | Syllabus Proposal, Syllabus, Lesson, learning objectives | Exercise Attempts (evaluation, optional feedback) |
-| Lesson Version: content, Exercises, Lesson Summary       | Tutor Thread and its messages                     |
+| Lesson Version: content, Exercises, Lesson Summary       | Tutor Threads and their messages                  |
 | Deck, Card, Canonical Answer, Accepted Variant           | CardProgress, CardAttempt, Study Sessions (v2)    |
 
 Rules:
@@ -104,7 +104,7 @@ Rules:
 - **Typed recall is the current card type, not a universal Card shape.** Card proposals are typed as one of several card types, currently with a single member, so other card types (for example LLM-graded open-ended recall) can be added without reworking the flow. No `type` column on Card yet.
 - **One Course Deck per course** is a v1 convention, not a domain invariant.
 - **Card provenance:** `Card.sourceLessonId` is nullable and set when a card comes from a lesson. It points at the Lesson, not the version. It is set to null only if the lesson is permanently deleted.
-- **Lesson Versions never change.** Regenerating creates a new current version. Exercise Attempts and the Tutor Thread belong to the version they were made against. Old versions are kept as historical snapshots.
+- **Lesson Versions never change.** Regenerating creates a new current version. Exercise Attempts and Tutor Threads belong to the version they were made against. Old versions are kept as historical snapshots.
 - **Curriculum is editable; learning history is durable (ADR-0003).**
   - Lessons and courses are archived, not deleted.
   - An archived lesson is excluded from navigation, "Continue" and progression, but keeps its versions, attempts, threads and card provenance.
@@ -138,7 +138,7 @@ Rules:
   Every attempt stores its evaluation: Correct or Incorrect, or for an explanation also Partially Correct. Written feedback is optional: deterministically correct answers make no model call, while LLM-evaluated answers generally get useful feedback. Accent mismatches count as correct, with a correction note (ADR-0002). Multiple choice is deferred.
 
 - **Tutor:**
-  - One persistent Tutor Thread per Lesson Version, restored when the lesson is reopened. Regenerating the lesson starts a fresh thread. The old thread stays with the old version, and a summary handed over from it can be added later if continuity proves valuable.
+  - Tutor Threads are per Lesson Version, and a version can have several (#62). The newest is the current one, restored when the lesson is reopened, and the only one the tutor sees. The learner starts a fresh thread when the current one has grown long or gone off track, and starting the lesson over starts one, so the tutor's earlier replies, which may quote answers the learner has since cleared, stop reaching it. Earlier threads stay with their version, to read back. Regenerating the lesson starts afresh on the new version, and a summary handed over from an old thread can be added later if continuity proves valuable.
   - Context: the course goal, the syllabus outline, the current Lesson Version's content, the current exercise, that version's attempts, and the thread's history. In v1 it knows nothing from other lessons. The long-term model is that a thread covers one lesson version, while what the tutor knows covers the learner and course. Context from other lessons will come from distilled learner state, not from earlier threads.
   - Behavior is adapted from Claude Study Agent's tutor rules: ask before telling, offer progressively more explicit hints, push back on vague answers, check understanding with follow-ups, and never reveal an exercise's expected answer before the learner has attempted it.
 - **Make review cards:**
@@ -249,7 +249,7 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 
 **B1: Tutor backend**
 
-- Tutor Thread per Lesson Version, with messages.
+- Tutor Threads per Lesson Version, with messages.
 - Context assembly as a pure function, plus the system prompt built from the Study Agent tutor rules.
 - Streaming through a tRPC mutation that returns an async generator (`httpBatchStreamLink`), so streaming is tested through the same tRPC caller as everything else. Decided 2026-10-28 (#23) instead of a subscription: tRPC 11's subscriptions are SSE GET requests that reconnect, re-running the procedure, on a dropped connection or a retryable error, which would repeat a paid model call; a streamed mutation is one POST that never retries.
 - Prompt caching for lesson content; usage records.

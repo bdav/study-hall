@@ -29,6 +29,7 @@ const mockInvalidateCards = vi.fn();
 const mockInvalidateCourse = vi.fn();
 const mockResetAnswers = vi.fn();
 const mockInvalidateDecks = vi.fn();
+const mockInvalidateTutorThread = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -44,6 +45,7 @@ vi.mock('@/lib/trpc', () => ({
       exercise: { answers: { reset: mockResetAnswers } },
       card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: mockInvalidateDecks } },
+      tutor: { thread: { invalidate: mockInvalidateTutorThread } },
     })),
     auth: { me: { useQuery: vi.fn() } },
     lesson: {
@@ -64,6 +66,7 @@ vi.mock('@/lib/trpc', () => ({
       thread: {
         useQuery: vi.fn(() => ({
           data: {
+            threads: [{ id: 'thread-1', number: 1, isCurrent: true }],
             messages: [
               {
                 id: 'message-1',
@@ -75,6 +78,9 @@ vi.mock('@/lib/trpc', () => ({
           },
           isLoading: false,
         })),
+      },
+      startThread: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
       },
     },
   },
@@ -2203,7 +2209,10 @@ describe('LessonPage', () => {
       await user.click(screen.getByRole('button', { name: 'More actions' }));
       await user.click(screen.getByRole('menuitem', { name: 'Start over' }));
       const dialog = screen.getByRole('alertdialog');
-      expect(dialog).toHaveTextContent(/earlier answers are still saved/i);
+      expect(dialog).toHaveTextContent(
+        /earlier answers and threads are still saved/i,
+      );
+      expect(dialog).toHaveTextContent(/tutor starts a new thread/i);
       expect(mockStartOver).not.toHaveBeenCalled();
       await user.click(
         within(dialog).getByRole('button', { name: 'Start over' }),
@@ -2232,6 +2241,10 @@ describe('LessonPage', () => {
 
       expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
       expect(mockInvalidateCourse).toHaveBeenCalledWith({ id: 'course-1' });
+      // Starting over starts a fresh Tutor Thread
+      expect(mockInvalidateTutorThread).toHaveBeenCalledWith({
+        lessonId: 'lesson-1',
+      });
       expect(mockResetAnswers).not.toHaveBeenCalled();
       lessonRefetched();
       await done;

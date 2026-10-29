@@ -24,6 +24,7 @@ import {
 } from '../ai/cardProposal.js';
 import { courseSetupSchema } from '../ai/syllabus.js';
 import { continueTarget } from '../services/syllabus.js';
+import { startTutorThread } from '../services/tutorThreads.js';
 import { userCanUseAI } from '../ai/access.js';
 import {
   createCards,
@@ -467,6 +468,14 @@ export const lessonRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await findOwnedLessonState(ctx.prisma, ctx.userId, input.id);
+      // A fresh Tutor Thread, so the tutor's earlier replies, which may
+      // quote answers the learner is clearing, stop reaching it. It comes
+      // first: should the reset then fail, a spare thread does no harm
+      const { versions } = await ctx.prisma.lesson.findUniqueOrThrow({
+        where: { id: input.id },
+        select: { versions: { ...currentVersion, select: { id: true } } },
+      });
+      if (versions[0]) await startTutorThread(ctx.prisma, versions[0].id);
 
       return ctx.prisma.lesson.update({
         where: { id: input.id },
