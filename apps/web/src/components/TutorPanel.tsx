@@ -149,7 +149,10 @@ export function TutorPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className={`flex items-center gap-2 pb-3 ${inDrawer ? 'pr-8' : ''}`}>
+      <div
+        // As tall as the thread picker, so it doesn't move when that appears
+        className={`flex min-h-11 items-center gap-2 pb-3 ${inDrawer ? 'pr-8' : ''}`}
+      >
         <h2 className="mr-auto text-lg font-semibold">Tutor</h2>
         {current && threads.length > 1 && (
           <Select

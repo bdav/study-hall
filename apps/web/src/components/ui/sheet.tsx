@@ -47,7 +47,10 @@ function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="absolute top-3 right-3 rounded-md p-1 opacity-70 hover:opacity-100">
+        <SheetPrimitive.Close
+          data-slot="sheet-close"
+          className="absolute top-3 right-3 rounded-md p-1 opacity-70 hover:opacity-100"
+        >
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>

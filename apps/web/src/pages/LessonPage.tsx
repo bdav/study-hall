@@ -1017,7 +1017,8 @@ function WrittenLesson({
     <Sheet open={isTutorDrawerOpen} onOpenChange={setIsTutorDrawerOpen}>
       <SheetContent
         side="right"
-        className="w-96 max-w-[90vw] border-l border-white/20 bg-[oklch(0.25_0.08_230)] text-white"
+        // Room above the panel's header, and the close button lined up with it
+        className="w-96 max-w-[90vw] border-l border-white/20 bg-[oklch(0.25_0.08_230)] pt-6 text-white [&>[data-slot=sheet-close]]:top-7"
       >
         <SheetTitle className="sr-only">Tutor</SheetTitle>
         <SheetDescription className="sr-only">
