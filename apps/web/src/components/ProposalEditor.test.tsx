@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { ProposalEditor } from './ProposalEditor';
 import { trpc } from '@/lib/trpc';
 
@@ -121,6 +121,22 @@ describe('ProposalEditor', () => {
     ]);
   });
 
+  it('puts the lessons back as saved when a save fails', async () => {
+    renderEditor();
+    const user = userEvent.setup();
+    const title = lesson(2).getByRole('textbox', { name: 'Lesson 2 title' });
+    await user.clear(title);
+    await user.type(title, 'Ordering a coffee{Enter}');
+
+    const options = vi.mocked(trpc.course.updateProposal.useMutation).mock
+      .lastCall?.[0] as { onError: () => void };
+    act(() => options.onError());
+
+    expect(
+      lesson(2).getByRole('textbox', { name: 'Lesson 2 title' }),
+    ).toHaveValue('At the café');
+  });
+
   it('puts a blanked title back, saving nothing', async () => {
     renderEditor();
     const user = userEvent.setup();
@@ -151,43 +167,76 @@ describe('ProposalEditor', () => {
       lesson(1).getByRole('textbox', { name: 'Lesson 1, objective 2' }),
     );
     await user.tab();
-    expect(savedLessons()[0].objectives).toEqual([
-      'Greet someone formally and informally',
-    ]);
+    // Each edit builds on the one before, saved or not
+    expect(savedLessons()[0].objectives).toEqual(['Say hello']);
   });
 
-  it('moves a lesson up or down', async () => {
-    renderEditor();
-    const user = userEvent.setup();
+  describe('reordering', () => {
+    // jsdom lays nothing out: stack the lessons 100px apart, as a page
+    // would, so dragging can tell where one ends and the next begins
+    beforeEach(() => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+        function (this: Element) {
+          const row = this.closest('li[aria-label^="Lesson"]');
+          const rows = row ? [...row.parentElement!.children] : [];
+          const top = row ? rows.indexOf(row) * 100 : 0;
+          return new DOMRect(0, top, 600, row ? 90 : 0);
+        },
+      );
+    });
 
-    await user.click(
-      lesson(2).getByRole('button', { name: 'Move At the café up' }),
-    );
-    expect(savedLessons().map((l: { title: string }) => l.title)).toEqual([
-      'At the café',
-      'Greetings',
-      'Numbers',
-    ]);
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
 
-    await user.click(
-      lesson(2).getByRole('button', { name: 'Move At the café down' }),
-    );
-    expect(savedLessons().map((l: { title: string }) => l.title)).toEqual([
-      'Greetings',
-      'Numbers',
-      'At the café',
-    ]);
-  });
+    it('moves a lesson by its drag handle, from the keyboard too', async () => {
+      renderEditor();
+      const user = userEvent.setup();
 
-  it("can't move the first lesson up or the last down", () => {
-    renderEditor();
+      lesson(1)
+        .getByRole('button', { name: 'Drag Greetings to reorder' })
+        .focus();
+      await user.keyboard('[Space]');
+      await user.keyboard('[ArrowDown]');
+      await user.keyboard('[Space]');
 
-    expect(
-      lesson(1).getByRole('button', { name: 'Move Greetings up' }),
-    ).toBeDisabled();
-    expect(
-      lesson(3).getByRole('button', { name: 'Move Numbers down' }),
-    ).toBeDisabled();
+      expect(savedLessons().map((l: { title: string }) => l.title)).toEqual([
+        'At the café',
+        'Greetings',
+        'Numbers',
+      ]);
+    });
+
+    it('shows the new order at once', async () => {
+      renderEditor();
+      const user = userEvent.setup();
+
+      lesson(3)
+        .getByRole('button', { name: 'Drag Numbers to reorder' })
+        .focus();
+      await user.keyboard('[Space]');
+      await user.keyboard('[ArrowUp]');
+      await user.keyboard('[ArrowUp]');
+      await user.keyboard('[Space]');
+
+      expect(
+        lesson(1).getByRole('textbox', { name: 'Lesson 1 title' }),
+      ).toHaveValue('Numbers');
+    });
+
+    it('saves nothing when a drag is cancelled', async () => {
+      renderEditor();
+      const user = userEvent.setup();
+
+      lesson(1)
+        .getByRole('button', { name: 'Drag Greetings to reorder' })
+        .focus();
+      await user.keyboard('[Space]');
+      await user.keyboard('[ArrowDown]');
+      await user.keyboard('[Escape]');
+
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
   });
 
   it('removes a lesson', async () => {
@@ -362,7 +411,7 @@ describe('ProposalEditor', () => {
     ).toBeEnabled();
   });
 
-  it('starts a half-typed objective afresh when the lessons move under it', async () => {
+  it('starts afresh when the proposal changes underneath, as a regeneration does', async () => {
     const { rerender } = renderEditor();
     const user = userEvent.setup();
     await user.type(
