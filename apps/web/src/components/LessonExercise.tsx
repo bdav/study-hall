@@ -189,6 +189,13 @@ function CheckButton({
   );
 }
 
+/**
+ * Check beside an answer: on phones a return arrow, muted until pressed;
+ * from sm, the Check button.
+ */
+const CHECK_BESIDE_CLASSES =
+  'touch-target rounded-lg text-sm text-white max-sm:p-1 max-sm:text-white/70 sm:shrink-0 sm:bg-white/20 sm:px-4 sm:py-1.5 sm:backdrop-blur-sm sm:hover:bg-white/30';
+
 /** Errors from AI evaluation whose message tells the learner what to do. */
 const AI_ERROR_CODES = new Set([
   'FORBIDDEN',
@@ -301,6 +308,7 @@ export function LessonExercise({
               {exercise.prompt.slice(0, gap.index)}
               <Input
                 aria-label="Fill in the blank"
+                enterKeyHint="go"
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 // A blank in the sentence, underlined as a flashcard's answer
@@ -310,7 +318,16 @@ export function LessonExercise({
               />
               {exercise.prompt.slice(gap.index + gap[0].length)}
             </p>
-            <div className="py-1">{checkButton}</div>
+            {/* On phones a return arrow, as a short answer's is, so the
+                sentence keeps the width; from sm, the Check button */}
+            <div className="py-1">
+              <CheckButton
+                blank={blank}
+                pending={submit.isPending}
+                iconOnPhones
+                className={CHECK_BESIDE_CLASSES}
+              />
+            </div>
           </div>
         ) : exercise.type === 'FREE_FORM_EXPLANATION' ? (
           <>
@@ -351,7 +368,7 @@ export function LessonExercise({
                 blank={blank}
                 pending={submit.isPending}
                 iconOnPhones
-                className="touch-target rounded-lg text-sm text-white max-sm:absolute max-sm:right-1.5 max-sm:bottom-1 max-sm:p-1 max-sm:text-white/70 sm:shrink-0 sm:bg-white/20 sm:px-4 sm:py-1.5 sm:backdrop-blur-sm sm:hover:bg-white/30"
+                className={`max-sm:absolute max-sm:right-1.5 max-sm:bottom-1 ${CHECK_BESIDE_CLASSES}`}
               />
             </div>
           </>
