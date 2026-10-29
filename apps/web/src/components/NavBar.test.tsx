@@ -13,6 +13,7 @@ vi.mock('@/lib/trpc', () => ({
     })),
     auth: {
       logout: { useMutation: vi.fn() },
+      me: { useQuery: vi.fn() },
     },
   },
 }));
@@ -31,7 +32,14 @@ function renderNavBar(path = '/') {
   );
 }
 
+function signedIn({ canUseAI }: { canUseAI: boolean }) {
+  vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
+    data: { user: { id: 'user-1', email: 'me@example.com', canUseAI } },
+  } as unknown as ReturnType<typeof trpc.auth.me.useQuery>);
+}
+
 function setupMocks() {
+  signedIn({ canUseAI: true });
   vi.mocked(trpc.auth.logout.useMutation).mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
@@ -85,6 +93,40 @@ describe('NavBar', () => {
     expect(statsLink).toHaveAttribute('href', '/stats');
   });
 
+  it('links AI usage, right after Stats, for learners who can use AI', () => {
+    renderNavBar();
+
+    const links = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+    expect(links.slice(links.indexOf('/stats'))).toEqual([
+      '/stats',
+      '/ai-usage',
+    ]);
+    expect(screen.getByRole('link', { name: 'AI usage' })).toHaveAttribute(
+      'href',
+      '/ai-usage',
+    );
+  });
+
+  it('marks AI usage as the current area on its page', () => {
+    renderNavBar('/ai-usage');
+
+    expect(screen.getByRole('link', { name: 'AI usage' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it("leaves AI usage out for learners who can't use AI", () => {
+    signedIn({ canUseAI: false });
+    renderNavBar();
+
+    expect(
+      screen.queryByRole('link', { name: 'AI usage' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders a Log out button', () => {
     renderNavBar();
 
@@ -111,7 +153,7 @@ describe('NavBar', () => {
   it('shows the areas and Log out as icons alone on narrow screens, keeping their names', () => {
     renderNavBar();
 
-    for (const name of ['Courses', 'Flashcards', 'Stats']) {
+    for (const name of ['Courses', 'Flashcards', 'Stats', 'AI usage']) {
       const link = screen.getByRole('link', { name });
       expect(within(link).getByText(name)).toHaveClass(
         'sr-only',

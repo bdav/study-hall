@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import CoursesPage from './CoursesPage';
 import { trpc } from '@/lib/trpc';
 
@@ -58,9 +59,17 @@ function renderPage(
 
   return render(
     <MemoryRouter>
-      <CoursesPage />
+      <Routes>
+        <Route path="/" element={<CoursesPage />} />
+        <Route path="/ai-usage" element={<ArrivedWith />} />
+      </Routes>
     </MemoryRouter>,
   );
+}
+
+/** Shows the router state a page was opened with. */
+function ArrivedWith() {
+  return <p>Arrived with {JSON.stringify(useLocation().state)}</p>;
 }
 
 beforeEach(() => {
@@ -127,6 +136,20 @@ describe('CoursesPage', () => {
         '/ai-usage',
       );
       expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
+    });
+
+    it('opens AI usage saying it came from Courses, so it links back', async () => {
+      const user = userEvent.setup();
+      renderPage({ data: courses } as Partial<ListQuery>, {
+        canUseAI: true,
+        summary: { spentUsd: 1.2, capUsd: 10, paused: false },
+      });
+
+      await user.click(screen.getByRole('link', { name: /ai usage/i }));
+
+      expect(
+        screen.getByText('Arrived with {"from":"courses"}'),
+      ).toBeInTheDocument();
     });
 
     it('says when AI features are paused because the cap is reached', () => {

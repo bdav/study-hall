@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
@@ -13,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatUsd } from '@/lib/format';
+import { openedFromCourses } from '@/lib/aiUsage';
 
 type AiPurpose =
   inferRouterOutputs<AppRouter>['aiUsage']['report']['breakdown'][number]['purpose'];
@@ -46,6 +48,11 @@ function formatTokens(tokens: number): string {
 
 export default function AiUsagePage() {
   const reportQuery = trpc.aiUsage.report.useQuery();
+  // Opened from the Courses page, it links back; from the site's
+  // navigation, it's an area of its own
+  const backLink = openedFromCourses(useLocation().state) && (
+    <BackLink to="/courses">Courses</BackLink>
+  );
 
   if (reportQuery.isLoading) {
     return <StatsSkeleton />;
@@ -69,7 +76,7 @@ export default function AiUsagePage() {
     return (
       <CenteredPage>
         <div className="w-full max-w-3xl text-white">
-          <BackLink to="/courses">Courses</BackLink>
+          {backLink}
           <h1 className="mt-2 text-2xl font-bold">AI usage</h1>
           <p className="mt-2 text-white/60">
             No AI usage yet. Creating a course uses AI, and its cost will show
@@ -85,7 +92,7 @@ export default function AiUsagePage() {
   return (
     <CenteredPage>
       <div className="w-full max-w-3xl text-white">
-        <BackLink to="/courses">Courses</BackLink>
+        {backLink}
         <h1 className="mt-2 text-2xl font-bold">AI usage</h1>
         <p className="mt-1 text-sm text-white/60">
           Estimated costs of only your own AI calls. The monthly spending cap

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { formatUsd } from '@/lib/format';
+import { FROM_COURSES } from '@/lib/aiUsage';
 
 /**
  * This month's AI spend against the monthly cap, for learners who can use
@@ -27,6 +28,7 @@ export function AiSpendSummary() {
         </p>
         <Link
           to="/ai-usage"
+          state={FROM_COURSES}
           className="text-white/70 underline underline-offset-2 hover:text-white"
         >
           See AI usage
