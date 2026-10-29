@@ -60,6 +60,23 @@ vi.mock('@/lib/trpc', () => ({
       },
       answers: { useQuery: vi.fn(() => ({ data: undefined })) },
     },
+    tutor: {
+      thread: {
+        useQuery: vi.fn(() => ({
+          data: {
+            messages: [
+              {
+                id: 'message-1',
+                role: 'LEARNER',
+                content: 'What does ciao mean?',
+                createdAt: '2026-10-28T09:00:00.000Z',
+              },
+            ],
+          },
+          isLoading: false,
+        })),
+      },
+    },
   },
 }));
 
@@ -2045,6 +2062,74 @@ describe('LessonPage', () => {
 
       expect(mockInvalidate).toHaveBeenCalledWith({ id: 'lesson-1' });
       expect(mockInvalidateCourse).toHaveBeenCalledWith({ id: 'course-1' });
+    });
+  });
+
+  describe('the tutor', () => {
+    const written = { data: twoSectionLesson } as Partial<LessonQuery>;
+
+    /** A screen wide enough for the tutor beside the lesson, or not. */
+    function screenIsWide(wide: boolean) {
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        (query) =>
+          ({
+            matches: wide,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          }) as unknown as MediaQueryList,
+      );
+    }
+
+    it('opens beside the lesson and stays open from step to step', async () => {
+      const user = userEvent.setup();
+      screenIsWide(true);
+      renderPage({ query: written });
+
+      const toggle = screen.getByRole('button', { name: 'Tutor' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+      expect(
+        screen.queryByRole('complementary', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
+
+      await user.click(toggle);
+
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      const tutor = screen.getByRole('complementary', { name: 'Tutor' });
+      expect(within(tutor).getByText('What does ciao mean?')).toBeVisible();
+
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      expect(
+        within(screen.getByRole('complementary', { name: 'Tutor' })).getByText(
+          'What does ciao mean?',
+        ),
+      ).toBeVisible();
+
+      await user.click(screen.getByRole('button', { name: 'Close tutor' }));
+
+      expect(
+        screen.queryByRole('complementary', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('opens as a drawer on a narrower screen', async () => {
+      const user = userEvent.setup();
+      screenIsWide(false);
+      renderPage({ query: written });
+
+      await user.click(screen.getByRole('button', { name: 'Tutor' }));
+
+      const drawer = screen.getByRole('dialog', { name: 'Tutor' });
+      expect(within(drawer).getByText('What does ciao mean?')).toBeVisible();
+    });
+
+    it('is offered only to learners who can use AI', () => {
+      renderPage({ query: written, canUseAI: false });
+
+      expect(
+        screen.queryByRole('button', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
     });
   });
 

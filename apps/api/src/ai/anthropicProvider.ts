@@ -48,5 +48,86 @@ export function createAnthropicProvider(): AiProvider {
         outputTokens: response.usage.output_tokens,
       };
     },
+
+    async *streamChat(request) {
+      client ??= new Anthropic({ maxRetries: 0 });
+      // Known once the model starts answering, from when the call is billed
+      let inputTokens: number | undefined;
+      try {
+        const stream = client.beta.messages.stream({
+          model: request.model,
+          max_tokens: request.maxTokens,
+          system: request.system.map(({ text, cache }) => ({
+            type: 'text' as const,
+            text,
+            ...(cache && { cache_control: { type: 'ephemeral' as const } }),
+          })),
+          messages: request.messages,
+          // Also caches the conversation so far, for the next message
+          cache_control: { type: 'ephemeral' },
+          // Conversation needs little thinking, and replies start sooner
+          output_config: { effort: 'low' },
+          // Retry on the server-defined fallback model if this one declines
+          betas: ['server-side-fallback-2026-07-01'],
+          fallbacks: 'default',
+        });
+
+        for await (const event of stream) {
+          if (event.type === 'message_start') {
+            inputTokens = allInputTokens(event.message.usage);
+          } else if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'text_delta'
+          ) {
+            yield { type: 'text', text: event.delta.text };
+          }
+        }
+
+        const message = await stream.finalMessage();
+        yield {
+          type: 'done',
+          model: message.model,
+          refused: message.stop_reason === 'refusal',
+          inputTokens: allInputTokens(message.usage),
+          outputTokens: message.usage.output_tokens,
+        };
+      } catch (error) {
+        // A stream that fails once the model has started answering may be
+        // billed, as may a call that never got a response
+        if (
+          inputTokens !== undefined ||
+          error instanceof Anthropic.APIConnectionError
+        ) {
+          throw new AiOutcomeUnknownError(
+            error instanceof Error ? error.message : String(error),
+            {
+              cause: error,
+              usage:
+                inputTokens === undefined
+                  ? undefined
+                  : { inputTokens, outputTokens: request.maxTokens },
+            },
+          );
+        }
+        throw error;
+      }
+    },
   };
+}
+
+/**
+ * Every input token of a call: uncached, written to the cache and read
+ * from it. Until cache tokens are priced at their own rates (#31), they
+ * count at the input rate, which overcounts reads and undercounts writes.
+ */
+function allInputTokens(usage: {
+  input_tokens: number;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+}) {
+  return (
+    usage.input_tokens +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0)
+  );
 }

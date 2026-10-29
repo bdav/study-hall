@@ -1,5 +1,6 @@
 import {
   AiOutcomeUnknownError,
+  type AiChatRequest,
   type AiProvider,
   type AiRequest,
   type TokenUsage,
@@ -17,7 +18,15 @@ type FakeResponse =
   | {
       failure: FakeFailure;
       usage?: TokenUsage;
+    }
+  | {
+      chunks: string[];
+      usage: TokenUsage;
+      refused: boolean;
+      failAfter?: FakeFailure;
     };
+
+const DEFAULT_USAGE: TokenUsage = { inputTokens: 100, outputTokens: 200 };
 
 /**
  * A provider for tests: it answers with queued fixtures, in order, and
@@ -26,18 +35,40 @@ type FakeResponse =
 export function createFakeAiProvider() {
   const queue: FakeResponse[] = [];
   const requests: AiRequest[] = [];
+  const chatRequests: AiChatRequest[] = [];
 
   const provider: AiProvider & {
     requests: AiRequest[];
+    chatRequests: AiChatRequest[];
     respondWith: (output: unknown, usage?: TokenUsage) => void;
+    streamReply: (
+      chunks: string[],
+      options?: {
+        usage?: TokenUsage;
+        refused?: boolean;
+        failAfter?: FakeFailure;
+      },
+    ) => void;
     failWith: (failure: FakeFailure, usage?: TokenUsage) => void;
     reset: () => void;
   } = {
     requests,
+    chatRequests,
 
     /** Queues a response. A string is returned as raw text, anything else as JSON. */
-    respondWith(output, usage = { inputTokens: 100, outputTokens: 200 }) {
+    respondWith(output, usage = DEFAULT_USAGE) {
       queue.push({ output, ...usage });
+    },
+
+    /**
+     * Queues a streamed reply, yielded in the pieces given. It can end in a
+     * refusal, or fail after its pieces, carrying the usage given.
+     */
+    streamReply(
+      chunks,
+      { usage = DEFAULT_USAGE, refused = false, failAfter } = {},
+    ) {
+      queue.push({ chunks, usage, refused, failAfter });
     },
 
     /**
@@ -51,6 +82,7 @@ export function createFakeAiProvider() {
     reset() {
       queue.length = 0;
       requests.length = 0;
+      chatRequests.length = 0;
     },
 
     async generate(request) {
@@ -58,6 +90,9 @@ export function createFakeAiProvider() {
       const next = queue.shift();
       if (!next) throw new Error('The fake AI provider has no response queued');
       if ('failure' in next) throw fakeError(next.failure, next.usage);
+      if ('chunks' in next) {
+        throw new Error('The fake AI provider has a streamed reply queued');
+      }
 
       return {
         text:
@@ -67,6 +102,31 @@ export function createFakeAiProvider() {
         model: request.model,
         inputTokens: next.inputTokens,
         outputTokens: next.outputTokens,
+      };
+    },
+
+    async *streamChat(request) {
+      chatRequests.push(request);
+      const next = queue.shift();
+      if (!next) throw new Error('The fake AI provider has no response queued');
+      if ('failure' in next) throw fakeError(next.failure, next.usage);
+      if (!('chunks' in next)) {
+        throw new Error(
+          'The fake AI provider has a structured response queued',
+        );
+      }
+
+      for (const text of next.chunks) {
+        // Each piece arrives on its own, as from the network
+        await Promise.resolve();
+        yield { type: 'text', text };
+      }
+      if (next.failAfter) throw fakeError(next.failAfter, next.usage);
+      yield {
+        type: 'done',
+        model: request.model,
+        refused: next.refused,
+        ...next.usage,
       };
     },
   };

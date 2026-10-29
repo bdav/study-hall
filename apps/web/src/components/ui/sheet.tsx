@@ -4,7 +4,10 @@ import { XIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-/** A panel that slides in from the left edge, such as a drawer on mobile. */
+/**
+ * A panel that slides in from an edge, such as a drawer on mobile: the left
+ * by default, or the right.
+ */
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
@@ -15,11 +18,19 @@ function SheetTrigger({
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
 }
 
+const SIDES = {
+  left: 'left-0 data-open:slide-in-from-left data-closed:slide-out-to-left',
+  right: 'right-0 data-open:slide-in-from-right data-closed:slide-out-to-right',
+};
+
 function SheetContent({
   className,
   children,
+  side = 'left',
   ...props
-}: React.ComponentProps<typeof SheetPrimitive.Content>) {
+}: React.ComponentProps<typeof SheetPrimitive.Content> & {
+  side?: keyof typeof SIDES;
+}) {
   return (
     <SheetPrimitive.Portal>
       <SheetPrimitive.Overlay
@@ -29,7 +40,8 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-col gap-4 p-4 shadow-lg duration-200 outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left',
+          'fixed inset-y-0 z-50 flex h-full w-72 max-w-[85vw] flex-col gap-4 p-4 shadow-lg duration-200 outline-none data-open:animate-in data-closed:animate-out',
+          SIDES[side],
           className,
         )}
         {...props}

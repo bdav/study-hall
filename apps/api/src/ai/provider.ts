@@ -20,6 +20,33 @@ export type AiResponse = TokenUsage & {
   model: string;
 };
 
+/** One request for a conversational reply, streamed as it is written. */
+export type AiChatRequest = {
+  model: string;
+  /**
+   * The system prompt in blocks, in order. A cached block is cached with
+   * everything before it, so stable blocks come first.
+   */
+  system: { text: string; cache?: boolean }[];
+  /** The conversation so far, oldest first, ending with the user's turn. */
+  messages: { role: 'user' | 'assistant'; content: string }[];
+  maxTokens: number;
+};
+
+/**
+ * What a streamed reply yields: its text in pieces as they arrive, then,
+ * once, how it ended.
+ */
+export type AiChatEvent =
+  | { type: 'text'; text: string }
+  | ({
+      type: 'done';
+      /** The model that actually answered. */
+      model: string;
+      /** The model declined to answer; any text so far is incomplete. */
+      refused: boolean;
+    } & TokenUsage);
+
 /**
  * The small interface every AI call goes through, so domain code never
  * depends on a vendor SDK. Supplied on the tRPC context: production uses
@@ -31,6 +58,11 @@ export type AiResponse = TokenUsage & {
  */
 export interface AiProvider {
   generate(request: AiRequest): Promise<AiResponse>;
+  /**
+   * Streams a reply. A stream that fails once the model has started
+   * answering throws `AiOutcomeUnknownError`, since it may be billed.
+   */
+  streamChat(request: AiChatRequest): AsyncIterable<AiChatEvent>;
 }
 
 /**

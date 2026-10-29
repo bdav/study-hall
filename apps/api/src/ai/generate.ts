@@ -2,6 +2,8 @@ import { type AiPurpose, type PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
+  type AiChatEvent,
+  type AiChatRequest,
   AiOutcomeUnknownError,
   type AiProvider,
   type AiRequest,
@@ -81,6 +83,105 @@ export async function generateStructured<Schema extends z.ZodType>(
 }
 
 /**
+ * Runs one streamed conversational reply and writes its AI usage record,
+ * yielding the reply's text in pieces as they arrive. Once the reply is
+ * complete, `onComplete` stores it.
+ *
+ * The call runs to the end even if the caller stops reading, such as when
+ * the learner leaves the page, so the reply is still stored and its usage
+ * recorded. A failed call or a refusal throws a retryable BAD_GATEWAY error
+ * from the stream, and nothing is stored. As with `generateStructured`, a
+ * call that ended without a response is recorded as failed.
+ */
+export function generateStreamed(
+  { prisma, ai }: { prisma: PrismaClient; ai: AiProvider },
+  request: {
+    userId: string;
+    purpose: AiPurpose;
+    chat: AiChatRequest & { model: PricedModel };
+    onComplete: (reply: { text: string; model: string }) => Promise<void>;
+  },
+): AsyncGenerator<string> {
+  const pieces: string[] = [];
+  let finished = false;
+  let failure: unknown;
+  let wake = () => {};
+
+  const run = async () => {
+    let text = '';
+    let ending: Extract<AiChatEvent, { type: 'done' }> | undefined;
+    try {
+      for await (const event of ai.streamChat(request.chat)) {
+        if (event.type === 'text') {
+          text += event.text;
+          pieces.push(event.text);
+          wake();
+        } else {
+          ending = event;
+        }
+      }
+    } catch (cause) {
+      // The API may have billed a call that ended without a response
+      if (cause instanceof AiOutcomeUnknownError) {
+        await prisma.aiUsage.create({
+          data: {
+            userId: request.userId,
+            purpose: request.purpose,
+            model: request.chat.model,
+            inputTokens:
+              cause.usage?.inputTokens ?? estimateChatTokens(request.chat),
+            outputTokens: cause.usage?.outputTokens ?? request.chat.maxTokens,
+            failed: true,
+          },
+        });
+      }
+      throw retryableError(cause);
+    }
+    if (!ending) throw retryableError(new Error('The reply never finished'));
+
+    await prisma.aiUsage.create({
+      data: {
+        userId: request.userId,
+        purpose: request.purpose,
+        model: ending.model,
+        inputTokens: ending.inputTokens,
+        outputTokens: ending.outputTokens,
+      },
+    });
+    // A refusal's text so far is incomplete, so it isn't kept
+    if (ending.refused || !text.trim()) {
+      throw retryableError(new Error('No usable reply'));
+    }
+    await request.onComplete({ text: text.trim(), model: ending.model });
+  };
+
+  // Not awaited: it outlives a caller that stops reading. Its failure,
+  // retryable when the AI's and otherwise as it was, ends the stream
+  void run()
+    .catch((cause: unknown) => {
+      failure = cause;
+    })
+    .finally(() => {
+      finished = true;
+      wake();
+    });
+
+  return (async function* () {
+    while (true) {
+      const piece = pieces.shift();
+      if (piece !== undefined) {
+        yield piece;
+      } else if (finished) {
+        break;
+      } else {
+        await new Promise<void>((resolve) => (wake = resolve));
+      }
+    }
+    if (failure) throw failure;
+  })();
+}
+
+/**
  * A generous estimate of a request's input tokens, for a failed call whose
  * provider reported none: the bytes of the prompts and output schema. A
  * token usually spans several bytes of text, so this overcounts the text we
@@ -93,6 +194,14 @@ function estimateInputTokens(request: AiRequest): number {
     z.toJSONSchema(request.outputSchema, { unrepresentable: 'any' }),
   );
   return Buffer.byteLength(request.system + request.prompt + schema, 'utf8');
+}
+
+/** As `estimateInputTokens`, for a conversational request. */
+function estimateChatTokens(request: AiChatRequest): number {
+  const text = [...request.system, ...request.messages]
+    .map((block) => ('text' in block ? block.text : block.content))
+    .join('');
+  return Buffer.byteLength(text, 'utf8');
 }
 
 function parseJson(text: string): unknown {

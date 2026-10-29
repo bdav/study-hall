@@ -11,13 +11,16 @@ import {
   ChevronRight,
   Loader2,
   Menu,
+  MessageCircle,
   MoreHorizontal,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   useStoredPagingView,
   useStoredPracticeToggles,
@@ -59,6 +62,7 @@ import {
   LessonCompletion,
 } from '@/components/LessonCompletion';
 import { LessonWrapUp } from '@/components/LessonWrapUp';
+import { TutorPanel } from '@/components/TutorPanel';
 import {
   adjacentSteps,
   currentStepIndex,
@@ -249,12 +253,15 @@ const MENU_ITEM = 'focus:bg-white/10 focus:text-white';
 function WrittenLessonHeader({
   lesson,
   leading,
+  tutorToggle,
   views,
   practiceToggles,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
+  /** Opens and closes the tutor, for learners who can use AI. */
+  tutorToggle?: ReactNode;
   /** The step's views, if it can be shown more than one way. */
   views: ViewChoice[];
   /** Practice's toggles; left out on steps other than Practice. */
@@ -303,6 +310,7 @@ function WrittenLessonHeader({
             </Switch>
           </div>
         )}
+        {tutorToggle}
         <CompletionToggle lesson={lesson} />
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -965,12 +973,61 @@ function WrittenLesson({
     return () => window.removeEventListener('scroll', followReading);
   }, [isFullPage]);
 
+  // The tutor's state lives here, in the frame, so moving between steps
+  // never resets it. It sits beside the lesson where there's room, and is
+  // a drawer otherwise
+  const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const tutorBeside = useMediaQuery('(min-width: 1024px)');
+  const tutorToggle = canUseAI && (
+    <button
+      type="button"
+      aria-label="Tutor"
+      aria-pressed={isTutorOpen}
+      onClick={() => setIsTutorOpen(!isTutorOpen)}
+      className={`flex shrink-0 items-center gap-1.5 ${ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
+    >
+      <MessageCircle className="size-5" />
+      <span className="hidden text-sm md:inline">Tutor</span>
+    </button>
+  );
+  const tutorDrawer = canUseAI && !tutorBeside && (
+    <Sheet open={isTutorOpen} onOpenChange={setIsTutorOpen}>
+      <SheetContent
+        side="right"
+        className="w-96 max-w-[90vw] border-l border-white/20 bg-[oklch(0.25_0.08_230)] text-white"
+      >
+        <SheetTitle className="sr-only">Tutor</SheetTitle>
+        <SheetDescription className="sr-only">
+          Ask about {lesson.title}
+        </SheetDescription>
+        <TutorPanel lessonId={lesson.id} />
+      </SheetContent>
+    </Sheet>
+  );
+  const tutorPanel = canUseAI && isTutorOpen && tutorBeside && (
+    <TutorPanel
+      lessonId={lesson.id}
+      actions={
+        <button
+          type="button"
+          aria-label="Close tutor"
+          onClick={() => setIsTutorOpen(false)}
+          className={ICON_BUTTON}
+        >
+          <X className="size-4" />
+        </button>
+      }
+    />
+  );
+
   const outlineToggles = (
     <>
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
         <SheetTrigger
           aria-label="Open outline"
-          className={`md:hidden ${ICON_BUTTON}`}
+          // With the tutor beside the lesson, the outline is a drawer until
+          // the screen has room for both
+          className={`${tutorPanel ? 'xl:hidden' : 'md:hidden'} ${ICON_BUTTON}`}
         >
           <Menu className="size-5" />
         </SheetTrigger>
@@ -1001,6 +1058,7 @@ function WrittenLesson({
         <WrittenLessonHeader
           lesson={lesson}
           leading={outlineToggles}
+          tutorToggle={tutorToggle}
           views={[
             ...(isReadingStep(current)
               ? [
@@ -1043,7 +1101,9 @@ function WrittenLesson({
         />
       }
       outline={renderOutline()}
+      tutor={tutorPanel || undefined}
     >
+      {tutorDrawer}
       {/* Beside the outline */}
       <div
         ref={stepRef}

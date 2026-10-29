@@ -156,7 +156,7 @@ The lesson page is an interactive textbook: neither one long document nor a slid
 - **Frame:**
   - A lesson outline on the left lists the steps and progress, and jumps to a step when clicked. It can be collapsed, and on mobile it's a drawer.
   - The step is in the centre, with a comfortable reading width for prose.
-  - A region on the right holds the tutor. It takes no space while empty, and with the tutor open on a narrower desktop the outline collapses to icons. The tutor's state lives in the frame, so moving between steps never resets it.
+  - A region on the right holds the tutor. It takes no space while empty, and with the tutor open on a narrower desktop the outline becomes its drawer (decided 2026-10-28, #23: a drawer the page already has rather than a new icon rail); below that, the tutor is a drawer from the right. The tutor's state lives in the frame, so moving between steps never resets it.
   - A pinned header holds the title, the link back to the course, the Lesson Completion toggle and a ⋯ menu for rarely used actions such as starting the lesson over.
 - **Reading views:** By section (the default) shows one section at a time; Full lesson shows the sections and Examples as one page, so the browser's find works across the lesson. There are no separate reading or practice modes: the outline covers jumping to any part.
 - **Practice:**
@@ -251,7 +251,7 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 
 - Tutor Thread per Lesson Version, with messages.
 - Context assembly as a pure function, plus the system prompt built from the Study Agent tutor rules.
-- Streaming through a tRPC subscription, so streaming is tested through the same tRPC caller as everything else.
+- Streaming through a tRPC mutation that returns an async generator (`httpBatchStreamLink`), so streaming is tested through the same tRPC caller as everything else. Decided 2026-10-28 (#23) instead of a subscription: tRPC 11's subscriptions are SSE GET requests that reconnect, re-running the procedure, on a dropped connection or a retryable error, which would repeat a paid model call; a streamed mutation is one POST that never retries.
 - Prompt caching for lesson content; usage records.
 
 **B2: Tutor panel (frontend)**

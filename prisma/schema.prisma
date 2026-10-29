@@ -59,6 +59,13 @@ enum AiPurpose {
   EXERCISE_EVALUATION
   CARD_PROPOSAL
   CARD_REVISION
+  TUTOR
+}
+
+// Who wrote a Tutor Thread message
+enum TutorRole {
+  LEARNER
+  TUTOR
 }
 
 enum ExerciseType {
@@ -387,6 +394,7 @@ model LessonVersion {
   lesson        Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   exercises     Exercise[]
   attempts      ExerciseAttempt[]
+  tutorThread   TutorThread?
 
   @@index([lessonId, createdAt])
 }
@@ -447,6 +455,33 @@ model ExerciseAttempt {
 
   @@index([exerciseId, createdAt])
   @@index([lessonVersionId])
+}
+
+// Learner state: the conversation with the tutor about one Lesson Version.
+// A new version starts a fresh thread; the old one stays with its version
+model TutorThread {
+  id              String         @id @default(cuid())
+  lessonVersionId String         @unique
+  createdAt       DateTime       @default(now())
+  lessonVersion   LessonVersion  @relation(fields: [lessonVersionId], references: [id], onDelete: Cascade)
+  messages        TutorMessage[]
+}
+
+// One message in a Tutor Thread. A learner's message is stored with the
+// tutor's reply once the reply is complete, so the thread never holds a
+// question the tutor didn't answer
+model TutorMessage {
+  id            String      @id @default(cuid())
+  threadId      String
+  role          TutorRole
+  content       String
+  // The model and prompt version that wrote a tutor reply
+  model         String?
+  promptVersion String?
+  createdAt     DateTime    @default(now())
+  thread        TutorThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
 }
 
 model AiUsage {
