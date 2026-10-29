@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { BackLink } from '@/components/BackLink';
-import { PAGE_WIDTH } from '@/lib/layout';
+import { HEADER_BESIDE_PANEL, PAGE_WIDTH } from '@/lib/layout';
 
 /**
  * A page's header, pinned to the top as the learner scrolls: the way back,
@@ -13,6 +13,7 @@ export function PinnedHeader({
   title,
   subtitle,
   leading,
+  panelToggle,
   children,
 }: {
   back: { to: string; label: string };
@@ -27,11 +28,17 @@ export function PinnedHeader({
   leading?: ReactNode;
   /** The page's actions, on the right. */
   children?: ReactNode;
+  /**
+   * The toggle for a panel docked at the window's right edge, such as the
+   * lesson's tutor. It ends the page's actions, and the header then runs to
+   * that edge, so the toggle sits above the panel.
+   */
+  panelToggle?: ReactNode;
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
       <div
-        className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${PAGE_WIDTH}`}
+        className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${panelToggle ? HEADER_BESIDE_PANEL : PAGE_WIDTH}`}
       >
         {leading}
         <div className="min-w-0 flex-1">
@@ -49,6 +56,7 @@ export function PinnedHeader({
           )}
         </div>
         {children}
+        {panelToggle}
       </div>
     </header>
   );

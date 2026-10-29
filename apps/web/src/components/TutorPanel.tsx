@@ -25,7 +25,9 @@ function Message({ role, children }: { role: Role; children: ReactNode }) {
         {isLearner ? 'You' : 'Tutor'}
       </span>
       <div
-        className={`text-sm whitespace-pre-wrap ${isLearner ? 'max-w-[85%] rounded-lg bg-white/15 px-3 py-2' : ''}`}
+        // A step smaller than the lesson's prose, with the same room
+        // between lines, for long replies in a narrow column
+        className={`text-[0.9375rem] leading-relaxed whitespace-pre-wrap ${isLearner ? 'max-w-[85%] rounded-lg bg-white/15 px-3 py-2' : ''}`}
       >
         {children}
       </div>

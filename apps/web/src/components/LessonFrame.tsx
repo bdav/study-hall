@@ -1,5 +1,9 @@
 import { useCallback, type ReactNode } from 'react';
-import { PAGE_WIDTH_BESIDE_PANEL } from '@/lib/layout';
+import {
+  DOCKED_PANEL_SLIDE,
+  DOCKED_PANEL_WIDTH,
+  PAGE_WIDTH_BESIDE_PANEL,
+} from '@/lib/layout';
 
 /**
  * The written lesson's frame: a header pinned to the top, the outline on
@@ -67,12 +71,12 @@ export function LessonFrame({
             aria-hidden={!tutorOpen}
             inert={!tutorOpen}
             // Clipped, not hidden, which would stop the panel sticking
-            className={`relative hidden shrink-0 overflow-x-clip transition-[width] duration-300 ease-out motion-reduce:transition-none lg:block ${tutorOpen ? 'w-80 xl:w-96' : 'w-0'}`}
+            className={`relative hidden shrink-0 overflow-x-clip lg:block ${DOCKED_PANEL_SLIDE} ${tutorOpen ? DOCKED_PANEL_WIDTH : 'w-0'}`}
           >
             {/* Out of the page's flow, so the tutor never makes it taller
                 and pushes the step's footer down. Held at the right edge,
                 so opening reveals it from there as it slides in */}
-            <div className="absolute inset-y-0 right-0 w-80 xl:w-96">
+            <div className={`absolute inset-y-0 right-0 ${DOCKED_PANEL_WIDTH}`}>
               {/* Below the pinned header, its messages scrolling inside */}
               <div
                 ref={fillToBottom}

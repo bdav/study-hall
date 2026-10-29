@@ -12,7 +12,7 @@ import {
   Loader2,
   Menu,
   MoreHorizontal,
-  PanelRight,
+  MessageCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
@@ -259,7 +259,7 @@ function WrittenLessonHeader({
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
-  /** Opens and closes the tutor, at the far right, for learners who can use AI. */
+  /** Opens and closes the tutor, for learners who can use AI. */
   tutorToggle?: ReactNode;
   /** The step's views, if it can be shown more than one way. */
   views: ViewChoice[];
@@ -277,6 +277,7 @@ function WrittenLessonHeader({
         }}
         title={lesson.title}
         leading={leading}
+        panelToggle={tutorToggle}
       >
         {views
           .filter((view) => !view.menuOnly)
@@ -376,7 +377,6 @@ function WrittenLessonHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {tutorToggle}
       </PinnedHeader>
       <StartOverDialog
         lesson={lesson}
@@ -435,6 +435,12 @@ const STEP_WIDTHS: Record<LessonStep['kind'], string> = {
   practice: 'max-w-3xl',
   'wrap-up': 'max-w-[70ch]',
 };
+
+/**
+ * One example at a time is read as prose, so its count and the footer end
+ * where its explanation wraps; all of them are a table that needs more.
+ */
+const ONE_EXAMPLE_WIDTH = STEP_WIDTHS.section;
 
 /** One content section of a lesson, at a comfortable reading width. */
 function SectionContent({
@@ -996,7 +1002,7 @@ function WrittenLesson({
       }
       className={`shrink-0 ${ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
     >
-      <PanelRight className="size-5" />
+      <MessageCircle className="size-5" />
     </button>
   );
   const tutorDrawer = canUseAI && !tutorBeside && (
@@ -1055,7 +1061,7 @@ function WrittenLesson({
         <WrittenLessonHeader
           lesson={lesson}
           leading={outlineToggles}
-          tutorToggle={tutorToggle}
+          tutorToggle={tutorToggle || undefined}
           views={[
             ...(isReadingStep(current)
               ? [
@@ -1107,7 +1113,7 @@ function WrittenLesson({
         ref={stepRef}
         // At least as tall as the frame, so a short step's footer rests at
         // the bottom of the screen, staying put while paging through items
-        className={`flex w-full flex-1 flex-col [&_h2:focus]:outline-none ${isFullPage ? 'max-w-4xl' : STEP_WIDTHS[current.kind]}`}
+        className={`flex w-full flex-1 flex-col [&_h2:focus]:outline-none ${isFullPage ? 'max-w-4xl' : paging?.noun === 'example' ? ONE_EXAMPLE_WIDTH : STEP_WIDTHS[current.kind]}`}
       >
         <div className="flex-1">
           {isFullPage ? (
