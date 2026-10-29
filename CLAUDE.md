@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#51, and courses (spec #1) as #14–#27, #37–#43 and #55–#57. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
+**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#51, and courses (spec #1) as #14–#27, #37–#43 and #55–#57, with its Setup Interview (spec #63) as #64–#70. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Implementation Order
 
-**Completed: 48/55 planned issues**
+**Completed: 48/61 planned issues**
 
-When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, then Study Sessions.
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, then Study Sessions.
 
 1. Core study loop
    - [x] #13 Spacing differences don't make an answer wrong
@@ -72,7 +72,14 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #16 Edit and regenerate a Syllabus Proposal
    - [ ] #17 Edit the Syllabus; archive lessons and courses
    - [ ] #19 Regenerate a Lesson
-8. Study sessions
+8. Setup Interview
+   - [ ] #64 Time per week and session length as amounts of time
+   - [ ] #65 Deadline, lesson budget and pacing line
+   - [ ] #66 Focus, skip, materials, what I can already do, and a course title
+   - [ ] #67 Setup Interview
+   - [ ] #68 Multiple choice, placement checklist and Something else in the Setup Interview
+   - [ ] #69 Setup Interview survives failures and reloads
+9. Study sessions
    - [ ] #11 Missed cards come back in the same Study Session
    - [ ] #10 Resume and abandon Study Sessions
    - [ ] #8 Queue buckets and session types
