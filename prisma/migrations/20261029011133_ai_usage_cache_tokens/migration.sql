@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "AiUsage" ADD COLUMN     "cacheReadTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "cacheWrite1hTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "cacheWrite5mTokens" INTEGER NOT NULL DEFAULT 0;

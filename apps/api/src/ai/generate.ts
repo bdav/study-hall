@@ -7,6 +7,7 @@ import {
   AiOutcomeUnknownError,
   type AiProvider,
   type AiRequest,
+  type TokenUsage,
 } from './provider.js';
 import { type PricedModel } from './spend.js';
 
@@ -52,9 +53,12 @@ export async function generateStructured<Schema extends z.ZodType>(
           userId: request.userId,
           purpose: request.purpose,
           model: request.model,
-          inputTokens:
-            cause.usage?.inputTokens ?? estimateInputTokens(providerRequest),
-          outputTokens: cause.usage?.outputTokens ?? providerRequest.maxTokens,
+          ...usageCounts(
+            cause.usage ?? {
+              inputTokens: estimateInputTokens(providerRequest),
+              outputTokens: providerRequest.maxTokens,
+            },
+          ),
           failed: true,
         },
       });
@@ -67,8 +71,7 @@ export async function generateStructured<Schema extends z.ZodType>(
       userId: request.userId,
       purpose: request.purpose,
       model: response.model,
-      inputTokens: response.inputTokens,
-      outputTokens: response.outputTokens,
+      ...usageCounts(response),
     },
   });
 
@@ -128,9 +131,12 @@ export function generateStreamed(
             userId: request.userId,
             purpose: request.purpose,
             model: request.chat.model,
-            inputTokens:
-              cause.usage?.inputTokens ?? estimateChatTokens(request.chat),
-            outputTokens: cause.usage?.outputTokens ?? request.chat.maxTokens,
+            ...usageCounts(
+              cause.usage ?? {
+                inputTokens: estimateChatTokens(request.chat),
+                outputTokens: request.chat.maxTokens,
+              },
+            ),
             failed: true,
           },
         });
@@ -144,8 +150,7 @@ export function generateStreamed(
         userId: request.userId,
         purpose: request.purpose,
         model: ending.model,
-        inputTokens: ending.inputTokens,
-        outputTokens: ending.outputTokens,
+        ...usageCounts(ending),
       },
     });
     // A refusal's text so far is incomplete, so it isn't kept
@@ -179,6 +184,17 @@ export function generateStreamed(
     }
     if (failure) throw failure;
   })();
+}
+
+/** A call's token counts as its AI usage record stores them. */
+function usageCounts(usage: TokenUsage) {
+  return {
+    inputTokens: usage.inputTokens,
+    cacheWrite5mTokens: usage.cacheWrite5mTokens ?? 0,
+    cacheWrite1hTokens: usage.cacheWrite1hTokens ?? 0,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    outputTokens: usage.outputTokens,
+  };
 }
 
 /**

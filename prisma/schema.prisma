@@ -485,17 +485,23 @@ model TutorMessage {
 }
 
 model AiUsage {
-  id           String    @id @default(cuid())
-  userId       String
-  purpose      AiPurpose
-  model        String
-  inputTokens  Int
-  outputTokens Int
+  id                 String    @id @default(cuid())
+  userId             String
+  purpose            AiPurpose
+  model              String
+  // Input tokens neither written to nor read from the prompt cache
+  inputTokens        Int
+  // Input tokens written to the 5-minute and 1-hour prompt cache, and read
+  // from it, each priced at its own rate
+  cacheWrite5mTokens Int       @default(0)
+  cacheWrite1hTokens Int       @default(0)
+  cacheReadTokens    Int       @default(0)
+  outputTokens       Int
   // The call failed with no response, so the API may still have billed it
   // and the token counts may be a conservative estimate.
-  failed       Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  failed             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([createdAt])

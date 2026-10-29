@@ -96,61 +96,110 @@ async function collect(events: AsyncIterable<unknown>) {
   return collected;
 }
 
-describe('createAnthropicProvider streamChat', () => {
-  it('yields the text as it streams, then the model and every input token', async () => {
-    let body: Record<string, unknown> = {};
-    respond = (req, res) => {
-      let raw = '';
-      req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
-      req.on('end', () => {
-        body = JSON.parse(raw) as Record<string, unknown>;
-        res.writeHead(200, { 'content-type': 'text/event-stream' });
-        res.end(
-          sse([
-            {
-              type: 'message_start',
-              message: {
-                id: 'msg_1',
-                type: 'message',
-                role: 'assistant',
-                model: 'claude-sonnet-5-5',
-                content: [],
-                stop_reason: null,
-                stop_sequence: null,
-                usage: {
-                  input_tokens: 10,
-                  cache_creation_input_tokens: 1000,
-                  cache_read_input_tokens: 500,
-                  output_tokens: 1,
-                },
-              },
+/**
+ * Answers with a streamed reply whose usage at the start is `usage`, and
+ * returns the request body it received once it has.
+ */
+function respondWithStream(usage: object) {
+  let body: Record<string, unknown> = {};
+  respond = (req, res) => {
+    let raw = '';
+    req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+    req.on('end', () => {
+      body = JSON.parse(raw) as Record<string, unknown>;
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        sse([
+          {
+            type: 'message_start',
+            message: {
+              id: 'msg_1',
+              type: 'message',
+              role: 'assistant',
+              model: 'claude-sonnet-5-5',
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: { ...usage, output_tokens: 1 },
             },
-            {
-              type: 'content_block_start',
-              index: 0,
-              content_block: { type: 'text', text: '' },
+          },
+          {
+            type: 'content_block_start',
+            index: 0,
+            content_block: { type: 'text', text: '' },
+          },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text: 'What do ' },
+          },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text: 'you think?' },
+          },
+          { type: 'content_block_stop', index: 0 },
+          {
+            type: 'message_delta',
+            delta: { stop_reason: 'end_turn', stop_sequence: null },
+            usage: { output_tokens: 7 },
+          },
+          { type: 'message_stop' },
+        ]),
+      );
+    });
+  };
+  return () => body;
+}
+
+describe('createAnthropicProvider generate', () => {
+  it('reports the tokens of a structured call, cached ones by kind', async () => {
+    respond = (_, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: 'msg_1',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-sonnet-5-5',
+          content: [{ type: 'text', text: '{"title":"Italian"}' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: {
+            input_tokens: 5,
+            cache_creation_input_tokens: 20,
+            cache_creation: {
+              ephemeral_5m_input_tokens: 20,
+              ephemeral_1h_input_tokens: 0,
             },
-            {
-              type: 'content_block_delta',
-              index: 0,
-              delta: { type: 'text_delta', text: 'What do ' },
-            },
-            {
-              type: 'content_block_delta',
-              index: 0,
-              delta: { type: 'text_delta', text: 'you think?' },
-            },
-            { type: 'content_block_stop', index: 0 },
-            {
-              type: 'message_delta',
-              delta: { stop_reason: 'end_turn', stop_sequence: null },
-              usage: { output_tokens: 7 },
-            },
-            { type: 'message_stop' },
-          ]),
-        );
-      });
+            cache_read_input_tokens: 30,
+            output_tokens: 7,
+          },
+        }),
+      );
     };
+
+    expect(await createAnthropicProvider().generate(request)).toMatchObject({
+      inputTokens: 5,
+      cacheWrite5mTokens: 20,
+      cacheWrite1hTokens: 0,
+      cacheReadTokens: 30,
+      outputTokens: 7,
+    });
+  });
+});
+
+describe('createAnthropicProvider streamChat', () => {
+  it('yields the text as it streams, then the model and its tokens, cached ones by kind', async () => {
+    const body = respondWithStream({
+      input_tokens: 10,
+      cache_creation_input_tokens: 1000,
+      cache_creation: {
+        ephemeral_5m_input_tokens: 800,
+        ephemeral_1h_input_tokens: 200,
+      },
+      cache_read_input_tokens: 500,
+    });
 
     const events = await collect(
       createAnthropicProvider().streamChat(chatRequest),
@@ -163,13 +212,15 @@ describe('createAnthropicProvider streamChat', () => {
         type: 'done',
         model: 'claude-sonnet-5-5',
         refused: false,
-        // Cache writes and reads count as input until they're priced (#31)
-        inputTokens: 1510,
+        inputTokens: 10,
+        cacheWrite5mTokens: 800,
+        cacheWrite1hTokens: 200,
+        cacheReadTokens: 500,
         outputTokens: 7,
       },
     ]);
     // The lesson block is cached, and the rules before it aren't marked
-    expect(body.system).toEqual([
+    expect(body().system).toEqual([
       { type: 'text', text: 'You tutor.' },
       {
         type: 'text',
@@ -178,6 +229,70 @@ describe('createAnthropicProvider streamChat', () => {
       },
     ]);
     expect(attempts).toBe(1);
+  });
+
+  it("counts cache writes it can't attribute to a lifetime as 1-hour writes, the dearer", async () => {
+    respondWithStream({
+      input_tokens: 10,
+      cache_creation_input_tokens: 1000,
+      cache_read_input_tokens: 0,
+    });
+
+    const events = await collect(
+      createAnthropicProvider().streamChat(chatRequest),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      cacheWrite5mTokens: 0,
+      cacheWrite1hTokens: 1000,
+    });
+  });
+
+  it('reports what it knows of a stream that drops once the model has started', async () => {
+    respond = (req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(
+        sse([
+          {
+            type: 'message_start',
+            message: {
+              id: 'msg_1',
+              type: 'message',
+              role: 'assistant',
+              model: 'claude-sonnet-5-5',
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: {
+                input_tokens: 10,
+                cache_creation_input_tokens: 1000,
+                cache_creation: {
+                  ephemeral_5m_input_tokens: 800,
+                  ephemeral_1h_input_tokens: 200,
+                },
+                cache_read_input_tokens: 500,
+                output_tokens: 1,
+              },
+            },
+          },
+        ]),
+      );
+      setTimeout(() => req.socket.destroy(), 20);
+    };
+
+    const failure = await collect(
+      createAnthropicProvider().streamChat(chatRequest),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AiOutcomeUnknownError);
+    // Its output so far is unknown, so it's taken as the most it could be
+    expect((failure as AiOutcomeUnknownError).usage).toEqual({
+      inputTokens: 10,
+      cacheWrite5mTokens: 800,
+      cacheWrite1hTokens: 200,
+      cacheReadTokens: 500,
+      outputTokens: chatRequest.maxTokens,
+    });
   });
 
   it('makes one attempt when the connection drops, and reports the outcome as unknown', async () => {

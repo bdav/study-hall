@@ -179,6 +179,36 @@ describe('tutorRouter', () => {
       );
     });
 
+    it("records the reply's cached tokens, which count toward the cap", async () => {
+      const lesson = await createWrittenLesson();
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '1');
+      // Sonnet 5.5 writes to the 5-minute cache at $2.50 and reads it at
+      // $0.10 per million: 300,000 × 2.5 + 2,500,000 × 0.1 = $1
+      ai.streamReply(['Ciao!'], {
+        usage: {
+          inputTokens: 0,
+          cacheWrite5mTokens: 300_000,
+          cacheReadTokens: 2_500_000,
+          outputTokens: 0,
+        },
+      });
+
+      await ask(lesson.id, 'Hi');
+
+      const report = await createCaller().aiUsage.report();
+      expect(report.breakdown).toContainEqual(
+        expect.objectContaining({
+          purpose: 'TUTOR',
+          inputTokens: 2_800_000,
+          costUsd: expect.closeTo(1, 8),
+        }),
+      );
+      await expect(ask(lesson.id, 'And again?')).rejects.toMatchObject({
+        code: 'TOO_MANY_REQUESTS',
+      });
+      expect(ai.chatRequests).toHaveLength(1);
+    });
+
     it('starts a fresh thread for a new Lesson Version, leaving the old one with its version', async () => {
       const lesson = await createWrittenLesson();
       ai.streamReply(['Ciao!']);

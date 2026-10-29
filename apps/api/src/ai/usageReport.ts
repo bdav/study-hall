@@ -1,10 +1,17 @@
 import { type AiPurpose, type PrismaClient } from '@prisma/client';
-import { aiMonthOf, estimateCostUsd, startOfAiMonth } from './spend.js';
+import {
+  aiMonthOf,
+  callUsageFields,
+  estimateCostUsd,
+  promptTokens,
+  startOfAiMonth,
+} from './spend.js';
 
 type BreakdownRow = {
   purpose: AiPurpose;
   model: string;
   calls: number;
+  /** Every input token, whether or not it was cached. */
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
@@ -21,13 +28,7 @@ export async function aiUsageReport(prisma: PrismaClient, userId: string) {
   const monthStart = startOfAiMonth(now);
   const usage = await prisma.aiUsage.findMany({
     where: { userId },
-    select: {
-      purpose: true,
-      model: true,
-      inputTokens: true,
-      outputTokens: true,
-      createdAt: true,
-    },
+    select: { ...callUsageFields, purpose: true, createdAt: true },
   });
 
   const breakdownRows = new Map<string, BreakdownRow>();
@@ -52,7 +53,7 @@ export async function aiUsageReport(prisma: PrismaClient, userId: string) {
       costUsd: 0,
     };
     row.calls += 1;
-    row.inputTokens += call.inputTokens;
+    row.inputTokens += promptTokens(call);
     row.outputTokens += call.outputTokens;
     row.costUsd += estimateCostUsd(call);
     breakdownRows.set(key, row);

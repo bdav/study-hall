@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { AiOutcomeUnknownError, type AiProvider } from './provider.js';
+import {
+  AiOutcomeUnknownError,
+  type AiProvider,
+  type TokenUsage,
+} from './provider.js';
 
 /**
  * The production provider. The client is created on first use, so the API
@@ -44,15 +48,14 @@ export function createAnthropicProvider(): AiProvider {
       return {
         text,
         model: response.model,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        ...tokenUsage(response.usage),
       };
     },
 
     async *streamChat(request) {
       client ??= new Anthropic({ maxRetries: 0 });
       // Known once the model starts answering, from when the call is billed
-      let inputTokens: number | undefined;
+      let started: TokenUsage | undefined;
       try {
         const stream = client.beta.messages.stream({
           model: request.model,
@@ -74,7 +77,7 @@ export function createAnthropicProvider(): AiProvider {
 
         for await (const event of stream) {
           if (event.type === 'message_start') {
-            inputTokens = allInputTokens(event.message.usage);
+            started = tokenUsage(event.message.usage);
           } else if (
             event.type === 'content_block_delta' &&
             event.delta.type === 'text_delta'
@@ -88,24 +91,24 @@ export function createAnthropicProvider(): AiProvider {
           type: 'done',
           model: message.model,
           refused: message.stop_reason === 'refusal',
-          inputTokens: allInputTokens(message.usage),
-          outputTokens: message.usage.output_tokens,
+          ...tokenUsage(message.usage),
         };
       } catch (error) {
         // A stream that fails once the model has started answering may be
         // billed, as may a call that never got a response
         if (
-          inputTokens !== undefined ||
+          started !== undefined ||
           error instanceof Anthropic.APIConnectionError
         ) {
           throw new AiOutcomeUnknownError(
             error instanceof Error ? error.message : String(error),
             {
               cause: error,
-              usage:
-                inputTokens === undefined
-                  ? undefined
-                  : { inputTokens, outputTokens: request.maxTokens },
+              // Its output so far is unknown, so it's taken as the most
+              usage: started && {
+                ...started,
+                outputTokens: request.maxTokens,
+              },
             },
           );
         }
@@ -116,18 +119,29 @@ export function createAnthropicProvider(): AiProvider {
 }
 
 /**
- * Every input token of a call: uncached, written to the cache and read
- * from it. Until cache tokens are priced at their own rates (#31), they
- * count at the input rate, which overcounts reads and undercounts writes.
+ * A call's tokens as the API reports them. Cache writes it doesn't
+ * attribute to a lifetime count as 1-hour writes, the dearer, so the cap
+ * never undercounts.
  */
-function allInputTokens(usage: {
+function tokenUsage(usage: {
   input_tokens: number;
+  output_tokens: number;
   cache_creation_input_tokens: number | null;
   cache_read_input_tokens: number | null;
-}) {
-  return (
-    usage.input_tokens +
-    (usage.cache_creation_input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0)
-  );
+  cache_creation?: {
+    ephemeral_5m_input_tokens: number;
+    ephemeral_1h_input_tokens: number;
+  } | null;
+}): TokenUsage {
+  const byLifetime = usage.cache_creation;
+  return {
+    inputTokens: usage.input_tokens,
+    cacheWrite5mTokens: byLifetime?.ephemeral_5m_input_tokens ?? 0,
+    cacheWrite1hTokens:
+      byLifetime?.ephemeral_1h_input_tokens ??
+      usage.cache_creation_input_tokens ??
+      0,
+    cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+    outputTokens: usage.output_tokens,
+  };
 }

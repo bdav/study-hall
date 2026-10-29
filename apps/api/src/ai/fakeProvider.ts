@@ -101,6 +101,9 @@ export function createFakeAiProvider() {
             : JSON.stringify(next.output),
         model: request.model,
         inputTokens: next.inputTokens,
+        cacheWrite5mTokens: next.cacheWrite5mTokens,
+        cacheWrite1hTokens: next.cacheWrite1hTokens,
+        cacheReadTokens: next.cacheReadTokens,
         outputTokens: next.outputTokens,
       };
     },

@@ -72,6 +72,8 @@ async function recordCall({
   model = 'claude-sonnet-5-5',
   inputTokens = 0,
   outputTokens = 0,
+  cacheWrite5mTokens = 0,
+  cacheReadTokens = 0,
   failed = false,
 }: {
   by?: string;
@@ -80,6 +82,8 @@ async function recordCall({
   model?: string;
   inputTokens?: number;
   outputTokens?: number;
+  cacheWrite5mTokens?: number;
+  cacheReadTokens?: number;
   failed?: boolean;
 } = {}) {
   await prisma.aiUsage.create({
@@ -89,6 +93,8 @@ async function recordCall({
       model,
       inputTokens,
       outputTokens,
+      cacheWrite5mTokens,
+      cacheReadTokens,
       failed,
       createdAt: at,
     },
@@ -114,6 +120,17 @@ describe('aiUsage router', () => {
       const summary = await createCaller().aiUsage.summary();
 
       expect(summary).toMatchObject({ capUsd: 10, paused: true });
+    });
+
+    it('counts cache writes and reads toward the cap at their own rates', async () => {
+      // Sonnet 5.5 writes to the 5-minute cache at $2.50 per million
+      await recordCall({ cacheWrite5mTokens: 3_600_000 }); // $9
+      await recordCall({ cacheReadTokens: 10_000_000 }); // $1 at $0.10
+
+      const summary = await createCaller().aiUsage.summary();
+
+      expect(summary.spentUsd).toBeCloseTo(10, 8);
+      expect(summary.paused).toBe(true);
     });
 
     it('counts only this UTC month toward the cap', async () => {
@@ -180,6 +197,27 @@ describe('aiUsage router', () => {
         },
       ]);
       expect(report.totalUsd).toBeCloseTo(0.756, 8);
+    });
+
+    it('counts every input token, cached or not, pricing cached ones at their own rates', async () => {
+      // 1,000 × $2 + 10,000 × $2.50 + 50,000 × $0.10 + 2,000 × $10
+      await recordCall({
+        inputTokens: 1_000,
+        cacheWrite5mTokens: 10_000,
+        cacheReadTokens: 50_000,
+        outputTokens: 2_000,
+      });
+
+      const report = await createCaller().aiUsage.report();
+
+      expect(report.breakdown).toEqual([
+        expect.objectContaining({
+          calls: 1,
+          inputTokens: 61_000,
+          outputTokens: 2_000,
+          costUsd: expect.closeTo(0.052, 8),
+        }),
+      ]);
     });
 
     it("shows only the learner's own usage", async () => {

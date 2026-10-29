@@ -11,7 +11,17 @@ export type AiRequest = {
 };
 
 /** The tokens one call used, as the API bills them. */
-export type TokenUsage = { inputTokens: number; outputTokens: number };
+export type TokenUsage = {
+  /** Input tokens neither written to nor read from the prompt cache. */
+  inputTokens: number;
+  /** Input tokens written to the 5-minute prompt cache. */
+  cacheWrite5mTokens?: number;
+  /** Input tokens written to the 1-hour prompt cache. */
+  cacheWrite1hTokens?: number;
+  /** Input tokens read from the prompt cache. */
+  cacheReadTokens?: number;
+  outputTokens: number;
+};
 
 export type AiResponse = TokenUsage & {
   /** The response text, expected to be JSON matching the output schema. */

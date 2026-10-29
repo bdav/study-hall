@@ -327,6 +327,27 @@ describe('courseRouter', () => {
       ]);
     });
 
+    it('records the cached tokens of the generation by kind', async () => {
+      ai.respondWith(syllabus, {
+        inputTokens: 12,
+        cacheWrite5mTokens: 300,
+        cacheWrite1hTokens: 40,
+        cacheReadTokens: 5_000,
+        outputTokens: 1450,
+      });
+      await createCaller().course.create(courseForm);
+
+      expect(await prisma.aiUsage.findMany()).toEqual([
+        expect.objectContaining({
+          inputTokens: 12,
+          cacheWrite5mTokens: 300,
+          cacheWrite1hTokens: 40,
+          cacheReadTokens: 5_000,
+          outputTokens: 1450,
+        }),
+      ]);
+    });
+
     it.each([
       ['text that is not JSON', 'Here is your syllabus: ...'],
       ['JSON that fails the syllabus schema', { lessons: [] }],
