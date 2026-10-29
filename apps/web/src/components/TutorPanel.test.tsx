@@ -1,7 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { TutorPanel } from './TutorPanel';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { trpc } from '@/lib/trpc';
 
 const mockAsk = vi.fn();
@@ -108,6 +110,11 @@ function controlledReply() {
   };
 }
 
+/** Renders the panel with the tooltip provider the app gives it. */
+function renderPanel(panel: ReactElement) {
+  return render(panel, { wrapper: TooltipProvider });
+}
+
 function messageList() {
   return within(screen.getByRole('list', { name: 'Messages' }));
 }
@@ -139,7 +146,7 @@ describe('TutorPanel', () => {
       { role: 'TUTOR', content: 'What do you think it means?' },
     ]);
 
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     const items = messageList().getAllByRole('listitem');
     expect(items).toHaveLength(2);
@@ -152,7 +159,7 @@ describe('TutorPanel', () => {
   it('invites a first question while the thread is empty', () => {
     mockThread([]);
 
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     expect(
       screen.getByText(/ask about anything in this lesson/i),
@@ -164,7 +171,7 @@ describe('TutorPanel', () => {
     mockThread([]);
     const reply = controlledReply();
     mockAsk.mockReturnValue(Promise.resolve(reply.stream));
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     await user.type(
       screen.getByLabelText('Message the tutor'),
@@ -215,7 +222,7 @@ describe('TutorPanel', () => {
         return Promise.resolve(reply.stream);
       },
     );
-    const { unmount } = render(<TutorPanel lessonId="lesson-1" />);
+    const { unmount } = renderPanel(<TutorPanel lessonId="lesson-1" />);
     await user.type(
       screen.getByLabelText('Message the tutor'),
       'What does ciao mean?{Enter}',
@@ -238,7 +245,7 @@ describe('TutorPanel', () => {
     mockThread([]);
     const reply = controlledReply();
     mockAsk.mockReturnValue(Promise.resolve(reply.stream));
-    render(
+    renderPanel(
       <TutorPanel
         lessonId="lesson-1"
         exercise={{ id: 'exercise-3', number: 3 }}
@@ -264,7 +271,7 @@ describe('TutorPanel', () => {
   it("doesn't mention an exercise when the learner isn't on one", () => {
     mockThread([]);
 
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     expect(screen.queryByText(/can see exercise/)).not.toBeInTheDocument();
   });
@@ -272,7 +279,7 @@ describe('TutorPanel', () => {
   it('keeps a Shift+Enter line break in the message', async () => {
     const user = userEvent.setup();
     mockThread([]);
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     await user.type(
       screen.getByLabelText('Message the tutor'),
@@ -290,7 +297,7 @@ describe('TutorPanel', () => {
     mockThread([]);
     const reply = controlledReply();
     mockAsk.mockReturnValue(Promise.resolve(reply.stream));
-    render(<TutorPanel lessonId="lesson-1" />);
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
 
     await user.type(
       screen.getByLabelText('Message the tutor'),
@@ -315,7 +322,7 @@ describe('TutorPanel', () => {
         { role: 'LEARNER', content: 'What does ciao mean?' },
         { role: 'TUTOR', content: 'What do you think it means?' },
       ]);
-      render(<TutorPanel lessonId="lesson-1" />);
+      renderPanel(<TutorPanel lessonId="lesson-1" />);
 
       await user.click(screen.getByRole('button', { name: 'New thread' }));
 
@@ -323,10 +330,24 @@ describe('TutorPanel', () => {
       expect(mockInvalidate).toHaveBeenCalledWith({ lessonId: 'lesson-1' });
     });
 
+    it('names New thread in a tooltip, the button showing only its icon', async () => {
+      const user = userEvent.setup();
+      mockThread([{ role: 'LEARNER', content: 'Hi' }]);
+      renderPanel(<TutorPanel lessonId="lesson-1" />);
+      const button = screen.getByRole('button', { name: 'New thread' });
+      expect(button).toHaveTextContent('');
+
+      await user.hover(button);
+
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(
+        'New thread',
+      );
+    });
+
     it("can't start a new thread while the current one is empty", () => {
       mockThread([]);
 
-      render(<TutorPanel lessonId="lesson-1" />);
+      renderPanel(<TutorPanel lessonId="lesson-1" />);
 
       expect(screen.getByRole('button', { name: 'New thread' })).toBeDisabled();
     });
@@ -334,7 +355,7 @@ describe('TutorPanel', () => {
     it("doesn't offer a choice of threads while there is only one", () => {
       mockThread([{ role: 'LEARNER', content: 'Hi' }]);
 
-      render(<TutorPanel lessonId="lesson-1" />);
+      renderPanel(<TutorPanel lessonId="lesson-1" />);
 
       expect(
         screen.queryByRole('combobox', { name: 'Thread' }),
@@ -350,7 +371,7 @@ describe('TutorPanel', () => {
           { role: 'TUTOR', content: 'What do you think it means?' },
         ],
       });
-      render(
+      renderPanel(
         <TutorPanel
           lessonId="lesson-1"
           exercise={{ id: 'exercise-3', number: 3 }}
@@ -393,7 +414,7 @@ describe('TutorPanel', () => {
         'thread-2': [{ role: 'LEARNER', content: 'Fresh start' }],
         'thread-1': [{ role: 'LEARNER', content: 'Long ago' }],
       });
-      render(<TutorPanel lessonId="lesson-1" />);
+      renderPanel(<TutorPanel lessonId="lesson-1" />);
       await user.click(screen.getByRole('combobox', { name: 'Thread' }));
       await user.click(screen.getByRole('option', { name: 'Thread 1' }));
 

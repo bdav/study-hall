@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import LessonPage from './LessonPage';
 import { trpc } from '@/lib/trpc';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -283,7 +284,10 @@ function renderPage({
       </Routes>
     </MemoryRouter>
   );
-  return render(strict ? <StrictMode>{page}</StrictMode> : page);
+  // The tooltip provider the app gives every page, kept across rerenders
+  return render(strict ? <StrictMode>{page}</StrictMode> : page, {
+    wrapper: TooltipProvider,
+  });
 }
 
 beforeEach(() => {

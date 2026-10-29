@@ -2,6 +2,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -18,6 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type Role =
   inferRouterOutputs<AppRouter>['tutor']['thread']['messages'][number]['role'];
@@ -55,10 +61,13 @@ function Message({ role, children }: { role: Role; children: ReactNode }) {
 export function TutorPanel({
   lessonId,
   exercise,
+  inDrawer = false,
 }: {
   lessonId: string;
   /** The exercise on the learner's screen, numbered as the lesson shows it. */
   exercise?: { id: string; number: number };
+  /** In a drawer, whose close button sits at the header's end. */
+  inDrawer?: boolean;
 }) {
   const utils = trpc.useUtils();
   // An earlier thread being read back, or null for the current one
@@ -140,7 +149,7 @@ export function TutorPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 pb-3">
+      <div className={`flex items-center gap-2 pb-3 ${inDrawer ? 'pr-8' : ''}`}>
         <h2 className="mr-auto text-lg font-semibold">Tutor</h2>
         {current && threads.length > 1 && (
           <Select
@@ -172,27 +181,42 @@ export function TutorPanel({
             </SelectContent>
           </Select>
         )}
-        <button
-          type="button"
-          onClick={() => startThread.mutate({ lessonId })}
-          // An empty current thread is fresh already
-          disabled={
-            pending !== null ||
-            startThread.isPending ||
-            (!readingEarlier && messages.length === 0)
-          }
-          className="touch-target flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-white/80 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <SquarePen aria-hidden className="size-3.5" />
-          New thread
-        </button>
+        <Tooltip>
+          {/* A disabled button gets no hover, so the span takes it */}
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <button
+                type="button"
+                aria-label="New thread"
+                onClick={() => startThread.mutate({ lessonId })}
+                // An empty current thread is fresh already
+                disabled={
+                  pending !== null ||
+                  startThread.isPending ||
+                  (!readingEarlier && messages.length === 0)
+                }
+                className="touch-target rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <SquarePen aria-hidden className="size-4" />
+              </button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            className="border border-white/20 bg-[oklch(0.2_0.06_230)] text-white"
+            style={{ '--tooltip-bg': 'oklch(0.2 0.06 230)' } as CSSProperties}
+          >
+            New thread
+          </TooltipContent>
+        </Tooltip>
       </div>
       <ol
         ref={listRef}
         aria-label="Messages"
         // Read out as it streams in
         aria-live="polite"
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
+        // Room for a scrollbar drawn over the messages
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-3"
       >
         {messages.map((message) => (
           <Message key={message.id} role={message.role}>

@@ -1023,7 +1023,7 @@ function WrittenLesson({
         <SheetDescription className="sr-only">
           Ask about {lesson.title}
         </SheetDescription>
-        <TutorPanel lessonId={lesson.id} exercise={tutorExercise} />
+        <TutorPanel lessonId={lesson.id} exercise={tutorExercise} inDrawer />
       </SheetContent>
     </Sheet>
   );

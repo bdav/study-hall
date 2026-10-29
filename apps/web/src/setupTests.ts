@@ -5,6 +5,13 @@ Element.prototype.hasPointerCapture ??= () => false;
 Element.prototype.releasePointerCapture ??= () => {};
 Element.prototype.scrollIntoView ??= () => {};
 
+// Radix UI's Tooltip measures its arrow, and jsdom has no ResizeObserver
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // jsdom doesn't scroll; the lesson page scrolls to the top of each new step
 window.scrollTo = () => {};
 
