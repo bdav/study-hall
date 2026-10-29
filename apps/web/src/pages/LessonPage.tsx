@@ -11,15 +11,14 @@ import {
   ChevronRight,
   Loader2,
   Menu,
-  MessageCircle,
   MoreHorizontal,
-  X,
+  PanelRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
-import { useStoredChoice } from '@/hooks/useStoredChoice';
+import { useStoredChoice, useStoredFlag } from '@/hooks/useStoredChoice';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   useStoredPagingView,
@@ -260,7 +259,7 @@ function WrittenLessonHeader({
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
   leading?: ReactNode;
-  /** Opens and closes the tutor, for learners who can use AI. */
+  /** Opens and closes the tutor, at the far right, for learners who can use AI. */
   tutorToggle?: ReactNode;
   /** The step's views, if it can be shown more than one way. */
   views: ViewChoice[];
@@ -310,7 +309,6 @@ function WrittenLessonHeader({
             </Switch>
           </div>
         )}
-        {tutorToggle}
         <CompletionToggle lesson={lesson} />
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -378,6 +376,7 @@ function WrittenLessonHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {tutorToggle}
       </PinnedHeader>
       <StartOverDialog
         lesson={lesson}
@@ -974,24 +973,34 @@ function WrittenLesson({
   }, [isFullPage]);
 
   // The tutor's state lives here, in the frame, so moving between steps
-  // never resets it. It sits beside the lesson where there's room, and is
-  // a drawer otherwise
-  const [isTutorOpen, setIsTutorOpen] = useState(false);
+  // never resets it. Where there's room it sits beside the lesson, open to
+  // start and remembered by the browser; otherwise it's a drawer, closed
+  // until asked for so it doesn't cover the lesson
   const tutorBeside = useMediaQuery('(min-width: 1024px)');
+  const [isTutorBesideOpen, setIsTutorBesideOpen] = useStoredFlag(
+    'study-hall:tutor-open',
+    true,
+  );
+  const [isTutorDrawerOpen, setIsTutorDrawerOpen] = useState(false);
+  const isTutorOpen = tutorBeside ? isTutorBesideOpen : isTutorDrawerOpen;
   const tutorToggle = canUseAI && (
     <button
       type="button"
       aria-label="Tutor"
       aria-pressed={isTutorOpen}
-      onClick={() => setIsTutorOpen(!isTutorOpen)}
-      className={`flex shrink-0 items-center gap-1.5 ${ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
+      title={isTutorOpen ? 'Hide the tutor' : 'Show the tutor'}
+      onClick={() =>
+        tutorBeside
+          ? setIsTutorBesideOpen(!isTutorBesideOpen)
+          : setIsTutorDrawerOpen(!isTutorDrawerOpen)
+      }
+      className={`shrink-0 ${ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
     >
-      <MessageCircle className="size-5" />
-      <span className="hidden text-sm md:inline">Tutor</span>
+      <PanelRight className="size-5" />
     </button>
   );
   const tutorDrawer = canUseAI && !tutorBeside && (
-    <Sheet open={isTutorOpen} onOpenChange={setIsTutorOpen}>
+    <Sheet open={isTutorDrawerOpen} onOpenChange={setIsTutorDrawerOpen}>
       <SheetContent
         side="right"
         className="w-96 max-w-[90vw] border-l border-white/20 bg-[oklch(0.25_0.08_230)] text-white"
@@ -1004,20 +1013,8 @@ function WrittenLesson({
       </SheetContent>
     </Sheet>
   );
-  const tutorPanel = canUseAI && isTutorOpen && tutorBeside && (
-    <TutorPanel
-      lessonId={lesson.id}
-      actions={
-        <button
-          type="button"
-          aria-label="Close tutor"
-          onClick={() => setIsTutorOpen(false)}
-          className={ICON_BUTTON}
-        >
-          <X className="size-4" />
-        </button>
-      }
-    />
+  const tutorPanel = canUseAI && tutorBeside && (
+    <TutorPanel lessonId={lesson.id} />
   );
 
   const outlineToggles = (
@@ -1027,7 +1024,7 @@ function WrittenLesson({
           aria-label="Open outline"
           // With the tutor beside the lesson, the outline is a drawer until
           // the screen has room for both
-          className={`${tutorPanel ? 'xl:hidden' : 'md:hidden'} ${ICON_BUTTON}`}
+          className={`${tutorPanel && isTutorOpen ? 'xl:hidden' : 'md:hidden'} ${ICON_BUTTON}`}
         >
           <Menu className="size-5" />
         </SheetTrigger>
@@ -1102,6 +1099,7 @@ function WrittenLesson({
       }
       outline={renderOutline()}
       tutor={tutorPanel || undefined}
+      tutorOpen={isTutorOpen}
     >
       {tutorDrawer}
       {/* Beside the outline */}

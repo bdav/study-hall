@@ -38,14 +38,7 @@ function Message({ role, children }: { role: Role; children: ReactNode }) {
  * version, restored on reopening, and a box to ask in. The reply streams in
  * as it is written, and joins the stored thread once complete.
  */
-export function TutorPanel({
-  lessonId,
-  actions,
-}: {
-  lessonId: string;
-  /** Controls for the panel's heading, such as closing it. */
-  actions?: ReactNode;
-}) {
+export function TutorPanel({ lessonId }: { lessonId: string }) {
   const utils = trpc.useUtils();
   const thread = trpc.tutor.thread.useQuery({ lessonId });
   const [draft, setDraft] = useState('');
@@ -107,10 +100,7 @@ export function TutorPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 pb-3">
-        <h2 className="text-lg font-semibold">Tutor</h2>
-        {actions}
-      </div>
+      <h2 className="pb-3 text-lg font-semibold">Tutor</h2>
       <ol
         ref={listRef}
         aria-label="Messages"

@@ -2081,19 +2081,12 @@ describe('LessonPage', () => {
       );
     }
 
-    it('opens beside the lesson and stays open from step to step', async () => {
+    it('is open beside the lesson to start, and stays open from step to step', async () => {
       const user = userEvent.setup();
       screenIsWide(true);
       renderPage({ query: written });
 
       const toggle = screen.getByRole('button', { name: 'Tutor' });
-      expect(toggle).toHaveAttribute('aria-pressed', 'false');
-      expect(
-        screen.queryByRole('complementary', { name: 'Tutor' }),
-      ).not.toBeInTheDocument();
-
-      await user.click(toggle);
-
       expect(toggle).toHaveAttribute('aria-pressed', 'true');
       const tutor = screen.getByRole('complementary', { name: 'Tutor' });
       expect(within(tutor).getByText('What does ciao mean?')).toBeVisible();
@@ -2105,19 +2098,41 @@ describe('LessonPage', () => {
           'What does ciao mean?',
         ),
       ).toBeVisible();
+    });
 
-      await user.click(screen.getByRole('button', { name: 'Close tutor' }));
+    it('closes and reopens from the header, remembering the choice', async () => {
+      const user = userEvent.setup();
+      screenIsWide(true);
+      const { unmount } = renderPage({ query: written });
+
+      await user.click(screen.getByRole('button', { name: 'Tutor' }));
+
+      expect(screen.getByRole('button', { name: 'Tutor' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(
+        screen.queryByRole('complementary', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
+
+      unmount();
+      renderPage({ query: written });
 
       expect(
         screen.queryByRole('complementary', { name: 'Tutor' }),
       ).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Tutor' }));
+      expect(
+        screen.getByRole('complementary', { name: 'Tutor' }),
+      ).toBeInTheDocument();
     });
 
-    it('opens as a drawer on a narrower screen', async () => {
+    it('opens as a drawer on a narrower screen, starting closed', async () => {
       const user = userEvent.setup();
       screenIsWide(false);
       renderPage({ query: written });
 
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Tutor' }));
 
       const drawer = screen.getByRole('dialog', { name: 'Tutor' });
