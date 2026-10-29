@@ -178,7 +178,7 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v3',
+        promptVersion: 'lesson-v4',
       });
       expect(
         version.exercises.map(
@@ -417,6 +417,20 @@ describe('lessonRouter', () => {
         expect(prompt).toContain(objectives[0]);
       }
       expect(prompt).toMatch(/Write the lesson "At the café"/);
+    });
+
+    it('asks the model to choose the objectives of a lesson the learner added without any', async () => {
+      const [, cafe] = await createCourseWithLessons();
+      await prisma.lesson.update({
+        where: { id: cafe.id },
+        data: { objectives: [] },
+      });
+
+      const prompt = await generate(cafe.id, 'Taught ordering.');
+
+      expect(prompt).toMatch(
+        /Write the lesson "At the café"\. It has no learning objectives yet: choose two to five/,
+      );
     });
 
     it('sends summaries of earlier generated lessons in syllabus order, never later ones', async () => {

@@ -6,17 +6,14 @@ import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
 import { ChevronRight, Circle, CircleCheck, CircleDot } from 'lucide-react';
 import { CenteredPage } from '@/components/CenteredPage';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { PAGE_WIDTH } from '@/lib/layout';
 import { PinnedHeader } from '@/components/PinnedHeader';
+import { ProposalEditor } from '@/components/ProposalEditor';
 
 type SyllabusLesson =
   inferRouterOutputs<AppRouter>['course']['getById']['lessons'][number];
 type LessonStatus = SyllabusLesson['status'];
-
-/** A proposed lesson: it doesn't exist yet, so it has no id or progress. */
-type ProposedLesson = { title: string; objectives: string[] };
 
 /** How each Lesson Completion status shows in a syllabus row. */
 const STATUSES: Record<
@@ -31,40 +28,6 @@ const STATUSES: Record<
   OPENED: { label: 'Opened', Icon: CircleDot, className: 'text-white/60' },
   COMPLETE: { label: 'Complete', Icon: CircleCheck, className: 'text-white' },
 };
-
-/**
- * A Syllabus Proposal's lessons, objectives in full, since reading them is
- * the point of reviewing it.
- */
-function ProposedLessons({
-  lessons,
-  labelledBy,
-}: {
-  lessons: ProposedLesson[];
-  labelledBy: string;
-}) {
-  return (
-    <ol aria-labelledby={labelledBy} className="mt-4 space-y-3">
-      {lessons.map((lesson, index) => (
-        <li
-          key={index}
-          aria-label={`Lesson ${index + 1}: ${lesson.title}`}
-          className="rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm"
-        >
-          <p className="font-semibold">
-            <span className="mr-2 text-white/50">{index + 1}.</span>
-            {lesson.title}
-          </p>
-          <ul className="mt-2 list-disc space-y-0.5 pl-10 text-sm text-white/70">
-            {lesson.objectives.map((objective, objectiveIndex) => (
-              <li key={objectiveIndex}>{objective}</li>
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 /**
  * The accepted Syllabus as a compact list, like a table of contents: a row
@@ -102,18 +65,24 @@ function Syllabus({
             className="px-3 py-2.5"
           >
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                aria-controls={objectivesId}
-                aria-label={`Objectives: ${lesson.title}`}
-                onClick={() => toggle(lesson.id)}
-                className="relative touch-target shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
-              >
-                <ChevronRight
-                  className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                />
-              </button>
+              {lesson.objectives.length > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  aria-controls={objectivesId}
+                  aria-label={`Objectives: ${lesson.title}`}
+                  onClick={() => toggle(lesson.id)}
+                  className="relative touch-target shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+                >
+                  <ChevronRight
+                    className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                  />
+                </button>
+              ) : (
+                // A lesson added without objectives has none to open; the
+                // space keeps its number in line with the others
+                <span className="size-6 shrink-0" aria-hidden />
+              )}
               <span className="w-6 shrink-0 text-white/50 tabular-nums">
                 {index + 1}.
               </span>
@@ -293,35 +262,19 @@ export default function CoursePage() {
                 Syllabus Proposal
               </h2>
               <p className="mt-1 text-sm text-white/60">
-                Review the lessons below. Accepting creates your course&apos;s
+                Shape the lessons below: rename, reorder, remove or add them,
+                and edit their objectives. Accepting creates your course&apos;s
                 syllabus.
               </p>
-              <ProposedLessons
+              <ProposalEditor
+                courseId={courseId}
+                courseTitle={course.title}
                 lessons={proposal.lessons}
-                labelledBy="syllabus-heading"
-              />
-              <button
-                type="button"
-                onClick={() => acceptProposal.mutate({ courseId })}
-                disabled={acceptProposal.isPending}
-                className="mt-6 w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
-              >
-                {acceptProposal.isPending ? 'Accepting…' : 'Accept syllabus'}
-              </button>
-              <ConfirmDialog
-                title="Discard proposal"
-                description={`Discard the proposed syllabus and remove "${course.title}"? You can create the course again later.`}
-                confirmLabel="Discard"
-                onConfirm={() => discardProposal.mutate({ courseId })}
-                trigger={
-                  <button
-                    type="button"
-                    disabled={discardProposal.isPending}
-                    className="mt-3 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
-                  >
-                    Discard proposal
-                  </button>
-                }
+                feedback={proposal.feedback}
+                onAccept={() => acceptProposal.mutate({ courseId })}
+                isAccepting={acceptProposal.isPending}
+                onDiscard={() => discardProposal.mutate({ courseId })}
+                isDiscarding={discardProposal.isPending}
               />
             </section>
           ) : (

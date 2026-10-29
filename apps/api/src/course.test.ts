@@ -293,8 +293,9 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v1',
+        promptVersion: 'syllabus-v2',
         acceptedAt: null,
+        feedback: [],
       });
       expect(course.lessons).toEqual([]);
     });
@@ -492,6 +493,42 @@ describe('courseRouter', () => {
       expect(course.proposal?.acceptedAt).toBeInstanceOf(Date);
     });
 
+    it('creates the Lessons as the learner edited them', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      const [greetings, , numbers] = syllabus.lessons;
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [
+          numbers,
+          { ...greetings, title: 'Hello and goodbye' },
+          { title: 'Days of the week', objectives: [] },
+        ],
+      });
+
+      await caller.course.acceptProposal({ courseId: id });
+      const course = await caller.course.getById({ id });
+
+      expect(
+        course.lessons.map(({ title, position, objectives }) => ({
+          title,
+          position,
+          objectives,
+        })),
+      ).toEqual([
+        { title: 'Numbers', position: 0, objectives: ['Count to one hundred'] },
+        {
+          title: 'Hello and goodbye',
+          position: 1,
+          objectives: [
+            'Greet someone formally and informally',
+            'Say your name',
+          ],
+        },
+        { title: 'Days of the week', position: 2, objectives: [] },
+      ]);
+    });
+
     it('creates the Course Deck, listed in Flashcards with its course', async () => {
       const caller = createCaller();
       const { id } = await createCourse(caller);
@@ -538,6 +575,267 @@ describe('courseRouter', () => {
       ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
       expect((await caller.course.getById({ id })).lessons).toHaveLength(3);
       expect(await prisma.deck.count()).toBe(1);
+    });
+  });
+
+  describe('updateProposal', () => {
+    it('renames a proposed lesson', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      const [greetings, ...rest] = syllabus.lessons;
+
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [{ ...greetings, title: 'Hello and goodbye' }, ...rest],
+      });
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal?.lessons.map((lesson) => lesson.title)).toEqual([
+        'Hello and goodbye',
+        'At the café',
+        'Numbers',
+      ]);
+    });
+
+    it('adds a lesson by its title alone', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [
+          ...syllabus.lessons,
+          { title: 'Days of the week', objectives: [] },
+        ],
+      });
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal?.lessons.at(-1)).toEqual({
+        title: 'Days of the week',
+        objectives: [],
+      });
+    });
+
+    it('reorders and removes proposed lessons', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      const [greetings, cafe, numbers] = syllabus.lessons;
+
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [numbers, greetings],
+      });
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal?.lessons).toEqual([numbers, greetings]);
+      expect(proposal?.lessons).not.toContainEqual(cafe);
+    });
+
+    it("edits a lesson's learning objectives", async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      const [greetings, ...rest] = syllabus.lessons;
+
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [
+          { ...greetings, objectives: ['Greet someone', 'Say goodbye'] },
+          ...rest,
+        ],
+      });
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal?.lessons[0].objectives).toEqual([
+        'Greet someone',
+        'Say goodbye',
+      ]);
+    });
+
+    it('refuses to leave a proposal with no lessons, or a lesson without a title', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      await expect(
+        caller.course.updateProposal({ courseId: id, lessons: [] }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+      await expect(
+        caller.course.updateProposal({
+          courseId: id,
+          lessons: [{ title: '  ', objectives: [] }],
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+      expect((await caller.course.getById({ id })).proposal?.lessons).toEqual(
+        syllabus.lessons,
+      );
+    });
+
+    it('refuses more than a hundred lessons', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      await expect(
+        caller.course.updateProposal({
+          courseId: id,
+          lessons: Array.from({ length: 101 }, (_, i) => ({
+            title: `Lesson ${i + 1}`,
+            objectives: [],
+          })),
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+    });
+
+    it('refuses to edit an accepted Syllabus this way', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      await caller.course.acceptProposal({ courseId: id });
+
+      await expect(
+        caller.course.updateProposal({
+          courseId: id,
+          lessons: [{ title: 'Something else', objectives: [] }],
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect((await caller.course.getById({ id })).proposal?.lessons).toEqual(
+        syllabus.lessons,
+      );
+    });
+  });
+
+  describe('regenerateProposal', () => {
+    const regenerated = {
+      lessons: [
+        { title: 'Il passato prossimo', objectives: ['Say what you did'] },
+        { title: 'At the café', objectives: ['Order food and drinks'] },
+      ],
+    };
+
+    it('replaces the proposal with a regenerated one, keeping the feedback', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      ai.respondWith(regenerated);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        feedback: 'More focus on the past tense',
+      });
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal).toMatchObject({
+        lessons: regenerated.lessons,
+        feedback: ['More focus on the past tense'],
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'syllabus-v2',
+        acceptedAt: null,
+      });
+    });
+
+    it('sends the setup answers, the feedback so far and the proposal as the learner left it', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      const [greetings] = syllabus.lessons;
+      await caller.course.updateProposal({
+        courseId: id,
+        lessons: [greetings, { title: 'Days of the week', objectives: [] }],
+      });
+      ai.respondWith(regenerated);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        feedback: 'More focus on the past tense',
+      });
+
+      ai.respondWith(syllabus);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        feedback: 'Fewer lessons',
+      });
+
+      const [first, second] = ai.requests.slice(1).map((r) => r.prompt);
+      for (const answer of Object.values(courseForm)) {
+        expect(first).toContain(answer);
+      }
+      expect(first).toContain('Greet someone formally and informally');
+      expect(first).toContain('Days of the week');
+      expect(first).not.toContain('At the café');
+      expect(first).toContain('More focus on the past tense');
+      // The second round builds on the first's proposal, with both pieces
+      // of feedback, oldest first
+      expect(second).toContain('Il passato prossimo');
+      expect(second.indexOf('More focus on the past tense')).toBeLessThan(
+        second.indexOf('Fewer lessons'),
+      );
+      expect((await caller.course.getById({ id })).proposal?.feedback).toEqual([
+        'More focus on the past tense',
+        'Fewer lessons',
+      ]);
+    });
+
+    it('records the AI usage of the regeneration', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      ai.respondWith(regenerated);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        feedback: 'Shorter',
+      });
+
+      const usage = await prisma.aiUsage.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(usage).toHaveLength(2);
+      expect(usage[1]).toMatchObject({
+        userId,
+        purpose: 'SYLLABUS_GENERATION',
+        model: 'claude-sonnet-5-5',
+      });
+    });
+
+    it('needs AI access, without calling the model', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      vi.stubEnv('AI_ALLOWED_EMAILS', 'someone-else@example.com');
+
+      await expect(
+        caller.course.regenerateProposal({ courseId: id, feedback: 'Shorter' }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('refuses empty feedback', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      await expect(
+        caller.course.regenerateProposal({ courseId: id, feedback: '   ' }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('refuses to regenerate an accepted Syllabus, without calling the model', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      await caller.course.acceptProposal({ courseId: id });
+
+      await expect(
+        caller.course.regenerateProposal({ courseId: id, feedback: 'Shorter' }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(ai.requests).toHaveLength(1);
+    });
+
+    it('leaves the proposal and its feedback as they were when the call fails', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      ai.failWith('timeout');
+      await expect(
+        caller.course.regenerateProposal({ courseId: id, feedback: 'Shorter' }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_GATEWAY' }));
+
+      const { proposal } = await caller.course.getById({ id });
+      expect(proposal).toMatchObject({
+        lessons: syllabus.lessons,
+        feedback: [],
+      });
     });
   });
 
@@ -589,6 +887,21 @@ describe('courseRouter', () => {
       await expect(
         stranger.course.discardProposal({ courseId: id }),
       ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }));
+      await expect(
+        stranger.course.regenerateProposal({
+          courseId: id,
+          feedback: 'Shorter',
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }));
+      await expect(
+        stranger.course.updateProposal({
+          courseId: id,
+          lessons: [{ title: 'Something else', objectives: [] }],
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }));
+      expect(
+        (await createCaller().course.getById({ id })).proposal?.lessons,
+      ).toEqual(syllabus.lessons);
       expect(await stranger.course.list()).toEqual([]);
       expect(await prisma.course.count()).toBe(1);
       expect(await prisma.lesson.count()).toBe(0);

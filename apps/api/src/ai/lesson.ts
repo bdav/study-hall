@@ -5,7 +5,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v3';
+export const LESSON_PROMPT_VERSION = 'lesson-v4';
 
 const text = z.string().trim().min(1);
 
@@ -198,7 +198,14 @@ export function buildLessonPrompt(context: LessonContext): string {
         )
       : ['- Nothing yet: no earlier lesson has been written.']),
     '',
-    `Write the lesson "${context.lesson.title}", with these learning objectives:`,
-    ...list(context.lesson.objectives),
+    // A lesson the learner added by its title alone has no objectives yet
+    ...(context.lesson.objectives.length > 0
+      ? [
+          `Write the lesson "${context.lesson.title}", with these learning objectives:`,
+          ...list(context.lesson.objectives),
+        ]
+      : [
+          `Write the lesson "${context.lesson.title}". It has no learning objectives yet: choose two to five that fit its title and its place in the syllabus, and teach those.`,
+        ]),
   ].join('\n');
 }

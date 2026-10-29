@@ -8,11 +8,18 @@ import {
   buildSyllabusPrompt,
   courseSetupSchema,
   parseProposalLessons,
+  proposalEditSchema,
   SYLLABUS_MODEL,
   SYLLABUS_PROMPT_VERSION,
   SYLLABUS_SYSTEM_PROMPT,
   syllabusOutputSchema,
 } from '../ai/syllabus.js';
+
+/** The longest feedback a regeneration takes. */
+const MAX_FEEDBACK_LENGTH = 1000;
+
+const ACCEPTED_MESSAGE =
+  'This syllabus has been accepted, so it is no longer a proposal';
 
 export const courseRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -120,8 +127,6 @@ export const courseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
       }
 
-      const lessons = parseProposalLessons(proposal.lessons);
-
       await ctx.prisma.$transaction(async (tx) => {
         // Claim the proposal first so a concurrent accept can't double it
         const claimed = await tx.syllabusProposal.updateMany({
@@ -135,6 +140,16 @@ export const courseRouter = router({
             message: 'This syllabus proposal has already been accepted',
           });
         }
+
+        // Read after claiming, so an edit saved meanwhile is in: the claim
+        // holds off any edit from here on
+        const lessons = parseProposalLessons(
+          (
+            await tx.syllabusProposal.findUniqueOrThrow({
+              where: { id: proposal.id },
+            })
+          ).lessons,
+        );
 
         await tx.lesson.createMany({
           data: lessons.map((lesson, position) => ({
@@ -154,6 +169,95 @@ export const courseRouter = router({
           },
         });
       });
+
+      return { success: true };
+    }),
+
+  /**
+   * Saves the learner's edits to a Syllabus Proposal: its lessons in full,
+   * in order, as the learner left them.
+   */
+  updateProposal: protectedProcedure
+    .input(
+      z.object({
+        courseId: z.string(),
+        lessons: proposalEditSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const course = await ctx.prisma.course.findUnique({
+        where: { id: input.courseId, userId: ctx.userId },
+        include: { proposal: { select: { id: true } } },
+      });
+
+      if (!course?.proposal) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
+      }
+
+      // Only while unaccepted: an accept in between wins
+      const updated = await ctx.prisma.syllabusProposal.updateMany({
+        where: { id: course.proposal.id, acceptedAt: null },
+        data: { lessons: input.lessons },
+      });
+
+      if (updated.count === 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: ACCEPTED_MESSAGE,
+        });
+      }
+
+      return { success: true };
+    }),
+
+  /**
+   * Regenerates a Syllabus Proposal from the learner's feedback: the model
+   * gets the setup answers, every piece of feedback so far and the proposal
+   * as the learner left it, and its answer replaces the proposal.
+   */
+  regenerateProposal: aiProcedure
+    .input(
+      z.object({
+        courseId: z.string(),
+        feedback: z.string().trim().min(1).max(MAX_FEEDBACK_LENGTH),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const course = await ctx.prisma.course.findUnique({
+        where: { id: input.courseId, userId: ctx.userId },
+        include: { proposal: true },
+      });
+
+      if (!course?.proposal) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
+      }
+      if (course.proposal.acceptedAt) {
+        throw new TRPCError({ code: 'CONFLICT', message: ACCEPTED_MESSAGE });
+      }
+
+      const feedback = [...course.proposal.feedback, input.feedback];
+      const { output, model, promptVersion } = await generateStructured(ctx, {
+        userId: ctx.userId,
+        purpose: 'SYLLABUS_GENERATION',
+        model: SYLLABUS_MODEL,
+        promptVersion: SYLLABUS_PROMPT_VERSION,
+        system: SYLLABUS_SYSTEM_PROMPT,
+        prompt: buildSyllabusPrompt(courseSetupSchema.parse(course), {
+          feedback,
+          lessons: parseProposalLessons(course.proposal.lessons),
+        }),
+        outputSchema: syllabusOutputSchema,
+      });
+
+      // Only while unaccepted: an accept during the call wins
+      const updated = await ctx.prisma.syllabusProposal.updateMany({
+        where: { id: course.proposal.id, acceptedAt: null },
+        data: { lessons: output.lessons, feedback, model, promptVersion },
+      });
+
+      if (updated.count === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: ACCEPTED_MESSAGE });
+      }
 
       return { success: true };
     }),

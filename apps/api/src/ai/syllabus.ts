@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const SYLLABUS_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const SYLLABUS_PROMPT_VERSION = 'syllabus-v1';
+export const SYLLABUS_PROMPT_VERSION = 'syllabus-v2';
 
 const text = z.string().trim().min(1);
 
@@ -21,9 +21,31 @@ export const syllabusOutputSchema = z.object({
 
 export type SyllabusOutput = z.infer<typeof syllabusOutputSchema>;
 
+/**
+ * A Syllabus Proposal's lessons as stored. The model always gives
+ * objectives, but a lesson the learner added by its title may have none yet.
+ */
+export const proposalLessonsSchema = z
+  .array(z.object({ title: text, objectives: z.array(text) }))
+  .min(1);
+
+/**
+ * The learner's edits to a proposal's lessons, bounded, since every lesson
+ * is stored and sent to the model when the proposal is regenerated.
+ */
+export const proposalEditSchema = z
+  .array(
+    z.object({
+      title: text.max(200),
+      objectives: z.array(text.max(500)).max(20),
+    }),
+  )
+  .min(1)
+  .max(100);
+
 /** Reads the lessons stored on a Syllabus Proposal. */
 export function parseProposalLessons(lessons: unknown) {
-  return syllabusOutputSchema.shape.lessons.parse(lessons);
+  return proposalLessonsSchema.parse(lessons);
 }
 
 const optionalText = z.string().trim().default('');
@@ -60,10 +82,41 @@ export function formatCourseSetup(setup: CourseSetup): string[] {
   ];
 }
 
-export function buildSyllabusPrompt(setup: CourseSetup): string {
+/**
+ * What regenerating a proposal builds on: the learner's feedback so far,
+ * oldest first, and the proposal as they left it.
+ */
+export type Regeneration = {
+  feedback: string[];
+  lessons: z.infer<typeof proposalLessonsSchema>;
+};
+
+export function buildSyllabusPrompt(
+  setup: CourseSetup,
+  regeneration?: Regeneration,
+): string {
+  if (!regeneration) {
+    return [
+      ...formatCourseSetup(setup),
+      '',
+      'Propose a syllabus for this learner.',
+    ].join('\n');
+  }
+
   return [
     ...formatCourseSetup(setup),
     '',
-    'Propose a syllabus for this learner.',
+    'Your last proposal, as the learner left it:',
+    ...regeneration.lessons.flatMap(({ title, objectives }, index) => [
+      `${index + 1}. ${title}`,
+      ...(objectives.length > 0
+        ? objectives.map((objective) => `  - ${objective}`)
+        : ['  (no learning objectives yet)']),
+    ]),
+    '',
+    "The learner's feedback, oldest first:",
+    ...regeneration.feedback.map((item, index) => `${index + 1}. ${item}`),
+    '',
+    "Propose the syllabus again, following the learner's feedback, the latest most of all. Keep what the feedback doesn't ask to change, including the learner's own edits to the last proposal.",
   ].join('\n');
 }

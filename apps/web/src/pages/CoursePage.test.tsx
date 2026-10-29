@@ -15,7 +15,12 @@ vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
       course: {
-        getById: { invalidate: vi.fn() },
+        getById: {
+          invalidate: vi.fn(),
+          cancel: vi.fn(),
+          getData: vi.fn(),
+          setData: vi.fn(),
+        },
         list: { invalidate: vi.fn() },
       },
     })),
@@ -23,6 +28,8 @@ vi.mock('@/lib/trpc', () => ({
       getById: { useQuery: vi.fn() },
       acceptProposal: { useMutation: vi.fn() },
       discardProposal: { useMutation: vi.fn() },
+      updateProposal: { useMutation: vi.fn() },
+      regenerateProposal: { useMutation: vi.fn() },
     },
   },
 }));
@@ -31,6 +38,10 @@ type CourseQuery = ReturnType<typeof trpc.course.getById.useQuery>;
 type AcceptMutation = ReturnType<typeof trpc.course.acceptProposal.useMutation>;
 type DiscardMutation = ReturnType<
   typeof trpc.course.discardProposal.useMutation
+>;
+type UpdateMutation = ReturnType<typeof trpc.course.updateProposal.useMutation>;
+type RegenerateMutation = ReturnType<
+  typeof trpc.course.regenerateProposal.useMutation
 >;
 
 const proposedLessons = [
@@ -55,6 +66,7 @@ const baseCourse = {
     model: 'claude-sonnet-5-5',
     promptVersion: 'syllabus-v1',
     acceptedAt: null,
+    feedback: [],
   },
 };
 
@@ -103,6 +115,15 @@ function renderPage(
     mutate: mockDiscard,
     isPending: false,
   } as unknown as DiscardMutation);
+  vi.mocked(trpc.course.updateProposal.useMutation).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  } as unknown as UpdateMutation);
+  vi.mocked(trpc.course.regenerateProposal.useMutation).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  } as unknown as RegenerateMutation);
 
   return render(
     <MemoryRouter initialEntries={['/courses/course-1']}>
@@ -187,12 +208,16 @@ describe('CoursePage', () => {
       ).toBeInTheDocument();
       const lessons = screen.getAllByRole('listitem', { name: /lesson/i });
       expect(lessons).toHaveLength(2);
-      expect(within(lessons[0]).getByText('Greetings')).toBeInTheDocument();
       expect(
-        within(lessons[0]).getByText('Greet someone formally and informally'),
+        within(lessons[0]).getByDisplayValue('Greetings'),
       ).toBeInTheDocument();
       expect(
-        within(lessons[1]).getByText('Order food and drinks'),
+        within(lessons[0]).getByDisplayValue(
+          'Greet someone formally and informally',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(lessons[1]).getByDisplayValue('Order food and drinks'),
       ).toBeInTheDocument();
     });
 
@@ -302,6 +327,25 @@ describe('CoursePage', () => {
       );
       expect(objectivesOf(rows()[0])).not.toBeInTheDocument();
       expect(toggle(rows()[0])).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('offers no objectives to open on a lesson added without any', () => {
+      renderPage({
+        data: {
+          ...acceptedCourse,
+          lessons: [
+            acceptedCourse.lessons[0],
+            { ...acceptedCourse.lessons[1], objectives: [] },
+          ],
+        },
+      } as Partial<CourseQuery>);
+
+      expect(
+        screen.getByRole('button', { name: 'Objectives: Greetings' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Objectives: At the café' }),
+      ).not.toBeInTheDocument();
     });
 
     it('keeps closed objectives out of reach of the keyboard and screen readers', () => {

@@ -339,8 +339,11 @@ model Course {
 model SyllabusProposal {
   id            String    @id @default(cuid())
   courseId      String    @unique
-  // Ordered lessons: [{ title, objectives: string[] }]
+  // Ordered lessons: [{ title, objectives: string[] }], as the learner left
+  // them; a lesson they added may have no objectives yet
   lessons       Json
+  // The learner's feedback on each regeneration, oldest first
+  feedback      String[]  @default([])
   model         String
   promptVersion String
   acceptedAt    DateTime?
