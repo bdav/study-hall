@@ -66,7 +66,10 @@ export function TutorPanel({
   lessonId: string;
   /** The exercise on the learner's screen, numbered as the lesson shows it. */
   exercise?: { id: string; number: number };
-  /** In a drawer, whose close button sits at the header's end. */
+  /**
+   * In a drawer, whose close button sits at the header's end, padded 16px
+   * rather than the docked panel's 24px.
+   */
   inDrawer?: boolean;
 }) {
   const utils = trpc.useUtils();
@@ -218,8 +221,10 @@ export function TutorPanel({
         aria-label="Messages"
         // Read out as it streams in
         aria-live="polite"
-        // Room for a scrollbar drawn over the messages
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-3"
+        // Out through the padding around the panel, the drawer's or the
+        // docked panel's, so the scrollbar sits at the screen's edge and
+        // clear of the messages, which line up with the header
+        className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto ${inDrawer ? '-mr-4 pr-4' : '-mr-6 pr-6'}`}
       >
         {messages.map((message) => (
           <Message key={message.id} role={message.role}>
