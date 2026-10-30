@@ -48,7 +48,10 @@ import {
   PinnedHeader,
 } from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
-import { RegenerateLessonDialog } from '@/components/RegenerateLessonDialog';
+import {
+  RegenerateLessonDialog,
+  type LessonFeedback,
+} from '@/components/RegenerateLessonDialog';
 import {
   Sheet,
   SheetContent,
@@ -95,6 +98,72 @@ function LessonHeader({ lesson }: { lesson: Lesson }) {
       </BackLink>
       <h1 className="mt-2 text-2xl font-bold">{lesson.title}</h1>
     </>
+  );
+}
+
+/**
+ * Regenerates a written lesson. When the new version is ready it replaces
+ * this one, from its first step, and a toast says so; a failure says why.
+ */
+function useLessonRegeneration(lesson: Lesson) {
+  const [, setSearchParams] = useSearchParams();
+  const utils = trpc.useUtils();
+
+  // A regeneration outlives the page if the learner moves on meanwhile
+  const isOnPage = useRef(true);
+  useEffect(() => {
+    isOnPage.current = true;
+    return () => {
+      isOnPage.current = false;
+    };
+  }, []);
+
+  const regenerate = trpc.lesson.regenerate.useMutation({
+    onSuccess: (view) => {
+      utils.lesson.getById.setData({ id: lesson.id }, view);
+      // The new version starts with no tutor thread of its own
+      utils.tutor.thread.invalidate({ lessonId: lesson.id });
+      utils.course.getById.invalidate({ id: lesson.course.id });
+      // It opens at its first step: the step on screen may not be in it.
+      // Only here: elsewhere, the URL is another page's
+      if (isOnPage.current) setSearchParams({}, { replace: true });
+      toast.success(`The new version of "${lesson.title}" is ready`);
+    },
+    onError: (error) => {
+      // AI paused or not allowed, or the lesson already being written:
+      // say so, rather than suggest a fault
+      toast.error(
+        EXPLAINED_ERRORS.includes(error.data?.code ?? '')
+          ? error.message
+          : "Couldn't regenerate the lesson. It's still as it was; try again.",
+      );
+    },
+  });
+
+  return {
+    regenerate: (feedback: LessonFeedback) =>
+      regenerate.mutate({ id: lesson.id, ...feedback }),
+    // Here, or in another tab, or before a reload
+    isRegenerating: regenerate.isPending || lesson.regenerating,
+  };
+}
+
+/** Shown below the pinned header while a new version is written. */
+function RegeneratingLesson() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center text-white/80">
+      <div
+        role="status"
+        aria-label="Writing a new version"
+        className="flex items-center gap-2 text-lg"
+      >
+        <Loader2 className="size-5 animate-spin" aria-hidden />
+        Writing a new version of this lesson
+      </div>
+      <p className="max-w-md text-sm text-white/60">
+        This takes about a minute. It opens here when it&apos;s ready.
+      </p>
+    </div>
   );
 }
 
@@ -265,6 +334,7 @@ function WrittenLessonHeader({
   views,
   practiceToggles,
   canUseAI,
+  onRegenerate,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
@@ -275,49 +345,16 @@ function WrittenLessonHeader({
   views: ViewChoice[];
   /** Practice's toggles; left out on steps other than Practice. */
   practiceToggles?: PracticeToggles;
-  /** Whether the learner can use AI, which rewriting the lesson needs. */
+  /** Whether the learner can use AI, which regenerating the lesson needs. */
   canUseAI: boolean;
+  /** Asks for a new version of the lesson. */
+  onRegenerate: (feedback: LessonFeedback) => void;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
   const [isAskingToRegenerate, setIsAskingToRegenerate] = useState(false);
-  const [, setSearchParams] = useSearchParams();
-  const utils = trpc.useUtils();
   // An archived lesson, or one of an archived course, is kept as it was
   const canRegenerate =
     canUseAI && !lesson.archivedAt && !lesson.course.archivedAt;
-
-  // A regeneration outlives the page if the learner moves on meanwhile
-  const isOnPage = useRef(true);
-  useEffect(() => {
-    isOnPage.current = true;
-    return () => {
-      isOnPage.current = false;
-    };
-  }, []);
-
-  const regenerate = trpc.lesson.regenerate.useMutation({
-    onSuccess: (view) => {
-      utils.lesson.getById.setData({ id: lesson.id }, view);
-      // The new version starts with no tutor thread of its own
-      utils.tutor.thread.invalidate({ lessonId: lesson.id });
-      utils.course.getById.invalidate({ id: lesson.course.id });
-      // It opens at its first step: the step on screen may not be in it.
-      // Only here: elsewhere, the URL is another page's
-      if (isOnPage.current) setSearchParams({}, { replace: true });
-      toast.success(`The new version of "${lesson.title}" is ready`);
-    },
-    onError: (error) => {
-      // AI paused or not allowed, or the lesson already being written:
-      // say so, rather than suggest a fault
-      toast.error(
-        EXPLAINED_ERRORS.includes(error.data?.code ?? '')
-          ? error.message
-          : "Couldn't regenerate the lesson. It's still as it was; try again.",
-      );
-    },
-  });
-  // Here, or in another tab, or before a reload
-  const isRegenerating = regenerate.isPending || lesson.regenerating;
 
   return (
     <>
@@ -329,18 +366,6 @@ function WrittenLessonHeader({
         title={lesson.title}
         leading={leading}
         panelToggle={tutorToggle}
-        notice={
-          isRegenerating && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-white/80"
-            >
-              <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
-              Writing a new version of this lesson. You can keep reading this
-              one until it&apos;s ready.
-            </p>
-          )
-        }
       >
         {views
           .filter((view) => !view.menuOnly)
@@ -425,7 +450,6 @@ function WrittenLessonHeader({
           {canRegenerate && (
             <DropdownMenuItem
               onSelect={() => setIsAskingToRegenerate(true)}
-              disabled={isRegenerating}
               className={HEADER_MENU_ITEM}
             >
               Regenerate lesson
@@ -448,9 +472,7 @@ function WrittenLessonHeader({
         <RegenerateLessonDialog
           open={isAskingToRegenerate}
           onOpenChange={setIsAskingToRegenerate}
-          onRegenerate={(feedback) =>
-            regenerate.mutate({ id: lesson.id, ...feedback })
-          }
+          onRegenerate={onRegenerate}
         />
       )}
     </>
@@ -820,6 +842,7 @@ function WrittenLesson({
   canUseAI: boolean;
 }) {
   const steps = lessonSteps(version);
+  const { regenerate, isRegenerating } = useLessonRegeneration(lesson);
   // The step is in the URL, so reloading, going back and links land on it.
   // A step the lesson doesn't have opens the first
   const [searchParams] = useSearchParams();
@@ -1132,12 +1155,33 @@ function WrittenLesson({
     </>
   );
 
+  // While a new version is written, nothing of this one to read or act on:
+  // the header's way back and title, and below it the wait
+  if (isRegenerating) {
+    return (
+      <LessonFrame
+        header={
+          <PinnedHeader
+            back={{
+              to: `/courses/${lesson.course.id}`,
+              label: lesson.course.title,
+            }}
+            title={lesson.title}
+          />
+        }
+      >
+        <RegeneratingLesson />
+      </LessonFrame>
+    );
+  }
+
   return (
     <LessonFrame
       header={
         <WrittenLessonHeader
           lesson={lesson}
           canUseAI={canUseAI}
+          onRegenerate={regenerate}
           leading={outlineToggles}
           tutorToggle={tutorToggle || undefined}
           views={[

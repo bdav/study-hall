@@ -2225,18 +2225,33 @@ describe('LessonPage', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('says a new version is being written, the lesson still readable', () => {
+    it('replaces everything below the header with a loader while a new version is written', () => {
       renderPage({ query: written, regenerate: { isPending: true } });
 
       expect(
-        screen.getByText(/writing a new version of this lesson/i),
-      ).toHaveAttribute('role', 'status');
-      expect(
-        screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+        screen.getByRole('status', { name: 'Writing a new version' }),
       ).toBeInTheDocument();
+      // The header stays, with the way back and the title
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Greetings' }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Italian' })).toBeInTheDocument();
+      // Nothing of the lesson to read or answer, and nothing to act on
+      expect(
+        screen.queryByRole('heading', { level: 2, name: 'Saying hello' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('navigation', { name: /lesson outline/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
     });
 
-    it('says so after a reload too, checking back until it is done', () => {
+    it('shows the loader after a reload too, checking back until it is done', () => {
       renderPage({
         query: {
           data: { ...twoSectionLesson, regenerating: true },
@@ -2244,8 +2259,8 @@ describe('LessonPage', () => {
       });
 
       expect(
-        screen.getByText(/writing a new version of this lesson/i),
-      ).toHaveAttribute('role', 'status');
+        screen.getByRole('status', { name: 'Writing a new version' }),
+      ).toBeInTheDocument();
       const { refetchInterval } = vi.mocked(trpc.lesson.getById.useQuery).mock
         .calls[0][1] as {
         refetchInterval: (query: unknown) => number | false;
@@ -2253,17 +2268,6 @@ describe('LessonPage', () => {
       expect(
         refetchInterval({ state: { data: { regenerating: true } } }),
       ).toBeGreaterThan(0);
-    });
-
-    it("doesn't offer another regeneration while one is under way", async () => {
-      const user = userEvent.setup();
-      renderPage({ query: written, regenerate: { isPending: true } });
-
-      await user.click(screen.getByRole('button', { name: 'More actions' }));
-
-      expect(
-        screen.getByRole('menuitem', { name: 'Regenerate lesson' }),
-      ).toHaveAttribute('aria-disabled', 'true');
     });
 
     it('opens the new version at its first step, saying it is ready', async () => {

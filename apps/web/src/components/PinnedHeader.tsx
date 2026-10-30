@@ -20,7 +20,6 @@ export function PinnedHeader({
   subtitle,
   leading,
   panelToggle,
-  notice,
   children,
 }: {
   back: { to: string; label: string };
@@ -41,11 +40,6 @@ export function PinnedHeader({
    * that edge, so the toggle sits above the panel.
    */
   panelToggle?: ReactNode;
-  /**
-   * A line under the header's row that stays in view as the learner
-   * scrolls, such as news of a new version being written.
-   */
-  notice?: ReactNode;
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-white/15 bg-[oklch(0.3_0.1_228)]/90 py-3 backdrop-blur-md">
@@ -70,13 +64,6 @@ export function PinnedHeader({
         {children}
         {panelToggle}
       </div>
-      {notice && (
-        <div
-          className={`mt-2 ${panelToggle ? HEADER_BESIDE_PANEL : PAGE_WIDTH}`}
-        >
-          {notice}
-        </div>
-      )}
     </header>
   );
 }
