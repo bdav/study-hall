@@ -60,6 +60,7 @@ enum AiPurpose {
   CARD_PROPOSAL
   CARD_REVISION
   TUTOR
+  COURSE_INTERVIEW
 }
 
 // Who wrote a Tutor Thread message
@@ -338,6 +339,11 @@ model Course {
   materials      String            @default("")
   // What the learner says they can already do, so the syllabus leaves it out
   canAlreadyDo   String[]          @default([])
+  // The Setup Interview that drafted the Course Setup, for tuning the
+  // interview: { opening, rounds: [{ questions, answers }], model,
+  // promptVersion }. Null when the learner skipped it. Generation never
+  // reads it, only the Course Setup
+  interview      Json?
   archivedAt     DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt

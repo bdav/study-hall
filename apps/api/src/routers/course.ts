@@ -24,6 +24,18 @@ import {
   syllabusFeedbackChipSchema,
   syllabusOutputSchema,
 } from '../ai/syllabus.js';
+import {
+  buildInterviewPrompt,
+  INTERVIEW_MODEL,
+  INTERVIEW_PROMPT_VERSION,
+  INTERVIEW_SYSTEM_PROMPT,
+  interviewOutputSchema,
+  interviewSchema,
+  MAX_INTERVIEW_ROUNDS,
+  nearestSessionLength,
+  transcriptSchema,
+  withSuggestionOffered,
+} from '../ai/courseInterview.js';
 
 const ACCEPTED_MESSAGE =
   'This syllabus has been accepted, so it is no longer a proposal';
@@ -174,22 +186,73 @@ export const courseRouter = router({
     }),
   ),
 
-  create: aiProcedure
-    .input(newCourseSetupSchema)
+  /**
+   * One round of a Setup Interview: from the learner's opening words and
+   * every earlier round, the model drafts the Course Setup and asks the next
+   * round, or says nothing important is left to ask. The page holds the
+   * interview, so the server keeps none of it.
+   */
+  interviewRound: aiProcedure
+    .input(interviewSchema)
     .mutation(async ({ ctx, input }) => {
+      const { output, model, promptVersion } = await generateStructured(ctx, {
+        userId: ctx.userId,
+        purpose: 'COURSE_INTERVIEW',
+        model: INTERVIEW_MODEL,
+        promptVersion: INTERVIEW_PROMPT_VERSION,
+        system: INTERVIEW_SYSTEM_PROMPT,
+        prompt: buildInterviewPrompt(input, new Date()),
+        outputSchema: interviewOutputSchema,
+      });
+
+      // No more than three rounds, whatever the model returns
+      const ready =
+        output.ready ||
+        output.questions.length === 0 ||
+        input.rounds.length >= MAX_INTERVIEW_ROUNDS;
+      const { draft } = output;
+      return {
+        draft: {
+          ...draft,
+          sessionMinutes:
+            draft.sessionMinutes && nearestSessionLength(draft.sessionMinutes),
+        },
+        ready,
+        questions: ready ? [] : output.questions.map(withSuggestionOffered),
+        // For the transcript course creation keeps
+        model,
+        promptVersion,
+      };
+    }),
+
+  /**
+   * Creates a course and its Syllabus Proposal from the confirmed Course
+   * Setup. The Setup Interview that drafted it, if any, is kept for tuning
+   * the interview; generation reads only the Course Setup.
+   */
+  create: aiProcedure
+    .input(
+      z.intersection(
+        newCourseSetupSchema,
+        z.object({ interview: transcriptSchema.optional() }),
+      ),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { interview, ...setup } = input;
       const { output, model, promptVersion } = await generateStructured(ctx, {
         userId: ctx.userId,
         purpose: 'SYLLABUS_GENERATION',
         model: SYLLABUS_MODEL,
         promptVersion: SYLLABUS_PROMPT_VERSION,
         system: SYLLABUS_SYSTEM_PROMPT,
-        prompt: buildSyllabusPrompt(input),
+        prompt: buildSyllabusPrompt(setup),
         outputSchema: syllabusOutputSchema,
       });
 
       const course = await ctx.prisma.course.create({
         data: {
-          ...input,
+          ...setup,
+          interview,
           userId: ctx.userId,
           proposal: {
             create: { lessons: output.lessons, model, promptVersion },

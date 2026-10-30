@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,18 +17,28 @@ vi.mock('@/lib/trpc', () => ({
       course: { list: { invalidate: vi.fn() } },
     })),
     auth: { me: { useQuery: vi.fn() } },
-    course: { create: { useMutation: vi.fn() } },
+    course: {
+      create: { useMutation: vi.fn() },
+      interviewRound: { useMutation: vi.fn() },
+    },
   },
 }));
 
 type CreateMutation = ReturnType<typeof trpc.course.create.useMutation>;
+type RoundMutation = ReturnType<typeof trpc.course.interviewRound.useMutation>;
 
 const mockMutate = vi.fn();
+const mockRound = vi.fn();
 
 function renderPage({
   canUseAI = true,
   mutation = {},
-}: { canUseAI?: boolean; mutation?: Partial<CreateMutation> } = {}) {
+  round = {},
+}: {
+  canUseAI?: boolean;
+  mutation?: Partial<CreateMutation>;
+  round?: Partial<RoundMutation>;
+} = {}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
     data: { user: { id: 'user-1', email: 'me@example.com', canUseAI } },
   } as ReturnType<typeof trpc.auth.me.useQuery>);
@@ -38,12 +48,25 @@ function renderPage({
     error: null,
     ...mutation,
   } as unknown as CreateMutation);
+  vi.mocked(trpc.course.interviewRound.useMutation).mockReturnValue({
+    mutate: mockRound,
+    isPending: false,
+    error: null,
+    ...round,
+  } as unknown as RoundMutation);
 
   return render(
     <MemoryRouter>
       <NewCoursePage />
     </MemoryRouter>,
   );
+}
+
+/** Renders the page and skips the interview, to the form, empty. */
+function renderForm(options: Parameters<typeof renderPage>[0] = {}) {
+  const view = renderPage(options);
+  fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+  return view;
 }
 
 async function fillForm() {
@@ -69,7 +92,7 @@ beforeEach(() => {
 
 describe('NewCoursePage', () => {
   it('submits the course form to generate a Syllabus Proposal', async () => {
-    renderPage();
+    renderForm();
 
     const user = await fillForm();
     await user.click(
@@ -94,7 +117,7 @@ describe('NewCoursePage', () => {
   });
 
   it('takes a title, what to focus on and skip, and materials', async () => {
-    renderPage();
+    renderForm();
 
     const user = await fillForm();
     await user.type(
@@ -119,7 +142,7 @@ describe('NewCoursePage', () => {
   });
 
   it('suggests the topic as the title, which a blank title falls back to', async () => {
-    renderPage();
+    renderForm();
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText('Topic'), 'Italian');
@@ -131,7 +154,7 @@ describe('NewCoursePage', () => {
   });
 
   it('lists what the learner can already do as chips they can add and remove', async () => {
-    renderPage();
+    renderForm();
     const user = await fillForm();
     const newItem = screen.getByLabelText('Something you can already do');
 
@@ -159,7 +182,7 @@ describe('NewCoursePage', () => {
   });
 
   it('adds what was typed but not added when the syllabus is generated', async () => {
-    renderPage();
+    renderForm();
     const user = await fillForm();
 
     await user.type(
@@ -176,7 +199,7 @@ describe('NewCoursePage', () => {
   });
 
   it('takes an optional deadline date', async () => {
-    renderPage();
+    renderForm();
 
     const user = await fillForm();
     fireEvent.change(screen.getByLabelText(/deadline/i), {
@@ -192,7 +215,7 @@ describe('NewCoursePage', () => {
   });
 
   it('offers time per week and session length as chips', () => {
-    renderPage();
+    renderForm();
 
     const chips = {
       'Time per week': ['1h', '2h', '3h', '5h', '7h+', 'Custom'],
@@ -209,7 +232,7 @@ describe('NewCoursePage', () => {
   });
 
   it('offers preferred depth as chips, Balanced to start', () => {
-    renderPage();
+    renderForm();
 
     const depth = screen.getByRole('group', { name: 'Preferred depth' });
     expect(within(depth).getAllByRole('radio')).toHaveLength(3);
@@ -219,7 +242,7 @@ describe('NewCoursePage', () => {
   });
 
   it('takes a custom time per week in hours', async () => {
-    renderPage();
+    renderForm();
 
     const user = await fillForm();
     await user.click(screen.getByRole('radio', { name: 'Custom' }));
@@ -234,7 +257,7 @@ describe('NewCoursePage', () => {
   });
 
   it('takes 7h+ as seven hours a week', async () => {
-    renderPage();
+    renderForm();
 
     const user = await fillForm();
     await user.click(screen.getByRole('radio', { name: '7h+' }));
@@ -248,7 +271,7 @@ describe('NewCoursePage', () => {
   });
 
   it('requires a topic, goal, time per week and session length', async () => {
-    renderPage();
+    renderForm();
     const user = userEvent.setup();
     const generate = screen.getByRole('button', { name: /generate syllabus/i });
 
@@ -288,7 +311,7 @@ describe('NewCoursePage', () => {
   });
 
   it('shows a failed generation so the learner can try again', () => {
-    renderPage({
+    renderForm({
       mutation: {
         error: {
           message: "The AI didn't produce a usable answer. Please try again.",
@@ -333,5 +356,280 @@ describe('NewCoursePage', () => {
       'href',
       '/flashcards',
     );
+  });
+});
+
+describe('the Setup Interview', () => {
+  const opening = 'Italian, for a trip to Rome in June';
+
+  const draft = {
+    title: 'Italian for a trip to Rome',
+    topic: 'Italian',
+    goal: 'Get by in Rome',
+    priorKnowledge: 'A little Duolingo',
+    canAlreadyDo: ['Order a coffee'],
+    minutesPerWeek: 120,
+    sessionMinutes: 30 as const,
+    deadline: '2027-06-01',
+    depth: 'Balanced' as const,
+    focus: 'Speaking',
+    skip: '',
+    materials: '',
+    notes: '',
+  };
+
+  const firstQuestions = [
+    {
+      type: 'SINGLE_CHOICE' as const,
+      prompt: 'How much time a week can you give it?',
+      options: ['1 hour', '2 hours', '3 hours'],
+      suggested: '2 hours',
+    },
+    {
+      type: 'FREE_TEXT' as const,
+      prompt: 'What Italian do you know already?',
+      suggested: 'None',
+    },
+  ];
+
+  const secondQuestions = [
+    {
+      type: 'SINGLE_CHOICE' as const,
+      prompt: 'How long is a sitting?',
+      options: ['15 minutes', '30 minutes'],
+      suggested: '30 minutes',
+    },
+    {
+      type: 'FREE_TEXT' as const,
+      prompt: 'Anything to leave out?',
+      suggested: 'Grammar drills',
+    },
+  ];
+
+  type Round = {
+    draft: typeof draft;
+    ready: boolean;
+    questions: typeof firstQuestions;
+  };
+
+  /** Answers the round call in flight, as the API would. */
+  function respond(round: Round) {
+    const [, options] = mockRound.mock.lastCall as [
+      unknown,
+      {
+        onSuccess: (
+          data: Round & { model: string; promptVersion: string },
+        ) => void;
+      },
+    ];
+    act(() =>
+      options.onSuccess({
+        ...round,
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'course-interview-v1',
+      }),
+    );
+  }
+
+  /** Starts the interview with the opening words, answered by a first round. */
+  async function startInterview() {
+    renderPage();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText('What do you want to learn, and why?'),
+      opening,
+    );
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+    respond({ draft, ready: false, questions: firstQuestions });
+    return user;
+  }
+
+  it('opens with one box asking what the learner wants to learn, and why', () => {
+    renderPage();
+
+    expect(
+      screen.getByLabelText('What do you want to learn, and why?'),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
+  });
+
+  it('starts the interview from the opening words', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.type(
+      screen.getByLabelText('What do you want to learn, and why?'),
+      opening,
+    );
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+
+    expect(mockRound).toHaveBeenCalledWith(
+      { opening, rounds: [] },
+      expect.anything(),
+    );
+  });
+
+  it('shows a round with its suggested answers already chosen', async () => {
+    await startInterview();
+
+    const time = screen.getByRole('group', {
+      name: 'How much time a week can you give it?',
+    });
+    expect(within(time).getByRole('radio', { name: '2 hours' })).toBeChecked();
+    expect(
+      screen.getByLabelText('What Italian do you know already?'),
+    ).toHaveValue('None');
+  });
+
+  it('sends the round with Next, with the answers as the learner left them', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('radio', { name: '3 hours' }));
+    const known = screen.getByLabelText('What Italian do you know already?');
+    await user.clear(known);
+    await user.type(known, 'A little');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(mockRound).toHaveBeenLastCalledWith(
+      {
+        opening,
+        rounds: [
+          { questions: firstQuestions, answers: ['3 hours', 'A little'] },
+        ],
+      },
+      expect.anything(),
+    );
+  });
+
+  it('collapses earlier rounds to a line of their answers', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    respond({ draft, ready: false, questions: secondQuestions });
+
+    expect(screen.getByText('2 hours · None')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('group', {
+        name: 'How much time a week can you give it?',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'How long is a sitting?' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the drafted Course Setup once nothing is left to ask', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    respond({ draft, ready: true, questions: [] });
+
+    expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
+    expect(screen.getByLabelText('Course title')).toHaveValue(
+      'Italian for a trip to Rome',
+    );
+    expect(screen.getByRole('radio', { name: '2h' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '30 min' })).toBeChecked();
+    expect(screen.getByLabelText(/deadline/i)).toHaveValue('2027-06-01');
+    expect(
+      within(screen.getByRole('list', { name: 'Can already do' })).getByText(
+        'Order a coffee',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the draft after three rounds, whatever comes back', async () => {
+    const user = await startInterview();
+
+    for (const questions of [secondQuestions, firstQuestions]) {
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      respond({ draft, ready: false, questions });
+    }
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    respond({ draft, ready: false, questions: secondQuestions });
+
+    expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
+  });
+
+  it('shows my brief at any round, from the latest draft, without another call', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('button', { name: 'Show my brief' }));
+
+    expect(mockRound).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
+  });
+
+  it('skips the interview to the form, empty', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /skip/i }));
+
+    expect(screen.getByLabelText('Topic')).toHaveValue('');
+    expect(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('creates the course from the draft as checked, with the interview, on Looks right', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    respond({ draft, ready: true, questions: [] });
+    await user.click(screen.getByRole('button', { name: 'Looks right' }));
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      title: 'Italian for a trip to Rome',
+      topic: 'Italian',
+      goal: 'Get by in Rome',
+      priorKnowledge: 'A little Duolingo',
+      canAlreadyDo: ['Order a coffee'],
+      minutesPerWeek: 120,
+      sessionMinutes: 30,
+      deadline: '2027-06-01',
+      depth: 'Balanced',
+      focus: 'Speaking',
+      skip: '',
+      materials: '',
+      notes: '',
+      interview: {
+        opening,
+        rounds: [{ questions: firstQuestions, answers: ['2 hours', 'None'] }],
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'course-interview-v1',
+      },
+    });
+  });
+
+  it('keeps the answers on screen when a round fails', async () => {
+    const { rerender } = renderPage();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText('What do you want to learn, and why?'),
+      opening,
+    );
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+    respond({ draft, ready: false, questions: firstQuestions });
+    const known = screen.getByLabelText('What Italian do you know already?');
+    await user.clear(known);
+    await user.type(known, 'A little');
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    vi.mocked(trpc.course.interviewRound.useMutation).mockReturnValue({
+      mutate: mockRound,
+      isPending: false,
+      error: { message: "The AI didn't answer. Please try again." },
+    } as unknown as RoundMutation);
+    rerender(
+      <MemoryRouter>
+        <NewCoursePage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
+    expect(
+      screen.getByLabelText('What Italian do you know already?'),
+    ).toHaveValue('A little');
   });
 });

@@ -80,6 +80,10 @@ _Avoid_: Deleted course, inactive course
 A course's confirmed brief: its title, topic, goal, prior knowledge, what the learner can already do, time per week, session length, an optional deadline, preferred depth, what to focus on and skip, materials they're following, and notes. Every generation call for the course (syllabus, lessons, tutor) builds on it.
 _Avoid_: Setup answers, course settings
 
+**Setup Interview**:
+The short rounds of questions that draft a new course's Course Setup from what the learner says they want to learn and why. Each question comes with a suggested answer, and it asks only what is still open, for at most three rounds; the learner then checks the draft on the course form.
+_Avoid_: Onboarding, questionnaire, wizard
+
 **Syllabus**:
 The ordered list of lessons that make up a course's path. Its order is the teaching sequence, regardless of the order in which the learner opens lessons or they are generated.
 _Avoid_: Study plan, curriculum, outline

@@ -32,6 +32,10 @@ export const tallDialogFooterClassName =
   'max-sm:sticky max-sm:bottom-0 max-sm:flex-row max-sm:flex-wrap max-sm:justify-end max-sm:bg-[oklch(0.25_0.08_230)]';
 
 /** An underlined input on the app's translucent dialogs. */
+/** A boxed field on the glass background, as the course form's are. */
+export const glassFieldClassName =
+  'border-white/20 bg-white/10 text-white placeholder-white/40 focus-visible:border-white/40 focus-visible:ring-white/20';
+
 export const glassInputClassName =
   'rounded-none border-0 border-b-2 border-white/40 bg-transparent text-white shadow-none focus-visible:ring-0 focus-visible:border-white/70 placeholder-white/40';
 
