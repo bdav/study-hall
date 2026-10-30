@@ -359,24 +359,54 @@ describe('ProposalEditor', () => {
       ).toEqual(['More focus on the past tense', 'Shorter']);
     });
 
-    it('holds off editing and accepting while a new proposal is written', () => {
+    it('shows a loader in place of the proposal while a new one is written', () => {
       renderEditor({}, { isPending: true });
 
       expect(
-        screen.getByRole('button', { name: /regenerating/i }),
-      ).toBeDisabled();
+        screen.getByRole('status', { name: 'Writing a new proposal' }),
+      ).toBeInTheDocument();
+      // Nothing of the old one to edit, accept or discard meanwhile
       expect(
-        lesson(1).getByRole('textbox', { name: 'Lesson 1 title' }),
-      ).toBeDisabled();
+        screen.queryByRole('listitem', { name: /^lesson/i }),
+      ).not.toBeInTheDocument();
       expect(
-        lesson(1).getByRole('button', { name: 'Remove Greetings' }),
-      ).toBeDisabled();
+        screen.queryByRole('button', { name: /accept syllabus/i }),
+      ).not.toBeInTheDocument();
       expect(
-        screen.getByRole('textbox', { name: 'New lesson title' }),
-      ).toBeDisabled();
+        screen.queryByRole('button', { name: /discard proposal/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps the feedback being written while the loader shows', async () => {
+      const { rerender } = renderEditor();
+      const user = userEvent.setup();
+      await user.type(
+        screen.getByRole('textbox', { name: /ask for a new proposal/i }),
+        'Shorter',
+      );
+
+      vi.mocked(trpc.course.regenerateProposal.useMutation).mockReturnValue({
+        mutate: mockRegenerate,
+        isPending: false,
+        error: { data: { code: 'BAD_GATEWAY' }, message: 'upstream' },
+      } as unknown as RegenerateMutation);
+      rerender(
+        <ProposalEditor
+          courseId="course-1"
+          lessons={lessons}
+          feedback={[]}
+          courseTitle="Italian"
+          onAccept={vi.fn()}
+          isAccepting={false}
+          acceptTarget={null}
+          onDiscard={vi.fn()}
+          isDiscarding={false}
+        />,
+      );
+
       expect(
-        screen.getByRole('button', { name: /accept syllabus/i }),
-      ).toBeDisabled();
+        screen.getByRole('textbox', { name: /ask for a new proposal/i }),
+      ).toHaveValue('Shorter');
     });
 
     it("says when the learner's account can't use AI", () => {

@@ -351,14 +351,6 @@ export default function CoursePage() {
         <div className="mx-auto max-w-3xl">
           {isProposal ? (
             <section>
-              <h2 id="syllabus-heading" className="text-lg font-semibold">
-                Syllabus Proposal
-              </h2>
-              <p className="mt-1 text-sm text-white/60">
-                Shape the lessons below: rename, reorder, remove or add them,
-                and edit their objectives. Accepting creates your course&apos;s
-                syllabus.
-              </p>
               <ProposalEditor
                 courseId={courseId}
                 courseTitle={course.title}

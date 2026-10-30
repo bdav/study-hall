@@ -1,9 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { Input } from '@/components/ui/input';
 import { CenteredPage } from '@/components/CenteredPage';
+import { WritingLoader } from '@/components/WritingLoader';
 
 const glassInputClassName =
   'mt-1 border-white/20 bg-white/10 text-white placeholder-white/40 focus-visible:border-white/40 focus-visible:ring-white/20';
@@ -103,7 +103,18 @@ export default function NewCoursePage() {
     createCourse.mutate(form);
   }
 
-  const isGenerating = createCourse.isPending;
+  // The form stays as typed underneath, should generating fail
+  if (createCourse.isPending) {
+    return (
+      <CenteredPage centered>
+        <WritingLoader
+          label="Writing your syllabus"
+          title="Writing your syllabus proposal"
+          detail="This takes about a minute. You can shape it before you start."
+        />
+      </CenteredPage>
+    );
+  }
 
   return (
     <CenteredPage>
@@ -115,7 +126,7 @@ export default function NewCoursePage() {
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <fieldset disabled={isGenerating} className="space-y-4">
+          <fieldset className="space-y-4">
             <Field id="topic" label="Topic">
               <Input
                 id="topic"
@@ -183,28 +194,17 @@ export default function NewCoursePage() {
             </Field>
           </fieldset>
 
-          {createCourse.error && !isGenerating && (
+          {createCourse.error && (
             <p role="alert" className="text-sm text-red-400">
               {createCourse.error.message}
             </p>
           )}
 
-          {isGenerating && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-white/80"
-            >
-              <Loader2 className="size-4 animate-spin" />
-              Generating your syllabus. This can take a minute…
-            </p>
-          )}
-
           <button
             type="submit"
-            disabled={isGenerating}
-            className="w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
+            className="w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30"
           >
-            {isGenerating ? 'Generating…' : 'Generate syllabus'}
+            Generate syllabus
           </button>
         </form>
       </div>

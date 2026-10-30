@@ -94,13 +94,15 @@ describe('NewCoursePage', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('shows a loading state while the syllabus is generated', () => {
+  it('shows a loader in place of the form while the syllabus is written', () => {
     renderPage({ mutation: { isPending: true } });
 
-    expect(screen.getByRole('status')).toHaveTextContent(
-      /generating your syllabus/i,
-    );
-    expect(screen.getByRole('button', { name: /generating/i })).toBeDisabled();
+    expect(
+      screen.getByRole('status', { name: 'Writing your syllabus' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /generate syllabus/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('opens the new course once its proposal is ready', () => {

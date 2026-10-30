@@ -48,6 +48,7 @@ import {
   PinnedHeader,
 } from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
+import { WritingLoader } from '@/components/WritingLoader';
 import {
   RegenerateLessonDialog,
   type LessonFeedback,
@@ -151,19 +152,11 @@ function useLessonRegeneration(lesson: Lesson) {
 /** Shown below the pinned header while a new version is written. */
 function RegeneratingLesson() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center text-white/80">
-      <div
-        role="status"
-        aria-label="Writing a new version"
-        className="flex items-center gap-2 text-lg"
-      >
-        <Loader2 className="size-5 animate-spin" aria-hidden />
-        Writing a new version of this lesson
-      </div>
-      <p className="max-w-md text-sm text-white/60">
-        This takes about a minute. It opens here when it&apos;s ready.
-      </p>
-    </div>
+    <WritingLoader
+      label="Writing a new version"
+      title="Writing a new version of this lesson"
+      detail="This takes about a minute. It opens here when it's ready."
+    />
   );
 }
 

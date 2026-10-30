@@ -5,6 +5,7 @@ import { Loader2, Trash2 } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { WritingLoader } from '@/components/WritingLoader';
 import {
   AddField,
   EditableLessonList,
@@ -122,8 +123,25 @@ export function ProposalEditor({
     );
   }
 
+  // Nothing of this proposal to edit, accept or discard while its
+  // replacement is written; the feedback typed stays, should it fail
+  if (isRegenerating) {
+    return (
+      <WritingLoader
+        label="Writing a new proposal"
+        title="Writing a new syllabus proposal"
+        detail="It builds on this one, your edits and feedback included. This takes about a minute."
+      />
+    );
+  }
+
   return (
     <>
+      <h2 className="text-lg font-semibold">Syllabus Proposal</h2>
+      <p className="mt-1 text-sm text-white/60">
+        Shape the lessons below: rename, reorder, remove or add them, and edit
+        their objectives. Accepting creates your course&apos;s syllabus.
+      </p>
       <EditableLessonList
         label="Proposed lessons"
         lessons={items.map(({ key, lesson }) => ({ id: key, lesson }))}
