@@ -88,8 +88,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #8 Queue buckets and session types
    - [ ] #9 Study modes: Drill Weakest and Cram
 10. Generating cards
-
-- [ ] #75 Generate cards for a deck from a description
+    - [ ] #75 Generate cards for a deck from a description
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
