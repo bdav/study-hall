@@ -10,9 +10,9 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ## Implementation Order
 
-**Completed: 53/64 planned issues**
+**Completed: 53/65 planned issues**
 
-When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, then Study Sessions.
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, Study Sessions, then generating cards.
 
 1. Core study loop
    - [x] #13 Spacing differences don't make an answer wrong
@@ -87,6 +87,9 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #10 Resume and abandon Study Sessions
    - [ ] #8 Queue buckets and session types
    - [ ] #9 Study modes: Drill Weakest and Cram
+10. Generating cards
+
+- [ ] #75 Generate cards for a deck from a description
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
