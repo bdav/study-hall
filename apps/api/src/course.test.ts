@@ -29,6 +29,10 @@ const courseForm = {
   sessionMinutes: 30,
   depth: 'Practical',
   notes: 'I travel to Rome in June',
+  focus: 'Speaking',
+  skip: 'Formal letters',
+  materials: 'Nuovo Espresso 1',
+  canAlreadyDo: ['Order a coffee', 'Count to ten'],
 };
 
 /** The Course Setup as every generation prompt gives it. */
@@ -40,6 +44,10 @@ const setupLines = [
   'Session length: 30 minutes',
   'Preferred depth: Practical',
   'Notes: I travel to Rome in June',
+  'Focus: Speaking',
+  'Skip: Formal letters',
+  'Materials: Nuovo Espresso 1',
+  'Can already do:\n- Order a coffee\n- Count to ten',
 ];
 
 const syllabus = {
@@ -306,7 +314,7 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v6',
+        promptVersion: 'syllabus-v7',
         acceptedAt: null,
         feedback: [],
       });
@@ -322,6 +330,83 @@ describe('courseRouter', () => {
       for (const line of setupLines) {
         expect(prompt).toContain(line);
       }
+    });
+
+    it('stores focus, skip, materials and what the learner can already do', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      expect(await caller.course.getById({ id })).toMatchObject({
+        focus: 'Speaking',
+        skip: 'Formal letters',
+        materials: 'Nuovo Espresso 1',
+        canAlreadyDo: ['Order a coffee', 'Count to ten'],
+      });
+    });
+
+    it('takes a title, given in the setup lines', async () => {
+      const caller = createCaller();
+      ai.respondWith(syllabus);
+      const { id } = await caller.course.create({
+        ...courseForm,
+        title: 'Italian for a trip to Rome',
+      });
+
+      expect((await caller.course.getById({ id })).title).toBe(
+        'Italian for a trip to Rome',
+      );
+      expect(ai.requests[0].prompt).toContain(
+        'Course title: Italian for a trip to Rome',
+      );
+    });
+
+    it.each([
+      ['no title', {}],
+      ['a blank title', { title: '   ' }],
+    ])('falls back to the topic for %s', async (_, title) => {
+      const caller = createCaller();
+      ai.respondWith(syllabus);
+      const { id } = await caller.course.create({ ...courseForm, ...title });
+
+      expect((await caller.course.getById({ id })).title).toBe('Italian');
+      expect(ai.requests[0].prompt).toContain('Course title: Italian');
+    });
+
+    it('says none were given when focus, skip, materials and what the learner can already do are left out', async () => {
+      const caller = createCaller();
+      ai.respondWith(syllabus);
+      const { id } = await caller.course.create({
+        topic: 'Italian',
+        goal: 'A2 by summer',
+        minutesPerWeek: 180,
+        sessionMinutes: 30,
+        depth: 'Practical',
+      });
+
+      expect(await caller.course.getById({ id })).toMatchObject({
+        focus: '',
+        skip: '',
+        materials: '',
+        canAlreadyDo: [],
+      });
+      for (const line of [
+        'Focus: None given',
+        'Skip: None given',
+        'Materials: None given',
+        'Can already do: None given',
+      ]) {
+        expect(ai.requests[0].prompt).toContain(line);
+      }
+    });
+
+    it('asks for a syllabus that leaves out what the learner can already do and follows focus, skip and materials', async () => {
+      await createCourse();
+
+      const { system } = ai.requests[0];
+      expect(system).toMatch(/can already do/i);
+      expect(system).toMatch(/focus/i);
+      expect(system).toMatch(/skip/i);
+      expect(system).toMatch(/materials/i);
     });
 
     it('stores time per week and session length as minutes', async () => {
@@ -816,7 +901,7 @@ describe('courseRouter', () => {
         lessons: regenerated.lessons,
         feedback: [{ chips: [], text: 'More focus on the past tense' }],
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v6',
+        promptVersion: 'syllabus-v7',
         acceptedAt: null,
       });
     });

@@ -216,12 +216,17 @@ describe('lessonOutputSchema', () => {
 
 describe('assembleLessonContext', () => {
   const setup = {
+    title: 'Italian',
     topic: 'Italian',
     goal: 'A2 by summer',
     priorKnowledge: 'Some Duolingo',
     minutesPerWeek: 180,
     sessionMinutes: 30,
     deadline: null,
+    focus: '',
+    skip: '',
+    materials: '',
+    canAlreadyDo: [],
     depth: 'Practical',
     notes: 'Trip to Rome in June',
   };

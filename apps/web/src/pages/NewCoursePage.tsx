@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input';
 import { CenteredPage } from '@/components/CenteredPage';
 import { WritingLoader } from '@/components/WritingLoader';
 import { ChoiceChips } from '@/components/ChoiceChips';
+import { ChipListField } from '@/components/ChipListField';
+import { withTyped } from '@/lib/lists';
+import { cn } from '@/lib/utils';
 
 const glassInputClassName =
   'mt-1 border-white/20 bg-white/10 text-white placeholder-white/40 focus-visible:border-white/40 focus-visible:ring-white/20';
@@ -32,10 +35,14 @@ type WeeklyTime = (typeof WEEKLY_TIMES)[number]['value'];
 
 const emptyForm = {
   topic: '',
+  title: '',
   goal: '',
   priorKnowledge: '',
   deadline: '',
   depth: 'Balanced',
+  focus: '',
+  skip: '',
+  materials: '',
   notes: '',
 };
 
@@ -90,6 +97,8 @@ export default function NewCoursePage() {
   const [weeklyTime, setWeeklyTime] = useState<WeeklyTime | null>(null);
   const [customHours, setCustomHours] = useState('');
   const [sessionMinutes, setSessionMinutes] = useState<number | null>(null);
+  const [canAlreadyDo, setCanAlreadyDo] = useState<string[]>([]);
+  const [canAlreadyDoText, setCanAlreadyDoText] = useState('');
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery();
@@ -135,6 +144,8 @@ export default function NewCoursePage() {
           ? Math.round(Number(customHours) * 60)
           : weeklyTime,
       sessionMinutes,
+      // Typed but not added is meant to be in the list
+      canAlreadyDo: withTyped(canAlreadyDo, canAlreadyDoText),
     });
   }
 
@@ -172,6 +183,17 @@ export default function NewCoursePage() {
                 required
               />
             </Field>
+            <Field id="title" label="Course title">
+              <Input
+                id="title"
+                value={form.title}
+                onChange={(e) => update('title', e.target.value)}
+                maxLength={200}
+                // Left blank, the course takes its topic's name
+                placeholder={form.topic || 'Italian for a trip to Rome'}
+                className={glassInputClassName}
+              />
+            </Field>
             <Field id="goal" label="Goal or target level">
               <Input
                 id="goal"
@@ -191,6 +213,17 @@ export default function NewCoursePage() {
                 className={glassInputClassName}
               />
             </Field>
+            <ChipListField
+              label="Can already do"
+              inputLabel="Something you can already do"
+              placeholder="Order a coffee"
+              items={canAlreadyDo}
+              onChange={setCanAlreadyDo}
+              text={canAlreadyDoText}
+              onTextChange={setCanAlreadyDoText}
+              maxLength={200}
+              inputClassName={cn(glassInputClassName, 'mt-0')}
+            />
             <ChoiceChips
               label="Time per week"
               options={[...WEEKLY_TIMES]}
@@ -247,12 +280,39 @@ export default function NewCoursePage() {
                 ))}
               </select>
             </Field>
+            <Field id="focus" label="Focus on">
+              <Input
+                id="focus"
+                value={form.focus}
+                onChange={(e) => update('focus', e.target.value)}
+                placeholder="Speaking and listening"
+                className={glassInputClassName}
+              />
+            </Field>
+            <Field id="skip" label="Skip">
+              <Input
+                id="skip"
+                value={form.skip}
+                onChange={(e) => update('skip', e.target.value)}
+                placeholder="Formal writing"
+                className={glassInputClassName}
+              />
+            </Field>
+            <Field id="materials" label="Materials">
+              <Input
+                id="materials"
+                value={form.materials}
+                onChange={(e) => update('materials', e.target.value)}
+                placeholder="A textbook or course you're following"
+                className={glassInputClassName}
+              />
+            </Field>
             <Field id="notes" label="Notes">
               <textarea
                 id="notes"
                 value={form.notes}
                 onChange={(e) => update('notes', e.target.value)}
-                placeholder="Anything else: what you'll use it for, what to focus on or skip"
+                placeholder="Anything else, such as what you'll use it for"
                 rows={3}
                 className={`w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
               />

@@ -83,7 +83,94 @@ describe('NewCoursePage', () => {
       deadline: null,
       depth: 'In depth',
       notes: 'Trip to Rome',
+      title: '',
+      focus: '',
+      skip: '',
+      materials: '',
+      canAlreadyDo: [],
     });
+  });
+
+  it('takes a title, what to focus on and skip, and materials', async () => {
+    renderPage();
+
+    const user = await fillForm();
+    await user.type(
+      screen.getByLabelText('Course title'),
+      'Italian for a trip to Rome',
+    );
+    await user.type(screen.getByLabelText('Focus on'), 'Speaking');
+    await user.type(screen.getByLabelText('Skip'), 'Formal letters');
+    await user.type(screen.getByLabelText('Materials'), 'Nuovo Espresso 1');
+    await user.click(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Italian for a trip to Rome',
+        focus: 'Speaking',
+        skip: 'Formal letters',
+        materials: 'Nuovo Espresso 1',
+      }),
+    );
+  });
+
+  it('suggests the topic as the title, which a blank title falls back to', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Topic'), 'Italian');
+
+    expect(screen.getByLabelText('Course title')).toHaveAttribute(
+      'placeholder',
+      'Italian',
+    );
+  });
+
+  it('lists what the learner can already do as chips they can add and remove', async () => {
+    renderPage();
+    const user = await fillForm();
+    const newItem = screen.getByLabelText('Something you can already do');
+
+    await user.type(newItem, 'Order a coffee');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    // Enter adds it, rather than submitting the form
+    await user.type(newItem, 'Count to ten{Enter}');
+    expect(mockMutate).not.toHaveBeenCalled();
+    const list = screen.getByRole('list', { name: 'Can already do' });
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Order a coffee', 'Count to ten']);
+    await user.click(
+      within(list).getByRole('button', { name: 'Remove Order a coffee' }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ canAlreadyDo: ['Count to ten'] }),
+    );
+  });
+
+  it('adds what was typed but not added when the syllabus is generated', async () => {
+    renderPage();
+    const user = await fillForm();
+
+    await user.type(
+      screen.getByLabelText('Something you can already do'),
+      'Say hello',
+    );
+    await user.click(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ canAlreadyDo: ['Say hello'] }),
+    );
   });
 
   it('takes an optional deadline date', async () => {

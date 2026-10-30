@@ -5,7 +5,7 @@ import { lessonBudget } from '../services/pacing.js';
 export const SYLLABUS_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const SYLLABUS_PROMPT_VERSION = 'syllabus-v6';
+export const SYLLABUS_PROMPT_VERSION = 'syllabus-v7';
 
 const text = z.string().trim().min(1);
 
@@ -136,6 +136,7 @@ const MINUTES_IN_A_WEEK = 7 * 24 * 60;
  * a new course's has, so stored amounts are read unbounded.
  */
 export const courseSetupSchema = z.object({
+  title: text,
   topic: text,
   goal: text,
   priorKnowledge: optionalText,
@@ -144,23 +145,35 @@ export const courseSetupSchema = z.object({
   deadline: z.date().nullable(),
   depth: text,
   notes: optionalText,
+  focus: optionalText,
+  skip: optionalText,
+  materials: optionalText,
+  canAlreadyDo: z.array(z.string()),
 });
 
 export type CourseSetup = z.infer<typeof courseSetupSchema>;
 
 const minutes = z.number().int().positive().max(MINUTES_IN_A_WEEK);
 
-/** A new course's Course Setup, from the course form. */
-export const newCourseSetupSchema = courseSetupSchema.extend({
-  minutesPerWeek: minutes,
-  sessionMinutes: minutes,
-  // A date with no time ("2027-06-01"), stored as the start of its day in UTC
-  deadline: z.iso
-    .date()
-    .transform((date) => new Date(date))
-    .nullable()
-    .default(null),
-});
+/**
+ * A new course's Course Setup, from the course form. A blank title falls
+ * back to the topic, so a course always has a name.
+ */
+export const newCourseSetupSchema = courseSetupSchema
+  .extend({
+    title: z.string().trim().max(200).default(''),
+    minutesPerWeek: minutes,
+    sessionMinutes: minutes,
+    // A date with no time ("2027-06-01"), stored as the start of its day in
+    // UTC
+    deadline: z.iso
+      .date()
+      .transform((date) => new Date(date))
+      .nullable()
+      .default(null),
+    canAlreadyDo: z.array(text.max(200)).max(30).default([]),
+  })
+  .transform((setup) => ({ ...setup, title: setup.title || setup.topic }));
 
 export const SYLLABUS_SYSTEM_PROMPT = `You design syllabi for self-directed learners.
 
@@ -169,6 +182,8 @@ A syllabus is an ordered list of lessons. Its order is the teaching sequence: ea
 For each lesson give a short title and two to five learning objectives. A learning objective is a short statement of what the lesson should enable the learner to do, starting with a verb, such as "Order food and drinks in a café".
 
 Size each lesson to one session: a learner should be able to work through it, reading and practice included, in one sitting of their session length. Fit the number of lessons to the learner's goal, prior knowledge, time per week and preferred depth. Skip material the learner already knows.
+
+Leave out what the learner says they can already do, building on it instead of teaching it. Weight the syllabus toward what they want to focus on, leave out what they ask to skip, and where they name materials they're following, such as a textbook or course, follow their order and coverage.
 
 Settle any choice the whole course depends on, such as which variety of a language or which version of a framework to learn: take it from what the learner said, or else choose the most common option, and name it in the first lesson's objectives, so every lesson follows it. Never make such a choice an objective for the learner to make: later lessons are written without knowing what they chose.`;
 
@@ -191,14 +206,21 @@ function formatMinutes(total: number | null): string {
 /** The Course Setup as prompt lines, for every course generation call. */
 export function formatCourseSetup(setup: CourseSetup): string[] {
   return [
+    `Course title: ${setup.title}`,
     `Topic: ${setup.topic}`,
     `Goal or target level: ${setup.goal}`,
     `Prior knowledge: ${setup.priorKnowledge || 'None given'}`,
+    ...(setup.canAlreadyDo.length > 0
+      ? ['Can already do:', ...setup.canAlreadyDo.map((item) => `- ${item}`)]
+      : ['Can already do: None given']),
     `Time per week: ${formatMinutes(setup.minutesPerWeek)}`,
     `Session length: ${formatMinutes(setup.sessionMinutes)}`,
     `Deadline: ${setup.deadline ? setup.deadline.toISOString().slice(0, 10) : 'None'}`,
     `Preferred depth: ${setup.depth}`,
     `Notes: ${setup.notes || 'None'}`,
+    `Focus: ${setup.focus || 'None given'}`,
+    `Skip: ${setup.skip || 'None given'}`,
+    `Materials: ${setup.materials || 'None given'}`,
   ];
 }
 

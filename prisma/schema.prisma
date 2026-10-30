@@ -332,6 +332,12 @@ model Course {
   deadline       DateTime?         @db.Date
   depth          String
   notes          String
+  // Optional, blank when not given
+  focus          String            @default("")
+  skip           String            @default("")
+  materials      String            @default("")
+  // What the learner says they can already do, so the syllabus leaves it out
+  canAlreadyDo   String[]          @default([])
   archivedAt     DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt

@@ -2,12 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { assembleTutorContext, buildTutorRequest } from './tutor.js';
 
 const setup = {
+  title: 'Italian',
   topic: 'Italian',
   goal: 'A2 by summer',
   priorKnowledge: 'Some Duolingo',
   minutesPerWeek: 180,
   sessionMinutes: 30,
   deadline: null,
+  focus: '',
+  skip: '',
+  materials: '',
+  canAlreadyDo: [],
   depth: 'Practical',
   notes: '',
 };

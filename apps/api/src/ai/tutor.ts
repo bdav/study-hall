@@ -12,7 +12,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const TUTOR_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt changes meaningfully. */
-export const TUTOR_PROMPT_VERSION = 'tutor-v4';
+export const TUTOR_PROMPT_VERSION = 'tutor-v5';
 
 /** Room for a reply and the model's thinking before it. */
 const TUTOR_MAX_TOKENS = 8000;

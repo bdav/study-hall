@@ -191,7 +191,6 @@ export const courseRouter = router({
         data: {
           ...input,
           userId: ctx.userId,
-          title: input.topic,
           proposal: {
             create: { lessons: output.lessons, model, promptVersion },
           },

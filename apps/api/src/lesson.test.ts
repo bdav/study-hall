@@ -28,6 +28,10 @@ const courseForm = {
   sessionMinutes: 30,
   depth: 'Practical',
   notes: 'I travel to Rome in June',
+  focus: 'Speaking',
+  skip: 'Formal letters',
+  materials: 'Nuovo Espresso 1',
+  canAlreadyDo: ['Order a coffee', 'Count to ten'],
 };
 
 /** The Course Setup as every generation prompt gives it. */
@@ -39,6 +43,10 @@ const setupLines = [
   'Session length: 30 minutes',
   'Preferred depth: Practical',
   'Notes: I travel to Rome in June',
+  'Focus: Speaking',
+  'Skip: Formal letters',
+  'Materials: Nuovo Espresso 1',
+  'Can already do:\n- Order a coffee\n- Count to ten',
 ];
 
 const syllabus = {
@@ -190,7 +198,7 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v8',
+        promptVersion: 'lesson-v9',
       });
       expect(
         version.exercises.map(
@@ -965,7 +973,7 @@ describe('Regenerating a lesson', () => {
     ]);
     expect(versions[1]).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'lesson-v8',
+      promptVersion: 'lesson-v9',
     });
   });
 

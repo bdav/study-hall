@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Course" ADD COLUMN     "canAlreadyDo" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN     "focus" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "materials" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "skip" TEXT NOT NULL DEFAULT '';
