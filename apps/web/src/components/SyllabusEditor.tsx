@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Archive } from 'lucide-react';
+import { Archive, ChevronRight } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -22,6 +22,71 @@ function toItems(lessons: SyllabusLesson[]): EditableLesson[] {
 
 function sameItems(a: EditableLesson[], b: EditableLesson[]) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The course's archived lessons, below the Syllabus being edited: collapsed
+ * to start, each restored to the end of the Syllabus with everything it
+ * had (ADR-0003). Left out when there are none.
+ */
+function ArchivedLessons({
+  courseId,
+  onRestored,
+}: {
+  courseId: string;
+  /** Refreshes the lists, the restore pending until it's done. */
+  onRestored: () => Promise<unknown>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const archived =
+    trpc.course.listArchivedLessons.useQuery({ courseId }).data ?? [];
+  const restore = trpc.course.restoreLesson.useMutation({
+    onSuccess: onRestored,
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  if (archived.length === 0) return null;
+
+  return (
+    <section aria-label="Archived lessons" className="mt-6">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls="archived-lessons"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex items-center gap-1 text-sm text-white/60 hover:text-white"
+      >
+        <ChevronRight
+          className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+          aria-hidden
+        />
+        Archived lessons ({archived.length})
+      </button>
+      {/* Kept in the page while closed, so the toggle's aria-controls
+          always points at it */}
+      <ul id="archived-lessons" hidden={!isOpen} className="mt-3 space-y-2">
+        {archived.map((lesson) => (
+          <li
+            key={lesson.id}
+            className="flex items-center justify-between gap-4 rounded-xl border border-white/20 bg-white/5 px-4 py-2"
+          >
+            <span className="min-w-0 truncate">{lesson.title}</span>
+            <button
+              type="button"
+              aria-label={`Restore ${lesson.title}`}
+              onClick={() => restore.mutate({ lessonId: lesson.id })}
+              disabled={restore.isPending}
+              className="shrink-0 rounded-lg bg-white/15 px-3 py-1 text-sm text-white hover:bg-white/25 disabled:opacity-50"
+            >
+              Restore
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /**
@@ -55,9 +120,12 @@ export function SyllabusEditor({
   }
 
   const saving = {
-    onSuccess: () => {
-      utils.course.getById.invalidate({ id: courseId });
-    },
+    // Returned, so a mutation stays pending until the lists have refetched
+    onSuccess: () =>
+      Promise.all([
+        utils.course.getById.invalidate({ id: courseId }),
+        utils.course.listArchivedLessons.invalidate({ courseId }),
+      ]),
     onError: async (error: { message: string }) => {
       toast.error(error.message);
       // Back to the Syllabus as saved now, other edits saved meanwhile
@@ -122,6 +190,7 @@ export function SyllabusEditor({
         disabled={false}
         className="mt-3 rounded-xl border border-dashed border-white/30 p-4"
       />
+      <ArchivedLessons courseId={courseId} onRestored={saving.onSuccess} />
       <button
         type="button"
         onClick={onDone}

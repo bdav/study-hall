@@ -7,13 +7,18 @@ import { trpc } from '@/lib/trpc';
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
-      course: { getById: { invalidate: vi.fn() } },
+      course: {
+        getById: { invalidate: vi.fn() },
+        listArchivedLessons: { invalidate: vi.fn() },
+      },
     })),
     course: {
       updateLesson: { useMutation: vi.fn() },
       reorderLessons: { useMutation: vi.fn() },
       addLesson: { useMutation: vi.fn() },
       archiveLesson: { useMutation: vi.fn() },
+      restoreLesson: { useMutation: vi.fn() },
+      listArchivedLessons: { useQuery: vi.fn() },
     },
   },
 }));
@@ -33,11 +38,21 @@ const mutate = {
   reorderLessons: vi.fn(),
   addLesson: vi.fn(),
   archiveLesson: vi.fn(),
+  restoreLesson: vi.fn(),
 };
+
+const archivedLessons = [
+  { id: 'lesson-4', title: 'Colours', archivedAt: '2026-10-29T12:00:00.000Z' },
+  { id: 'lesson-5', title: 'Weather', archivedAt: '2026-10-20T12:00:00.000Z' },
+];
 
 function renderEditor(
   props: Partial<Parameters<typeof SyllabusEditor>[0]> = {},
+  archived: typeof archivedLessons = [],
 ) {
+  vi.mocked(trpc.course.listArchivedLessons.useQuery).mockReturnValue({
+    data: archived,
+  } as never);
   for (const name of Object.keys(mutate) as (keyof typeof mutate)[]) {
     vi.mocked(trpc.course[name].useMutation).mockReturnValue({
       mutate: mutate[name],
@@ -189,5 +204,37 @@ describe('SyllabusEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Done' }));
 
     expect(onDone).toHaveBeenCalled();
+  });
+
+  describe('archived lessons', () => {
+    it('lists them below the Syllabus, collapsed to start, each to restore', async () => {
+      renderEditor({}, archivedLessons);
+      const user = userEvent.setup();
+      const toggle = screen.getByRole('button', {
+        name: /archived lessons \(2\)/i,
+      });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(
+        screen.queryByRole('button', { name: 'Restore Colours' }),
+      ).not.toBeInTheDocument();
+
+      await user.click(toggle);
+      await user.click(screen.getByRole('button', { name: 'Restore Colours' }));
+
+      expect(mutate.restoreLesson).toHaveBeenCalledWith({
+        lessonId: 'lesson-4',
+      });
+      expect(trpc.course.listArchivedLessons.useQuery).toHaveBeenCalledWith({
+        courseId: 'course-1',
+      });
+    });
+
+    it('leaves the list out when no lesson is archived', () => {
+      renderEditor();
+
+      expect(
+        screen.queryByRole('button', { name: /archived lessons/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

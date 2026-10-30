@@ -1257,6 +1257,117 @@ describe('editing the Syllabus', () => {
     });
   });
 
+  describe('restoring a lesson', () => {
+    it("lists a course's archived lessons, most recently archived first", async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings, cafe] = lessons;
+      await caller.course.archiveLesson({ lessonId: greetings.id });
+      await caller.course.archiveLesson({ lessonId: cafe.id });
+      // A day apart, so the order can't hang on the same millisecond
+      await prisma.lesson.update({
+        where: { id: greetings.id },
+        data: { archivedAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+
+      expect(await caller.course.listArchivedLessons({ courseId: id })).toEqual(
+        [
+          { id: cafe.id, title: 'At the café', archivedAt: expect.any(Date) },
+          {
+            id: greetings.id,
+            title: 'Greetings',
+            archivedAt: expect.any(Date),
+          },
+        ],
+      );
+    });
+
+    it('puts a restored lesson back at the end of the Syllabus, as it was', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings] = lessons;
+      await caller.lesson.setCompleted({ id: greetings.id, completed: true });
+      await caller.course.archiveLesson({ lessonId: greetings.id });
+
+      await caller.course.restoreLesson({ lessonId: greetings.id });
+
+      const course = await caller.course.getById({ id });
+      expect(course.lessons.map((lesson) => lesson.title)).toEqual([
+        'At the café',
+        'Numbers',
+        'Greetings',
+      ]);
+      expect(course.lessons.at(-1)).toMatchObject({
+        objectives: ['Greet someone formally and informally', 'Say your name'],
+        status: 'COMPLETE',
+      });
+      expect(await caller.course.listArchivedLessons({ courseId: id })).toEqual(
+        [],
+      );
+    });
+
+    it('brings back its written version and the cards made from it', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings] = lessons;
+      const version = await prisma.lessonVersion.create({
+        data: {
+          lessonId: greetings.id,
+          content: [{ heading: 'Saying hello', paragraphs: ['Ciao!'] }],
+          examples: [{ example: 'Ciao, Marco!', explanation: 'Informal.' }],
+          summary: 'Taught ciao.',
+          model: 'claude-sonnet-5-5',
+          promptVersion: 'lesson-v6',
+        },
+      });
+      const { deckId } = await caller.course.getById({ id });
+      await prisma.card.create({
+        data: { deckId: deckId!, front: 'Ciao', sourceLessonId: greetings.id },
+      });
+      await caller.course.archiveLesson({ lessonId: greetings.id });
+
+      await caller.course.restoreLesson({ lessonId: greetings.id });
+
+      const opened = await caller.lesson.getById({ id: greetings.id });
+      expect(opened.version?.id).toBe(version.id);
+      expect(
+        await prisma.card.findMany({ where: { deckId: deckId! } }),
+      ).toEqual([expect.objectContaining({ sourceLessonId: greetings.id })]);
+    });
+
+    it('refuses a restore past a hundred lessons', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+      await prisma.lesson.createMany({
+        data: Array.from({ length: 98 }, (_, i) => ({
+          courseId: id,
+          title: `Extra ${i + 1}`,
+          position: 3 + i,
+        })),
+      });
+
+      await expect(
+        caller.course.restoreLesson({ lessonId: lessons[0].id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+    });
+
+    it("refuses a lesson that isn't archived, or one of an archived course", async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+
+      await expect(
+        caller.course.restoreLesson({ lessonId: lessons[0].id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+      await caller.course.archive({ courseId: id });
+      await expect(
+        caller.course.restoreLesson({ lessonId: lessons[0].id }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+    });
+  });
+
   describe('restoring a course', () => {
     it('lists archived courses on their own, most recently archived first', async () => {
       const caller = createCaller();
@@ -1331,6 +1442,7 @@ describe('editing the Syllabus', () => {
     await caller.course.updateLesson({ lessonId: lessons[0].id, title: 'Hi' });
     await caller.course.addLesson({ courseId: id, title: 'More' });
     await caller.course.archiveLesson({ lessonId: lessons[1].id });
+    await caller.course.restoreLesson({ lessonId: lessons[1].id });
     await caller.course.archive({ courseId: id });
     await caller.course.restore({ courseId: id });
 
@@ -1353,6 +1465,8 @@ describe('editing the Syllabus', () => {
       () => stranger.course.archiveLesson({ lessonId: lessons[0].id }),
       () => stranger.course.archive({ courseId: id }),
       () => stranger.course.restore({ courseId: id }),
+      () => stranger.course.restoreLesson({ lessonId: lessons[0].id }),
+      () => stranger.course.listArchivedLessons({ courseId: id }),
     ]) {
       await expect(edit()).rejects.toThrow(
         expect.objectContaining({ code: 'NOT_FOUND' }),

@@ -40,6 +40,46 @@ async function lockCourse(tx: Prisma.TransactionClient, courseId: string) {
 }
 
 /**
+ * The place after the last of a course's lessons, archived ones included,
+ * for a lesson joining its Syllabus; refused when the Syllabus is full.
+ * Run it holding the course's lock.
+ */
+async function nextPlaceInSyllabus(
+  tx: Prisma.TransactionClient,
+  courseId: string,
+) {
+  const inSyllabus = await tx.lesson.count({
+    where: { courseId, archivedAt: null },
+  });
+  if (inSyllabus >= MAX_LESSONS) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: `A syllabus holds at most ${MAX_LESSONS} lessons`,
+    });
+  }
+
+  const { _max } = await tx.lesson.aggregate({
+    where: { courseId },
+    _max: { position: true },
+  });
+  return (_max.position ?? -1) + 1;
+}
+
+/** Refuses a change to a course archived meanwhile; run it holding the lock. */
+async function assertCourseActive(
+  tx: Prisma.TransactionClient,
+  courseId: string,
+) {
+  const { archivedAt } = await tx.course.findUniqueOrThrow({
+    where: { id: courseId },
+    select: { archivedAt: true },
+  });
+  if (archivedAt) {
+    throw new TRPCError({ code: 'CONFLICT', message: ARCHIVED_MESSAGE });
+  }
+}
+
+/**
  * A lesson of the user's accepted Syllabus they can still edit: not
  * archived, in a course that isn't. Throws NOT_FOUND for anyone else's.
  */
@@ -414,26 +454,13 @@ export const courseRouter = router({
 
       const lesson = await ctx.prisma.$transaction(async (tx) => {
         await lockCourse(tx, input.courseId);
-        const inSyllabus = await tx.lesson.count({
-          where: { courseId: input.courseId, archivedAt: null },
-        });
-        if (inSyllabus >= MAX_LESSONS) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `A syllabus holds at most ${MAX_LESSONS} lessons`,
-          });
-        }
-
-        const { _max } = await tx.lesson.aggregate({
-          where: { courseId: input.courseId },
-          _max: { position: true },
-        });
+        await assertCourseActive(tx, input.courseId);
         return tx.lesson.create({
           data: {
             courseId: input.courseId,
             title: input.title,
             objectives: [],
-            position: (_max.position ?? -1) + 1,
+            position: await nextPlaceInSyllabus(tx, input.courseId),
           },
         });
       });
@@ -457,6 +484,7 @@ export const courseRouter = router({
 
       await ctx.prisma.$transaction(async (tx) => {
         await lockCourse(tx, lesson.courseId);
+        await assertCourseActive(tx, lesson.courseId);
         const inSyllabus = await tx.lesson.count({
           where: { courseId: lesson.courseId, archivedAt: null },
         });
@@ -472,6 +500,69 @@ export const courseRouter = router({
         await tx.lesson.updateMany({
           where: { id: lesson.id, archivedAt: null },
           data: { archivedAt: new Date() },
+        });
+      });
+
+      return { success: true };
+    }),
+
+  /** A course's archived lessons, most recently archived first. */
+  listArchivedLessons: protectedProcedure
+    .input(z.object({ courseId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const course = await ctx.prisma.course.findUnique({
+        where: { id: input.courseId, userId: ctx.userId },
+        select: { id: true },
+      });
+
+      if (!course) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
+      }
+
+      return ctx.prisma.lesson.findMany({
+        where: { courseId: course.id, archivedAt: { not: null } },
+        orderBy: { archivedAt: 'desc' },
+        select: { id: true, title: true, archivedAt: true },
+      });
+    }),
+
+  /**
+   * Restores an archived lesson to the end of its Syllabus, with everything
+   * it had: its versions, Lesson Completion, attempts, tutor threads and
+   * cards (ADR-0003). Within the Syllabus's limit of lessons.
+   */
+  restoreLesson: protectedProcedure
+    .input(z.object({ lessonId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const lesson = await ctx.prisma.lesson.findFirst({
+        where: { id: input.lessonId, course: { userId: ctx.userId } },
+      });
+
+      if (!lesson) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lesson not found' });
+      }
+
+      await ctx.prisma.$transaction(async (tx) => {
+        await lockCourse(tx, lesson.courseId);
+        // Checked under the lock, so an archive of the course meanwhile wins
+        await assertCourseActive(tx, lesson.courseId);
+        const current = await tx.lesson.findUniqueOrThrow({
+          where: { id: lesson.id },
+          select: { archivedAt: true },
+        });
+        if (!current.archivedAt) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'This lesson is not archived',
+          });
+        }
+
+        await tx.lesson.update({
+          where: { id: lesson.id },
+          data: {
+            archivedAt: null,
+            position: await nextPlaceInSyllabus(tx, lesson.courseId),
+          },
         });
       });
 

@@ -42,6 +42,8 @@ vi.mock('@/lib/trpc', () => ({
       reorderLessons: { useMutation: vi.fn() },
       addLesson: { useMutation: vi.fn() },
       archiveLesson: { useMutation: vi.fn() },
+      restoreLesson: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+      listArchivedLessons: { useQuery: vi.fn(() => ({ data: [] })) },
     },
   },
 }));
