@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { lessonBudget } from '../services/pacing.js';
 
 /** Sonnet-class model for generation (courses-plan.md, AI platform). */
 export const SYLLABUS_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const SYLLABUS_PROMPT_VERSION = 'syllabus-v5';
+export const SYLLABUS_PROMPT_VERSION = 'syllabus-v6';
 
 const text = z.string().trim().min(1);
 
@@ -140,6 +141,7 @@ export const courseSetupSchema = z.object({
   priorKnowledge: optionalText,
   minutesPerWeek: z.number().int().nullable(),
   sessionMinutes: z.number().int().nullable(),
+  deadline: z.date().nullable(),
   depth: text,
   notes: optionalText,
 });
@@ -152,6 +154,12 @@ const minutes = z.number().int().positive().max(MINUTES_IN_A_WEEK);
 export const newCourseSetupSchema = courseSetupSchema.extend({
   minutesPerWeek: minutes,
   sessionMinutes: minutes,
+  // A date with no time ("2027-06-01"), stored as the start of its day in UTC
+  deadline: z.iso
+    .date()
+    .transform((date) => new Date(date))
+    .nullable()
+    .default(null),
 });
 
 export const SYLLABUS_SYSTEM_PROMPT = `You design syllabi for self-directed learners.
@@ -188,6 +196,7 @@ export function formatCourseSetup(setup: CourseSetup): string[] {
     `Prior knowledge: ${setup.priorKnowledge || 'None given'}`,
     `Time per week: ${formatMinutes(setup.minutesPerWeek)}`,
     `Session length: ${formatMinutes(setup.sessionMinutes)}`,
+    `Deadline: ${setup.deadline ? setup.deadline.toISOString().slice(0, 10) : 'None'}`,
     `Preferred depth: ${setup.depth}`,
     `Notes: ${setup.notes || 'None'}`,
   ];
@@ -202,20 +211,33 @@ export type Regeneration = {
   lessons: z.infer<typeof proposalLessonsSchema>;
 };
 
+/**
+ * With a deadline, about how many lessons fit before it, as a target;
+ * without one, the model chooses.
+ */
+function budgetLines(setup: CourseSetup): string[] {
+  const budget = lessonBudget(setup, new Date());
+  return budget === null
+    ? []
+    : [
+        `Lesson budget: about ${budget} lessons fit before the deadline, one session each at the learner's time per week. Aim for about that many, fewer if the goal needs fewer.`,
+      ];
+}
+
 export function buildSyllabusPrompt(
   setup: CourseSetup,
   regeneration?: Regeneration,
 ): string {
+  const setupLines = [...formatCourseSetup(setup), ...budgetLines(setup)];
+
   if (!regeneration) {
-    return [
-      ...formatCourseSetup(setup),
-      '',
-      'Propose a syllabus for this learner.',
-    ].join('\n');
+    return [...setupLines, '', 'Propose a syllabus for this learner.'].join(
+      '\n',
+    );
   }
 
   return [
-    ...formatCourseSetup(setup),
+    ...setupLines,
     '',
     'Your last proposal, as the learner left it:',
     ...regeneration.lessons.flatMap(({ title, objectives }, index) => [

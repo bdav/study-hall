@@ -116,8 +116,8 @@ Rules:
 
 - **Navigation:** Courses and Flashcards are peer top-level areas, with Courses as the default landing page. Inside a course, its deck appears as **Review** (cards due, start a study session), reusing the v2 study flow, so the learner never has to go through the Decks area. Course decks are also listed in Flashcards, labelled with their course. Structure the routes so a later "Today" view can sit above both areas.
 - **Course creation:**
-  - A structured form, the **Course Setup**: topic, goal or target level, prior knowledge, time per week and session length (chosen from chips, stored as minutes), preferred depth and free-text notes. Syllabus and lesson generation size each lesson to one session.
-  - One generation call then produces a **Syllabus Proposal**.
+  - A structured form, the **Course Setup**: topic, goal or target level, prior knowledge, time per week and session length (chosen from chips, stored as minutes), an optional deadline, preferred depth and free-text notes. Syllabus and lesson generation size each lesson to one session. With a deadline, the syllabus is given a **lesson budget** as a target: weeks until the deadline × minutes per week ÷ session minutes; without one, the model chooses the number of lessons.
+  - One generation call then produces a **Syllabus Proposal**, with a **pacing line** worked out in code from it as it stands ("12 lessons · about 30 minutes each · about 4 weeks at 2 hours a week, before your deadline"), sharing the lesson budget's arithmetic (`services/pacing.ts`). An accepted Syllabus has none.
   - While it's a proposal, the learner can rename, reorder, add and remove lessons, edit learning objectives, and regenerate with feedback: chips for the common corrections and their own words.
   - Accepting it creates the Syllabus and Lessons. After that, edits are by hand only; AI-suggested syllabus changes come later.
 - **Lessons are lesson-driven:** stored, structured content the learner works through in steps, with the tutor in a side panel (**Lesson layout** below). A lesson is generated the first time it's opened. Revisiting it never regenerates.

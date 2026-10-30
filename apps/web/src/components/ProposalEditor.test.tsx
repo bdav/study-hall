@@ -144,6 +144,34 @@ describe('ProposalEditor', () => {
     ).toHaveValue('At the café');
   });
 
+  it('shows the pacing of the proposal as last saved', async () => {
+    const pacing = {
+      lessons: 3,
+      sessionMinutes: 60,
+      minutesPerWeek: 60,
+      weeks: 3,
+      deadline: null,
+    };
+    renderEditor({ pacing });
+    expect(
+      screen.getByText(/^3 lessons · about 1 hour each · about 3 weeks/),
+    ).toBeInTheDocument();
+    const user = userEvent.setup();
+
+    await user.click(lesson(3).getByRole('button', { name: 'Remove Numbers' }));
+    const [, options] = mockUpdate.mock.lastCall as [
+      unknown,
+      { onSuccess: (data: { pacing: typeof pacing }) => void },
+    ];
+    act(() =>
+      options.onSuccess({ pacing: { ...pacing, lessons: 2, weeks: 2 } }),
+    );
+
+    expect(
+      screen.getByText(/^2 lessons · about 1 hour each · about 2 weeks/),
+    ).toBeInTheDocument();
+  });
+
   it('puts a blanked title back, saving nothing', async () => {
     renderEditor();
     const user = userEvent.setup();

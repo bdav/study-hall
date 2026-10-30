@@ -356,6 +356,7 @@ export default function CoursePage() {
                 courseTitle={course.title}
                 lessons={proposal.lessons}
                 feedback={proposal.feedback}
+                pacing={course.pacing}
                 onAccept={() => acceptProposal.mutate({ courseId })}
                 isAccepting={acceptProposal.isPending}
                 acceptTarget={acceptTarget}

@@ -328,6 +328,8 @@ model Course {
   // before they were asked as amounts, whose free text didn't parse
   minutesPerWeek Int?
   sessionMinutes Int?
+  // Optional: the date the learner wants to finish by
+  deadline       DateTime?         @db.Date
   depth          String
   notes          String
   archivedAt     DateTime?

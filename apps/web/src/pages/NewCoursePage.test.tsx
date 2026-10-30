@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -80,9 +80,26 @@ describe('NewCoursePage', () => {
       priorKnowledge: 'Some Duolingo',
       minutesPerWeek: 180,
       sessionMinutes: 30,
+      deadline: null,
       depth: 'In depth',
       notes: 'Trip to Rome',
     });
+  });
+
+  it('takes an optional deadline date', async () => {
+    renderPage();
+
+    const user = await fillForm();
+    fireEvent.change(screen.getByLabelText(/deadline/i), {
+      target: { value: '2027-06-01' },
+    });
+    await user.click(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ deadline: '2027-06-01' }),
+    );
   });
 
   it('offers time per week and session length as chips', () => {

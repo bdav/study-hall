@@ -5,6 +5,7 @@ import {
   beforeAll,
   beforeEach,
   afterAll,
+  afterEach,
   vi,
 } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
@@ -305,7 +306,7 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v5',
+        promptVersion: 'syllabus-v6',
         acceptedAt: null,
         feedback: [],
       });
@@ -815,7 +816,7 @@ describe('courseRouter', () => {
         lessons: regenerated.lessons,
         feedback: [{ chips: [], text: 'More focus on the past tense' }],
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v5',
+        promptVersion: 'syllabus-v6',
         acceptedAt: null,
       });
     });
@@ -1763,5 +1764,174 @@ describe('course review', () => {
     const deck = await createCaller().deck.getById({ id: deckId });
 
     expect(deck.course).toEqual({ id, title: 'Italian', archivedAt: null });
+  });
+});
+
+describe('deadline and pacing', () => {
+  beforeEach(() => {
+    // Monday 2 November 2026
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-02T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Creates a course of the fixture syllabus's three lessons. */
+  async function createCourseWith(
+    setup: Partial<typeof courseForm> & { deadline?: string | null },
+    caller = createCaller(),
+  ) {
+    ai.respondWith(syllabus);
+    return caller.course.create({ ...courseForm, ...setup });
+  }
+
+  it('stores an optional deadline and gives it in the setup lines', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith({ deadline: '2026-11-30' }, caller);
+
+    expect((await caller.course.getById({ id })).deadline).toEqual(
+      new Date('2026-11-30T00:00:00Z'),
+    );
+    expect(ai.requests[0].prompt).toContain('Deadline: 2026-11-30');
+  });
+
+  it('says there is no deadline when none is given', async () => {
+    await createCourseWith({});
+
+    expect(ai.requests[0].prompt).toContain('Deadline: None');
+  });
+
+  it('refuses a deadline that is not a date, without calling the model', async () => {
+    await expect(createCourseWith({ deadline: 'next summer' })).rejects.toThrow(
+      expect.objectContaining({ code: 'BAD_REQUEST' }),
+    );
+    expect(ai.requests).toHaveLength(0);
+  });
+
+  it('gives the syllabus a lesson budget that fits the time until the deadline', async () => {
+    // 4 weeks at 3 hours a week, in 30-minute sessions: 24 lessons
+    await createCourseWith({ deadline: '2026-11-30' });
+
+    expect(ai.requests[0].prompt).toMatch(/Lesson budget: about 24 lessons/);
+  });
+
+  it('leaves the number of lessons to the model without a deadline', async () => {
+    await createCourseWith({});
+
+    expect(ai.requests[0].prompt).not.toMatch(/Lesson budget/);
+  });
+
+  it('gives a regenerated proposal the lesson budget left until the deadline', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith({ deadline: '2026-11-30' }, caller);
+    // A week later: 3 weeks left, 18 lessons
+    vi.setSystemTime(new Date('2026-11-09T12:00:00Z'));
+
+    ai.respondWith(syllabus);
+    await caller.course.regenerateProposal({
+      courseId: id,
+      feedback: 'Fewer lessons',
+    });
+
+    expect(ai.requests[1].prompt).toMatch(/Lesson budget: about 18 lessons/);
+  });
+
+  it('gives a proposal its pacing: lessons, session length and weeks at the time per week', async () => {
+    const caller = createCaller();
+    // 3 lessons of 30 minutes at an hour a week: about 2 weeks
+    const { id } = await createCourseWith(
+      { minutesPerWeek: 60, sessionMinutes: 30 },
+      caller,
+    );
+
+    expect((await caller.course.getById({ id })).pacing).toEqual({
+      lessons: 3,
+      sessionMinutes: 30,
+      minutesPerWeek: 60,
+      weeks: 2,
+      deadline: null,
+    });
+  });
+
+  it('says a proposal finishes before the deadline', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith(
+      { minutesPerWeek: 60, sessionMinutes: 30, deadline: '2026-11-30' },
+      caller,
+    );
+
+    expect((await caller.course.getById({ id })).pacing?.deadline).toEqual({
+      finishesBefore: true,
+      weeksOver: 0,
+    });
+  });
+
+  it('says by how much a proposal runs past the deadline', async () => {
+    const caller = createCaller();
+    // 3 lessons of an hour at an hour a week take 3 weeks; 1 week is left
+    const { id } = await createCourseWith(
+      { minutesPerWeek: 60, sessionMinutes: 60, deadline: '2026-11-09' },
+      caller,
+    );
+
+    expect((await caller.course.getById({ id })).pacing?.deadline).toEqual({
+      finishesBefore: false,
+      weeksOver: 2,
+    });
+  });
+
+  it('follows the proposal as the learner edits it', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith(
+      { minutesPerWeek: 60, sessionMinutes: 60 },
+      caller,
+    );
+
+    await caller.course.updateProposal({
+      courseId: id,
+      lessons: syllabus.lessons.slice(0, 1),
+    });
+
+    expect((await caller.course.getById({ id })).pacing).toMatchObject({
+      lessons: 1,
+      weeks: 1,
+    });
+  });
+
+  it("returns a saved edit's pacing, so the proposal can show it at once", async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith(
+      { minutesPerWeek: 60, sessionMinutes: 60 },
+      caller,
+    );
+
+    const saved = await caller.course.updateProposal({
+      courseId: id,
+      lessons: syllabus.lessons.slice(0, 2),
+    });
+
+    expect(saved.pacing).toMatchObject({ lessons: 2, weeks: 2 });
+  });
+
+  it('gives no pacing for an accepted Syllabus', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith({}, caller);
+
+    await caller.course.acceptProposal({ courseId: id });
+
+    expect((await caller.course.getById({ id })).pacing).toBeNull();
+  });
+
+  it('gives no pacing for a course without its time per week or session length', async () => {
+    const caller = createCaller();
+    const { id } = await createCourseWith({}, caller);
+    await prisma.course.update({
+      where: { id },
+      data: { sessionMinutes: null },
+    });
+
+    expect((await caller.course.getById({ id })).pacing).toBeNull();
   });
 });

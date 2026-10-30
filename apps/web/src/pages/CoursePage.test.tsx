@@ -76,6 +76,7 @@ const baseCourse = {
   lessons: [],
   continueLesson: null,
   review: null,
+  pacing: null,
   proposal: {
     lessons: proposedLessons,
     model: 'claude-sonnet-5-5',
@@ -348,6 +349,46 @@ describe('CoursePage', () => {
       ).toBeInTheDocument();
     });
 
+    it.each([
+      [
+        'before the deadline',
+        {
+          lessons: 12,
+          sessionMinutes: 30,
+          minutesPerWeek: 120,
+          weeks: 3,
+          deadline: { finishesBefore: true, weeksOver: 0 },
+        },
+        '12 lessons · about 30 minutes each · about 3 weeks at 2 hours a week, before your deadline',
+      ],
+      [
+        'past the deadline',
+        {
+          lessons: 12,
+          sessionMinutes: 60,
+          minutesPerWeek: 90,
+          weeks: 8,
+          deadline: { finishesBefore: false, weeksOver: 2 },
+        },
+        '12 lessons · about 1 hour each · about 8 weeks at 1 hour 30 minutes a week, 2 weeks past your deadline',
+      ],
+      [
+        'with no deadline',
+        {
+          lessons: 1,
+          sessionMinutes: 45,
+          minutesPerWeek: 180,
+          weeks: 1,
+          deadline: null,
+        },
+        '1 lesson · about 45 minutes each · about 1 week at 3 hours a week',
+      ],
+    ])("shows how it fits the learner's time, %s", (_, pacing, line) => {
+      renderPage({ data: { ...baseCourse, pacing } } as Partial<CourseQuery>);
+
+      expect(screen.getByText(line)).toBeInTheDocument();
+    });
+
     it('accepts the proposal from the pinned header, in view at any length', async () => {
       renderPage({ data: baseCourse } as Partial<CourseQuery>);
       const user = userEvent.setup();
@@ -396,6 +437,23 @@ describe('CoursePage', () => {
 
   describe('with an accepted Syllabus', () => {
     const rows = () => screen.getAllByRole('listitem', { name: /lesson/i });
+
+    it('shows no pacing line', () => {
+      renderPage({
+        data: {
+          ...acceptedCourse,
+          pacing: {
+            lessons: 2,
+            sessionMinutes: 30,
+            minutesPerWeek: 60,
+            weeks: 1,
+            deadline: null,
+          },
+        },
+      } as Partial<CourseQuery>);
+
+      expect(screen.queryByText(/lessons? ·/)).not.toBeInTheDocument();
+    });
 
     it('lists the lessons in order, one row each', () => {
       renderPage({ data: acceptedCourse } as Partial<CourseQuery>);

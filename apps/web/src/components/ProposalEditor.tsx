@@ -9,6 +9,7 @@ import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { FeedbackChips } from '@/components/FeedbackChips';
 import { WritingLoader } from '@/components/WritingLoader';
+import { PacingLine, type Pacing } from '@/components/PacingLine';
 import {
   AddField,
   EditableLessonList,
@@ -74,6 +75,8 @@ interface ProposalEditorProps {
   lessons: ProposedLesson[];
   /** The learner's feedback on each regeneration so far, oldest first. */
   feedback: FeedbackRound[];
+  /** How the proposal, as last saved, fits the learner's time, if known. */
+  pacing?: Pacing | null;
   onAccept: () => void;
   isAccepting: boolean;
   /**
@@ -98,6 +101,7 @@ export function ProposalEditor({
   courseTitle,
   lessons,
   feedback,
+  pacing,
   onAccept,
   isAccepting,
   acceptTarget,
@@ -115,8 +119,11 @@ export function ProposalEditor({
   // not in an effect)
   const [items, setItems] = useState(() => withKeys(lessons));
   const [syncedLessons, setSyncedLessons] = useState(lessons);
+  // The pacing of the latest save, until the proposal changes under it
+  const [savedPacing, setSavedPacing] = useState<Pacing | null>();
   if (lessons !== syncedLessons) {
     setSyncedLessons(lessons);
+    setSavedPacing(undefined);
     if (
       !sameLessons(
         lessons,
@@ -148,9 +155,15 @@ export function ProposalEditor({
   // disabled as its neighbour saves would lose the focus moving into it
   const isActionBlocked = isBusy || update.isPending;
 
+  const shownPacing = savedPacing === undefined ? pacing : savedPacing;
+
   function save(next: KeyedLesson[]) {
     setItems(next);
-    update.mutate({ courseId, lessons: next.map((item) => item.lesson) });
+    update.mutate(
+      { courseId, lessons: next.map((item) => item.lesson) },
+      // Only the latest save's: an earlier one finishing late is passed over
+      { onSuccess: (saved) => setSavedPacing(saved.pacing) },
+    );
   }
 
   function handleRegenerate(e: FormEvent) {
@@ -187,6 +200,7 @@ export function ProposalEditor({
         Shape the lessons below: rename, reorder, remove or add them, and edit
         their objectives. Accepting creates your course&apos;s syllabus.
       </p>
+      {shownPacing && <PacingLine pacing={shownPacing} />}
       <EditableLessonList
         label="Proposed lessons"
         lessons={items.map(({ key, lesson }) => ({ id: key, lesson }))}

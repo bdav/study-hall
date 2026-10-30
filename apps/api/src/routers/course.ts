@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { type Prisma, type PrismaClient } from '@prisma/client';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { continueTarget, lessonStatus } from '../services/syllabus.js';
+import { pacing } from '../services/pacing.js';
 import { countDueAndNewCards } from '../services/studySessions.js';
 import { generateStructured } from '../ai/generate.js';
 import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
@@ -220,6 +221,9 @@ export const courseRouter = router({
       }
 
       const { deck, proposal, lessons, ...rest } = course;
+      const proposedLessons = proposal
+        ? parseProposalLessons(proposal.lessons)
+        : [];
       return {
         ...rest,
         continueLesson: continueTarget(lessons),
@@ -242,9 +246,15 @@ export const courseRouter = router({
             : null,
         proposal: proposal && {
           ...proposal,
-          lessons: parseProposalLessons(proposal.lessons),
+          lessons: proposedLessons,
           feedback: parseFeedbackRounds(proposal.feedback),
         },
+        // How a proposal, as the learner has left it, fits their time; an
+        // accepted Syllabus has none
+        pacing:
+          proposal && !proposal.acceptedAt
+            ? pacing(proposedLessons.length, course, new Date())
+            : null,
       };
     }),
 
@@ -340,7 +350,8 @@ export const courseRouter = router({
         });
       }
 
-      return { success: true };
+      // So the proposal shows how it now fits at once
+      return { pacing: pacing(input.lessons.length, course, new Date()) };
     }),
 
   /**

@@ -190,7 +190,7 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v7',
+        promptVersion: 'lesson-v8',
       });
       expect(
         version.exercises.map(
@@ -965,7 +965,7 @@ describe('Regenerating a lesson', () => {
     ]);
     expect(versions[1]).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'lesson-v7',
+      promptVersion: 'lesson-v8',
     });
   });
 

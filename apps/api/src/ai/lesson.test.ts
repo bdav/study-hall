@@ -221,6 +221,7 @@ describe('assembleLessonContext', () => {
     priorKnowledge: 'Some Duolingo',
     minutesPerWeek: 180,
     sessionMinutes: 30,
+    deadline: null,
     depth: 'Practical',
     notes: 'Trip to Rome in June',
   };

@@ -6,7 +6,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v7';
+export const LESSON_PROMPT_VERSION = 'lesson-v8';
 
 const text = z.string().trim().min(1);
 

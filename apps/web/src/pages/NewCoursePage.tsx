@@ -34,6 +34,7 @@ const emptyForm = {
   topic: '',
   goal: '',
   priorKnowledge: '',
+  deadline: '',
   depth: 'Balanced',
   notes: '',
 };
@@ -128,6 +129,7 @@ export default function NewCoursePage() {
     if (weeklyTime === null || sessionMinutes === null) return;
     createCourse.mutate({
       ...form,
+      deadline: form.deadline || null,
       minutesPerWeek:
         weeklyTime === CUSTOM
           ? Math.round(Number(customHours) * 60)
@@ -220,6 +222,17 @@ export default function NewCoursePage() {
               onChange={setSessionMinutes}
               required
             />
+            <Field id="deadline" label="Deadline (optional)">
+              <Input
+                id="deadline"
+                type="date"
+                // Today, where the learner is
+                min={new Date().toLocaleDateString('en-CA')}
+                value={form.deadline}
+                onChange={(e) => update('deadline', e.target.value)}
+                className={`max-w-48 [color-scheme:dark] ${glassInputClassName}`}
+              />
+            </Field>
             <Field id="depth" label="Preferred depth">
               <select
                 id="depth"

@@ -77,7 +77,7 @@ A course removed from the active courses list with its content and learning hist
 _Avoid_: Deleted course, inactive course
 
 **Course Setup**:
-A course's confirmed brief: its topic, goal, prior knowledge, time per week, session length, preferred depth and notes. Every generation call for the course (syllabus, lessons, tutor) builds on it.
+A course's confirmed brief: its topic, goal, prior knowledge, time per week, session length, an optional deadline, preferred depth and notes. Every generation call for the course (syllabus, lessons, tutor) builds on it.
 _Avoid_: Setup answers, course settings
 
 **Syllabus**:
