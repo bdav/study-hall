@@ -247,8 +247,18 @@ describe('CoursePage', () => {
         screen.getByRole('textbox', { name: 'Lesson 1 title' }),
       ).toHaveValue('Greetings');
       expect(screen.queryByRole('link', { name: 'Greetings' })).toBeNull();
+      // Done is in the pinned header, in view however far down the
+      // learner is, in place of Continue and the ⋯ menu
+      const header = within(screen.getByRole('banner'));
+      expect(
+        header.queryByRole('link', { name: /^continue/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        header.queryByRole('button', { name: 'More actions' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1);
 
-      await user.click(screen.getByRole('button', { name: 'Done' }));
+      await user.click(header.getByRole('button', { name: 'Done' }));
       expect(
         screen.queryByRole('textbox', { name: 'Lesson 1 title' }),
       ).not.toBeInTheDocument();

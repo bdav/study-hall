@@ -274,6 +274,7 @@ export default function CoursePage() {
   // A proposal has its own actions, and an archived course is kept as it
   // was, with nowhere to continue
   const isActive = !isProposal && !isArchived;
+  const isEditingSyllabus = isEditing && isActive;
 
   return (
     <div className="flex flex-1 flex-col text-white">
@@ -282,36 +283,51 @@ export default function CoursePage() {
         title={course.title}
         subtitle={course.goal}
       >
-        {isActive &&
-          (course.continueLesson ? (
-            <Link
-              to={`/lessons/${course.continueLesson.id}`}
-              // A line of its own on narrow screens, so it's never squeezed
-              className="flex w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-white/25 px-4 py-2 font-medium text-white backdrop-blur-sm hover:bg-white/35 sm:w-auto"
-            >
-              Continue: {course.continueLesson.title}
-              <ChevronRight className="size-4" />
-            </Link>
-          ) : (
-            course.lessons.length > 0 && (
-              <p className="text-sm text-white/70">Every lesson is complete</p>
-            )
-          ))}
-        {isActive && (
-          <HeaderMenu triggerClassName="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white">
-            <DropdownMenuItem
-              onSelect={() => setIsEditing(true)}
-              className={HEADER_MENU_ITEM}
-            >
-              Edit syllabus
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setIsConfirmingArchive(true)}
-              className={HEADER_MENU_ITEM}
-            >
-              Archive course
-            </DropdownMenuItem>
-          </HeaderMenu>
+        {isEditingSyllabus ? (
+          // In view however far down the learner is editing
+          <button
+            type="button"
+            onClick={() => setIsEditing(false)}
+            className="flex w-full shrink-0 items-center justify-center rounded-lg bg-white/25 px-4 py-2 font-medium text-white backdrop-blur-sm hover:bg-white/35 sm:w-auto"
+          >
+            Done
+          </button>
+        ) : (
+          <>
+            {isActive &&
+              (course.continueLesson ? (
+                <Link
+                  to={`/lessons/${course.continueLesson.id}`}
+                  // A line of its own on narrow screens, so it's never squeezed
+                  className="flex w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-white/25 px-4 py-2 font-medium text-white backdrop-blur-sm hover:bg-white/35 sm:w-auto"
+                >
+                  Continue: {course.continueLesson.title}
+                  <ChevronRight className="size-4" />
+                </Link>
+              ) : (
+                course.lessons.length > 0 && (
+                  <p className="text-sm text-white/70">
+                    Every lesson is complete
+                  </p>
+                )
+              ))}
+            {isActive && (
+              <HeaderMenu triggerClassName="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white">
+                <DropdownMenuItem
+                  onSelect={() => setIsEditing(true)}
+                  className={HEADER_MENU_ITEM}
+                >
+                  Edit syllabus
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setIsConfirmingArchive(true)}
+                  className={HEADER_MENU_ITEM}
+                >
+                  Archive course
+                </DropdownMenuItem>
+              </HeaderMenu>
+            )}
+          </>
         )}
       </PinnedHeader>
       <ConfirmDialog
@@ -370,12 +386,8 @@ export default function CoursePage() {
               <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
                 Syllabus
               </h2>
-              {isEditing && isActive ? (
-                <SyllabusEditor
-                  courseId={courseId}
-                  lessons={course.lessons}
-                  onDone={() => setIsEditing(false)}
-                />
+              {isEditingSyllabus ? (
+                <SyllabusEditor courseId={courseId} lessons={course.lessons} />
               ) : (
                 <Syllabus
                   lessons={course.lessons}

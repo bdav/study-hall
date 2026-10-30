@@ -98,11 +98,9 @@ function ArchivedLessons({
 export function SyllabusEditor({
   courseId,
   lessons,
-  onDone,
 }: {
   courseId: string;
   lessons: SyllabusLesson[];
-  onDone: () => void;
 }) {
   const utils = trpc.useUtils();
   const [toArchive, setToArchive] = useState<EditableLesson | null>(null);
@@ -191,13 +189,6 @@ export function SyllabusEditor({
         className="mt-3 rounded-xl border border-dashed border-white/30 p-4"
       />
       <ArchivedLessons courseId={courseId} onRestored={saving.onSuccess} />
-      <button
-        type="button"
-        onClick={onDone}
-        className="mt-6 w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30"
-      >
-        Done
-      </button>
       <ConfirmDialog
         open={toArchive !== null}
         onOpenChange={(open) => {

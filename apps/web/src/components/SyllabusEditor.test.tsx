@@ -61,12 +61,7 @@ function renderEditor(
   }
 
   return render(
-    <SyllabusEditor
-      courseId="course-1"
-      lessons={lessons}
-      onDone={vi.fn()}
-      {...props}
-    />,
+    <SyllabusEditor courseId="course-1" lessons={lessons} {...props} />,
   );
 }
 
@@ -194,16 +189,6 @@ describe('SyllabusEditor', () => {
     expect(
       lesson(1).getByRole('button', { name: 'Archive Greetings' }),
     ).toBeDisabled();
-  });
-
-  it('finishes editing', async () => {
-    const onDone = vi.fn();
-    renderEditor({ onDone });
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole('button', { name: 'Done' }));
-
-    expect(onDone).toHaveBeenCalled();
   });
 
   describe('archived lessons', () => {
