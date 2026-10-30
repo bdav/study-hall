@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { inferRouterInputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
-import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,15 +14,17 @@ import {
 import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
 import { MAX_FEEDBACK_LENGTH } from '@/lib/feedback';
 
-type Chip = NonNullable<
-  inferRouterInputs<AppRouter>['lesson']['regenerate']['chips']
->[number];
+type RegenerateInput = inferRouterInputs<AppRouter>['lesson']['regenerate'];
+export type LessonFeedbackChip = NonNullable<RegenerateInput['chips']>[number];
+
+/** What the learner asks of a regeneration. */
+export type LessonFeedback = Omit<RegenerateInput, 'id'>;
 
 /**
  * The chips, in the order shown, by their labels. A pair asks for opposite
  * things, so choosing one deselects the other; the API checks it too.
  */
-const CHIP_GROUPS: { chip: Chip; label: string }[][] = [
+const CHIP_GROUPS: { chip: LessonFeedbackChip; label: string }[][] = [
   [
     { chip: 'TOO_EASY', label: 'Too easy' },
     { chip: 'TOO_HARD', label: 'Too hard' },
@@ -41,60 +42,32 @@ const CHIP_GROUPS: { chip: Chip; label: string }[][] = [
 
 const ALL_CHIPS = CHIP_GROUPS.flat().map(({ chip }) => chip);
 
-/** Errors whose own message says what happened, rather than a fault. */
-const EXPLAINED = [
-  'TOO_MANY_REQUESTS',
-  'FORBIDDEN',
-  'CONFLICT',
-  'PRECONDITION_FAILED',
-];
-
 /**
- * Regenerates a written lesson from what the learner says should change:
- * chips for the common corrections, such as "too easy" or "more examples",
- * and their own words for the rest. The new version replaces this one on the
- * page; answers and tutor threads stay with the version they were made on
- * (ADR-0003). Opened from the lesson's ⋯ menu.
+ * Asks what should change before a written lesson is regenerated: chips for
+ * the common corrections, such as "too easy" or "more examples", and the
+ * learner's own words for the rest. It closes once they ask, and the lesson
+ * stays readable while the new version is written; it then replaces this
+ * one, and answers and tutor threads stay with the version they were made
+ * on (ADR-0003). Opened from the lesson's ⋯ menu.
  */
 export function RegenerateLessonDialog({
-  lesson,
   open,
   onOpenChange,
-  onRegenerated,
+  onRegenerate,
 }: {
-  lesson: { id: string; course: { id: string } };
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called once the new version shows, to start it from the top. */
-  onRegenerated: () => void;
+  onRegenerate: (feedback: LessonFeedback) => void;
 }) {
-  const utils = trpc.useUtils();
-  const [chips, setChips] = useState<Chip[]>([]);
+  const [chips, setChips] = useState<LessonFeedbackChip[]>([]);
   const [feedback, setFeedback] = useState('');
   const text = feedback.trim();
 
-  const regenerate = trpc.lesson.regenerate.useMutation({
-    onSuccess: (view) => {
-      utils.lesson.getById.setData({ id: lesson.id }, view);
-      // The new version starts with no tutor thread of its own
-      utils.tutor.thread.invalidate({ lessonId: lesson.id });
-      utils.course.getById.invalidate({ id: lesson.course.id });
-      setChips([]);
-      setFeedback('');
-      onOpenChange(false);
-      onRegenerated();
-    },
-  });
-
-  function handleOpenChange(isOpen: boolean) {
-    // A regeneration under way finishes first
-    if (regenerate.isPending) return;
-    if (!isOpen) regenerate.reset();
-    onOpenChange(isOpen);
-  }
-
   /** Chooses or unchooses a chip, its opposite giving way; in display order. */
-  function toggle(chip: Chip, group: { chip: Chip }[]) {
+  function toggle(
+    chip: LessonFeedbackChip,
+    group: { chip: LessonFeedbackChip }[],
+  ) {
     setChips((chosen) => {
       const next = chosen.includes(chip)
         ? chosen.filter((other) => other !== chip)
@@ -109,17 +82,14 @@ export function RegenerateLessonDialog({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (chips.length === 0 && !text) return;
-    regenerate.mutate(
-      text
-        ? { id: lesson.id, chips, feedback: text }
-        : { id: lesson.id, chips },
-    );
+    onRegenerate(text ? { chips, feedback: text } : { chips });
+    setChips([]);
+    setFeedback('');
+    onOpenChange(false);
   }
 
-  const code = regenerate.error?.data?.code;
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={`sm:max-w-lg ${glassDialogClassName}`}
         showCloseButton={false}
@@ -149,8 +119,7 @@ export function RegenerateLessonDialog({
                       type="button"
                       aria-pressed={isChosen}
                       onClick={() => toggle(chip, group)}
-                      disabled={regenerate.isPending}
-                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-50 ${
+                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
                         isChosen
                           ? 'border-white/80 bg-white/25 text-white'
                           : 'border-white/25 text-white/75 hover:bg-white/10 hover:text-white'
@@ -178,24 +147,13 @@ export function RegenerateLessonDialog({
             maxLength={MAX_FEEDBACK_LENGTH}
             rows={3}
             placeholder="The formal greetings especially…"
-            disabled={regenerate.isPending}
             className={`mt-1 w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
           />
-          {regenerate.error && (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              {/* AI paused or not allowed, or the lesson already being
-                  written: say so, rather than suggest a fault */}
-              {code && EXPLAINED.includes(code)
-                ? regenerate.error.message
-                : "Couldn't regenerate the lesson. It's still as it was; try again."}
-            </p>
-          )}
         </form>
         <DialogFooter className="border-white/20 bg-white/5">
           <Button
             variant="outline"
-            onClick={() => handleOpenChange(false)}
-            disabled={regenerate.isPending}
+            onClick={() => onOpenChange(false)}
             className="border-white/20 bg-white/10 text-white hover:bg-white/20"
           >
             Cancel
@@ -203,13 +161,10 @@ export function RegenerateLessonDialog({
           <Button
             type="submit"
             form="regenerate-lesson"
-            disabled={regenerate.isPending || (chips.length === 0 && !text)}
+            disabled={chips.length === 0 && !text}
             className="bg-white/20 text-white hover:bg-white/30"
           >
-            {regenerate.isPending && (
-              <Loader2 className="size-4 animate-spin" />
-            )}
-            {regenerate.isPending ? 'Regenerating…' : 'Regenerate'}
+            Regenerate
           </Button>
         </DialogFooter>
       </DialogContent>

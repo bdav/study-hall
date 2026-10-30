@@ -142,6 +142,14 @@ function StartOverDialog({
   );
 }
 
+/** Errors whose own message says what happened, rather than a fault. */
+const EXPLAINED_ERRORS = [
+  'TOO_MANY_REQUESTS',
+  'FORBIDDEN',
+  'CONFLICT',
+  'PRECONDITION_FAILED',
+];
+
 /** The header's icon-only buttons. */
 const ICON_BUTTON =
   'rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white';
@@ -271,11 +279,45 @@ function WrittenLessonHeader({
   canUseAI: boolean;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isAskingToRegenerate, setIsAskingToRegenerate] = useState(false);
   const [, setSearchParams] = useSearchParams();
+  const utils = trpc.useUtils();
   // An archived lesson, or one of an archived course, is kept as it was
   const canRegenerate =
     canUseAI && !lesson.archivedAt && !lesson.course.archivedAt;
+
+  // A regeneration outlives the page if the learner moves on meanwhile
+  const isOnPage = useRef(true);
+  useEffect(() => {
+    isOnPage.current = true;
+    return () => {
+      isOnPage.current = false;
+    };
+  }, []);
+
+  const regenerate = trpc.lesson.regenerate.useMutation({
+    onSuccess: (view) => {
+      utils.lesson.getById.setData({ id: lesson.id }, view);
+      // The new version starts with no tutor thread of its own
+      utils.tutor.thread.invalidate({ lessonId: lesson.id });
+      utils.course.getById.invalidate({ id: lesson.course.id });
+      // It opens at its first step: the step on screen may not be in it.
+      // Only here: elsewhere, the URL is another page's
+      if (isOnPage.current) setSearchParams({}, { replace: true });
+      toast.success(`The new version of "${lesson.title}" is ready`);
+    },
+    onError: (error) => {
+      // AI paused or not allowed, or the lesson already being written:
+      // say so, rather than suggest a fault
+      toast.error(
+        EXPLAINED_ERRORS.includes(error.data?.code ?? '')
+          ? error.message
+          : "Couldn't regenerate the lesson. It's still as it was; try again.",
+      );
+    },
+  });
+  // Here, or in another tab, or before a reload
+  const isRegenerating = regenerate.isPending || lesson.regenerating;
 
   return (
     <>
@@ -287,6 +329,18 @@ function WrittenLessonHeader({
         title={lesson.title}
         leading={leading}
         panelToggle={tutorToggle}
+        notice={
+          isRegenerating && (
+            <p
+              role="status"
+              className="flex items-center gap-2 text-sm text-white/80"
+            >
+              <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+              Writing a new version of this lesson. You can keep reading this
+              one until it&apos;s ready.
+            </p>
+          )
+        }
       >
         {views
           .filter((view) => !view.menuOnly)
@@ -370,7 +424,8 @@ function WrittenLessonHeader({
           )}
           {canRegenerate && (
             <DropdownMenuItem
-              onSelect={() => setIsRegenerating(true)}
+              onSelect={() => setIsAskingToRegenerate(true)}
+              disabled={isRegenerating}
               className={HEADER_MENU_ITEM}
             >
               Regenerate lesson
@@ -391,12 +446,11 @@ function WrittenLessonHeader({
       />
       {canRegenerate && (
         <RegenerateLessonDialog
-          lesson={lesson}
-          open={isRegenerating}
-          onOpenChange={setIsRegenerating}
-          // The new version opens at its first step: the step on screen
-          // may not be in it
-          onRegenerated={() => setSearchParams({}, { replace: true })}
+          open={isAskingToRegenerate}
+          onOpenChange={setIsAskingToRegenerate}
+          onRegenerate={(feedback) =>
+            regenerate.mutate({ id: lesson.id, ...feedback })
+          }
         />
       )}
     </>
@@ -1191,10 +1245,13 @@ export default function LessonPage() {
   const me = trpc.auth.me.useQuery();
   const lessonQuery = trpc.lesson.getById.useQuery(
     { id: lessonId },
-    // While another open writes the lesson, check back until it's done
+    // While another open writes the lesson, or a new version of it, check
+    // back until it's done
     {
       refetchInterval: (query) =>
-        query.state.data?.generating ? GENERATING_POLL_MS : false,
+        query.state.data?.generating || query.state.data?.regenerating
+          ? GENERATING_POLL_MS
+          : false,
     },
   );
 

@@ -164,6 +164,9 @@ function toLessonView(
     (exercise) => canUseAI || !exercise.open,
   );
   const { generationClaimedAt } = lesson;
+  const isClaimed =
+    generationClaimedAt !== null &&
+    generationClaimedAt >= staleClaimsBefore(new Date());
   const { lessons: syllabus, ...course } = lesson.course;
   // Where Continue goes from here: never back to this lesson
   const nextLesson = continueTarget(
@@ -182,10 +185,9 @@ function toLessonView(
     course,
     nextLesson,
     // Another open is writing the lesson; the page waits for it to finish
-    generating:
-      !version &&
-      generationClaimedAt !== null &&
-      generationClaimedAt >= staleClaimsBefore(new Date()),
+    generating: !version && isClaimed,
+    // A new version is being written; the page shows this one until then
+    regenerating: Boolean(version) && isClaimed,
     version: version
       ? {
           id: version.id,

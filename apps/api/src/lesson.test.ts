@@ -521,6 +521,38 @@ describe('lessonRouter', () => {
       expect(opened.generating).toBe(false);
     });
 
+    it('says when a written lesson is being regenerated, still showing its version', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date() },
+      });
+
+      const opened = await createCaller().lesson.getById({ id: lesson.id });
+
+      expect(opened).toMatchObject({ generating: false, regenerating: true });
+      expect(opened.version).not.toBeNull();
+    });
+
+    it('is not regenerating otherwise, or once a claim has gone stale', async () => {
+      const [lesson] = await createCourseWithLessons();
+      ai.respondWith(lessonOutput());
+      await createCaller().lesson.generate({ id: lesson.id });
+      expect(
+        (await createCaller().lesson.getById({ id: lesson.id })).regenerating,
+      ).toBe(false);
+
+      await prisma.lesson.update({
+        where: { id: lesson.id },
+        data: { generationClaimedAt: new Date(Date.now() - 16 * 60 * 1000) },
+      });
+      expect(
+        (await createCaller().lesson.getById({ id: lesson.id })).regenerating,
+      ).toBe(false);
+    });
+
     it('shows a lesson that has not been generated yet, without calling the model', async () => {
       const [lesson] = await createCourseWithLessons();
 

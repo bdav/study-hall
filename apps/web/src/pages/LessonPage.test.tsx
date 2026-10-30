@@ -210,6 +210,7 @@ function renderPage({
   create = {},
   setCompleted = {},
   startOver = {},
+  regenerate = {},
   path = '/lessons/lesson-1',
   extra,
 }: {
@@ -225,6 +226,7 @@ function renderPage({
   create?: Partial<CreateMutation>;
   setCompleted?: Partial<SetCompletedMutation>;
   startOver?: Partial<StartOverMutation>;
+  regenerate?: Partial<RegenerateMutation>;
 } = {}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue(
     (meLoading
@@ -276,6 +278,7 @@ function renderPage({
     reset: vi.fn(),
     isPending: false,
     error: null,
+    ...regenerate,
   } as unknown as RegenerateMutation);
 
   const page = (
@@ -2218,9 +2221,52 @@ describe('LessonPage', () => {
         id: 'lesson-1',
         chips: ['TOO_EASY'],
       });
+      // The lesson stays readable while the new version is written
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('opens the new version at its first step', async () => {
+    it('says a new version is being written, the lesson still readable', () => {
+      renderPage({ query: written, regenerate: { isPending: true } });
+
+      expect(
+        screen.getByText(/writing a new version of this lesson/i),
+      ).toHaveAttribute('role', 'status');
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Saying hello' }),
+      ).toBeInTheDocument();
+    });
+
+    it('says so after a reload too, checking back until it is done', () => {
+      renderPage({
+        query: {
+          data: { ...twoSectionLesson, regenerating: true },
+        } as Partial<LessonQuery>,
+      });
+
+      expect(
+        screen.getByText(/writing a new version of this lesson/i),
+      ).toHaveAttribute('role', 'status');
+      const { refetchInterval } = vi.mocked(trpc.lesson.getById.useQuery).mock
+        .calls[0][1] as {
+        refetchInterval: (query: unknown) => number | false;
+      };
+      expect(
+        refetchInterval({ state: { data: { regenerating: true } } }),
+      ).toBeGreaterThan(0);
+    });
+
+    it("doesn't offer another regeneration while one is under way", async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written, regenerate: { isPending: true } });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+
+      expect(
+        screen.getByRole('menuitem', { name: 'Regenerate lesson' }),
+      ).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('opens the new version at its first step, saying it is ready', async () => {
       renderPage({ path: '/lessons/lesson-1?step=section-2', query: written });
       expect(currentStep()).toBe('Saying goodbye');
 
@@ -2229,6 +2275,32 @@ describe('LessonPage', () => {
       act(() => options.onSuccess(twoSectionLesson));
 
       expect(currentStep()).toBe('Saying hello');
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringMatching(/new version .* ready/i),
+      );
+    });
+
+    it('says why a regeneration failed', () => {
+      renderPage({ query: written });
+
+      const options = vi.mocked(trpc.lesson.regenerate.useMutation).mock
+        .calls[0][0] as { onError: (error: unknown) => void };
+      act(() =>
+        options.onError({
+          data: { code: 'CONFLICT' },
+          message: 'This lesson is already being written.',
+        }),
+      );
+      expect(toast.error).toHaveBeenCalledWith(
+        'This lesson is already being written.',
+      );
+
+      act(() =>
+        options.onError({ data: { code: 'BAD_GATEWAY' }, message: 'upstream' }),
+      );
+      expect(toast.error).toHaveBeenLastCalledWith(
+        expect.stringMatching(/couldn't regenerate the lesson/i),
+      );
     });
 
     it("isn't offered on an archived lesson", async () => {
