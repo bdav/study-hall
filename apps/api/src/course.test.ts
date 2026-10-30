@@ -1282,28 +1282,69 @@ describe('editing the Syllabus', () => {
       );
     });
 
-    it('puts a restored lesson back at the end of the Syllabus, as it was', async () => {
+    it('puts a restored lesson back where it was, as it was', async () => {
       const caller = createCaller();
       const { id, lessons } = await acceptedCourse(caller);
-      const [greetings] = lessons;
-      await caller.lesson.setCompleted({ id: greetings.id, completed: true });
-      await caller.course.archiveLesson({ lessonId: greetings.id });
+      const [, cafe] = lessons;
+      await caller.lesson.setCompleted({ id: cafe.id, completed: true });
+      await caller.course.archiveLesson({ lessonId: cafe.id });
 
-      await caller.course.restoreLesson({ lessonId: greetings.id });
+      await caller.course.restoreLesson({ lessonId: cafe.id });
 
       const course = await caller.course.getById({ id });
       expect(course.lessons.map((lesson) => lesson.title)).toEqual([
+        'Greetings',
         'At the café',
         'Numbers',
-        'Greetings',
       ]);
-      expect(course.lessons.at(-1)).toMatchObject({
-        objectives: ['Greet someone formally and informally', 'Say your name'],
+      expect(course.lessons[1]).toMatchObject({
+        objectives: ['Order food and drinks'],
         status: 'COMPLETE',
       });
       expect(await caller.course.listArchivedLessons({ courseId: id })).toEqual(
         [],
       );
+    });
+
+    it('keeps its place through reorders, coming back to the same numbered place', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [greetings, cafe, numbers] = lessons;
+      await caller.course.archiveLesson({ lessonId: cafe.id });
+      await caller.course.reorderLessons({
+        courseId: id,
+        lessonIds: [numbers.id, greetings.id],
+      });
+      await caller.course.addLesson({ courseId: id, title: 'Days' });
+
+      await caller.course.restoreLesson({ lessonId: cafe.id });
+
+      expect(await syllabusTitles(id)).toEqual([
+        'Numbers',
+        'At the café',
+        'Greetings',
+        'Days',
+      ]);
+    });
+
+    it('goes at the end when its place has been taken', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      const [, cafe, numbers] = lessons;
+      await caller.course.archiveLesson({ lessonId: cafe.id });
+      // As a reorder from before places were kept could leave it
+      await prisma.lesson.update({
+        where: { id: numbers.id },
+        data: { position: 1 },
+      });
+
+      await caller.course.restoreLesson({ lessonId: cafe.id });
+
+      expect(await syllabusTitles(id)).toEqual([
+        'Greetings',
+        'Numbers',
+        'At the café',
+      ]);
     });
 
     it('brings back its written version and the cards made from it', async () => {

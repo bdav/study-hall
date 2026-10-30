@@ -39,12 +39,14 @@ async function lockCourse(tx: Prisma.TransactionClient, courseId: string) {
   });
 }
 
-/**
- * The place after the last of a course's lessons, archived ones included,
- * for a lesson joining its Syllabus; refused when the Syllabus is full.
- * Run it holding the course's lock.
+/*
+ * A lesson's position is its place in the Syllabus, a numbered slot.
+ * Reordering shuffles the Syllabus's lessons among the slots they hold and
+ * archiving keeps a lesson's slot, so a restored lesson can go back to it.
  */
-async function nextPlaceInSyllabus(
+
+/** Refuses a lesson joining a full Syllabus; run it holding the lock. */
+async function assertRoomInSyllabus(
   tx: Prisma.TransactionClient,
   courseId: string,
 ) {
@@ -57,7 +59,13 @@ async function nextPlaceInSyllabus(
       message: `A syllabus holds at most ${MAX_LESSONS} lessons`,
     });
   }
+}
 
+/**
+ * The slot after every lesson's, archived ones included, so a new slot
+ * never takes an archived lesson's. Run it holding the course's lock.
+ */
+async function slotAfterLast(tx: Prisma.TransactionClient, courseId: string) {
   const { _max } = await tx.lesson.aggregate({
     where: { courseId },
     _max: { position: true },
@@ -429,7 +437,7 @@ export const courseRouter = router({
         const lessons = await tx.lesson.findMany({
           where: { courseId: input.courseId, archivedAt: null },
           orderBy: { position: 'asc' },
-          select: { id: true },
+          select: { id: true, position: true },
         });
 
         const inSyllabus = new Set(lessons.map((lesson) => lesson.id));
@@ -438,8 +446,13 @@ export const courseRouter = router({
           .map((lesson) => lesson.id)
           .filter((id) => !named.includes(id));
 
-        for (const [position, id] of [...named, ...left].entries()) {
-          await tx.lesson.update({ where: { id }, data: { position } });
+        // The same slots, in the new order: archived lessons keep theirs
+        const slots = lessons.map((lesson) => lesson.position);
+        for (const [index, id] of [...named, ...left].entries()) {
+          await tx.lesson.update({
+            where: { id },
+            data: { position: slots[index] },
+          });
         }
       });
 
@@ -455,12 +468,13 @@ export const courseRouter = router({
       const lesson = await ctx.prisma.$transaction(async (tx) => {
         await lockCourse(tx, input.courseId);
         await assertCourseActive(tx, input.courseId);
+        await assertRoomInSyllabus(tx, input.courseId);
         return tx.lesson.create({
           data: {
             courseId: input.courseId,
             title: input.title,
             objectives: [],
-            position: await nextPlaceInSyllabus(tx, input.courseId),
+            position: await slotAfterLast(tx, input.courseId),
           },
         });
       });
@@ -527,9 +541,10 @@ export const courseRouter = router({
     }),
 
   /**
-   * Restores an archived lesson to the end of its Syllabus, with everything
-   * it had: its versions, Lesson Completion, attempts, tutor threads and
-   * cards (ADR-0003). Within the Syllabus's limit of lessons.
+   * Restores an archived lesson to its place in the Syllabus, the slot it
+   * kept, with everything it had: its versions, Lesson Completion,
+   * attempts, tutor threads and cards (ADR-0003). Within the Syllabus's
+   * limit of lessons.
    */
   restoreLesson: protectedProcedure
     .input(z.object({ lessonId: z.string() }))
@@ -557,11 +572,24 @@ export const courseRouter = router({
           });
         }
 
+        await assertRoomInSyllabus(tx, lesson.courseId);
+        // Back in its own slot, unless a reorder from before slots were kept
+        // gave it to another lesson: then at the end
+        const taken = await tx.lesson.count({
+          where: {
+            courseId: lesson.courseId,
+            archivedAt: null,
+            position: lesson.position,
+          },
+        });
         await tx.lesson.update({
           where: { id: lesson.id },
           data: {
             archivedAt: null,
-            position: await nextPlaceInSyllabus(tx, lesson.courseId),
+            position:
+              taken > 0
+                ? await slotAfterLast(tx, lesson.courseId)
+                : lesson.position,
           },
         });
       });

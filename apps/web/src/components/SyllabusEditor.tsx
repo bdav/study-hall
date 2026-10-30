@@ -26,7 +26,7 @@ function sameItems(a: EditableLesson[], b: EditableLesson[]) {
 
 /**
  * The course's archived lessons, below the Syllabus being edited: collapsed
- * to start, each restored to the end of the Syllabus with everything it
+ * to start, each restored to its place in the Syllabus with everything it
  * had (ADR-0003). Left out when there are none.
  */
 function ArchivedLessons({
