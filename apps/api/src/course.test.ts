@@ -24,10 +24,22 @@ const courseForm = {
   topic: 'Italian',
   goal: 'A2 by summer',
   priorKnowledge: 'Some Duolingo',
-  timePerWeek: '3 hours',
+  minutesPerWeek: 180,
+  sessionMinutes: 30,
   depth: 'Practical',
   notes: 'I travel to Rome in June',
 };
+
+/** The Course Setup as every generation prompt gives it. */
+const setupLines = [
+  'Topic: Italian',
+  'Goal or target level: A2 by summer',
+  'Prior knowledge: Some Duolingo',
+  'Time per week: 3 hours',
+  'Session length: 30 minutes',
+  'Preferred depth: Practical',
+  'Notes: I travel to Rome in June',
+];
 
 const syllabus = {
   lessons: [
@@ -293,22 +305,101 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v4',
+        promptVersion: 'syllabus-v5',
         acceptedAt: null,
         feedback: [],
       });
       expect(course.lessons).toEqual([]);
     });
 
-    it('sends the setup answers to the model', async () => {
+    it('sends the Course Setup to the model', async () => {
       await createCourse();
 
       expect(ai.requests).toHaveLength(1);
       const { prompt, model } = ai.requests[0];
       expect(model).toBe('claude-sonnet-5-5');
-      for (const answer of Object.values(courseForm)) {
-        expect(prompt).toContain(answer);
+      for (const line of setupLines) {
+        expect(prompt).toContain(line);
       }
+    });
+
+    it('stores time per week and session length as minutes', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      expect(await caller.course.getById({ id })).toMatchObject({
+        minutesPerWeek: 180,
+        sessionMinutes: 30,
+      });
+    });
+
+    it.each([
+      [
+        90,
+        45,
+        'Time per week: 1 hour 30 minutes',
+        'Session length: 45 minutes',
+      ],
+      [60, 90, 'Time per week: 1 hour', 'Session length: 1 hour 30 minutes'],
+      [420, 60, 'Time per week: 7 hours', 'Session length: 1 hour'],
+    ])(
+      'gives %i minutes a week and %i-minute sessions in hours and minutes',
+      async (minutesPerWeek, sessionMinutes, weekLine, sessionLine) => {
+        ai.respondWith(syllabus);
+        await createCaller().course.create({
+          ...courseForm,
+          minutesPerWeek,
+          sessionMinutes,
+        });
+
+        expect(ai.requests[0].prompt).toContain(weekLine);
+        expect(ai.requests[0].prompt).toContain(sessionLine);
+      },
+    );
+
+    it('asks for lessons sized to one session', async () => {
+      await createCourse();
+
+      expect(ai.requests[0].system).toMatch(/one session/i);
+    });
+
+    it.each([
+      ['no time per week', { minutesPerWeek: undefined }],
+      ['no session length', { sessionMinutes: undefined }],
+      ['no time a week', { minutesPerWeek: 0 }],
+      ['a session of no time', { sessionMinutes: 0 }],
+      ['part of a minute', { sessionMinutes: 22.5 }],
+    ])(
+      'refuses a course with %s, without calling the model',
+      async (_, change) => {
+        await expect(
+          createCaller().course.create({
+            ...courseForm,
+            ...change,
+          } as typeof courseForm),
+        ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+        expect(ai.requests).toHaveLength(0);
+        expect(await prisma.course.count()).toBe(0);
+      },
+    );
+
+    it('says "not given" for the time of a course from before it was asked as an amount', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      await prisma.course.update({
+        where: { id },
+        data: { minutesPerWeek: null, sessionMinutes: null },
+      });
+
+      ai.respondWith(syllabus);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        feedback: 'Fewer lessons',
+      });
+
+      const { prompt } = ai.requests[1];
+      expect(prompt).toContain('Time per week: Not given');
+      expect(prompt).toContain('Session length: Not given');
     });
 
     it('records the AI usage of the generation', async () => {
@@ -724,12 +815,12 @@ describe('courseRouter', () => {
         lessons: regenerated.lessons,
         feedback: [{ chips: [], text: 'More focus on the past tense' }],
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v4',
+        promptVersion: 'syllabus-v5',
         acceptedAt: null,
       });
     });
 
-    it('sends the setup answers, the feedback so far and the proposal as the learner left it', async () => {
+    it('sends the Course Setup, the feedback so far and the proposal as the learner left it', async () => {
       const caller = createCaller();
       const { id } = await createCourse(caller);
       const [greetings] = syllabus.lessons;
@@ -750,8 +841,8 @@ describe('courseRouter', () => {
       });
 
       const [first, second] = ai.requests.slice(1).map((r) => r.prompt);
-      for (const answer of Object.values(courseForm)) {
-        expect(first).toContain(answer);
+      for (const line of setupLines) {
+        expect(first).toContain(line);
       }
       expect(first).toContain('Greet someone formally and informally');
       expect(first).toContain('Days of the week');
@@ -1425,7 +1516,7 @@ describe('editing the Syllabus', () => {
           examples: [{ example: 'Ciao, Marco!', explanation: 'Informal.' }],
           summary: 'Taught ciao.',
           model: 'claude-sonnet-5-5',
-          promptVersion: 'lesson-v6',
+          promptVersion: 'lesson-v7',
         },
       });
       const { deckId } = await caller.course.getById({ id });

@@ -76,6 +76,10 @@ _Avoid_: Class, curriculum, track
 A course removed from the active courses list with its content and learning history kept intact.
 _Avoid_: Deleted course, inactive course
 
+**Course Setup**:
+A course's confirmed brief: its topic, goal, prior knowledge, time per week, session length, preferred depth and notes. Every generation call for the course (syllabus, lessons, tutor) builds on it.
+_Avoid_: Setup answers, course settings
+
 **Syllabus**:
 The ordered list of lessons that make up a course's path. Its order is the teaching sequence, regardless of the order in which the learner opens lessons or they are generated.
 _Avoid_: Study plan, curriculum, outline

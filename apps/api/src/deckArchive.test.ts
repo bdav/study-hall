@@ -80,7 +80,8 @@ async function courseWithDeck({ archived = false } = {}) {
       topic: 'Spanish',
       goal: 'A2',
       priorKnowledge: '',
-      timePerWeek: '2 hours',
+      minutesPerWeek: 120,
+      sessionMinutes: 30,
       depth: 'practical',
       notes: '',
       archivedAt: archived ? new Date() : null,
@@ -88,7 +89,7 @@ async function courseWithDeck({ archived = false } = {}) {
         create: {
           lessons: [{ title: 'Greetings', objectives: ['Say hello'] }],
           model: 'claude-sonnet-5-5',
-          promptVersion: 'syllabus-v4',
+          promptVersion: 'syllabus-v5',
           acceptedAt: new Date(),
         },
       },

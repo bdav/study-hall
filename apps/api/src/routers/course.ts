@@ -9,6 +9,7 @@ import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
 import {
   buildSyllabusPrompt,
   courseSetupSchema,
+  newCourseSetupSchema,
   OPPOSITE_SYLLABUS_CHIPS,
   parseFeedbackRounds,
   parseProposalLessons,
@@ -173,7 +174,7 @@ export const courseRouter = router({
   ),
 
   create: aiProcedure
-    .input(courseSetupSchema)
+    .input(newCourseSetupSchema)
     .mutation(async ({ ctx, input }) => {
       const { output, model, promptVersion } = await generateStructured(ctx, {
         userId: ctx.userId,
@@ -344,7 +345,7 @@ export const courseRouter = router({
 
   /**
    * Regenerates a Syllabus Proposal from the learner's feedback, chips and
-   * words: the model gets the setup answers, every round of feedback so far
+   * words: the model gets the Course Setup, every round of feedback so far
    * and the proposal as the learner left it, and its answer replaces the
    * proposal.
    */

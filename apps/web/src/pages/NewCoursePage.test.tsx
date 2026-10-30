@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -51,7 +51,8 @@ async function fillForm() {
   await user.type(screen.getByLabelText('Topic'), 'Italian');
   await user.type(screen.getByLabelText('Goal or target level'), 'A2');
   await user.type(screen.getByLabelText('Prior knowledge'), 'Some Duolingo');
-  await user.type(screen.getByLabelText('Time per week'), '3 hours');
+  await user.click(screen.getByRole('radio', { name: '3h' }));
+  await user.click(screen.getByRole('radio', { name: '30 min' }));
   await user.selectOptions(
     screen.getByLabelText('Preferred depth'),
     'In depth',
@@ -77,19 +78,74 @@ describe('NewCoursePage', () => {
       topic: 'Italian',
       goal: 'A2',
       priorKnowledge: 'Some Duolingo',
-      timePerWeek: '3 hours',
+      minutesPerWeek: 180,
+      sessionMinutes: 30,
       depth: 'In depth',
       notes: 'Trip to Rome',
     });
   });
 
-  it('requires a topic, goal and time per week', async () => {
+  it('offers time per week and session length as chips', () => {
     renderPage();
-    const user = userEvent.setup();
 
+    const chips = {
+      'Time per week': ['1h', '2h', '3h', '5h', '7h+', 'Custom'],
+      'Session length': ['15 min', '30 min', '45 min', '60 min', '90 min'],
+    };
+    for (const [group, names] of Object.entries(chips)) {
+      const choice = screen.getByRole('group', { name: group });
+      expect(within(choice).getAllByRole('radio')).toHaveLength(names.length);
+      for (const name of names) {
+        // Neither is chosen for the learner
+        expect(within(choice).getByRole('radio', { name })).not.toBeChecked();
+      }
+    }
+  });
+
+  it('takes a custom time per week in hours', async () => {
+    renderPage();
+
+    const user = await fillForm();
+    await user.click(screen.getByRole('radio', { name: 'Custom' }));
+    await user.type(screen.getByLabelText('Hours per week'), '2.5');
     await user.click(
       screen.getByRole('button', { name: /generate syllabus/i }),
     );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ minutesPerWeek: 150, sessionMinutes: 30 }),
+    );
+  });
+
+  it('takes 7h+ as seven hours a week', async () => {
+    renderPage();
+
+    const user = await fillForm();
+    await user.click(screen.getByRole('radio', { name: '7h+' }));
+    await user.click(
+      screen.getByRole('button', { name: /generate syllabus/i }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ minutesPerWeek: 420 }),
+    );
+  });
+
+  it('requires a topic, goal, time per week and session length', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    const generate = screen.getByRole('button', { name: /generate syllabus/i });
+
+    await user.click(generate);
+    await user.type(screen.getByLabelText('Topic'), 'Italian');
+    await user.type(screen.getByLabelText('Goal or target level'), 'A2');
+    await user.click(generate);
+    await user.click(screen.getByRole('radio', { name: '3h' }));
+    await user.click(generate);
+    await user.click(screen.getByRole('radio', { name: 'Custom' }));
+    await user.click(screen.getByRole('radio', { name: '30 min' }));
+    // Custom needs its amount
+    await user.click(generate);
 
     expect(mockMutate).not.toHaveBeenCalled();
   });

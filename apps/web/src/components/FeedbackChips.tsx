@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { Check } from 'lucide-react';
 import type { ChipGroups } from '@/lib/feedback';
+import { chipClassName } from '@/lib/utils';
 
 /**
  * Asks what should change with a tap, for regenerating something the
@@ -51,11 +52,7 @@ export function FeedbackChips<Chip extends string>({
                 aria-pressed={isChosen}
                 disabled={disabled}
                 onClick={() => toggle(chip, group)}
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-50 ${
-                  isChosen
-                    ? 'border-white/80 bg-white/25 text-white'
-                    : 'border-white/25 text-white/75 hover:bg-white/10 hover:text-white'
-                }`}
+                className={`${chipClassName(isChosen)} outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-50`}
               >
                 {/* Chosen shows by more than colour */}
                 {isChosen && <Check className="size-3.5" aria-hidden />}

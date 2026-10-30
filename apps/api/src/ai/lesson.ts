@@ -6,7 +6,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v6';
+export const LESSON_PROMPT_VERSION = 'lesson-v7';
 
 const text = z.string().trim().min(1);
 
@@ -178,7 +178,7 @@ A lesson has:
     Include only points you're sure are accurate, with their conditions. Leave a supplementary point out rather than state an oversimplified rule.
 - A Lesson Summary: a compact record of the rules, vocabulary and material this lesson introduced and practised, so later lessons can build on it. It records what was taught, not what the learner learned.
 
-Teach only this lesson's objectives. Build on what earlier lessons taught, as their summaries describe, and leave material for later lessons in the syllabus to them. Fit the depth and tone to the learner's goal, prior knowledge and preferred depth.`;
+Teach only this lesson's objectives. Build on what earlier lessons taught, as their summaries describe, and leave material for later lessons in the syllabus to them. Fit the depth and tone to the learner's goal, prior knowledge and preferred depth. Size the lesson to one session: the learner should be able to read it and do its exercises in one sitting of their session length.`;
 
 /**
  * What a learner can ask of a regeneration with a tap, each reaching the

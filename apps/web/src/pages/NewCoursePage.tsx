@@ -4,20 +4,41 @@ import { trpc } from '@/lib/trpc';
 import { Input } from '@/components/ui/input';
 import { CenteredPage } from '@/components/CenteredPage';
 import { WritingLoader } from '@/components/WritingLoader';
+import { ChoiceChips } from '@/components/ChoiceChips';
 
 const glassInputClassName =
   'mt-1 border-white/20 bg-white/10 text-white placeholder-white/40 focus-visible:border-white/40 focus-visible:ring-white/20';
 
 const DEPTHS = ['Light overview', 'Balanced', 'In depth'];
 
+const CUSTOM = 'custom';
+
+/** Time per week in minutes, or a custom amount the learner types in hours. */
+const WEEKLY_TIMES = [
+  { value: 60, label: '1h' },
+  { value: 120, label: '2h' },
+  { value: 180, label: '3h' },
+  { value: 300, label: '5h' },
+  { value: 420, label: '7h+' },
+  { value: CUSTOM, label: 'Custom' },
+] as const;
+
+const SESSION_LENGTHS = [15, 30, 45, 60, 90].map((minutes) => ({
+  value: minutes,
+  label: `${minutes} min`,
+}));
+
+type WeeklyTime = (typeof WEEKLY_TIMES)[number]['value'];
+
 const emptyForm = {
   topic: '',
   goal: '',
   priorKnowledge: '',
-  timePerWeek: '',
   depth: 'Balanced',
   notes: '',
 };
+
+type TextField = keyof typeof emptyForm;
 
 function Field({
   id,
@@ -65,6 +86,9 @@ function AiUnavailableNotice({
 
 export default function NewCoursePage() {
   const [form, setForm] = useState(emptyForm);
+  const [weeklyTime, setWeeklyTime] = useState<WeeklyTime | null>(null);
+  const [customHours, setCustomHours] = useState('');
+  const [sessionMinutes, setSessionMinutes] = useState<number | null>(null);
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery();
@@ -94,13 +118,22 @@ export default function NewCoursePage() {
     );
   }
 
-  function update(field: keyof typeof emptyForm, value: string) {
+  function update(field: TextField, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    createCourse.mutate(form);
+    // The browser holds off submitting until both are chosen
+    if (weeklyTime === null || sessionMinutes === null) return;
+    createCourse.mutate({
+      ...form,
+      minutesPerWeek:
+        weeklyTime === CUSTOM
+          ? Math.round(Number(customHours) * 60)
+          : weeklyTime,
+      sessionMinutes,
+    });
   }
 
   // The form stays as typed underneath, should generating fail
@@ -156,32 +189,51 @@ export default function NewCoursePage() {
                 className={glassInputClassName}
               />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="timePerWeek" label="Time per week">
+            <ChoiceChips
+              label="Time per week"
+              options={[...WEEKLY_TIMES]}
+              value={weeklyTime}
+              onChange={setWeeklyTime}
+              required
+            />
+            {weeklyTime === CUSTOM && (
+              <Field id="customHours" label="Hours per week">
                 <Input
-                  id="timePerWeek"
-                  value={form.timePerWeek}
-                  onChange={(e) => update('timePerWeek', e.target.value)}
-                  placeholder="3 hours"
-                  className={glassInputClassName}
+                  id="customHours"
+                  type="number"
+                  inputMode="decimal"
+                  min={0.25}
+                  max={168}
+                  step="any"
+                  value={customHours}
+                  onChange={(e) => setCustomHours(e.target.value)}
+                  placeholder="4"
+                  className={`max-w-32 ${glassInputClassName}`}
                   required
                 />
               </Field>
-              <Field id="depth" label="Preferred depth">
-                <select
-                  id="depth"
-                  value={form.depth}
-                  onChange={(e) => update('depth', e.target.value)}
-                  className={`h-8 w-full rounded-lg border px-2.5 text-base outline-none md:text-sm ${glassInputClassName}`}
-                >
-                  {DEPTHS.map((depth) => (
-                    <option key={depth} value={depth} className="text-black">
-                      {depth}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+            )}
+            <ChoiceChips
+              label="Session length"
+              options={SESSION_LENGTHS}
+              value={sessionMinutes}
+              onChange={setSessionMinutes}
+              required
+            />
+            <Field id="depth" label="Preferred depth">
+              <select
+                id="depth"
+                value={form.depth}
+                onChange={(e) => update('depth', e.target.value)}
+                className={`h-8 w-full rounded-lg border px-2.5 text-base outline-none md:text-sm ${glassInputClassName}`}
+              >
+                {DEPTHS.map((depth) => (
+                  <option key={depth} value={depth} className="text-black">
+                    {depth}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field id="notes" label="Notes">
               <textarea
                 id="notes"

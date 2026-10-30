@@ -34,3 +34,12 @@ export const tallDialogFooterClassName =
 /** An underlined input on the app's translucent dialogs. */
 export const glassInputClassName =
   'rounded-none border-0 border-b-2 border-white/40 bg-transparent text-white shadow-none focus-visible:ring-0 focus-visible:border-white/70 placeholder-white/40';
+
+/** A chip the learner taps to choose an answer, chosen or not. */
+export function chipClassName(isChosen: boolean) {
+  return `inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors ${
+    isChosen
+      ? 'border-white/80 bg-white/25 text-white'
+      : 'border-white/25 text-white/75 hover:bg-white/10 hover:text-white'
+  }`;
+}

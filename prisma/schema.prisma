@@ -320,11 +320,14 @@ model Course {
   id             String            @id @default(cuid())
   userId         String
   title          String
-  // Setup answers from the course form
+  // Course Setup: the learner's confirmed brief
   topic          String
   goal           String
   priorKnowledge String
-  timePerWeek    String
+  // Amounts of time in minutes, required on creation; null for courses from
+  // before they were asked as amounts, whose free text didn't parse
+  minutesPerWeek Int?
+  sessionMinutes Int?
   depth          String
   notes          String
   archivedAt     DateTime?

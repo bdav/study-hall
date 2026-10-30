@@ -24,10 +24,22 @@ const courseForm = {
   topic: 'Italian',
   goal: 'A2 by summer',
   priorKnowledge: 'Some Duolingo',
-  timePerWeek: '3 hours',
+  minutesPerWeek: 180,
+  sessionMinutes: 30,
   depth: 'Practical',
   notes: 'I travel to Rome in June',
 };
+
+/** The Course Setup as every generation prompt gives it. */
+const setupLines = [
+  'Topic: Italian',
+  'Goal or target level: A2 by summer',
+  'Prior knowledge: Some Duolingo',
+  'Time per week: 3 hours',
+  'Session length: 30 minutes',
+  'Preferred depth: Practical',
+  'Notes: I travel to Rome in June',
+];
 
 const syllabus = {
   lessons: [
@@ -178,7 +190,7 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v6',
+        promptVersion: 'lesson-v7',
       });
       expect(
         version.exercises.map(
@@ -416,19 +428,38 @@ describe('lessonRouter', () => {
       return ai.requests.at(-1)!.prompt;
     }
 
-    it('sends the setup answers, the syllabus outline and the lesson objectives', async () => {
+    it('sends the Course Setup, the syllabus outline and the lesson objectives', async () => {
       const [, cafe] = await createCourseWithLessons();
 
       const prompt = await generate(cafe.id, 'Taught ordering.');
 
-      for (const answer of Object.values(courseForm)) {
-        expect(prompt).toContain(answer);
+      for (const line of setupLines) {
+        expect(prompt).toContain(line);
       }
       for (const { title, objectives } of syllabus.lessons) {
         expect(prompt).toContain(title);
         expect(prompt).toContain(objectives[0]);
       }
       expect(prompt).toMatch(/Write the lesson "At the café"/);
+    });
+
+    it("asks for a lesson sized to one session of the learner's length", async () => {
+      const [greetings] = await createCourseWithLessons();
+
+      const prompt = await generate(greetings.id, 'Taught greetings.');
+
+      expect(prompt).toContain('Session length: 30 minutes');
+      expect(ai.requests.at(-1)!.system).toMatch(/one session/i);
+    });
+
+    it('writes a lesson for a course whose old time per week read as more than a week holds', async () => {
+      const [greetings] = await createCourseWithLessons();
+      // "200 hours", as the migration from free text reads it
+      await prisma.course.updateMany({ data: { minutesPerWeek: 12000 } });
+
+      const prompt = await generate(greetings.id, 'Taught greetings.');
+
+      expect(prompt).toContain('Time per week: 200 hours');
     });
 
     it('asks the model to choose the objectives of a lesson the learner added without any', async () => {
@@ -713,8 +744,8 @@ describe('Regenerating a lesson', () => {
 
     const { prompt, model } = ai.requests.at(-1)!;
     expect(model).toBe('claude-sonnet-5-5');
-    for (const answer of Object.values(courseForm)) {
-      expect(prompt).toContain(answer);
+    for (const line of setupLines) {
+      expect(prompt).toContain(line);
     }
     expect(prompt).toMatch(/Write the lesson "Greetings"/);
     // The version being replaced: its sections, examples and exercises
@@ -934,7 +965,7 @@ describe('Regenerating a lesson', () => {
     ]);
     expect(versions[1]).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'lesson-v6',
+      promptVersion: 'lesson-v7',
     });
   });
 

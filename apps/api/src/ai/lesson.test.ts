@@ -219,7 +219,8 @@ describe('assembleLessonContext', () => {
     topic: 'Italian',
     goal: 'A2 by summer',
     priorKnowledge: 'Some Duolingo',
-    timePerWeek: '3 hours',
+    minutesPerWeek: 180,
+    sessionMinutes: 30,
     depth: 'Practical',
     notes: 'Trip to Rome in June',
   };
@@ -242,7 +243,7 @@ describe('assembleLessonContext', () => {
     };
   }
 
-  it('gives the setup answers, the outline and the current lesson objectives', () => {
+  it('gives the Course Setup, the outline and the current lesson objectives', () => {
     const context = assembleLessonContext({
       setup,
       lessons: [lesson(0), lesson(1), lesson(2)],

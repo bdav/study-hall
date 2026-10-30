@@ -25,7 +25,8 @@ const courseForm = {
   topic: 'Italian',
   goal: 'A2 by summer',
   priorKnowledge: 'Some Duolingo',
-  timePerWeek: '3 hours',
+  minutesPerWeek: 180,
+  sessionMinutes: 30,
   depth: 'Practical',
   notes: '',
 };

@@ -92,7 +92,7 @@ Course ──1:1 (v1 convention)── Course Deck ── Cards (existing v2 mod
 
 | Learning content                                         | Learner state                                     |
 | -------------------------------------------------------- | ------------------------------------------------- |
-| Course (setup answers, goal)                             | Lesson first-opened time, Lesson Completion       |
+| Course (Course Setup, goal)                              | Lesson first-opened time, Lesson Completion       |
 | Syllabus Proposal, Syllabus, Lesson, learning objectives | Exercise Attempts (evaluation, optional feedback) |
 | Lesson Version: content, Exercises, Lesson Summary       | Tutor Threads and their messages                  |
 | Deck, Card, Canonical Answer, Accepted Variant           | CardProgress, CardAttempt, Study Sessions (v2)    |
@@ -116,13 +116,13 @@ Rules:
 
 - **Navigation:** Courses and Flashcards are peer top-level areas, with Courses as the default landing page. Inside a course, its deck appears as **Review** (cards due, start a study session), reusing the v2 study flow, so the learner never has to go through the Decks area. Course decks are also listed in Flashcards, labelled with their course. Structure the routes so a later "Today" view can sit above both areas.
 - **Course creation:**
-  - A structured form: topic, goal or target level, prior knowledge, time per week, preferred depth and free-text notes.
+  - A structured form, the **Course Setup**: topic, goal or target level, prior knowledge, time per week and session length (chosen from chips, stored as minutes), preferred depth and free-text notes. Syllabus and lesson generation size each lesson to one session.
   - One generation call then produces a **Syllabus Proposal**.
   - While it's a proposal, the learner can rename, reorder, add and remove lessons, edit learning objectives, and regenerate with feedback: chips for the common corrections and their own words.
   - Accepting it creates the Syllabus and Lessons. After that, edits are by hand only; AI-suggested syllabus changes come later.
 - **Lessons are lesson-driven:** stored, structured content the learner works through in steps, with the tutor in a side panel (**Lesson layout** below). A lesson is generated the first time it's opened. Revisiting it never regenerates.
 - **Lesson generation context:**
-  - The course setup answers.
+  - The Course Setup.
   - The full syllabus outline with every lesson's learning objectives.
   - The Lesson Summaries of already-generated lessons that come **earlier in syllabus order**.
   - The current lesson's objectives.
@@ -173,14 +173,14 @@ The lesson page is an interactive textbook: neither one long document nor a slid
 
 ## AI Operations
 
-| Operation                  | Trigger                                                        | Inputs                                                                                                                                                  | Output (Zod-validated)                                                                                                                    | Stored as                                                                  |
-| -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Syllabus generation        | Course form submitted; regenerate with feedback                | Setup answers, optional feedback, previous proposal                                                                                                     | Ordered lessons with titles and objectives                                                                                                | Syllabus Proposal (+ model/prompt version)                                 |
-| Lesson generation          | First open of a lesson; explicit regenerate                    | Setup answers, syllabus outline, earlier generated Lesson Summaries, lesson objectives; on regenerate, optional feedback and the version being replaced | Content blocks, exercises with expected answers or essential/supplementary points, Lesson Summary                                         | Lesson Version (+ model/prompt version, and the feedback it was asked for) |
-| Exercise evaluation        | Open Exercise attempt not settled deterministically (ADR-0005) | Exercise, expected answers or essential/supplementary points, learner answer                                                                            | Short answer: evaluation + feedback; explanation: per-point assessment + misconceptions + feedback, evaluation derived in code (ADR-0006) | Exercise Attempt                                                           |
-| Tutoring                   | Learner message in the tutor panel                             | Tutor context (above)                                                                                                                                   | Streamed text                                                                                                                             | Tutor Thread messages                                                      |
-| Card proposal              | "Make review cards"                                            | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards                                                   | List of card proposals typed by card type                                                                                                 | Nothing until confirmed; then Cards                                        |
-| Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                                                                               | Recall Grade                                                                                                                              | CardAttempt grading metadata                                               |
+| Operation                  | Trigger                                                        | Inputs                                                                                                                                                 | Output (Zod-validated)                                                                                                                    | Stored as                                                                  |
+| -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Syllabus generation        | Course form submitted; regenerate with feedback                | Course Setup, optional feedback, previous proposal                                                                                                     | Ordered lessons with titles and objectives                                                                                                | Syllabus Proposal (+ model/prompt version)                                 |
+| Lesson generation          | First open of a lesson; explicit regenerate                    | Course Setup, syllabus outline, earlier generated Lesson Summaries, lesson objectives; on regenerate, optional feedback and the version being replaced | Content blocks, exercises with expected answers or essential/supplementary points, Lesson Summary                                         | Lesson Version (+ model/prompt version, and the feedback it was asked for) |
+| Exercise evaluation        | Open Exercise attempt not settled deterministically (ADR-0005) | Exercise, expected answers or essential/supplementary points, learner answer                                                                           | Short answer: evaluation + feedback; explanation: per-point assessment + misconceptions + feedback, evaluation derived in code (ADR-0006) | Exercise Attempt                                                           |
+| Tutoring                   | Learner message in the tutor panel                             | Tutor context (above)                                                                                                                                  | Streamed text                                                                                                                             | Tutor Thread messages                                                      |
+| Card proposal              | "Make review cards"                                            | Lesson Version content, Lesson Summary, that version's incorrect attempts, existing course-deck cards                                                  | List of card proposals typed by card type                                                                                                 | Nothing until confirmed; then Cards                                        |
+| Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                                                                              | Recall Grade                                                                                                                              | CardAttempt grading metadata                                               |
 
 Every row writes an AI usage record and goes through `canUseAI`.
 
@@ -209,7 +209,7 @@ Tests: `canUseAI` cases, cap enforcement, usage recording and schema validation 
 
 **A2: Courses and Syllabus Proposals (backend)**
 
-- Course model with setup answers and an archived timestamp.
+- Course model with its Course Setup and an archived timestamp.
 - The course deck is created alongside the course (Deck gets an optional course link).
 - Syllabus Proposal generation, proposal edits, regenerate with feedback, and accept, which creates Lessons with position and objectives.
 - Archiving lessons and courses; active-syllabus queries exclude archived records.

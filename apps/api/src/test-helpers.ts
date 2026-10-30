@@ -155,7 +155,8 @@ export async function createLessonVersion(
       topic: 'Italian',
       goal: 'A2 by summer',
       priorKnowledge: '',
-      timePerWeek: '3 hours',
+      minutesPerWeek: 180,
+      sessionMinutes: 30,
       depth: 'Balanced',
       notes: '',
       lessons: {
