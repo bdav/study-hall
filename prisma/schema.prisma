@@ -391,6 +391,9 @@ model LessonVersion {
   // [{ example, explanation }]
   examples      Json
   summary       String
+  // The learner's feedback when they asked for the lesson to be rewritten;
+  // none on a first open or when they gave none
+  feedback      String?
   model         String
   promptVersion String
   createdAt     DateTime          @default(now())

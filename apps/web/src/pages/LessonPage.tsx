@@ -48,6 +48,7 @@ import {
   PinnedHeader,
 } from '@/components/PinnedHeader';
 import { LessonOutline } from '@/components/LessonOutline';
+import { RegenerateLessonDialog } from '@/components/RegenerateLessonDialog';
 import {
   Sheet,
   SheetContent,
@@ -255,6 +256,7 @@ function WrittenLessonHeader({
   tutorToggle,
   views,
   practiceToggles,
+  canUseAI,
 }: {
   lesson: Lesson;
   /** Controls before the title, such as the outline's toggles. */
@@ -265,8 +267,15 @@ function WrittenLessonHeader({
   views: ViewChoice[];
   /** Practice's toggles; left out on steps other than Practice. */
   practiceToggles?: PracticeToggles;
+  /** Whether the learner can use AI, which rewriting the lesson needs. */
+  canUseAI: boolean;
 }) {
   const [isStartingOver, setIsStartingOver] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [, setSearchParams] = useSearchParams();
+  // An archived lesson, or one of an archived course, is kept as it was
+  const canRegenerate =
+    canUseAI && !lesson.archivedAt && !lesson.course.archivedAt;
 
   return (
     <>
@@ -359,6 +368,14 @@ function WrittenLessonHeader({
               <DropdownMenuSeparator />
             </div>
           )}
+          {canRegenerate && (
+            <DropdownMenuItem
+              onSelect={() => setIsRegenerating(true)}
+              className={HEADER_MENU_ITEM}
+            >
+              Regenerate lesson
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onSelect={() => setIsStartingOver(true)}
             className={HEADER_MENU_ITEM}
@@ -372,6 +389,16 @@ function WrittenLessonHeader({
         open={isStartingOver}
         onOpenChange={setIsStartingOver}
       />
+      {canRegenerate && (
+        <RegenerateLessonDialog
+          lesson={lesson}
+          open={isRegenerating}
+          onOpenChange={setIsRegenerating}
+          // The new version opens at its first step: the step on screen
+          // may not be in it
+          onRegenerated={() => setSearchParams({}, { replace: true })}
+        />
+      )}
     </>
   );
 }
@@ -1056,6 +1083,7 @@ function WrittenLesson({
       header={
         <WrittenLessonHeader
           lesson={lesson}
+          canUseAI={canUseAI}
           leading={outlineToggles}
           tutorToggle={tutorToggle || undefined}
           views={[

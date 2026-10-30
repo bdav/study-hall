@@ -30,6 +30,12 @@ export const proposalLessonsSchema = z
   .min(1);
 
 /**
+ * The longest feedback the learner writes when regenerating a Syllabus
+ * Proposal or a lesson.
+ */
+export const MAX_FEEDBACK_LENGTH = 1000;
+
+/**
  * The most lessons a proposal or Syllabus holds, since every lesson goes to
  * the model with each regeneration, lesson and tutor reply.
  */

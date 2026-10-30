@@ -11,6 +11,7 @@ import {
   parseProposalLessons,
   proposalEditSchema,
   lessonTitleSchema,
+  MAX_FEEDBACK_LENGTH,
   MAX_LESSONS,
   objectivesSchema,
   SYLLABUS_MODEL,
@@ -18,9 +19,6 @@ import {
   SYLLABUS_SYSTEM_PROMPT,
   syllabusOutputSchema,
 } from '../ai/syllabus.js';
-
-/** The longest feedback a regeneration takes. */
-const MAX_FEEDBACK_LENGTH = 1000;
 
 const ACCEPTED_MESSAGE =
   'This syllabus has been accepted, so it is no longer a proposal';

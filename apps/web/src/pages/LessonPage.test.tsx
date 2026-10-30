@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -56,6 +57,7 @@ vi.mock('@/lib/trpc', () => ({
       createReviewCards: { useMutation: vi.fn() },
       setCompleted: { useMutation: vi.fn() },
       startOver: { useMutation: vi.fn() },
+      regenerate: { useMutation: vi.fn() },
     },
     exercise: {
       submitAttempt: {
@@ -102,6 +104,7 @@ type SetCompletedOptions = Parameters<
   typeof trpc.lesson.setCompleted.useMutation
 >[0];
 type StartOverMutation = ReturnType<typeof trpc.lesson.startOver.useMutation>;
+type RegenerateMutation = ReturnType<typeof trpc.lesson.regenerate.useMutation>;
 type StartOverOptions = Parameters<typeof trpc.lesson.startOver.useMutation>[0];
 type CreateOptions = Parameters<
   typeof trpc.lesson.createReviewCards.useMutation
@@ -195,6 +198,7 @@ const mockResetProposal = vi.fn();
 const mockCreate = vi.fn();
 const mockSetCompleted = vi.fn();
 const mockStartOver = vi.fn();
+const mockRegenerate = vi.fn();
 
 function renderPage({
   query = {},
@@ -267,6 +271,12 @@ function renderPage({
     isPending: false,
     ...startOver,
   } as unknown as StartOverMutation);
+  vi.mocked(trpc.lesson.regenerate.useMutation).mockReturnValue({
+    mutate: mockRegenerate,
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+  } as unknown as RegenerateMutation);
 
   const page = (
     <MemoryRouter initialEntries={[path]}>
@@ -2179,6 +2189,75 @@ describe('LessonPage', () => {
 
       expect(
         screen.queryByRole('button', { name: 'Tutor' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('regenerating a lesson', () => {
+    const written = { data: twoSectionLesson } as Partial<LessonQuery>;
+    const currentStep = () =>
+      screen.getByRole('heading', { level: 2 }).textContent;
+
+    it('rewrites the lesson from the ⋯ menu, with optional feedback', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+      await user.click(
+        screen.getByRole('menuitem', { name: 'Regenerate lesson' }),
+      );
+      const dialog = screen.getByRole('dialog', { name: 'Regenerate lesson' });
+      await user.type(
+        within(dialog).getByRole('textbox', { name: /what should change/i }),
+        'Too easy',
+      );
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Regenerate' }),
+      );
+
+      expect(mockRegenerate).toHaveBeenCalledWith({
+        id: 'lesson-1',
+        feedback: 'Too easy',
+      });
+    });
+
+    it('opens the new version at its first step', async () => {
+      renderPage({ path: '/lessons/lesson-1?step=section-2', query: written });
+      expect(currentStep()).toBe('Saying goodbye');
+
+      const options = vi.mocked(trpc.lesson.regenerate.useMutation).mock
+        .calls[0][0] as { onSuccess: (view: unknown) => void };
+      act(() => options.onSuccess(twoSectionLesson));
+
+      expect(currentStep()).toBe('Saying hello');
+    });
+
+    it("isn't offered on an archived lesson", async () => {
+      const user = userEvent.setup();
+      renderPage({
+        query: {
+          data: {
+            ...twoSectionLesson,
+            archivedAt: '2026-10-29T00:00:00.000Z',
+          },
+        } as Partial<LessonQuery>,
+      });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+
+      expect(
+        screen.queryByRole('menuitem', { name: 'Regenerate lesson' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is offered only to learners who can use AI', async () => {
+      const user = userEvent.setup();
+      renderPage({ query: written, canUseAI: false });
+
+      await user.click(screen.getByRole('button', { name: 'More actions' }));
+
+      expect(
+        screen.queryByRole('menuitem', { name: 'Regenerate lesson' }),
       ).not.toBeInTheDocument();
     });
   });

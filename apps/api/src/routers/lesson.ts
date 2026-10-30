@@ -13,6 +13,7 @@ import {
   lessonOutputSchema,
   parseLessonContent,
   parseLessonExamples,
+  type LessonRegeneration,
 } from '../ai/lesson.js';
 import {
   buildCardProposalPrompt,
@@ -22,10 +23,11 @@ import {
   cardProposalOutputSchema,
   cardProposalSchema,
 } from '../ai/cardProposal.js';
-import { courseSetupSchema } from '../ai/syllabus.js';
+import { courseSetupSchema, MAX_FEEDBACK_LENGTH } from '../ai/syllabus.js';
 import { continueTarget } from '../services/syllabus.js';
 import { startTutorThread } from '../services/tutorThreads.js';
 import { userCanUseAI } from '../ai/access.js';
+import { type AiProvider } from '../ai/provider.js';
 import {
   createCards,
   deckOrder,
@@ -169,6 +171,8 @@ function toLessonView(
     id: lesson.id,
     title: lesson.title,
     objectives: lesson.objectives,
+    // Still readable once archived, but not to be written again
+    archivedAt: lesson.archivedAt,
     firstOpenedAt: lesson.firstOpenedAt,
     completedAt: lesson.completedAt,
     // Exercises start afresh when it changes
@@ -203,6 +207,117 @@ function toLessonView(
   };
 }
 
+/**
+ * Runs `write` while holding the lesson's generation claim, so a first open
+ * and a regeneration, or two of either, never write at once and pay twice.
+ * A claim older than the stale window can be taken over. Returns false,
+ * without running `write`, when another call holds the claim.
+ */
+async function withGenerationClaim(
+  prisma: PrismaClient,
+  lessonId: string,
+  /** What else the lesson must be to claim it. */
+  where: Prisma.LessonWhereInput,
+  write: () => Promise<void>,
+): Promise<boolean> {
+  const claim = new Date();
+  const claimed = await prisma.lesson.updateMany({
+    where: {
+      id: lessonId,
+      ...where,
+      OR: [
+        { generationClaimedAt: null },
+        { generationClaimedAt: { lt: staleClaimsBefore(claim) } },
+      ],
+    },
+    data: { generationClaimedAt: claim },
+  });
+  if (claimed.count === 0) return false;
+
+  try {
+    await write();
+  } finally {
+    // Release this claim only, so the learner can try again straight away:
+    // a call that outlived it leaves a newer one alone
+    await prisma.lesson.updateMany({
+      where: { id: lessonId, generationClaimedAt: claim },
+      data: { generationClaimedAt: null },
+    });
+  }
+  return true;
+}
+
+/**
+ * Writes a new Lesson Version from what generation builds on
+ * (courses-plan.md, Lesson generation context), and a regeneration's
+ * replaced version and feedback. The newest version is the lesson's
+ * current one (ADR-0003). Run it holding the lesson's generation claim.
+ */
+async function writeLessonVersion(
+  ctx: { prisma: PrismaClient; ai: AiProvider; userId: string },
+  lesson: { id: string; courseId: string; firstOpenedAt: Date | null },
+  regeneration?: LessonRegeneration,
+) {
+  const course = await ctx.prisma.course.findUniqueOrThrow({
+    where: { id: lesson.courseId },
+    include: {
+      lessons: {
+        include: {
+          versions: { ...currentVersion, select: { summary: true } },
+        },
+      },
+    },
+  });
+
+  const context = assembleLessonContext({
+    setup: courseSetupSchema.parse(course),
+    lessons: course.lessons.map(({ versions, ...syllabusLesson }) => ({
+      ...syllabusLesson,
+      summary: versions[0]?.summary ?? null,
+    })),
+    lessonId: lesson.id,
+  });
+
+  const { output, model, promptVersion } = await generateStructured(ctx, {
+    userId: ctx.userId,
+    purpose: 'LESSON_GENERATION',
+    model: LESSON_MODEL,
+    promptVersion: LESSON_PROMPT_VERSION,
+    system: LESSON_SYSTEM_PROMPT,
+    prompt: buildLessonPrompt(context, regeneration),
+    outputSchema: lessonOutputSchema,
+  });
+
+  await ctx.prisma.$transaction([
+    ctx.prisma.lessonVersion.create({
+      data: {
+        lessonId: lesson.id,
+        content: output.content,
+        examples: output.examples,
+        summary: output.summary,
+        feedback: regeneration?.feedback ?? null,
+        model,
+        promptVersion,
+        exercises: {
+          create: output.exercises.map((exercise, position) => ({
+            position,
+            type: exercise.type,
+            prompt: exercise.prompt,
+            ...exerciseExpectations(exercise),
+          })),
+        },
+      },
+    }),
+    ctx.prisma.lesson.update({
+      where: { id: lesson.id },
+      data: { firstOpenedAt: lesson.firstOpenedAt ?? new Date() },
+    }),
+  ]);
+}
+
+const BEING_WRITTEN =
+  'This lesson is already being written. Try again in a moment.';
+
 export const lessonRouter = router({
   /** Opens a lesson: its current version, or null before it is generated. */
   getById: protectedProcedure
@@ -234,103 +349,87 @@ export const lessonRouter = router({
         });
       }
 
-      // Claim the lesson first so a concurrent open can't pay for a second
-      // generation
-      const now = new Date();
-      const claimed = await ctx.prisma.lesson.updateMany({
-        where: {
-          id: lesson.id,
-          versions: { none: {} },
-          OR: [
-            { generationClaimedAt: null },
-            {
-              generationClaimedAt: { lt: staleClaimsBefore(now) },
-            },
-          ],
-        },
-        data: { generationClaimedAt: now },
-      });
+      const wrote = await withGenerationClaim(
+        ctx.prisma,
+        lesson.id,
+        // A concurrent open may have written it meanwhile
+        { versions: { none: {} } },
+        () => writeLessonVersion(ctx, lesson),
+      );
 
-      if (claimed.count === 0) {
-        const latest = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
-        if (latest.versions.length > 0) return toLessonView(latest, access);
+      const latest = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
+      if (!wrote && latest.versions.length === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: BEING_WRITTEN });
+      }
+      return toLessonView(latest, access);
+    }),
+
+  /**
+   * Regenerates a written lesson, with the learner's optional feedback: a
+   * new Lesson Version becomes the current one, written from what first
+   * open uses plus the version it replaces, and earlier versions keep their
+   * exercises, attempts and tutor threads (ADR-0003).
+   */
+  regenerate: aiProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        feedback: z.string().trim().max(MAX_FEEDBACK_LENGTH).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const lesson = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
+
+      if (lesson.versions.length === 0) {
         throw new TRPCError({
-          code: 'CONFLICT',
+          code: 'PRECONDITION_FAILED',
+          message: 'This lesson has not been written yet. Open it first.',
+        });
+      }
+      if (lesson.archivedAt || lesson.course.archivedAt) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
           message:
-            'This lesson is already being written. Try again in a moment.',
+            "An archived lesson, or one of an archived course, can't be regenerated.",
         });
       }
 
-      try {
-        const course = await ctx.prisma.course.findUniqueOrThrow({
-          where: { id: lesson.courseId },
-          include: {
-            lessons: {
-              include: {
-                versions: { ...currentVersion, select: { summary: true } },
-              },
+      const wrote = await withGenerationClaim(
+        ctx.prisma,
+        lesson.id,
+        {},
+        async () => {
+          // Read once claimed: another regeneration may have finished since
+          const [replacing] = (
+            await findOwnedLesson(ctx.prisma, ctx.userId, input.id)
+          ).versions;
+          await writeLessonVersion(ctx, lesson, {
+            replacing: {
+              content: parseLessonContent(replacing.content),
+              examples: parseLessonExamples(replacing.examples),
+              exercises: replacing.exercises.map((exercise) => ({
+                type: exercise.type,
+                prompt: exercise.prompt,
+                expected: [
+                  ...exercise.expectedAnswers,
+                  ...exercise.essentialPoints,
+                  ...exercise.expectedPoints,
+                ],
+              })),
             },
-          },
-        });
+            feedback: input.feedback || null,
+          });
+        },
+      );
 
-        const context = assembleLessonContext({
-          setup: courseSetupSchema.parse(course),
-          lessons: course.lessons.map(({ versions, ...syllabusLesson }) => ({
-            ...syllabusLesson,
-            summary: versions[0]?.summary ?? null,
-          })),
-          lessonId: lesson.id,
-        });
-
-        const { output, model, promptVersion } = await generateStructured(ctx, {
-          userId: ctx.userId,
-          purpose: 'LESSON_GENERATION',
-          model: LESSON_MODEL,
-          promptVersion: LESSON_PROMPT_VERSION,
-          system: LESSON_SYSTEM_PROMPT,
-          prompt: buildLessonPrompt(context),
-          outputSchema: lessonOutputSchema,
-        });
-
-        await ctx.prisma.$transaction([
-          ctx.prisma.lessonVersion.create({
-            data: {
-              lessonId: lesson.id,
-              content: output.content,
-              examples: output.examples,
-              summary: output.summary,
-              model,
-              promptVersion,
-              exercises: {
-                create: output.exercises.map((exercise, position) => ({
-                  position,
-                  type: exercise.type,
-                  prompt: exercise.prompt,
-                  ...exerciseExpectations(exercise),
-                })),
-              },
-            },
-          }),
-          ctx.prisma.lesson.update({
-            where: { id: lesson.id },
-            data: {
-              firstOpenedAt: lesson.firstOpenedAt ?? new Date(),
-              generationClaimedAt: null,
-            },
-          }),
-        ]);
-      } catch (error) {
-        // Release the claim so the learner can retry straight away
-        await ctx.prisma.lesson.update({
-          where: { id: lesson.id },
-          data: { generationClaimedAt: null },
-        });
-        throw error;
+      if (!wrote) {
+        throw new TRPCError({ code: 'CONFLICT', message: BEING_WRITTEN });
       }
 
+      // aiProcedure: only learners with AI access get here
       return toLessonView(
         await findOwnedLesson(ctx.prisma, ctx.userId, input.id),
-        access,
+        { canUseAI: true },
       );
     }),
 

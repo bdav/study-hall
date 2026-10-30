@@ -5,7 +5,7 @@ import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v4';
+export const LESSON_PROMPT_VERSION = 'lesson-v5';
 
 const text = z.string().trim().min(1);
 
@@ -179,7 +179,23 @@ A lesson has:
 
 Teach only this lesson's objectives. Build on what earlier lessons taught, as their summaries describe, and leave material for later lessons in the syllabus to them. Fit the depth and tone to the learner's goal, prior knowledge and preferred depth.`;
 
-export function buildLessonPrompt(context: LessonContext): string {
+/**
+ * A regeneration of a written lesson: the version it replaces, and the
+ * learner's feedback, if any.
+ */
+export type LessonRegeneration = {
+  replacing: {
+    content: LessonOutput['content'];
+    examples: LessonOutput['examples'];
+    exercises: { type: string; prompt: string; expected: string[] }[];
+  };
+  feedback: string | null;
+};
+
+export function buildLessonPrompt(
+  context: LessonContext,
+  regeneration?: LessonRegeneration,
+): string {
   const list = (items: string[]) => items.map((item) => `  - ${item}`);
 
   return [
@@ -207,5 +223,43 @@ export function buildLessonPrompt(context: LessonContext): string {
       : [
           `Write the lesson "${context.lesson.title}". It has no learning objectives yet: choose two to five that fit its title and its place in the syllabus, and teach those.`,
         ]),
+    ...(regeneration ? describeRegeneration(regeneration) : []),
   ].join('\n');
+}
+
+/** The version a regeneration replaces, and what the learner asked for. */
+function describeRegeneration({
+  replacing,
+  feedback,
+}: LessonRegeneration): string[] {
+  return [
+    '',
+    'The learner has read this lesson and asked for it to be written again. The version they read:',
+    '<replaced_version>',
+    ...replacing.content.flatMap(({ heading, paragraphs }) => [
+      `## ${heading}`,
+      ...paragraphs,
+    ]),
+    '## Examples',
+    ...replacing.examples.flatMap(({ example, explanation }) => [
+      `- Example: ${example}`,
+      `  Explanation: ${explanation}`,
+    ]),
+    '## Exercises',
+    ...replacing.exercises.flatMap(({ type, prompt, expected }) => [
+      `- ${type}: ${prompt}`,
+      ...(expected.length > 0 ? [`  Expected: ${expected.join(' / ')}`] : []),
+    ]),
+    '</replaced_version>',
+    '',
+    ...(feedback
+      ? [
+          "The learner's feedback:",
+          `<feedback>${feedback}</feedback>`,
+          "Write the lesson again, following their feedback. Keep what it doesn't ask to change, and write new exercises.",
+        ]
+      : [
+          'The learner gave no feedback. Write the lesson again afresh, in other words and with other examples and exercises, teaching the same objectives.',
+        ]),
+  ];
 }

@@ -10,12 +10,10 @@ import {
   type LessonFields,
 } from '@/components/EditableLessonList';
 import { glassInputClassName } from '@/lib/utils';
+import { MAX_FEEDBACK_LENGTH } from '@/lib/feedback';
 
 /** A proposed lesson: it doesn't exist yet, so it has no id or progress. */
 export type ProposedLesson = LessonFields;
-
-/** The longest feedback a regeneration takes, as the API allows. */
-const MAX_FEEDBACK_LENGTH = 1000;
 
 /** A lesson as the editor holds it: keyed, so it keeps its place in the
  * DOM, its fields and anything half-typed in them, as it moves. */
