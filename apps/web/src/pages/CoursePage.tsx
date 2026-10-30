@@ -223,11 +223,32 @@ export default function CoursePage() {
   const archive = trpc.course.archive.useMutation({
     onSuccess: () => {
       utils.course.list.invalidate();
+      utils.course.listArchived.invalidate();
+      // Deck and lesson pages show whether their course is archived
       utils.deck.list.invalidate();
+      utils.deck.getById.invalidate();
+      utils.lesson.getById.invalidate();
       navigate('/courses');
     },
     onError: () => {
       toast.error('Failed to archive the course');
+    },
+  });
+
+  // Back in Courses as it was, its Syllabus editable again
+  const restore = trpc.course.restore.useMutation({
+    onSuccess: () => {
+      utils.course.getById.invalidate({ id: courseId });
+      utils.course.list.invalidate();
+      utils.course.listArchived.invalidate();
+      // Deck and lesson pages show whether their course is archived
+      utils.deck.list.invalidate();
+      utils.deck.getById.invalidate();
+      utils.lesson.getById.invalidate();
+      toast.success('Course restored');
+    },
+    onError: () => {
+      toast.error('Failed to restore the course');
     },
   });
 
@@ -330,10 +351,20 @@ export default function CoursePage() {
           ) : (
             <section>
               {isArchived && (
-                <p className="mb-6 rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white/80">
-                  This course is archived. Its lessons and your work in them are
-                  kept, and its cards stay in Flashcards.
-                </p>
+                <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/20 bg-white/5 px-4 py-3">
+                  <p className="flex-1 text-sm text-white/80">
+                    This course is archived. Its lessons and your work in them
+                    are kept, and its cards stay in Flashcards.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => restore.mutate({ courseId })}
+                    disabled={restore.isPending}
+                    className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
+                  >
+                    {restore.isPending ? 'Restoring…' : 'Restore course'}
+                  </button>
+                </div>
               )}
               {course.review && <Review {...course.review} />}
               <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">

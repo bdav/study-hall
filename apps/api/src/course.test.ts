@@ -1257,6 +1257,72 @@ describe('editing the Syllabus', () => {
     });
   });
 
+  describe('restoring a course', () => {
+    it('lists archived courses on their own, most recently archived first', async () => {
+      const caller = createCaller();
+      const italian = await acceptedCourse(caller);
+      const spanish = await acceptedCourse(caller);
+      await prisma.course.update({
+        where: { id: spanish.id },
+        data: { title: 'Spanish' },
+      });
+      await caller.course.archive({ courseId: italian.id });
+      await caller.course.archive({ courseId: spanish.id });
+      // A day apart, so the order can't hang on the same millisecond
+      await prisma.course.update({
+        where: { id: italian.id },
+        data: { archivedAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+
+      const archived = await caller.course.listArchived();
+
+      expect(archived).toEqual([
+        { id: spanish.id, title: 'Spanish', archivedAt: expect.any(Date) },
+        { id: italian.id, title: 'Italian', archivedAt: expect.any(Date) },
+      ]);
+      expect(await caller.course.list()).toEqual([]);
+    });
+
+    it('puts a restored course back in Courses, editable again', async () => {
+      const caller = createCaller();
+      const { id } = await acceptedCourse(caller);
+      await caller.course.archive({ courseId: id });
+
+      await caller.course.restore({ courseId: id });
+
+      expect((await caller.course.list()).map((course) => course.id)).toEqual([
+        id,
+      ]);
+      expect(await caller.course.listArchived()).toEqual([]);
+      const course = await caller.course.getById({ id });
+      expect(course.archivedAt).toBeNull();
+      expect(course.continueLesson).not.toBeNull();
+      await expect(
+        caller.course.addLesson({ courseId: id, title: 'More' }),
+      ).resolves.toHaveProperty('id');
+    });
+
+    it('leaves lessons archived on their own archived', async () => {
+      const caller = createCaller();
+      const { id, lessons } = await acceptedCourse(caller);
+      await caller.course.archiveLesson({ lessonId: lessons[1].id });
+      await caller.course.archive({ courseId: id });
+
+      await caller.course.restore({ courseId: id });
+
+      expect(await syllabusTitles(id)).toEqual(['Greetings', 'Numbers']);
+    });
+
+    it("refuses to restore a course that isn't archived", async () => {
+      const caller = createCaller();
+      const { id } = await acceptedCourse(caller);
+
+      await expect(caller.course.restore({ courseId: id })).rejects.toThrow(
+        expect.objectContaining({ code: 'CONFLICT' }),
+      );
+    });
+  });
+
   it('needs no AI access', async () => {
     const caller = createCaller();
     const { id, lessons } = await acceptedCourse(caller);
@@ -1266,8 +1332,9 @@ describe('editing the Syllabus', () => {
     await caller.course.addLesson({ courseId: id, title: 'More' });
     await caller.course.archiveLesson({ lessonId: lessons[1].id });
     await caller.course.archive({ courseId: id });
+    await caller.course.restore({ courseId: id });
 
-    expect(await caller.course.list()).toEqual([]);
+    expect(await caller.course.list()).toHaveLength(1);
   });
 
   it("refuses to touch another learner's Syllabus", async () => {
@@ -1285,6 +1352,7 @@ describe('editing the Syllabus', () => {
         stranger.course.updateLesson({ lessonId: lessons[0].id, title: 'Hi' }),
       () => stranger.course.archiveLesson({ lessonId: lessons[0].id }),
       () => stranger.course.archive({ courseId: id }),
+      () => stranger.course.restore({ courseId: id }),
     ]) {
       await expect(edit()).rejects.toThrow(
         expect.objectContaining({ code: 'NOT_FOUND' }),
@@ -1296,6 +1364,7 @@ describe('editing the Syllabus', () => {
       'Numbers',
     ]);
     expect(await createCaller().course.list()).toHaveLength(1);
+    expect(await stranger.course.listArchived()).toEqual([]);
   });
 });
 

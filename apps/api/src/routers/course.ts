@@ -112,6 +112,15 @@ export const courseRouter = router({
     }));
   }),
 
+  /** The learner's archived courses, most recently archived first. */
+  listArchived: protectedProcedure.query(({ ctx }) =>
+    ctx.prisma.course.findMany({
+      where: { userId: ctx.userId, archivedAt: { not: null } },
+      orderBy: { archivedAt: 'desc' },
+      select: { id: true, title: true, archivedAt: true },
+    }),
+  ),
+
   create: aiProcedure
     .input(courseSetupSchema)
     .mutation(async ({ ctx, input }) => {
@@ -483,6 +492,35 @@ export const courseRouter = router({
         where: { id: input.courseId },
         data: { archivedAt: new Date() },
       });
+
+      return { success: true };
+    }),
+
+  /**
+   * Restores an archived course: it's back in Courses as it was, its
+   * Syllabus editable again. Lessons archived on their own stay archived.
+   */
+  restore: protectedProcedure
+    .input(z.object({ courseId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const course = await ctx.prisma.course.findUnique({
+        where: { id: input.courseId, userId: ctx.userId },
+      });
+
+      if (!course) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
+      }
+
+      const restored = await ctx.prisma.course.updateMany({
+        where: { id: course.id, archivedAt: { not: null } },
+        data: { archivedAt: null },
+      });
+      if (restored.count === 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'This course is not archived',
+        });
+      }
 
       return { success: true };
     }),

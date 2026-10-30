@@ -11,6 +11,7 @@ vi.mock('@/lib/trpc', () => ({
     aiUsage: { summary: { useQuery: vi.fn() } },
     course: {
       list: { useQuery: vi.fn() },
+      listArchived: { useQuery: vi.fn() },
     },
   },
 }));
@@ -42,8 +43,16 @@ function renderPage(
   {
     canUseAI = false,
     summary,
-  }: { canUseAI?: boolean; summary?: SummaryQuery['data'] } = {},
+    archived = [],
+  }: {
+    canUseAI?: boolean;
+    summary?: SummaryQuery['data'];
+    archived?: { id: string; title: string; archivedAt: string }[];
+  } = {},
 ) {
+  vi.mocked(trpc.course.listArchived.useQuery).mockReturnValue({
+    data: archived,
+  } as unknown as ReturnType<typeof trpc.course.listArchived.useQuery>);
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
     data: { user: { id: 'user-1', email: 'me@example.com', canUseAI } },
   } as ReturnType<typeof trpc.auth.me.useQuery>);
@@ -89,6 +98,58 @@ describe('CoursesPage', () => {
       '/courses/course-2',
     );
     expect(screen.getByText('A2 by summer')).toBeInTheDocument();
+  });
+
+  describe('archived courses', () => {
+    const archived = [
+      {
+        id: 'course-3',
+        title: 'German',
+        archivedAt: '2026-10-28T00:00:00.000Z',
+      },
+      {
+        id: 'course-4',
+        title: 'French',
+        archivedAt: '2026-09-02T12:00:00.000Z',
+      },
+    ];
+
+    it('lists them out of the way, collapsed to start, each linking to its page', async () => {
+      renderPage({ data: courses } as Partial<ListQuery>, { archived });
+      const user = userEvent.setup();
+      const toggle = screen.getByRole('button', { name: /archived \(2\)/i });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('link', { name: /german/i })).toBeNull();
+
+      await user.click(toggle);
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('link', { name: /german/i })).toHaveAttribute(
+        'href',
+        '/courses/course-3',
+      );
+      expect(screen.getByRole('link', { name: /french/i })).toHaveTextContent(
+        /archived sep 2, 2026/i,
+      );
+    });
+
+    it('leaves the section out when nothing is archived', () => {
+      renderPage({ data: courses } as Partial<ListQuery>);
+
+      expect(
+        screen.queryByRole('button', { name: /archived/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows them even with no active courses, saying none are active', () => {
+      renderPage({ data: [] } as Partial<ListQuery>, { archived });
+
+      expect(
+        screen.getByRole('button', { name: /archived \(2\)/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/no active courses/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no courses yet/i)).not.toBeInTheDocument();
+    });
   });
 
   it('shows the lesson count, or that a proposal awaits review', () => {

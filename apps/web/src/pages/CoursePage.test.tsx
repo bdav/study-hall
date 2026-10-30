@@ -22,8 +22,13 @@ vi.mock('@/lib/trpc', () => ({
           setData: vi.fn(),
         },
         list: { invalidate: vi.fn() },
+        listArchived: { invalidate: vi.fn() },
       },
-      deck: { list: { invalidate: vi.fn() } },
+      deck: {
+        list: { invalidate: vi.fn() },
+        getById: { invalidate: vi.fn() },
+      },
+      lesson: { getById: { invalidate: vi.fn() } },
     })),
     course: {
       getById: { useQuery: vi.fn() },
@@ -32,6 +37,7 @@ vi.mock('@/lib/trpc', () => ({
       updateProposal: { useMutation: vi.fn() },
       regenerateProposal: { useMutation: vi.fn() },
       archive: { useMutation: vi.fn() },
+      restore: { useMutation: vi.fn() },
       updateLesson: { useMutation: vi.fn() },
       reorderLessons: { useMutation: vi.fn() },
       addLesson: { useMutation: vi.fn() },
@@ -103,6 +109,7 @@ const acceptedCourse = {
 const mockAccept = vi.fn();
 const mockDiscard = vi.fn();
 const mockArchive = vi.fn();
+const mockRestore = vi.fn();
 
 function renderPage(
   query: Partial<CourseQuery>,
@@ -129,6 +136,10 @@ function renderPage(
   } as unknown as UpdateMutation);
   vi.mocked(trpc.course.archive.useMutation).mockReturnValue({
     mutate: mockArchive,
+    isPending: false,
+  } as never);
+  vi.mocked(trpc.course.restore.useMutation).mockReturnValue({
+    mutate: mockRestore,
     isPending: false,
   } as never);
   for (const editing of [
@@ -267,6 +278,25 @@ describe('CoursePage', () => {
       options.onSuccess();
 
       expect(mockNavigate).toHaveBeenCalledWith('/courses');
+    });
+
+    it('restores an archived course', async () => {
+      renderPage({
+        data: { ...acceptedCourse, archivedAt: '2026-10-29T00:00:00Z' },
+      } as Partial<CourseQuery>);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Restore course' }));
+
+      expect(mockRestore).toHaveBeenCalledWith({ courseId: 'course-1' });
+    });
+
+    it('offers no Restore on a course that is not archived', () => {
+      renderPage({ data: acceptedCourse } as Partial<CourseQuery>);
+
+      expect(
+        screen.queryByRole('button', { name: 'Restore course' }),
+      ).not.toBeInTheDocument();
     });
 
     it('says an archived course is archived, with nothing to edit', () => {

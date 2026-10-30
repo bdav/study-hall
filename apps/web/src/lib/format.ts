@@ -21,6 +21,17 @@ export function formatDay(date: string | Date): string {
   return dayFormat.format(new Date(date));
 }
 
+const dateFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
+/** "Sep 2, 2026" */
+export function formatDate(date: string | Date): string {
+  return dateFormat.format(new Date(date));
+}
+
 /** "Answered 3 times · 2 right" */
 export function answeredLine(answeredCount: number, rightCount: number) {
   const times = answeredCount === 1 ? 'time' : 'times';

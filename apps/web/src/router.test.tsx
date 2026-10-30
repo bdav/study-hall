@@ -53,6 +53,7 @@ vi.mock('@/lib/trpc', () => ({
     },
     course: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
+      listArchived: { useQuery: vi.fn(() => ({ data: [] })) },
     },
     deck: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
