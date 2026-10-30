@@ -8,7 +8,8 @@ interface DeckHeaderProps {
   activeTab: 'study' | 'cards' | 'stats';
   /**
    * A Course Deck's course, which reviewing it links back to, unless the
-   * course is archived: then the deck only names it.
+   * course is archived: then the deck names it and links back to
+   * Flashcards, as a standalone deck does.
    */
   course?: {
     id: string;
@@ -33,14 +34,20 @@ export function DeckHeader({
 }: DeckHeaderProps) {
   return (
     <div className="w-full max-w-4xl">
-      {course &&
-        (course.archivedAt ? (
-          <p className="text-sm text-white/60">
-            From the archived course {course.title}
-          </p>
-        ) : (
-          <BackLink to={`/courses/${course.id}`}>{course.title}</BackLink>
-        ))}
+      {course && !course.archivedAt ? (
+        <BackLink to={`/courses/${course.id}`}>{course.title}</BackLink>
+      ) : (
+        // A standalone deck, or one whose course is archived, goes back to
+        // Flashcards, where it's listed
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <BackLink to="/flashcards">Flashcards</BackLink>
+          {course && (
+            <p className="text-sm text-white/60">
+              From the archived course {course.title}
+            </p>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-6">
         <div className="min-w-0">
           {title ?? (

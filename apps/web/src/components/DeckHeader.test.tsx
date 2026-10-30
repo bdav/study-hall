@@ -61,7 +61,7 @@ describe('DeckHeader', () => {
     );
   });
 
-  it('names an archived course without linking to it', () => {
+  it('links back to Flashcards, naming an archived course without linking to it', () => {
     render(
       <MemoryRouter>
         <DeckHeader
@@ -77,16 +77,26 @@ describe('DeckHeader', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // Back to Flashcards, where the deck is; the archived course is named
+    expect(screen.getByRole('link', { name: /^flashcards$/i })).toHaveAttribute(
+      'href',
+      '/flashcards',
+    );
+    expect(
+      screen.queryByRole('link', { name: /italian/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText('From the archived course Italian'),
     ).toBeInTheDocument();
   });
 
-  it('has no back link on a standalone deck', () => {
+  it('links a standalone deck back to Flashcards', () => {
     renderDeckHeader('World Capitals', 'deck-1', 'study');
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^flashcards$/i })).toHaveAttribute(
+      'href',
+      '/flashcards',
+    );
   });
 
   it('takes a title in place of the deck name, such as an editable one', () => {
