@@ -198,6 +198,9 @@ export default function CoursePage() {
   const utils = trpc.useUtils();
   const courseQuery = trpc.course.getById.useQuery({ id: courseId });
   const [isEditing, setIsEditing] = useState(false);
+  // The pinned header's place for a proposal's Accept, which the editor
+  // renders into
+  const [acceptTarget, setAcceptTarget] = useState<HTMLElement | null>(null);
   const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
 
   const acceptProposal = trpc.course.acceptProposal.useMutation({
@@ -283,6 +286,9 @@ export default function CoursePage() {
         title={course.title}
         subtitle={course.goal}
       >
+        {isProposal && (
+          <div ref={setAcceptTarget} className="w-full sm:w-auto" />
+        )}
         {isEditingSyllabus ? (
           // In view however far down the learner is editing
           <button
@@ -360,6 +366,7 @@ export default function CoursePage() {
                 feedback={proposal.feedback}
                 onAccept={() => acceptProposal.mutate({ courseId })}
                 isAccepting={acceptProposal.isPending}
+                acceptTarget={acceptTarget}
                 onDiscard={() => discardProposal.mutate({ courseId })}
                 isDiscarding={discardProposal.isPending}
               />

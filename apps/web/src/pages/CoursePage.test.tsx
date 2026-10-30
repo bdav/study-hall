@@ -348,12 +348,14 @@ describe('CoursePage', () => {
       ).toBeInTheDocument();
     });
 
-    it('accepts the proposal', async () => {
+    it('accepts the proposal from the pinned header, in view at any length', async () => {
       renderPage({ data: baseCourse } as Partial<CourseQuery>);
       const user = userEvent.setup();
 
       await user.click(
-        screen.getByRole('button', { name: /accept syllabus/i }),
+        within(screen.getByRole('banner')).getByRole('button', {
+          name: /accept syllabus/i,
+        }),
       );
 
       expect(mockAccept).toHaveBeenCalledWith({ courseId: 'course-1' });

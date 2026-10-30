@@ -12,14 +12,24 @@ export const glassDialogClassName =
 /**
  * A dialog that can be taller than the screen: from sm, its body
  * (`tallDialogBodyClassName`) scrolls between a fixed header and footer;
- * on phones, where the footer's buttons stack and would leave the body a
- * sliver, the whole dialog scrolls instead.
+ * on phones, where a fixed body would be left a sliver, the whole dialog
+ * scrolls instead, its footer pinned to the bottom
+ * (`tallDialogFooterClassName`).
  */
 export const tallDialogClassName =
   'flex max-h-[90dvh] flex-col max-sm:overflow-y-auto sm:max-h-[80vh]';
 
 /** The part of a `tallDialogClassName` dialog that scrolls from sm. */
 export const tallDialogBodyClassName = 'sm:flex-1 sm:overflow-y-auto';
+
+/**
+ * A `tallDialogClassName` dialog's footer. On phones, where the whole
+ * dialog scrolls, it stays pinned to the dialog's bottom, so its actions
+ * are in reach however long the list above, its buttons in a row (wrapping
+ * if need be) rather than stacked, leaving the body room.
+ */
+export const tallDialogFooterClassName =
+  'max-sm:sticky max-sm:bottom-0 max-sm:flex-row max-sm:flex-wrap max-sm:justify-end max-sm:bg-[oklch(0.25_0.08_230)]';
 
 /** An underlined input on the app's translucent dialogs. */
 export const glassInputClassName =

@@ -338,13 +338,17 @@ export default function DeckCardsPage() {
         </p>
 
         {selection ? (
-          <CardSelectionBar
-            deckId={deckId}
-            cardIds={cards.map((card) => card.id)}
-            selected={selection}
-            onSelect={setSelection}
-            onDone={() => setSelection(null)}
-          />
+          // Pinned to the top while selecting, so its actions are in reach
+          // however far down the deck the learner ticks cards
+          <div className="sticky top-0 z-20 rounded-b-xl bg-[oklch(0.3_0.1_228)]/90 py-2 backdrop-blur-md">
+            <CardSelectionBar
+              deckId={deckId}
+              cardIds={cards.map((card) => card.id)}
+              selected={selection}
+              onSelect={setSelection}
+              onDone={() => setSelection(null)}
+            />
+          </div>
         ) : (
           // Wraps rather than squeezing each action onto two lines
           <div className="mr-4 flex flex-wrap justify-end gap-x-4 gap-y-2 whitespace-nowrap">

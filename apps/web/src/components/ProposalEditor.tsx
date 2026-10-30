@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { Loader2, Trash2 } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -36,6 +37,12 @@ interface ProposalEditorProps {
   feedback: string[];
   onAccept: () => void;
   isAccepting: boolean;
+  /**
+   * Where Accept goes: the page's pinned header, so it's in view however
+   * long the proposal. It waits on the editing here, which is why the
+   * editor renders it there.
+   */
+  acceptTarget: HTMLElement | null;
   onDiscard: () => void;
   isDiscarding: boolean;
 }
@@ -54,6 +61,7 @@ export function ProposalEditor({
   feedback,
   onAccept,
   isAccepting,
+  acceptTarget,
   onDiscard,
   isDiscarding,
 }: ProposalEditorProps) {
@@ -199,14 +207,19 @@ export function ProposalEditor({
         </button>
       </form>
 
-      <button
-        type="button"
-        onClick={onAccept}
-        disabled={isActionBlocked}
-        className="mt-8 w-full rounded-lg bg-white/20 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
-      >
-        {isAccepting ? 'Accepting…' : 'Accept syllabus'}
-      </button>
+      {acceptTarget &&
+        createPortal(
+          <button
+            type="button"
+            onClick={onAccept}
+            disabled={isActionBlocked}
+            // A line of its own on narrow screens, as Continue is
+            className="flex w-full shrink-0 items-center justify-center rounded-lg bg-white/25 px-4 py-2 font-medium text-white backdrop-blur-sm hover:bg-white/35 disabled:opacity-50 sm:w-auto"
+          >
+            {isAccepting ? 'Accepting…' : 'Accept syllabus'}
+          </button>,
+          acceptTarget,
+        )}
       <ConfirmDialog
         title="Discard proposal"
         description={`Discard the proposed syllabus and remove "${courseTitle}"? You can create the course again later.`}
@@ -216,7 +229,7 @@ export function ProposalEditor({
           <button
             type="button"
             disabled={isActionBlocked}
-            className="mt-3 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
+            className="mt-8 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
           >
             Discard proposal
           </button>

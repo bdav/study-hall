@@ -31,6 +31,7 @@ import {
   glassInputClassName,
   tallDialogBodyClassName,
   tallDialogClassName,
+  tallDialogFooterClassName,
 } from '@/lib/utils';
 
 /**
@@ -369,7 +370,9 @@ export function ImportPreviewDialog({
           )}
         </div>
 
-        <DialogFooter className="border-white/20 bg-white/5">
+        <DialogFooter
+          className={`border-white/20 bg-white/5 ${tallDialogFooterClassName}`}
+        >
           <Button
             variant="outline"
             onClick={onClose}

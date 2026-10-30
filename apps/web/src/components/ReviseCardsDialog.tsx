@@ -16,6 +16,7 @@ import {
   glassInputClassName,
   tallDialogBodyClassName,
   tallDialogClassName,
+  tallDialogFooterClassName,
 } from '@/lib/utils';
 
 /** A proposed change to one card, with the card as it is. */
@@ -342,7 +343,9 @@ export function ReviseCardsDialog({
           </form>
         )}
 
-        <DialogFooter className="border-white/20 bg-white/5">
+        <DialogFooter
+          className={`border-white/20 bg-white/5 ${tallDialogFooterClassName}`}
+        >
           <Button
             variant="outline"
             onClick={onClose}

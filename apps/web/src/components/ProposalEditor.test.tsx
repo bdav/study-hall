@@ -57,8 +57,14 @@ function renderEditor(
     ...regeneration,
   } as unknown as RegenerateMutation);
 
+  // Where the page's pinned header would take the Accept button
+  const acceptTarget = document.createElement('div');
+  acceptTarget.setAttribute('data-testid', 'header-actions');
+  document.body.append(acceptTarget);
+
   return render(
     <ProposalEditor
+      acceptTarget={acceptTarget}
       courseId="course-1"
       lessons={lessons}
       feedback={[]}
@@ -86,6 +92,7 @@ function savedLessons() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  document.body.innerHTML = '';
 });
 
 describe('ProposalEditor', () => {
@@ -427,6 +434,7 @@ describe('ProposalEditor', () => {
         courseTitle="Italian"
         onAccept={vi.fn()}
         isAccepting={false}
+        acceptTarget={null}
         onDiscard={vi.fn()}
         isDiscarding={false}
       />,
@@ -438,6 +446,16 @@ describe('ProposalEditor', () => {
   });
 
   describe('accepting and discarding', () => {
+    it('puts Accept where it is told, such as the pinned header', () => {
+      renderEditor();
+
+      expect(
+        within(screen.getByTestId('header-actions')).getByRole('button', {
+          name: /accept syllabus/i,
+        }),
+      ).toBeInTheDocument();
+    });
+
     it('accepts the proposal', async () => {
       const onAccept = vi.fn();
       renderEditor({ onAccept });
