@@ -20,6 +20,11 @@ import {
 } from '../services/cards.js';
 import { findCountedAttempts, isCorrect } from '../services/countedAttempts.js';
 import { matchAnswer } from '../services/answerGrader.js';
+import {
+  assertDeckActive,
+  findActiveDeck,
+  findOwnedDeck,
+} from '../services/decks.js';
 
 const text = z.string().trim().min(1);
 const proposalSource = z.string().min(1).max(100);
@@ -98,9 +103,10 @@ export const deckRouter = router({
       return deck;
     }),
 
+  /** The learner's decks in Flashcards: those not archived. */
   list: protectedProcedure.query(async ({ ctx }) => {
     const decks = await ctx.prisma.deck.findMany({
-      where: { userId: ctx.userId },
+      where: { userId: ctx.userId, archivedAt: null },
       orderBy: { createdAt: 'desc' },
       include: {
         course: { select: { id: true, title: true, archivedAt: true } },
@@ -157,6 +163,26 @@ export const deckRouter = router({
     });
   }),
 
+  /** The learner's archived decks, most recently archived first. */
+  listArchived: protectedProcedure.query(async ({ ctx }) => {
+    const decks = await ctx.prisma.deck.findMany({
+      where: { userId: ctx.userId, archivedAt: { not: null } },
+      orderBy: { archivedAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        archivedAt: true,
+        course: { select: { id: true, title: true, archivedAt: true } },
+        _count: { select: { cards: true } },
+      },
+    });
+
+    return decks.map(({ _count, ...deck }) => ({
+      ...deck,
+      cardCount: _count.cards,
+    }));
+  }),
+
   create: protectedProcedure
     .input(
       z.object({
@@ -183,16 +209,10 @@ export const deckRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const deck = await ctx.prisma.deck.findUnique({
-        where: { id: input.id, userId: ctx.userId },
+      await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.id,
       });
-
-      if (!deck) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Deck not found',
-        });
-      }
 
       return ctx.prisma.deck.update({
         where: { id: input.id },
@@ -205,21 +225,84 @@ export const deckRouter = router({
       });
     }),
 
-  delete: protectedProcedure
+  /**
+   * Archives a deck (#77, ADR-0003): it leaves Flashcards and keeps its
+   * cards, Card Versions, attempts, progress and Study Sessions. A Course
+   * Deck goes with its course, so it can't be archived on its own while
+   * the course is active.
+   */
+  archive: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const deck = await ctx.prisma.deck.findUnique({
-        where: { id: input.id, userId: ctx.userId },
+      const deck = await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.id,
       });
 
-      if (!deck) {
+      // Checked as it's archived, so a course restored meanwhile wins
+      const archived = await ctx.prisma.deck.updateMany({
+        where: {
+          id: deck.id,
+          archivedAt: null,
+          OR: [{ courseId: null }, { course: { archivedAt: { not: null } } }],
+        },
+        data: { archivedAt: new Date() },
+      });
+      if (archived.count === 0) {
         throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Deck not found',
+          code: 'CONFLICT',
+          message:
+            "A course's deck goes with its course: archive the course instead.",
         });
       }
 
-      await ctx.prisma.deck.delete({ where: { id: input.id } });
+      return { success: true };
+    }),
+
+  /** Puts an archived deck back in Flashcards as it was. */
+  restore: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const deck = await findOwnedDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.id,
+      });
+
+      const restored = await ctx.prisma.deck.updateMany({
+        where: { id: deck.id, archivedAt: { not: null } },
+        data: { archivedAt: null },
+      });
+      if (restored.count === 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'This deck is not archived',
+        });
+      }
+
+      return { success: true };
+    }),
+
+  /**
+   * Deletes an archived deck for good, with its cards and their whole
+   * history: the only way to remove a deck, and only once it's archived.
+   */
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const deck = await findOwnedDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.id,
+      });
+
+      const deleted = await ctx.prisma.deck.deleteMany({
+        where: { id: deck.id, archivedAt: { not: null } },
+      });
+      if (deleted.count === 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Archive a deck before deleting it permanently',
+        });
+      }
 
       return { success: true };
     }),
@@ -250,6 +333,7 @@ export const deckRouter = router({
       if (!deck) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Deck not found' });
       }
+      assertDeckActive(deck);
       if (deck.cards.length === 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -368,6 +452,7 @@ export const deckRouter = router({
       if (!deck) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Deck not found' });
       }
+      assertDeckActive(deck);
 
       const cards = new Map(deck.cards.map((card) => [card.id, card]));
       const changed = [...input.edits.map((e) => e.cardId), ...input.deletions];

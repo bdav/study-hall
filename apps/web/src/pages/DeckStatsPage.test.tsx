@@ -7,8 +7,10 @@ import { trpc } from '@/lib/trpc';
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
+    useUtils: vi.fn(() => ({})),
     deck: {
       getById: { useQuery: vi.fn() },
+      restore: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     stats: {
       deckStats: { useQuery: vi.fn() },
@@ -113,5 +115,26 @@ describe('DeckStatsPage', () => {
     renderDeckStatsPage();
 
     expect(screen.getByText(/error/i)).toBeInTheDocument();
+  });
+
+  it('says an archived deck is archived, with Restore, its stats still shown', () => {
+    setupMocks();
+    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+      data: {
+        id: 'deck-1',
+        name: 'World Capitals',
+        cards: [],
+        archivedAt: '2026-10-01T12:00:00.000Z',
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+    renderDeckStatsPage();
+
+    expect(screen.getByText(/this deck is archived/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Restore deck' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('30')).toBeInTheDocument();
   });
 });

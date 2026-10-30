@@ -11,7 +11,7 @@ import {
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
 import { isKnown } from '../services/progressUpdater.js';
-import { type Context } from '../context.js';
+import { assertCanChangeCards, findActiveDeck } from '../services/decks.js';
 
 const front = z.string().trim().min(1);
 const answerText = z.string().trim().min(1);
@@ -21,33 +21,14 @@ const variantText = z.string().trim().min(1);
 // Cards acted on together: one, or a selection from the Cards tab
 const cardIds = z.array(z.string()).min(1).max(1000);
 
-/** Refuses, as not found, any card that isn't in one of the learner's decks. */
-async function assertOwnsCards(
-  ctx: { prisma: Context['prisma']; userId: string },
-  ids: string[],
-) {
-  const owned = await ctx.prisma.card.count({
-    where: { id: { in: ids }, deck: { userId: ctx.userId } },
-  });
-  if (owned !== new Set(ids).size) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Card not found' });
-  }
-}
-
 export const cardRouter = router({
   create: protectedProcedure
     .input(z.object({ deckId: z.string(), front, canonicalAnswers }))
     .mutation(async ({ ctx, input }) => {
-      const deck = await ctx.prisma.deck.findUnique({
-        where: { id: input.deckId, userId: ctx.userId },
+      await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
       });
-
-      if (!deck) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Deck not found',
-        });
-      }
 
       const duplicate = await ctx.prisma.card.findFirst({
         where: {
@@ -110,17 +91,10 @@ export const cardRouter = router({
         ),
     )
     .mutation(async ({ ctx, input }) => {
-      const card = await ctx.prisma.card.findUnique({
-        where: { id: input.cardId },
-        include: { deck: { select: { userId: true } } },
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: [input.cardId],
       });
-
-      if (!card || card.deck.userId !== ctx.userId) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Card not found',
-        });
-      }
 
       return ctx.prisma.$transaction((tx) => editCard(tx, input));
     }),
@@ -128,17 +102,10 @@ export const cardRouter = router({
   delete: protectedProcedure
     .input(z.object({ cardId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const card = await ctx.prisma.card.findUnique({
-        where: { id: input.cardId },
-        include: { deck: { select: { userId: true } } },
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: [input.cardId],
       });
-
-      if (!card || card.deck.userId !== ctx.userId) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Card not found',
-        });
-      }
 
       await ctx.prisma.card.delete({
         where: { id: input.cardId },
@@ -154,7 +121,10 @@ export const cardRouter = router({
   markKnown: protectedProcedure
     .input(z.object({ cardIds }))
     .mutation(async ({ ctx, input }) => {
-      await assertOwnsCards(ctx, input.cardIds);
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
       return markCardsKnown(ctx.prisma, {
         userId: ctx.userId,
         cardIds: input.cardIds,
@@ -165,7 +135,10 @@ export const cardRouter = router({
   deleteMany: protectedProcedure
     .input(z.object({ cardIds }))
     .mutation(async ({ ctx, input }) => {
-      await assertOwnsCards(ctx, input.cardIds);
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
       const { count } = await ctx.prisma.card.deleteMany({
         where: { id: { in: input.cardIds } },
       });
@@ -183,7 +156,10 @@ export const cardRouter = router({
   restoreVersion: protectedProcedure
     .input(z.object({ cardId: z.string(), versionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await assertOwnsCards(ctx, [input.cardId]);
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: [input.cardId],
+      });
       return ctx.prisma.$transaction((tx) => restoreCardVersion(tx, input));
     }),
 
@@ -228,16 +204,10 @@ export const cardRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const deck = await ctx.prisma.deck.findUnique({
-        where: { id: input.deckId, userId: ctx.userId },
+      await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
       });
-
-      if (!deck) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Deck not found',
-        });
-      }
 
       // Validate that all update cards belong to this deck
       if (input.update.length > 0) {

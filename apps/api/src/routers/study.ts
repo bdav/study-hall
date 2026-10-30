@@ -8,6 +8,7 @@ import {
   previewQueue,
   startStudySession,
 } from '../services/studySessions.js';
+import { findActiveDeck } from '../services/decks.js';
 
 export const studyRouter = router({
   queuePreview: protectedProcedure
@@ -33,16 +34,10 @@ export const studyRouter = router({
   startSession: protectedProcedure
     .input(z.object({ deckId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const deck = await ctx.prisma.deck.findUnique({
-        where: { id: input.deckId, userId: ctx.userId },
+      await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
       });
-
-      if (!deck) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Deck not found',
-        });
-      }
 
       return startStudySession(ctx.prisma, {
         userId: ctx.userId,

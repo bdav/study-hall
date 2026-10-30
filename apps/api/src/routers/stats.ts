@@ -155,8 +155,14 @@ export const statsRouter = router({
 
   overallStats: protectedProcedure.query(async ({ ctx }) => {
     // TODO: Add pagination or date-range filtering for users with large attempt histories
+    // Decks in Flashcards: archived ones are left out (#77)
+    const activeDecks = await ctx.prisma.deck.findMany({
+      where: { userId: ctx.userId, archivedAt: null },
+      select: { id: true },
+    });
     const attempts = await findCountedAttempts(ctx.prisma, {
       userId: ctx.userId,
+      deckIds: activeDecks.map((deck) => deck.id),
     });
 
     if (attempts.length === 0) {

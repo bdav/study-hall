@@ -57,7 +57,10 @@ vi.mock('@/lib/trpc', () => ({
     },
     deck: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
+      listArchived: { useQuery: vi.fn(() => ({ data: [] })) },
       create: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+      archive: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+      restore: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
       delete: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
   },

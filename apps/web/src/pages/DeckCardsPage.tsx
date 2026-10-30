@@ -7,8 +7,8 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Archive,
   SquareCheck,
-  Trash2,
   Upload,
   X,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import {
   answersWithPrimary,
   markedKnownMessage,
   toFlashcard,
+  type Flashcard,
 } from '@/lib/cards';
 import { parseCsv } from '@/lib/csvParser';
 import { diffCsvRows } from '@/lib/csvDiff';
@@ -32,10 +33,37 @@ import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
 import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 import { ReviseCards } from '@/components/ReviseCards';
+import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 import {
   CardSelectionBar,
   SelectCardToggle,
 } from '@/components/CardSelectionBar';
+
+/** An archived deck's cards, read only: each front and its answers. */
+function ArchivedCardList({ cards }: { cards: Flashcard[] }) {
+  if (cards.length === 0) {
+    return <p className="mt-6 text-white/60">This deck has no cards.</p>;
+  }
+
+  return (
+    <ul
+      aria-label="Cards"
+      className="mt-6 divide-y divide-white/10 rounded-xl border border-white/20 bg-white/5"
+    >
+      {cards.map((card) => (
+        <li
+          key={card.id}
+          className="grid gap-x-6 gap-y-1 px-4 py-3 sm:grid-cols-2"
+        >
+          <p className="break-words">{card.front}</p>
+          <p className="break-words text-white/70">
+            {card.answers.map((answer) => answer.text).join(' · ')}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
@@ -229,14 +257,15 @@ export default function DeckCardsPage() {
     },
   });
 
-  const deleteDeck = trpc.deck.delete.useMutation({
+  const archiveDeck = trpc.deck.archive.useMutation({
     onSuccess: () => {
       utils.deck.list.invalidate();
-      toast.success('Deck deleted');
+      utils.deck.listArchived.invalidate();
+      toast.success('Deck archived');
       navigate('/flashcards');
     },
     onError: () => {
-      toast.error('Failed to delete deck');
+      toast.error('Failed to archive the deck');
     },
   });
 
@@ -285,6 +314,24 @@ export default function DeckCardsPage() {
   const knownCardIds = new Set(
     (cardsQuery.data ?? []).filter((c) => c.isKnown).map((c) => c.id),
   );
+
+  // Read only, its cards listed as text (#77)
+  if (deck.archivedAt) {
+    return (
+      <CenteredPage>
+        <div className="w-full max-w-4xl text-white">
+          <DeckHeader
+            deckName={deck.name}
+            deckId={deckId}
+            activeTab="cards"
+            course={deck.course}
+            archivedAt={deck.archivedAt}
+          />
+          <ArchivedCardList cards={cards} />
+        </div>
+      </CenteredPage>
+    );
+  }
 
   function handleCsvUpload(file: File) {
     const reader = new FileReader();
@@ -364,21 +411,20 @@ export default function DeckCardsPage() {
               </button>
             )}
             {canUseAI && cards.length > 0 && <ReviseCards deckId={deckId} />}
-            <ConfirmDialog
-              title="Delete deck"
-              description={`Are you sure you want to delete "${deck.name}"? This cannot be undone.`}
-              confirmLabel="Delete"
-              onConfirm={() => deleteDeck.mutate({ id: deckId })}
-              trigger={
-                <button
-                  className="inline-flex items-center text-sm text-white/40 hover:text-destructive transition-colors"
-                  title="Delete deck"
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete Deck
-                </button>
-              }
-            />
+            {canArchiveDeck(deck) && (
+              <ConfirmDialog
+                title="Archive deck"
+                description={archiveDeckDescription(deck.name)}
+                confirmLabel="Archive"
+                onConfirm={() => archiveDeck.mutate({ id: deckId })}
+                trigger={
+                  <button className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
+                    <Archive className="h-4 w-4 mr-1" />
+                    Archive deck
+                  </button>
+                }
+              />
+            )}
           </div>
         )}
 

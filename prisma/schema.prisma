@@ -120,6 +120,8 @@ model Deck {
   courseId      String?        @unique
   name          String
   description   String?
+  // Archived decks leave Flashcards and keep everything (ADR-0003, #77)
+  archivedAt    DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -127,7 +129,7 @@ model Deck {
   cards         Card[]
   studySessions StudySession[]
 
-  @@index([userId])
+  @@index([userId, archivedAt])
 }
 
 model Card {

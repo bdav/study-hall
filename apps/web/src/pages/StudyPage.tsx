@@ -532,6 +532,21 @@ export default function StudyPage() {
     );
   }
 
+  // Read only: nothing to study until it's restored (#77)
+  if (deck.archivedAt) {
+    return (
+      <CenteredPage>
+        <DeckHeader
+          deckName={deck.name}
+          deckId={deckId ?? ''}
+          activeTab="study"
+          course={deck.course}
+          archivedAt={deck.archivedAt}
+        />
+      </CenteredPage>
+    );
+  }
+
   if (cards.length === 0) {
     return (
       <CenteredPage>

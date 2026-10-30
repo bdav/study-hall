@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -18,11 +18,17 @@ vi.mock('react-router-dom', async () => {
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
-      deck: { list: { invalidate: vi.fn() } },
+      deck: {
+        list: { invalidate: vi.fn() },
+        listArchived: { invalidate: vi.fn() },
+      },
     })),
     deck: {
       list: { useQuery: vi.fn() },
+      listArchived: { useQuery: vi.fn() },
       create: { useMutation: vi.fn() },
+      archive: { useMutation: vi.fn() },
+      restore: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
     },
   },
@@ -71,9 +77,44 @@ function renderDeckListPage() {
   );
 }
 
+const archivedDecks = [
+  {
+    id: 'deck-9',
+    name: 'Old Verbs',
+    cardCount: 12,
+    archivedAt: '2026-10-01T12:00:00.000Z',
+    course: null,
+  },
+  {
+    id: 'deck-8',
+    name: 'Spanish',
+    cardCount: 1,
+    archivedAt: '2026-09-01T12:00:00.000Z',
+    course: { id: 'course-2', title: 'Spanish', archivedAt: '2026-09-01' },
+  },
+];
+
+const mockArchive = vi.fn();
+const mockRestore = vi.fn();
+const mockDelete = vi.fn();
+
 function setupMocks(
   overrides?: Partial<ReturnType<typeof trpc.deck.list.useQuery>>,
+  archived: unknown[] = [],
 ) {
+  vi.mocked(trpc.deck.listArchived.useQuery).mockReturnValue({
+    data: archived,
+  } as ReturnType<typeof trpc.deck.listArchived.useQuery>);
+  for (const [procedure, mutate] of [
+    [trpc.deck.archive, mockArchive],
+    [trpc.deck.restore, mockRestore],
+  ] as const) {
+    vi.mocked(procedure.useMutation).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof procedure.useMutation>);
+  }
+
   vi.mocked(trpc.deck.list.useQuery).mockReturnValue({
     data: mockDecks,
     isLoading: false,
@@ -88,7 +129,7 @@ function setupMocks(
   } as unknown as ReturnType<typeof trpc.deck.create.useMutation>);
 
   vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
-    mutate: vi.fn(),
+    mutate: mockDelete,
     mutateAsync: vi.fn(),
     isPending: false,
   } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
@@ -257,36 +298,110 @@ describe('DeckListPage', () => {
     expect(screen.getByText('Math Facts')).toBeInTheDocument();
   });
 
-  it('renders delete buttons for each deck', () => {
-    setupMocks();
+  it('offers Archive on each deck, but not on a Course Deck whose course is active', () => {
+    setupMocks({
+      data: [
+        ...mockDecks,
+        {
+          ...mockDecks[0],
+          id: 'deck-3',
+          name: 'Italian',
+          course: { id: 'course-1', title: 'Italian', archivedAt: null },
+        },
+        {
+          ...mockDecks[0],
+          id: 'deck-4',
+          name: 'French',
+          course: { id: 'course-3', title: 'French', archivedAt: '2026-10-01' },
+        },
+      ],
+    } as Partial<ReturnType<typeof trpc.deck.list.useQuery>>);
     renderDeckListPage();
 
+    for (const name of ['World Capitals', 'Math Facts', 'French']) {
+      expect(
+        screen.getByRole('button', { name: `Archive ${name}` }),
+      ).toBeInTheDocument();
+    }
     expect(
-      screen.getByRole('button', { name: /delete world capitals/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: 'Archive Italian' }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /delete math facts/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: /^delete/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it('calls delete mutation after confirming delete', async () => {
+  it('archives a deck after a confirmation that says what is kept', async () => {
     setupMocks();
-    const mockMutate = vi.fn();
-    vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
-      mutate: mockMutate,
-      mutateAsync: vi.fn(),
-      isPending: false,
-    } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
-
     const user = userEvent.setup();
     renderDeckListPage();
 
     await user.click(
-      screen.getByRole('button', { name: /delete world capitals/i }),
+      screen.getByRole('button', { name: 'Archive World Capitals' }),
     );
-    // The confirm button in the AlertDialog — use exact name to avoid matching triggers
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(
+      screen.getByText(/its cards and their history are kept/i),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
 
-    expect(mockMutate).toHaveBeenCalledWith({ id: 'deck-1' });
+    expect(mockArchive).toHaveBeenCalledWith({ id: 'deck-1' });
+  });
+
+  it('leaves out the Archived section when no deck is archived', () => {
+    setupMocks();
+    renderDeckListPage();
+
+    expect(
+      screen.queryByRole('button', { name: /archived/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('lists archived decks below, collapsed to start, each with when it was archived', async () => {
+    setupMocks({}, archivedDecks);
+    const user = userEvent.setup();
+    renderDeckListPage();
+
+    const toggle = screen.getByRole('button', { name: 'Archived (2)' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Old Verbs')).not.toBeVisible();
+
+    await user.click(toggle);
+
+    const list = within(screen.getByRole('list', { name: 'Archived decks' }));
+    const rows = list.getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Old Verbs');
+    expect(rows[0]).toHaveTextContent(/archived/i);
+    expect(rows[1]).toHaveTextContent('Course: Spanish');
+  });
+
+  it('restores an archived deck without a confirmation', async () => {
+    setupMocks({}, archivedDecks);
+    const user = userEvent.setup();
+    renderDeckListPage();
+    await user.click(screen.getByRole('button', { name: 'Archived (2)' }));
+
+    await user.click(screen.getByRole('button', { name: 'Restore Old Verbs' }));
+
+    expect(mockRestore).toHaveBeenCalledWith({ id: 'deck-9' });
+  });
+
+  it('deletes an archived deck permanently after a confirmation naming what goes', async () => {
+    setupMocks({}, archivedDecks);
+    const user = userEvent.setup();
+    renderDeckListPage();
+    await user.click(screen.getByRole('button', { name: 'Archived (2)' }));
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete Old Verbs permanently' }),
+    );
+    expect(
+      screen.getByText(/its 12 cards and their whole history/i),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Delete permanently' }),
+    );
+
+    expect(mockDelete).toHaveBeenCalledWith({ id: 'deck-9' });
   });
 });

@@ -285,7 +285,7 @@ describe('deckRouter', () => {
   describe('delete', () => {
     it('deletes a deck', async () => {
       const deck = await prisma.deck.create({
-        data: { name: 'To Delete', userId },
+        data: { name: 'To Delete', userId, archivedAt: new Date() },
       });
 
       const caller = createCaller();
@@ -302,6 +302,10 @@ describe('deckRouter', () => {
         cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
       });
       const cardId = deck.cards[0].id;
+      await prisma.deck.update({
+        where: { id: deck.id },
+        data: { archivedAt: new Date() },
+      });
 
       const caller = createCaller();
       await caller.deck.delete({ id: deck.id });

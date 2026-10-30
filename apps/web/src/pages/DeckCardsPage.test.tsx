@@ -29,13 +29,18 @@ vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
       card: { listByDeck: { invalidate: mockInvalidateCards } },
-      deck: { list: { invalidate: vi.fn() }, getById: { invalidate: vi.fn() } },
+      deck: {
+        list: { invalidate: vi.fn() },
+        listArchived: { invalidate: vi.fn() },
+        getById: { invalidate: vi.fn() },
+      },
     })),
     auth: { me: { useQuery: vi.fn() } },
     deck: {
       getById: { useQuery: vi.fn() },
       update: { useMutation: vi.fn() },
-      delete: { useMutation: vi.fn() },
+      archive: { useMutation: vi.fn() },
+      restore: { useMutation: vi.fn() },
       proposeRevision: { useMutation: vi.fn() },
       applyRevision: { useMutation: vi.fn() },
     },
@@ -121,6 +126,10 @@ function setupMocks(overrides?: {
   cardsLoading?: boolean;
   deckError?: boolean;
   canUseAI?: boolean;
+  deck?: {
+    archivedAt?: string | null;
+    course?: { id: string; title: string; archivedAt: string | null } | null;
+  };
 }) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
     data: {
@@ -144,7 +153,14 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
     data: overrides?.deckError
       ? undefined
-      : { id: 'deck-1', name: 'World Capitals', cards: [] },
+      : {
+          id: 'deck-1',
+          name: 'World Capitals',
+          cards: [],
+          archivedAt: null,
+          course: null,
+          ...overrides?.deck,
+        },
     isLoading: overrides?.deckLoading ?? false,
     isError: overrides?.deckError ?? false,
   } as ReturnType<typeof trpc.deck.getById.useQuery>);
@@ -196,9 +212,13 @@ function setupMocks(overrides?: {
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.deck.update.useMutation>);
 
-  vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
+  vi.mocked(trpc.deck.archive.useMutation).mockReturnValue({
     ...defaultMutationReturn,
-  } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
+  } as unknown as ReturnType<typeof trpc.deck.archive.useMutation>);
+
+  vi.mocked(trpc.deck.restore.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.deck.restore.useMutation>);
 }
 
 beforeEach(() => {
@@ -668,10 +688,10 @@ describe('DeckCardsPage', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('calls deck delete and navigates to Flashcards when confirmed', async () => {
+  it('archives the deck after a confirmation saying what is kept, then goes to Flashcards', async () => {
     setupMocks();
     const mockMutate = vi.fn();
-    vi.mocked(trpc.deck.delete.useMutation).mockImplementation(((opts?: {
+    vi.mocked(trpc.deck.archive.useMutation).mockImplementation(((opts?: {
       onSuccess?: () => void;
     }) => {
       return {
@@ -680,40 +700,91 @@ describe('DeckCardsPage', () => {
           mockMutate(...args);
           opts?.onSuccess?.();
         }),
-      } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>;
-    }) as unknown as typeof trpc.deck.delete.useMutation);
+      } as unknown as ReturnType<typeof trpc.deck.archive.useMutation>;
+    }) as unknown as typeof trpc.deck.archive.useMutation);
 
     const user = userEvent.setup();
     renderDeckCardsPage();
 
-    await user.click(screen.getByRole('button', { name: /delete deck/i }));
-
-    const confirmButton = await screen.findByRole('button', {
-      name: /^delete$/i,
-    });
-    await user.click(confirmButton);
+    expect(
+      screen.queryByRole('button', { name: /delete deck/i }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /archive deck/i }));
+    expect(
+      screen.getByText(/its cards and their history are kept/i),
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /^archive$/i }));
 
     expect(mockMutate).toHaveBeenCalledWith({ id: 'deck-1' });
     expect(mockNavigate).toHaveBeenCalledWith('/flashcards');
   });
 
-  it('does not delete deck when confirmation is cancelled', async () => {
+  it('does not archive the deck when the confirmation is cancelled', async () => {
     setupMocks();
     const mockMutate = vi.fn();
-    vi.mocked(trpc.deck.delete.useMutation).mockReturnValue({
+    vi.mocked(trpc.deck.archive.useMutation).mockReturnValue({
       ...defaultMutationReturn,
       mutate: mockMutate,
-    } as unknown as ReturnType<typeof trpc.deck.delete.useMutation>);
+    } as unknown as ReturnType<typeof trpc.deck.archive.useMutation>);
 
     const user = userEvent.setup();
     renderDeckCardsPage();
 
-    await user.click(screen.getByRole('button', { name: /delete deck/i }));
-
-    const cancelButton = await screen.findByRole('button', { name: /cancel/i });
-    await user.click(cancelButton);
+    await user.click(screen.getByRole('button', { name: /archive deck/i }));
+    await user.click(await screen.findByRole('button', { name: /cancel/i }));
 
     expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it('offers no Archive on a Course Deck while its course is active', () => {
+    setupMocks({
+      deck: { course: { id: 'course-1', title: 'Italian', archivedAt: null } },
+    });
+    renderDeckCardsPage();
+
+    expect(
+      screen.queryByRole('button', { name: /archive deck/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  describe('an archived deck', () => {
+    it('shows its cards read only, saying it is archived, with Restore', () => {
+      setupMocks({ deck: { archivedAt: '2026-10-01T12:00:00.000Z' } });
+      renderDeckCardsPage();
+
+      expect(screen.getByText(/this deck is archived/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Restore deck' }),
+      ).toBeInTheDocument();
+      const list = within(screen.getByRole('list', { name: 'Cards' }));
+      expect(list.getAllByRole('listitem')).toHaveLength(2);
+      expect(list.getByText('Capital of France')).toBeInTheDocument();
+      expect(list.getByText('Paris')).toBeInTheDocument();
+    });
+
+    it('offers nothing that would change it', () => {
+      setupMocks({
+        deck: { archivedAt: '2026-10-01T12:00:00.000Z' },
+        canUseAI: true,
+      });
+      renderDeckCardsPage();
+
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      // Its tiles aren't buttons
+      expect(screen.queryByText(/new card/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/import csv/i)).not.toBeInTheDocument();
+      for (const name of [
+        /select cards/i,
+        /revise cards/i,
+        /archive deck/i,
+        /mark known/i,
+      ]) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      }
+      expect(
+        screen.getByRole('heading', { name: 'World Capitals' }),
+      ).toBeInTheDocument();
+    });
   });
 
   it('shows flip buttons on card tiles', () => {

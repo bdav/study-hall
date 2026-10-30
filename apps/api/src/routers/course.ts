@@ -205,7 +205,7 @@ export const courseRouter = router({
       const course = await ctx.prisma.course.findUnique({
         where: { id: input.id, userId: ctx.userId },
         include: {
-          deck: { select: { id: true } },
+          deck: { select: { id: true, archivedAt: true } },
           proposal: true,
           lessons: {
             where: { archivedAt: null },
@@ -228,16 +228,17 @@ export const courseRouter = router({
         })),
         deckId: deck?.id ?? null,
         // The course page's review section: its Course Deck's due and NEW
-        // cards
-        review: deck
-          ? {
-              deckId: deck.id,
-              ...(await countDueAndNewCards(ctx.prisma, {
-                userId: ctx.userId,
+        // cards, while the deck isn't archived
+        review:
+          deck && !deck.archivedAt
+            ? {
                 deckId: deck.id,
-              })),
-            }
-          : null,
+                ...(await countDueAndNewCards(ctx.prisma, {
+                  userId: ctx.userId,
+                  deckId: deck.id,
+                })),
+              }
+            : null,
         proposal: proposal && {
           ...proposal,
           lessons: parseProposalLessons(proposal.lessons),
@@ -634,6 +635,8 @@ export const courseRouter = router({
   /**
    * Restores an archived course: it's back in Courses as it was, its
    * Syllabus editable again. Lessons archived on their own stay archived.
+   * Its Course Deck comes back with it, or a new one if it was deleted
+   * while the course was archived (#77).
    */
   restore: protectedProcedure
     .input(z.object({ courseId: z.string() }))
@@ -646,16 +649,28 @@ export const courseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found' });
       }
 
-      const restored = await ctx.prisma.course.updateMany({
-        where: { id: course.id, archivedAt: { not: null } },
-        data: { archivedAt: null },
-      });
-      if (restored.count === 0) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'This course is not archived',
+      await ctx.prisma.$transaction(async (tx) => {
+        const restored = await tx.course.updateMany({
+          where: { id: course.id, archivedAt: { not: null } },
+          data: { archivedAt: null },
         });
-      }
+        if (restored.count === 0) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'This course is not archived',
+          });
+        }
+
+        await tx.deck.upsert({
+          where: { courseId: course.id },
+          update: { archivedAt: null },
+          create: {
+            userId: ctx.userId,
+            courseId: course.id,
+            name: course.title,
+          },
+        });
+      });
 
       return { success: true };
     }),

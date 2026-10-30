@@ -28,6 +28,7 @@ export default function DeckStatsPage() {
 
   const deckName = deckQuery.data?.name ?? 'Deck';
   const course = deckQuery.data?.course;
+  const archivedAt = deckQuery.data?.archivedAt;
 
   if (statsQuery.isLoading || deckQuery.isLoading) {
     return <StatsSkeleton />;
@@ -51,6 +52,7 @@ export default function DeckStatsPage() {
           deckId={deckId ?? ''}
           activeTab="stats"
           course={course}
+          archivedAt={archivedAt}
         />
         <p className="mt-6 text-center text-white/60">
           No study data yet. Study this deck to see stats here.
@@ -66,6 +68,7 @@ export default function DeckStatsPage() {
         deckId={deckId ?? ''}
         activeTab="stats"
         course={course}
+        archivedAt={archivedAt}
       />
       <div className="w-full max-w-4xl text-white">
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">

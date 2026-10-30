@@ -2,22 +2,146 @@ import { useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { CornerDownLeft, Plus, Trash2, X } from 'lucide-react';
+import {
+  Archive,
+  ChevronRight,
+  CornerDownLeft,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DeckListSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
-import { formatPercent } from '@/lib/format';
+import { formatDate, formatPercent } from '@/lib/format';
+import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 
 const MotionLink = motion.create(Link);
+
+type ArchivedDeck = {
+  id: string;
+  name: string;
+  cardCount: number;
+  archivedAt: Date | string | null;
+  course: { title: string } | null;
+};
+
+/**
+ * Archived decks, out of the way below the active ones: collapsed to
+ * start, each restorable, or deletable for good after a confirmation.
+ */
+function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const utils = trpc.useUtils();
+
+  function refresh() {
+    utils.deck.list.invalidate();
+    utils.deck.listArchived.invalidate();
+  }
+
+  const restore = trpc.deck.restore.useMutation({
+    onSuccess: () => {
+      refresh();
+      toast.success('Deck restored');
+    },
+    onError: () => toast.error('Failed to restore the deck'),
+  });
+
+  const deleteDeck = trpc.deck.delete.useMutation({
+    onSuccess: () => {
+      refresh();
+      toast.success('Deck deleted');
+    },
+    onError: () => toast.error('Failed to delete the deck'),
+  });
+
+  if (archived.length === 0) return null;
+
+  return (
+    <section className="mt-10">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls="archived-decks"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex items-center gap-1 text-sm text-white/60 hover:text-white"
+      >
+        <ChevronRight
+          className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+          aria-hidden
+        />
+        Archived ({archived.length})
+      </button>
+      {/* Kept in the page while closed, so the toggle's aria-controls
+          always points at it */}
+      <ul
+        id="archived-decks"
+        aria-label="Archived decks"
+        hidden={!isOpen}
+        className="mt-3 space-y-2"
+      >
+        {archived.map((deck) => (
+          <li
+            key={deck.id}
+            className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/20 bg-white/5 px-4 py-3"
+          >
+            <div className="min-w-0 flex-1">
+              <Link
+                to={`/decks/${deck.id}/cards`}
+                className="font-medium break-words hover:underline"
+              >
+                {deck.name}
+              </Link>
+              <p className="text-xs text-white/50">
+                {deck.course && <>Course: {deck.course.title} · </>}
+                {deck.cardCount} {deck.cardCount === 1 ? 'card' : 'cards'}
+                {deck.archivedAt && (
+                  <> · Archived {formatDate(deck.archivedAt)}</>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label={`Restore ${deck.name}`}
+                onClick={() => restore.mutate({ id: deck.id })}
+                disabled={restore.isPending}
+                className="text-sm text-white/70 hover:text-white disabled:opacity-50"
+              >
+                Restore
+              </button>
+              <ConfirmDialog
+                title="Delete deck permanently"
+                description={`Delete "${deck.name}" for good? Its ${deck.cardCount} ${deck.cardCount === 1 ? 'card' : 'cards'} and their whole history go with it: every answer, Card Version and Study Session. This can't be undone.`}
+                confirmLabel="Delete permanently"
+                onConfirm={() => deleteDeck.mutate({ id: deck.id })}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={`Delete ${deck.name} permanently`}
+                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                }
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export default function DeckListPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
   const utils = trpc.useUtils();
   const decksQuery = trpc.deck.list.useQuery();
+  const archived = trpc.deck.listArchived.useQuery().data ?? [];
 
   const navigate = useNavigate();
   const createDeck = trpc.deck.create.useMutation({
@@ -30,13 +154,14 @@ export default function DeckListPage() {
     },
   });
 
-  const deleteDeck = trpc.deck.delete.useMutation({
+  const archiveDeck = trpc.deck.archive.useMutation({
     onSuccess: () => {
       utils.deck.list.invalidate();
-      toast.success('Deck deleted');
+      utils.deck.listArchived.invalidate();
+      toast.success('Deck archived');
     },
     onError: () => {
-      toast.error('Failed to delete deck');
+      toast.error('Failed to archive the deck');
     },
   });
 
@@ -61,7 +186,9 @@ export default function DeckListPage() {
 
         {decks.length === 0 && !isCreating ? (
           <p className="mt-6 text-white/60">
-            No decks yet. Create one to get started.
+            {archived.length > 0
+              ? 'No active decks. Create one, or restore one below.'
+              : 'No decks yet. Create one to get started.'}
           </p>
         ) : null}
 
@@ -182,39 +309,43 @@ export default function DeckListPage() {
                       {new Date(deck.lastStudied).toLocaleDateString()}
                     </p>
                   )}
-                  <div
-                    // Shown on hover, or always on touch screens, which have none
-                    className="absolute bottom-2 right-2 opacity-0 transition-opacity group-hover/deck:opacity-100 pointer-coarse:opacity-100"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    <ConfirmDialog
-                      title="Delete deck"
-                      description={`Are you sure you want to delete "${deck.name}"? This cannot be undone.`}
-                      confirmLabel="Delete"
-                      onConfirm={() => deleteDeck.mutate({ id: deck.id })}
-                      trigger={
-                        <button
-                          type="button"
-                          aria-label={`Delete ${deck.name}`}
-                          className="relative touch-target rounded p-1 text-white/40 hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      }
-                    />
-                  </div>
+                  {canArchiveDeck(deck) && (
+                    <div
+                      // Shown on hover, or always on touch screens, which have none
+                      className="absolute bottom-2 right-2 opacity-0 transition-opacity group-hover/deck:opacity-100 pointer-coarse:opacity-100"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    >
+                      <ConfirmDialog
+                        title="Archive deck"
+                        description={archiveDeckDescription(deck.name)}
+                        confirmLabel="Archive"
+                        onConfirm={() => archiveDeck.mutate({ id: deck.id })}
+                        trigger={
+                          <button
+                            type="button"
+                            aria-label={`Archive ${deck.name}`}
+                            className="relative touch-target rounded p-1 text-white/40 hover:text-white transition-colors"
+                          >
+                            <Archive className="size-4" />
+                          </button>
+                        }
+                      />
+                    </div>
+                  )}
                 </DeckCard>
               </MotionLink>
             ))}
           </div>
         </LayoutGroup>
+
+        <ArchivedDecks archived={archived} />
       </div>
     </CenteredPage>
   );

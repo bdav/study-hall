@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { BackLink } from '@/components/BackLink';
 import { DeckTabs } from '@/components/DeckTabs';
+import { ArchivedDeckNotice } from '@/components/ArchivedDeckNotice';
 
 interface DeckHeaderProps {
   deckName: string;
@@ -18,6 +19,8 @@ interface DeckHeaderProps {
   } | null;
   /** Shown in place of the deck name, such as an editable title. */
   title?: ReactNode;
+  /** When the deck was archived: its pages then say so, with Restore. */
+  archivedAt?: Date | string | null;
 }
 
 /**
@@ -31,6 +34,7 @@ export function DeckHeader({
   activeTab,
   course,
   title,
+  archivedAt,
 }: DeckHeaderProps) {
   return (
     <div className="w-full max-w-4xl">
@@ -60,6 +64,9 @@ export function DeckHeader({
           <DeckTabs deckId={deckId} activeTab={activeTab} />
         </div>
       </div>
+      {archivedAt && (
+        <ArchivedDeckNotice deckId={deckId} archivedAt={archivedAt} />
+      )}
     </div>
   );
 }

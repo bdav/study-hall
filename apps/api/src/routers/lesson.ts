@@ -37,6 +37,7 @@ import {
   primaryAnswerText,
   withCanonicalAnswers,
 } from '../services/cards.js';
+import { assertDeckActive } from '../services/decks.js';
 import {
   attemptsSinceReset,
   nextResetTime,
@@ -147,6 +148,7 @@ async function findCourseDeck(prisma: PrismaClient, courseId: string) {
       message: 'This course has no deck to add review cards to.',
     });
   }
+  assertDeckActive(deck);
   return deck;
 }
 

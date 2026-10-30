@@ -37,6 +37,7 @@ vi.mock('@/lib/trpc', () => ({
       getById: {
         useQuery: vi.fn(),
       },
+      restore: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     study: {
       startSession: { useMutation: vi.fn() },
@@ -525,6 +526,27 @@ beforeEach(() => {
 });
 
 describe('StudyPage', () => {
+  it('says an archived deck is archived, with Restore, and offers no study', () => {
+    setupBasicMocks();
+    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+      data: { ...mockDeck, archivedAt: '2026-10-01T12:00:00.000Z' },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+    renderStudyPage();
+
+    expect(
+      screen.getByRole('heading', { name: /test deck/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/this deck is archived/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Restore deck' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /test deck/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows deck name and start button before studying', () => {
     setupBasicMocks();
     renderStudyPage();

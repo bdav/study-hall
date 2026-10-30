@@ -19,6 +19,7 @@ import {
   type ScheduledAnswer,
 } from './progressUpdater.js';
 import { countsSinceReset } from './countedAttempts.js';
+import { assertDeckActive } from './decks.js';
 
 /** Include for returning a Study Session with its items in queue order. */
 const withItems = {
@@ -199,7 +200,9 @@ export async function answerItem(
     where: { id: itemId, studySession: { userId } },
     include: {
       card: { include: withCanonicalAnswers },
-      studySession: { select: { status: true } },
+      studySession: {
+        select: { status: true, deck: { select: { archivedAt: true } } },
+      },
     },
   });
   if (!item) {
@@ -208,6 +211,8 @@ export async function answerItem(
       message: 'Study session card not found',
     });
   }
+  // A session started before its deck was archived
+  assertDeckActive(item.studySession.deck);
   if (item.studySession.status !== 'ACTIVE') {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -291,11 +296,19 @@ export async function acceptAnswer(
       studySession: { userId },
       card: { deck: { userId } },
     },
-    include: { card: { include: withCanonicalAnswers } },
+    include: {
+      card: {
+        include: {
+          ...withCanonicalAnswers,
+          deck: { select: { archivedAt: true } },
+        },
+      },
+    },
   });
   if (!attempt) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Attempt not found' });
   }
+  assertDeckActive(attempt.card.deck);
   const { userAnswer } = attempt;
   if (attempt.recallGrade !== 'MISSED' || userAnswer === null) {
     throw new TRPCError({
