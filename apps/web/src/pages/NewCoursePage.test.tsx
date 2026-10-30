@@ -53,9 +53,11 @@ async function fillForm() {
   await user.type(screen.getByLabelText('Prior knowledge'), 'Some Duolingo');
   await user.click(screen.getByRole('radio', { name: '3h' }));
   await user.click(screen.getByRole('radio', { name: '30 min' }));
-  await user.selectOptions(
-    screen.getByLabelText('Preferred depth'),
-    'In depth',
+  await user.click(
+    within(screen.getByRole('group', { name: 'Preferred depth' })).getByRole(
+      'radio',
+      { name: 'In depth' },
+    ),
   );
   await user.type(screen.getByLabelText('Notes'), 'Trip to Rome');
   return user;
@@ -204,6 +206,16 @@ describe('NewCoursePage', () => {
         expect(within(choice).getByRole('radio', { name })).not.toBeChecked();
       }
     }
+  });
+
+  it('offers preferred depth as chips, Balanced to start', () => {
+    renderPage();
+
+    const depth = screen.getByRole('group', { name: 'Preferred depth' });
+    expect(within(depth).getAllByRole('radio')).toHaveLength(3);
+    expect(
+      within(depth).getByRole('radio', { name: 'Balanced' }),
+    ).toBeChecked();
   });
 
   it('takes a custom time per week in hours', async () => {

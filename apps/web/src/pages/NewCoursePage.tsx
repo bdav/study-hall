@@ -12,7 +12,10 @@ import { cn } from '@/lib/utils';
 const glassInputClassName =
   'mt-1 border-white/20 bg-white/10 text-white placeholder-white/40 focus-visible:border-white/40 focus-visible:ring-white/20';
 
-const DEPTHS = ['Light overview', 'Balanced', 'In depth'];
+const DEPTHS = ['Light overview', 'Balanced', 'In depth'].map((depth) => ({
+  value: depth,
+  label: depth,
+}));
 
 const CUSTOM = 'custom';
 
@@ -266,20 +269,12 @@ export default function NewCoursePage() {
                 className={`max-w-48 [color-scheme:dark] ${glassInputClassName}`}
               />
             </Field>
-            <Field id="depth" label="Preferred depth">
-              <select
-                id="depth"
-                value={form.depth}
-                onChange={(e) => update('depth', e.target.value)}
-                className={`h-8 w-full rounded-lg border px-2.5 text-base outline-none md:text-sm ${glassInputClassName}`}
-              >
-                {DEPTHS.map((depth) => (
-                  <option key={depth} value={depth} className="text-black">
-                    {depth}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <ChoiceChips
+              label="Preferred depth"
+              options={DEPTHS}
+              value={form.depth}
+              onChange={(depth) => update('depth', depth)}
+            />
             <Field id="focus" label="Focus on">
               <Input
                 id="focus"
