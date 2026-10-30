@@ -2198,7 +2198,7 @@ describe('LessonPage', () => {
     const currentStep = () =>
       screen.getByRole('heading', { level: 2 }).textContent;
 
-    it('rewrites the lesson from the ⋯ menu, with optional feedback', async () => {
+    it('regenerates the lesson from the ⋯ menu, saying what should change', async () => {
       const user = userEvent.setup();
       renderPage({ query: written });
 
@@ -2207,9 +2207,8 @@ describe('LessonPage', () => {
         screen.getByRole('menuitem', { name: 'Regenerate lesson' }),
       );
       const dialog = screen.getByRole('dialog', { name: 'Regenerate lesson' });
-      await user.type(
-        within(dialog).getByRole('textbox', { name: /what should change/i }),
-        'Too easy',
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Too easy' }),
       );
       await user.click(
         within(dialog).getByRole('button', { name: 'Regenerate' }),
@@ -2217,7 +2216,7 @@ describe('LessonPage', () => {
 
       expect(mockRegenerate).toHaveBeenCalledWith({
         id: 'lesson-1',
-        feedback: 'Too easy',
+        chips: ['TOO_EASY'],
       });
     });
 

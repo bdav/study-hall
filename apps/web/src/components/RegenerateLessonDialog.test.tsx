@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { RegenerateLessonDialog } from './RegenerateLessonDialog';
@@ -60,29 +60,76 @@ describe('RegenerateLessonDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('rewrites the lesson with the feedback written', async () => {
+  it('offers chips for what should change, none chosen to start', () => {
+    renderDialog();
+
+    const chips = within(
+      screen.getByRole('group', { name: /what should change/i }),
+    ).getAllByRole('button');
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      'Too easy',
+      'Too hard',
+      'Shorter',
+      'Longer',
+      'More examples',
+      'More practice',
+      'Explain it differently',
+      'More real-world use',
+      'Just write it differently',
+    ]);
+    for (const chip of chips) {
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('regenerates once a chip or some text says what should change', async () => {
+    renderDialog();
+    const user = userEvent.setup();
+    const regenerate = screen.getByRole('button', { name: 'Regenerate' });
+    expect(regenerate).toBeDisabled();
+
+    await user.type(
+      screen.getByRole('textbox', { name: /in your own words/i }),
+      '  ',
+    );
+    expect(regenerate).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Shorter' }));
+    expect(regenerate).toBeEnabled();
+  });
+
+  it('sends the chips chosen with the text that adds detail', async () => {
     renderDialog();
     const user = userEvent.setup();
 
+    await user.click(screen.getByRole('button', { name: 'Too easy' }));
+    await user.click(screen.getByRole('button', { name: 'More examples' }));
     await user.type(
-      screen.getByRole('textbox', { name: /what should change/i }),
-      'More examples',
+      screen.getByRole('textbox', { name: /in your own words/i }),
+      'The formal greetings especially',
     );
     await user.click(screen.getByRole('button', { name: 'Regenerate' }));
 
     expect(mockRegenerate).toHaveBeenCalledWith({
       id: 'lesson-1',
-      feedback: 'More examples',
+      chips: ['TOO_EASY', 'MORE_EXAMPLES'],
+      feedback: 'The formal greetings especially',
     });
   });
 
-  it('rewrites the lesson without feedback, which is optional', async () => {
+  it('lets one of a pair of opposites be chosen at a time', async () => {
     renderDialog();
     const user = userEvent.setup();
+    const easy = screen.getByRole('button', { name: 'Too easy' });
+    const hard = screen.getByRole('button', { name: 'Too hard' });
 
-    await user.click(screen.getByRole('button', { name: 'Regenerate' }));
+    await user.click(easy);
+    await user.click(hard);
 
-    expect(mockRegenerate).toHaveBeenCalledWith({ id: 'lesson-1' });
+    expect(easy).toHaveAttribute('aria-pressed', 'false');
+    expect(hard).toHaveAttribute('aria-pressed', 'true');
+    await user.click(hard);
+    expect(hard).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows the new version and closes once it is written', () => {

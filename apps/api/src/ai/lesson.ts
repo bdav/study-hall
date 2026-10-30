@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { type ExerciseEvaluation } from '@prisma/client';
 import { type CourseSetup, formatCourseSetup } from './syllabus.js';
 
 /** Sonnet-class model for generation (courses-plan.md, AI platform). */
 export const LESSON_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const LESSON_PROMPT_VERSION = 'lesson-v5';
+export const LESSON_PROMPT_VERSION = 'lesson-v6';
 
 const text = z.string().trim().min(1);
 
@@ -180,15 +181,74 @@ A lesson has:
 Teach only this lesson's objectives. Build on what earlier lessons taught, as their summaries describe, and leave material for later lessons in the syllabus to them. Fit the depth and tone to the learner's goal, prior knowledge and preferred depth.`;
 
 /**
- * A regeneration of a written lesson: the version it replaces, and the
- * learner's feedback, if any.
+ * What a learner can ask of a regeneration with a tap, each reaching the
+ * model as a fixed instruction (CHIP_INSTRUCTIONS).
+ */
+export const LESSON_FEEDBACK_CHIPS = [
+  'TOO_EASY',
+  'TOO_HARD',
+  'SHORTER',
+  'LONGER',
+  'MORE_EXAMPLES',
+  'MORE_PRACTICE',
+  'EXPLAIN_DIFFERENTLY',
+  'MORE_REAL_WORLD',
+  'FRESH_TAKE',
+] as const;
+
+export type LessonFeedbackChip = (typeof LESSON_FEEDBACK_CHIPS)[number];
+
+export const lessonFeedbackChipSchema = z.enum(LESSON_FEEDBACK_CHIPS);
+
+/** Chips asking for opposite things: a learner picks one of each pair. */
+export const OPPOSITE_CHIPS: [LessonFeedbackChip, LessonFeedbackChip][] = [
+  ['TOO_EASY', 'TOO_HARD'],
+  ['SHORTER', 'LONGER'],
+];
+
+const CHIP_INSTRUCTIONS: Record<LessonFeedbackChip, string> = {
+  TOO_EASY:
+    'Make it harder: assume more of what earlier lessons taught, go further into the objectives, and make the exercises demand more, such as recall rather than recognition.',
+  TOO_HARD:
+    'Make it easier: explain each idea in smaller steps, assume less, and start the exercises gently.',
+  SHORTER:
+    'Make it shorter: fewer, tighter sections, keeping what the objectives need.',
+  LONGER: 'Make it longer: more depth in each section, and more of each part.',
+  MORE_EXAMPLES:
+    'More examples: show each idea in use more often, each with its explanation.',
+  MORE_PRACTICE: 'More practice: more exercises, covering every objective.',
+  EXPLAIN_DIFFERENTLY:
+    'Explain it differently: a new way into the same ideas, with other explanations and comparisons.',
+  MORE_REAL_WORLD:
+    'More real-world use: tie the ideas to situations the learner will meet, in the examples and the exercises.',
+  FRESH_TAKE:
+    'Write it again afresh: in other words, with other examples and exercises, teaching the same objectives.',
+};
+
+/** How each Exercise Attempt evaluation reads to the model. */
+const RESULTS: Record<ExerciseEvaluation, string> = {
+  CORRECT: 'right',
+  PARTIALLY_CORRECT: 'partly right',
+  INCORRECT: 'wrong',
+};
+
+/**
+ * A regeneration of a written lesson: the version it replaces, with the
+ * learner's latest result on each exercise since any Start over, and what
+ * they asked for, by chip and in their own words.
  */
 export type LessonRegeneration = {
   replacing: {
     content: LessonOutput['content'];
     examples: LessonOutput['examples'];
-    exercises: { type: string; prompt: string; expected: string[] }[];
+    exercises: {
+      type: string;
+      prompt: string;
+      expected: string[];
+      result: ExerciseEvaluation | null;
+    }[];
   };
+  chips: LessonFeedbackChip[];
   feedback: string | null;
 };
 
@@ -230,11 +290,12 @@ export function buildLessonPrompt(
 /** The version a regeneration replaces, and what the learner asked for. */
 function describeRegeneration({
   replacing,
+  chips,
   feedback,
 }: LessonRegeneration): string[] {
   return [
     '',
-    'The learner has read this lesson and asked for it to be written again. The version they read:',
+    'The learner has read this lesson and asked for it to be written again. The version they read, with how their latest answer to each exercise went:',
     '<replaced_version>',
     ...replacing.content.flatMap(({ heading, paragraphs }) => [
       `## ${heading}`,
@@ -246,20 +307,25 @@ function describeRegeneration({
       `  Explanation: ${explanation}`,
     ]),
     '## Exercises',
-    ...replacing.exercises.flatMap(({ type, prompt, expected }) => [
+    ...replacing.exercises.flatMap(({ type, prompt, expected, result }) => [
       `- ${type}: ${prompt}`,
-      ...(expected.length > 0 ? [`  Expected: ${expected.join(' / ')}`] : []),
+      `  Expected: ${expected.length > 0 ? expected.join(' / ') : 'none recorded'}`,
+      `  Learner's latest result: ${result ? RESULTS[result] : 'not tried'}`,
     ]),
     '</replaced_version>',
     '',
-    ...(feedback
+    ...(chips.length > 0
       ? [
-          "The learner's feedback:",
-          `<feedback>${feedback}</feedback>`,
-          "Write the lesson again, following their feedback. Keep what it doesn't ask to change, and write new exercises.",
+          'What the learner asked for:',
+          ...chips.map((chip) => `- ${CHIP_INSTRUCTIONS[chip]}`),
         ]
-      : [
-          'The learner gave no feedback. Write the lesson again afresh, in other words and with other examples and exercises, teaching the same objectives.',
-        ]),
+      : []),
+    ...(feedback
+      ? ['In their words:', `<feedback>${feedback}</feedback>`]
+      : []),
+    // A fresh take keeps nothing on purpose; anything else is a correction
+    chips.includes('FRESH_TAKE')
+      ? 'Write the lesson again, following what they asked for and weighing it against their results, and write new exercises.'
+      : "Write the lesson again, following what they asked for and weighing it against their results. Keep what they didn't ask to change, and write new exercises.",
   ];
 }

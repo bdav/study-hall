@@ -178,7 +178,7 @@ describe('lessonRouter', () => {
       });
       expect(version).toMatchObject({
         model: 'claude-sonnet-5-5',
-        promptVersion: 'lesson-v5',
+        promptVersion: 'lesson-v6',
       });
       expect(
         version.exercises.map(
@@ -696,24 +696,158 @@ describe('Regenerating a lesson', () => {
     const greetings = await writtenLesson();
 
     ai.respondWith(rewrittenOutput());
-    await createCaller().lesson.regenerate({ id: greetings.id });
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      chips: ['FRESH_TAKE'],
+    });
 
     const { prompt } = ai.requests.at(-1)!;
     expect(prompt).toContain('Buongiorno, come stai?');
     expect(prompt).toContain('It greets someone in the evening');
   });
 
-  it('writes afresh when the learner gives no feedback, storing none', async () => {
+  it('writes afresh from the Just write it differently chip, storing no text', async () => {
     const greetings = await writtenLesson();
 
     ai.respondWith(rewrittenOutput());
-    await createCaller().lesson.regenerate({ id: greetings.id, feedback: ' ' });
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      chips: ['FRESH_TAKE'],
+    });
 
     const { prompt } = ai.requests.at(-1)!;
     expect(prompt).toContain('Saying hello');
-    expect(prompt).toMatch(/gave no feedback/);
-    const versions = await prisma.lessonVersion.findMany();
-    expect(versions.map((version) => version.feedback)).toEqual([null, null]);
+    expect(prompt).toMatch(/in other words, with other examples/);
+    const versions = await prisma.lessonVersion.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(
+      versions.map(({ feedback, feedbackChips }) => ({
+        feedback,
+        feedbackChips,
+      })),
+    ).toEqual([
+      { feedback: null, feedbackChips: [] },
+      { feedback: null, feedbackChips: ['FRESH_TAKE'] },
+    ]);
+  });
+
+  it('sends each chip as its instruction, with the text that adds detail', async () => {
+    const greetings = await writtenLesson();
+
+    ai.respondWith(rewrittenOutput());
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      chips: ['TOO_EASY', 'MORE_EXAMPLES'],
+      feedback: 'The formal greetings especially',
+    });
+
+    const { prompt } = ai.requests.at(-1)!;
+    expect(prompt).toMatch(/Make it harder/);
+    expect(prompt).toMatch(/More examples/);
+    expect(prompt).toContain('The formal greetings especially');
+    expect(
+      (await prisma.lessonVersion.findFirst({ orderBy: { createdAt: 'desc' } }))
+        ?.feedbackChips,
+    ).toEqual(['TOO_EASY', 'MORE_EXAMPLES']);
+  });
+
+  it("sends the learner's results on the version it replaces", async () => {
+    const greetings = await writtenLesson();
+    const caller = createCaller();
+    const { version } = await caller.lesson.getById({ id: greetings.id });
+    const [goodMorning, howAreYou] = version!.exercises;
+    await caller.exercise.submitAttempt({
+      exerciseId: goodMorning.id,
+      answer: 'Buongiorno',
+    });
+    ai.respondWith({ evaluation: 'INCORRECT', feedback: 'Not quite.' });
+    await caller.exercise.submitAttempt({
+      exerciseId: howAreYou.id,
+      answer: 'Ciao',
+    });
+
+    ai.respondWith(rewrittenOutput());
+    await caller.lesson.regenerate({ id: greetings.id, chips: ['TOO_EASY'] });
+
+    const { prompt } = ai.requests.at(-1)!;
+    expect(prompt).toMatch(
+      /Translate: Good morning\n.*\n\s*Learner's latest result: right/,
+    );
+    expect(prompt).toMatch(
+      /Translate: Good morning, how are you\?\n.*\n\s*Learner's latest result: wrong/,
+    );
+    expect(prompt).toMatch(
+      /___, Marco!\n.*\n\s*Learner's latest result: not tried/,
+    );
+  });
+
+  it('leaves out answers given before the learner started over', async () => {
+    const greetings = await writtenLesson();
+    const caller = createCaller();
+    const { version } = await caller.lesson.getById({ id: greetings.id });
+    await caller.exercise.submitAttempt({
+      exerciseId: version!.exercises[0].id,
+      answer: 'Buongiorno',
+    });
+    await caller.lesson.startOver({ id: greetings.id });
+
+    ai.respondWith(rewrittenOutput());
+    await caller.lesson.regenerate({ id: greetings.id, chips: ['TOO_EASY'] });
+
+    const { prompt } = ai.requests.at(-1)!;
+    expect(prompt).not.toMatch(/Learner's latest result: right/);
+    expect(prompt).toMatch(
+      /Translate: Good morning\n.*\n\s*Learner's latest result: not tried/,
+    );
+  });
+
+  it("doesn't ask a fresh take to keep what wasn't asked about", async () => {
+    const greetings = await writtenLesson();
+
+    ai.respondWith(rewrittenOutput());
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      chips: ['FRESH_TAKE'],
+    });
+
+    const { prompt } = ai.requests.at(-1)!;
+    expect(prompt).not.toMatch(/Keep what they didn't ask to change/);
+  });
+
+  it('sends the words alone when no chip is chosen', async () => {
+    const greetings = await writtenLesson();
+
+    ai.respondWith(rewrittenOutput());
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      feedback: 'More on formal greetings',
+    });
+
+    const { prompt } = ai.requests.at(-1)!;
+    expect(prompt).not.toMatch(/What the learner asked for:\n(?!- )/);
+    expect(prompt).toContain('<feedback>More on formal greetings</feedback>');
+  });
+
+  it('refuses a regeneration with neither chip nor text, or both of a pair', async () => {
+    const greetings = await writtenLesson();
+    const caller = createCaller();
+    const requestsBefore = ai.requests.length;
+
+    for (const input of [
+      { id: greetings.id },
+      { id: greetings.id, feedback: '  ' },
+      { id: greetings.id, chips: ['TOO_EASY', 'TOO_HARD'] as const },
+      { id: greetings.id, chips: ['SHORTER', 'LONGER'] as const },
+    ]) {
+      await expect(
+        caller.lesson.regenerate({
+          ...input,
+          chips: input.chips && [...input.chips],
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+    }
+    expect(ai.requests).toHaveLength(requestsBefore);
   });
 
   it('refuses while the lesson is being written, without calling the model', async () => {
@@ -725,7 +859,10 @@ describe('Regenerating a lesson', () => {
     });
 
     await expect(
-      createCaller().lesson.regenerate({ id: greetings.id }),
+      createCaller().lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }));
     expect(ai.requests).toHaveLength(requestsBefore);
   });
@@ -737,7 +874,7 @@ describe('Regenerating a lesson', () => {
     await caller.tutor.startThread({ lessonId: greetings.id });
 
     ai.respondWith(rewrittenOutput());
-    await caller.lesson.regenerate({ id: greetings.id });
+    await caller.lesson.regenerate({ id: greetings.id, chips: ['FRESH_TAKE'] });
 
     expect(
       (await caller.tutor.thread({ lessonId: greetings.id })).threads,
@@ -765,7 +902,7 @@ describe('Regenerating a lesson', () => {
     ]);
     expect(versions[1]).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'lesson-v5',
+      promptVersion: 'lesson-v6',
     });
   });
 
@@ -779,7 +916,10 @@ describe('Regenerating a lesson', () => {
     });
 
     ai.respondWith(rewrittenOutput());
-    const lesson = await caller.lesson.regenerate({ id: greetings.id });
+    const lesson = await caller.lesson.regenerate({
+      id: greetings.id,
+      chips: ['FRESH_TAKE'],
+    });
 
     expect(
       lesson.version?.exercises.map((exercise) => exercise.latestAttempt),
@@ -795,7 +935,10 @@ describe('Regenerating a lesson', () => {
     const greetings = await writtenLesson();
 
     ai.respondWith(rewrittenOutput());
-    await createCaller().lesson.regenerate({ id: greetings.id });
+    await createCaller().lesson.regenerate({
+      id: greetings.id,
+      chips: ['FRESH_TAKE'],
+    });
 
     const usage = await prisma.aiUsage.findMany({
       where: { purpose: 'LESSON_GENERATION' },
@@ -809,7 +952,10 @@ describe('Regenerating a lesson', () => {
     const requestsBefore = ai.requests.length;
 
     await expect(
-      createCaller().lesson.regenerate({ id: greetings.id }),
+      createCaller().lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
     expect(ai.requests).toHaveLength(requestsBefore);
   });
@@ -818,7 +964,10 @@ describe('Regenerating a lesson', () => {
     const [greetings] = await createCourseWithLessons();
 
     await expect(
-      createCaller().lesson.regenerate({ id: greetings.id }),
+      createCaller().lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'PRECONDITION_FAILED' }));
     expect(ai.requests).toHaveLength(0);
   });
@@ -832,7 +981,10 @@ describe('Regenerating a lesson', () => {
       data: { archivedAt: new Date() },
     });
     await expect(
-      createCaller().lesson.regenerate({ id: greetings.id }),
+      createCaller().lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'PRECONDITION_FAILED' }));
 
     await prisma.lesson.update({
@@ -841,7 +993,10 @@ describe('Regenerating a lesson', () => {
     });
     await prisma.course.updateMany({ data: { archivedAt: new Date() } });
     await expect(
-      createCaller().lesson.regenerate({ id: greetings.id }),
+      createCaller().lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'PRECONDITION_FAILED' }));
     expect(ai.requests).toHaveLength(requestsBefore);
   });
@@ -853,7 +1008,7 @@ describe('Regenerating a lesson', () => {
 
     ai.failWith('timeout');
     await expect(
-      caller.lesson.regenerate({ id: greetings.id }),
+      caller.lesson.regenerate({ id: greetings.id, chips: ['FRESH_TAKE'] }),
     ).rejects.toThrow(expect.objectContaining({ code: 'BAD_GATEWAY' }));
     expect(
       (await caller.lesson.getById({ id: greetings.id })).version?.id,
@@ -861,7 +1016,7 @@ describe('Regenerating a lesson', () => {
 
     ai.respondWith(rewrittenOutput());
     await expect(
-      caller.lesson.regenerate({ id: greetings.id }),
+      caller.lesson.regenerate({ id: greetings.id, chips: ['FRESH_TAKE'] }),
     ).resolves.toMatchObject({ title: 'Greetings' });
   });
 
@@ -869,7 +1024,10 @@ describe('Regenerating a lesson', () => {
     const greetings = await writtenLesson();
 
     await expect(
-      createCaller(otherUserId).lesson.regenerate({ id: greetings.id }),
+      createCaller(otherUserId).lesson.regenerate({
+        id: greetings.id,
+        chips: ['FRESH_TAKE'],
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }));
   });
 });

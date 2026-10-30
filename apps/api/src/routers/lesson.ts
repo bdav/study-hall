@@ -14,6 +14,8 @@ import {
   parseLessonContent,
   parseLessonExamples,
   type LessonRegeneration,
+  lessonFeedbackChipSchema,
+  OPPOSITE_CHIPS,
 } from '../ai/lesson.js';
 import {
   buildCardProposalPrompt,
@@ -296,6 +298,7 @@ async function writeLessonVersion(
         examples: output.examples,
         summary: output.summary,
         feedback: regeneration?.feedback ?? null,
+        feedbackChips: regeneration?.chips ?? [],
         model,
         promptVersion,
         exercises: {
@@ -372,10 +375,23 @@ export const lessonRouter = router({
    */
   regenerate: aiProcedure
     .input(
-      z.object({
-        id: z.string(),
-        feedback: z.string().trim().max(MAX_FEEDBACK_LENGTH).optional(),
-      }),
+      z
+        .object({
+          id: z.string(),
+          chips: z.array(lessonFeedbackChipSchema).default([]),
+          feedback: z.string().trim().max(MAX_FEEDBACK_LENGTH).optional(),
+        })
+        .refine((input) => input.chips.length > 0 || Boolean(input.feedback), {
+          message: 'Choose what should change, or say it',
+        })
+        .refine(
+          ({ chips }) =>
+            new Set(chips).size === chips.length &&
+            !OPPOSITE_CHIPS.some(
+              ([one, other]) => chips.includes(one) && chips.includes(other),
+            ),
+          { message: 'Choose each chip once, and one of each pair' },
+        ),
     )
     .mutation(async ({ ctx, input }) => {
       const lesson = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);
@@ -415,8 +431,11 @@ export const lessonRouter = router({
                   ...exercise.essentialPoints,
                   ...exercise.expectedPoints,
                 ],
+                // The latest answer since any Start over
+                result: exercise.attempts[0]?.evaluation ?? null,
               })),
             },
+            chips: input.chips,
             feedback: input.feedback || null,
           });
         },
