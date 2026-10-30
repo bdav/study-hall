@@ -5,18 +5,21 @@ import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { continueTarget, lessonStatus } from '../services/syllabus.js';
 import { countDueAndNewCards } from '../services/studySessions.js';
 import { generateStructured } from '../ai/generate.js';
+import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
 import {
   buildSyllabusPrompt,
   courseSetupSchema,
+  OPPOSITE_SYLLABUS_CHIPS,
+  parseFeedbackRounds,
   parseProposalLessons,
   proposalEditSchema,
   lessonTitleSchema,
-  MAX_FEEDBACK_LENGTH,
   MAX_LESSONS,
   objectivesSchema,
   SYLLABUS_MODEL,
   SYLLABUS_PROMPT_VERSION,
   SYLLABUS_SYSTEM_PROMPT,
+  syllabusFeedbackChipSchema,
   syllabusOutputSchema,
 } from '../ai/syllabus.js';
 
@@ -238,6 +241,7 @@ export const courseRouter = router({
         proposal: proposal && {
           ...proposal,
           lessons: parseProposalLessons(proposal.lessons),
+          feedback: parseFeedbackRounds(proposal.feedback),
         },
       };
     }),
@@ -338,16 +342,25 @@ export const courseRouter = router({
     }),
 
   /**
-   * Regenerates a Syllabus Proposal from the learner's feedback: the model
-   * gets the setup answers, every piece of feedback so far and the proposal
-   * as the learner left it, and its answer replaces the proposal.
+   * Regenerates a Syllabus Proposal from the learner's feedback, chips and
+   * words: the model gets the setup answers, every round of feedback so far
+   * and the proposal as the learner left it, and its answer replaces the
+   * proposal.
    */
   regenerateProposal: aiProcedure
     .input(
-      z.object({
-        courseId: z.string(),
-        feedback: z.string().trim().min(1).max(MAX_FEEDBACK_LENGTH),
-      }),
+      z
+        .object({
+          courseId: z.string(),
+          chips: z.array(syllabusFeedbackChipSchema).default([]),
+          feedback: z.string().trim().max(MAX_FEEDBACK_LENGTH).optional(),
+        })
+        .refine((input) => input.chips.length > 0 || Boolean(input.feedback), {
+          message: 'Choose what should change, or say it',
+        })
+        .refine(({ chips }) => isChipChoice(chips, OPPOSITE_SYLLABUS_CHIPS), {
+          message: 'Choose each chip once, and one of each pair',
+        }),
     )
     .mutation(async ({ ctx, input }) => {
       const course = await ctx.prisma.course.findUnique({
@@ -362,7 +375,10 @@ export const courseRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: ACCEPTED_MESSAGE });
       }
 
-      const feedback = [...course.proposal.feedback, input.feedback];
+      const feedback = [
+        ...parseFeedbackRounds(course.proposal.feedback),
+        { chips: input.chips, text: input.feedback || null },
+      ];
       const { output, model, promptVersion } = await generateStructured(ctx, {
         userId: ctx.userId,
         purpose: 'SYLLABUS_GENERATION',

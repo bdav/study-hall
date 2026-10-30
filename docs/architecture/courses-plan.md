@@ -118,7 +118,7 @@ Rules:
 - **Course creation:**
   - A structured form: topic, goal or target level, prior knowledge, time per week, preferred depth and free-text notes.
   - One generation call then produces a **Syllabus Proposal**.
-  - While it's a proposal, the learner can rename, reorder, add and remove lessons, edit learning objectives, and regenerate with written feedback.
+  - While it's a proposal, the learner can rename, reorder, add and remove lessons, edit learning objectives, and regenerate with feedback: chips for the common corrections and their own words.
   - Accepting it creates the Syllabus and Lessons. After that, edits are by hand only; AI-suggested syllabus changes come later.
 - **Lessons are lesson-driven:** stored, structured content the learner works through in steps, with the tutor in a side panel (**Lesson layout** below). A lesson is generated the first time it's opened. Revisiting it never regenerates.
 - **Lesson generation context:**

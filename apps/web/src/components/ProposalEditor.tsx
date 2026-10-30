@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { Loader2, Trash2 } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { FeedbackChips } from '@/components/FeedbackChips';
 import { WritingLoader } from '@/components/WritingLoader';
 import {
   AddField,
@@ -12,7 +15,11 @@ import {
   type LessonFields,
 } from '@/components/EditableLessonList';
 import { glassInputClassName } from '@/lib/utils';
-import { MAX_FEEDBACK_LENGTH } from '@/lib/feedback';
+import {
+  chipLabels,
+  MAX_FEEDBACK_LENGTH,
+  type ChipGroups,
+} from '@/lib/feedback';
 
 /** A proposed lesson: it doesn't exist yet, so it has no id or progress. */
 export type ProposedLesson = LessonFields;
@@ -26,6 +33,37 @@ function withKeys(lessons: ProposedLesson[]): KeyedLesson[] {
   return lessons.map((lesson) => ({ key: `lesson-${++lastKey}`, lesson }));
 }
 
+type SyllabusFeedbackChip = NonNullable<
+  inferRouterInputs<AppRouter>['course']['regenerateProposal']['chips']
+>[number];
+
+/** One regeneration's feedback: the chips chosen and the learner's words. */
+export type FeedbackRound = NonNullable<
+  inferRouterOutputs<AppRouter>['course']['getById']['proposal']
+>['feedback'][number];
+
+/** The chips, in the order shown, by their labels. */
+const CHIP_GROUPS: ChipGroups<SyllabusFeedbackChip> = [
+  [
+    { chip: 'FEWER_LESSONS', label: 'Fewer lessons' },
+    { chip: 'MORE_LESSONS', label: 'More lessons' },
+  ],
+  [
+    { chip: 'START_EASIER', label: 'Start easier' },
+    { chip: 'START_FURTHER_ALONG', label: 'Start further along' },
+  ],
+  [{ chip: 'MORE_PRACTICAL', label: 'More practical' }],
+  [{ chip: 'MORE_IN_DEPTH', label: 'More in depth' }],
+];
+
+const CHIP_LABELS = chipLabels(CHIP_GROUPS);
+
+/** A round of feedback as the learner gave it: chips by label, then words. */
+function describeRound({ chips, text }: FeedbackRound) {
+  const labels = chips.map((chip) => CHIP_LABELS.get(chip) ?? chip).join(', ');
+  return [labels, text].filter(Boolean).join(' — ');
+}
+
 function sameLessons(a: ProposedLesson[], b: ProposedLesson[]) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -35,7 +73,7 @@ interface ProposalEditorProps {
   courseTitle: string;
   lessons: ProposedLesson[];
   /** The learner's feedback on each regeneration so far, oldest first. */
-  feedback: string[];
+  feedback: FeedbackRound[];
   onAccept: () => void;
   isAccepting: boolean;
   /**
@@ -52,8 +90,8 @@ interface ProposalEditorProps {
  * A Syllabus Proposal the learner shapes before accepting it: lessons
  * renamed, dragged into a new order, removed and added, and their
  * objectives edited, each change saved as it's made, so the proposal is
- * always as they left it. Or they ask for a new proposal with written
- * feedback, which builds on it.
+ * always as they left it. Or they ask for a new proposal, saying what
+ * should change with chips and in their own words, which builds on it.
  */
 export function ProposalEditor({
   courseId,
@@ -67,7 +105,9 @@ export function ProposalEditor({
   isDiscarding,
 }: ProposalEditorProps) {
   const utils = trpc.useUtils();
+  const [chips, setChips] = useState<SyllabusFeedbackChip[]>([]);
   const [newFeedback, setNewFeedback] = useState('');
+  const text = newFeedback.trim();
 
   // The lessons as the learner has left them, shown at once while each
   // change saves. They follow the proposal only when it changes to
@@ -115,16 +155,21 @@ export function ProposalEditor({
 
   function handleRegenerate(e: FormEvent) {
     e.preventDefault();
-    const text = newFeedback.trim();
-    if (!text) return;
+    if (chips.length === 0 && !text) return;
     regenerate.mutate(
-      { courseId, feedback: text },
-      { onSuccess: () => setNewFeedback('') },
+      text ? { courseId, chips, feedback: text } : { courseId, chips },
+      {
+        onSuccess: () => {
+          setChips([]);
+          setNewFeedback('');
+        },
+      },
     );
   }
 
   // Nothing of this proposal to edit, accept or discard while its
-  // replacement is written; the feedback typed stays, should it fail
+  // replacement is written; the chips and feedback typed stay, should it
+  // fail
   if (isRegenerating) {
     return (
       <WritingLoader
@@ -174,13 +219,10 @@ export function ProposalEditor({
         onSubmit={handleRegenerate}
         className="mt-8 rounded-xl border border-white/20 bg-white/5 p-4"
       >
-        <label htmlFor="proposal-feedback" className="font-semibold">
-          Ask for a new proposal
-        </label>
+        <h3 className="font-semibold">Ask for a new proposal</h3>
         <p className="mt-1 text-sm text-white/60">
-          Say what to change, such as &ldquo;more focus on the past
-          tense&rdquo;. The new proposal builds on this one, your edits
-          included, and replaces it.
+          Say what should change. The new proposal builds on this one, your
+          edits included, and replaces it.
         </p>
         {feedback.length > 0 && (
           <>
@@ -191,12 +233,26 @@ export function ProposalEditor({
               aria-labelledby="feedback-so-far"
               className="mt-1 list-decimal space-y-0.5 pl-6 text-sm text-white/80"
             >
-              {feedback.map((item, index) => (
-                <li key={index}>{item}</li>
+              {feedback.map((round, index) => (
+                <li key={index}>{describeRound(round)}</li>
               ))}
             </ol>
           </>
         )}
+        <div className="mt-3">
+          <FeedbackChips
+            groups={CHIP_GROUPS}
+            chosen={chips}
+            onChange={setChips}
+            disabled={isBusy}
+          />
+        </div>
+        <label
+          htmlFor="proposal-feedback"
+          className="mt-4 block text-sm font-medium text-white/80"
+        >
+          In your own words (optional)
+        </label>
         <textarea
           id="proposal-feedback"
           value={newFeedback}
@@ -204,7 +260,8 @@ export function ProposalEditor({
           maxLength={MAX_FEEDBACK_LENGTH}
           rows={3}
           disabled={isBusy}
-          className={`mt-3 w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
+          placeholder="More on the past tense…"
+          className={`mt-1 w-full rounded-lg border px-2.5 py-1.5 text-base outline-none md:text-sm ${glassInputClassName}`}
         />
         {regenerate.error && (
           <p className="mt-2 text-sm text-destructive">
@@ -217,7 +274,7 @@ export function ProposalEditor({
         )}
         <button
           type="submit"
-          disabled={isActionBlocked || !newFeedback.trim()}
+          disabled={isActionBlocked || (chips.length === 0 && !text)}
           className="mt-2 flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
         >
           {isRegenerating && <Loader2 className="size-4 animate-spin" />}

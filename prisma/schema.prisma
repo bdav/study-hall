@@ -342,8 +342,9 @@ model SyllabusProposal {
   // Ordered lessons: [{ title, objectives: string[] }], as the learner left
   // them; a lesson they added may have no objectives yet
   lessons       Json
-  // The learner's feedback on each regeneration, oldest first
-  feedback      String[]  @default([])
+  // The learner's feedback on each regeneration, oldest first: a list of
+  // rounds, [{ chips: string[], text: string | null }]
+  feedback      Json      @default("[]")
   model         String
   promptVersion String
   acceptedAt    DateTime?

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { syllabusOutputSchema } from './syllabus.js';
+import { parseFeedbackRounds, syllabusOutputSchema } from './syllabus.js';
 
 const validOutput = {
   lessons: [
@@ -52,5 +52,24 @@ describe('syllabusOutputSchema', () => {
       title: 'Greetings',
       objectives: ['Say hello'],
     });
+  });
+});
+
+describe('parseFeedbackRounds', () => {
+  it('reads stored rounds, oldest first', () => {
+    const rounds = [
+      { chips: [], text: 'More on the past tense' },
+      { chips: ['FEWER_LESSONS', 'MORE_PRACTICAL'], text: null },
+    ];
+
+    expect(parseFeedbackRounds(rounds)).toEqual(rounds);
+  });
+
+  it('passes over a chip no longer offered, so an old round still reads', () => {
+    expect(
+      parseFeedbackRounds([
+        { chips: ['RETIRED_CHIP', 'MORE_IN_DEPTH'], text: null },
+      ]),
+    ).toEqual([{ chips: ['MORE_IN_DEPTH'], text: null }]);
   });
 });

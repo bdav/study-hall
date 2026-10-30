@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { Check } from 'lucide-react';
 import type { inferRouterInputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { Button } from '@/components/ui/button';
@@ -12,7 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { glassDialogClassName, glassInputClassName } from '@/lib/utils';
-import { MAX_FEEDBACK_LENGTH } from '@/lib/feedback';
+import { MAX_FEEDBACK_LENGTH, type ChipGroups } from '@/lib/feedback';
+import { FeedbackChips } from '@/components/FeedbackChips';
 
 type RegenerateInput = inferRouterInputs<AppRouter>['lesson']['regenerate'];
 export type LessonFeedbackChip = NonNullable<RegenerateInput['chips']>[number];
@@ -20,11 +20,8 @@ export type LessonFeedbackChip = NonNullable<RegenerateInput['chips']>[number];
 /** What the learner asks of a regeneration. */
 export type LessonFeedback = Omit<RegenerateInput, 'id'>;
 
-/**
- * The chips, in the order shown, by their labels. A pair asks for opposite
- * things, so choosing one deselects the other; the API checks it too.
- */
-const CHIP_GROUPS: { chip: LessonFeedbackChip; label: string }[][] = [
+/** The chips, in the order shown, by their labels. */
+const CHIP_GROUPS: ChipGroups<LessonFeedbackChip> = [
   [
     { chip: 'TOO_EASY', label: 'Too easy' },
     { chip: 'TOO_HARD', label: 'Too hard' },
@@ -39,8 +36,6 @@ const CHIP_GROUPS: { chip: LessonFeedbackChip; label: string }[][] = [
   [{ chip: 'MORE_REAL_WORLD', label: 'More real-world use' }],
   [{ chip: 'FRESH_TAKE', label: 'Just write it differently' }],
 ];
-
-const ALL_CHIPS = CHIP_GROUPS.flat().map(({ chip }) => chip);
 
 /**
  * Asks what should change before a written lesson is regenerated: chips for
@@ -62,22 +57,6 @@ export function RegenerateLessonDialog({
   const [chips, setChips] = useState<LessonFeedbackChip[]>([]);
   const [feedback, setFeedback] = useState('');
   const text = feedback.trim();
-
-  /** Chooses or unchooses a chip, its opposite giving way; in display order. */
-  function toggle(
-    chip: LessonFeedbackChip,
-    group: { chip: LessonFeedbackChip }[],
-  ) {
-    setChips((chosen) => {
-      const next = chosen.includes(chip)
-        ? chosen.filter((other) => other !== chip)
-        : [
-            ...chosen.filter((other) => !group.some((g) => g.chip === other)),
-            chip,
-          ];
-      return ALL_CHIPS.filter((other) => next.includes(other));
-    });
-  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -102,38 +81,11 @@ export function RegenerateLessonDialog({
           </DialogDescription>
         </DialogHeader>
         <form id="regenerate-lesson" onSubmit={handleSubmit}>
-          <div role="group" aria-labelledby="regenerate-chips-label">
-            <p
-              id="regenerate-chips-label"
-              className="text-sm font-medium text-white/80"
-            >
-              What should change?
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {CHIP_GROUPS.flatMap((group) =>
-                group.map(({ chip, label }) => {
-                  const isChosen = chips.includes(chip);
-                  return (
-                    <button
-                      key={chip}
-                      type="button"
-                      aria-pressed={isChosen}
-                      onClick={() => toggle(chip, group)}
-                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                        isChosen
-                          ? 'border-white/80 bg-white/25 text-white'
-                          : 'border-white/25 text-white/75 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {/* Chosen shows by more than colour */}
-                      {isChosen && <Check className="size-3.5" aria-hidden />}
-                      {label}
-                    </button>
-                  );
-                }),
-              )}
-            </div>
-          </div>
+          <FeedbackChips
+            groups={CHIP_GROUPS}
+            chosen={chips}
+            onChange={setChips}
+          />
           <label
             htmlFor="regenerate-feedback"
             className="mt-4 block text-sm font-medium text-white/80"

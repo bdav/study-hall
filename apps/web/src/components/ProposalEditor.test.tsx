@@ -313,30 +313,97 @@ describe('ProposalEditor', () => {
   });
 
   describe('regenerating', () => {
-    it('asks for a new proposal with the feedback written', async () => {
+    it('offers chips for what should change, none chosen to start', () => {
+      renderEditor();
+
+      const chips = within(
+        screen.getByRole('group', { name: /what should change/i }),
+      ).getAllByRole('button');
+      expect(chips.map((chip) => chip.textContent)).toEqual([
+        'Fewer lessons',
+        'More lessons',
+        'Start easier',
+        'Start further along',
+        'More practical',
+        'More in depth',
+      ]);
+      for (const chip of chips) {
+        expect(chip).toHaveAttribute('aria-pressed', 'false');
+      }
+    });
+
+    it('regenerates once a chip or some text says what should change', async () => {
       renderEditor();
       const user = userEvent.setup();
       const regenerate = screen.getByRole('button', { name: 'Regenerate' });
       expect(regenerate).toBeDisabled();
 
       await user.type(
-        screen.getByRole('textbox', { name: /ask for a new proposal/i }),
-        'More focus on the past tense',
+        screen.getByRole('textbox', { name: /in your own words/i }),
+        '  ',
       );
+      expect(regenerate).toBeDisabled();
+
+      await user.click(screen.getByRole('button', { name: 'More practical' }));
+      expect(regenerate).toBeEnabled();
       await user.click(regenerate);
 
       expect(mockRegenerate).toHaveBeenCalledWith(
-        { courseId: 'course-1', feedback: 'More focus on the past tense' },
+        { courseId: 'course-1', chips: ['MORE_PRACTICAL'] },
         expect.anything(),
       );
     });
 
-    it('clears the feedback once the new proposal is in', async () => {
+    it('asks with the chips chosen, in the order shown, and the words that add detail', async () => {
       renderEditor();
       const user = userEvent.setup();
-      const box = screen.getByRole('textbox', {
-        name: /ask for a new proposal/i,
-      });
+
+      await user.click(screen.getByRole('button', { name: 'More in depth' }));
+      await user.click(screen.getByRole('button', { name: 'Fewer lessons' }));
+      await user.type(
+        screen.getByRole('textbox', { name: /in your own words/i }),
+        'More on the past tense',
+      );
+      await user.click(screen.getByRole('button', { name: 'Regenerate' }));
+
+      expect(mockRegenerate).toHaveBeenCalledWith(
+        {
+          courseId: 'course-1',
+          chips: ['FEWER_LESSONS', 'MORE_IN_DEPTH'],
+          feedback: 'More on the past tense',
+        },
+        expect.anything(),
+      );
+    });
+
+    it('chooses one of each pair, the other giving way', async () => {
+      renderEditor();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Fewer lessons' }));
+      await user.click(screen.getByRole('button', { name: 'More lessons' }));
+      await user.click(screen.getByRole('button', { name: 'Start easier' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Start further along' }),
+      );
+      // Choosing it again unchooses it
+      await user.click(
+        screen.getByRole('button', { name: 'Start further along' }),
+      );
+
+      const pressed = within(
+        screen.getByRole('group', { name: /what should change/i }),
+      )
+        .getAllByRole('button', { pressed: true })
+        .map((chip) => chip.textContent);
+      expect(pressed).toEqual(['More lessons']);
+    });
+
+    it('clears the chips and words once the new proposal is in', async () => {
+      renderEditor();
+      const user = userEvent.setup();
+      const box = screen.getByRole('textbox', { name: /in your own words/i });
+      await user.click(screen.getByRole('button', { name: 'Fewer lessons' }));
       await user.type(box, 'Shorter');
       await user.click(screen.getByRole('button', { name: 'Regenerate' }));
 
@@ -346,17 +413,30 @@ describe('ProposalEditor', () => {
       act(() => options.onSuccess());
 
       expect(box).toHaveValue('');
+      expect(
+        screen.getByRole('button', { name: 'Fewer lessons' }),
+      ).toHaveAttribute('aria-pressed', 'false');
     });
 
-    it('lists the feedback given so far, oldest first', () => {
-      renderEditor({ feedback: ['More focus on the past tense', 'Shorter'] });
+    it("lists each round of feedback so far, oldest first, by its chips' labels and its words", () => {
+      renderEditor({
+        feedback: [
+          { chips: [], text: 'More focus on the past tense' },
+          { chips: ['FEWER_LESSONS', 'MORE_PRACTICAL'], text: 'Shorter' },
+          { chips: ['START_EASIER'], text: null },
+        ],
+      });
 
       const list = within(
         screen.getByRole('list', { name: /feedback so far/i }),
       );
       expect(
         list.getAllByRole('listitem').map((item) => item.textContent),
-      ).toEqual(['More focus on the past tense', 'Shorter']);
+      ).toEqual([
+        'More focus on the past tense',
+        'Fewer lessons, More practical — Shorter',
+        'Start easier',
+      ]);
     });
 
     it('shows a loader in place of the proposal while a new one is written', () => {
@@ -381,7 +461,7 @@ describe('ProposalEditor', () => {
       const { rerender } = renderEditor();
       const user = userEvent.setup();
       await user.type(
-        screen.getByRole('textbox', { name: /ask for a new proposal/i }),
+        screen.getByRole('textbox', { name: /in your own words/i }),
         'Shorter',
       );
 
@@ -405,7 +485,7 @@ describe('ProposalEditor', () => {
       );
 
       expect(
-        screen.getByRole('textbox', { name: /ask for a new proposal/i }),
+        screen.getByRole('textbox', { name: /in your own words/i }),
       ).toHaveValue('Shorter');
     });
 

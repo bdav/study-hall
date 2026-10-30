@@ -3,6 +3,7 @@ import { type Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { generateStructured } from '../ai/generate.js';
+import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
 import {
   assembleLessonContext,
   buildLessonPrompt,
@@ -25,7 +26,7 @@ import {
   cardProposalOutputSchema,
   cardProposalSchema,
 } from '../ai/cardProposal.js';
-import { courseSetupSchema, MAX_FEEDBACK_LENGTH } from '../ai/syllabus.js';
+import { courseSetupSchema } from '../ai/syllabus.js';
 import { continueTarget } from '../services/syllabus.js';
 import { startTutorThread } from '../services/tutorThreads.js';
 import { userCanUseAI } from '../ai/access.js';
@@ -386,14 +387,9 @@ export const lessonRouter = router({
         .refine((input) => input.chips.length > 0 || Boolean(input.feedback), {
           message: 'Choose what should change, or say it',
         })
-        .refine(
-          ({ chips }) =>
-            new Set(chips).size === chips.length &&
-            !OPPOSITE_CHIPS.some(
-              ([one, other]) => chips.includes(one) && chips.includes(other),
-            ),
-          { message: 'Choose each chip once, and one of each pair' },
-        ),
+        .refine(({ chips }) => isChipChoice(chips, OPPOSITE_CHIPS), {
+          message: 'Choose each chip once, and one of each pair',
+        }),
     )
     .mutation(async ({ ctx, input }) => {
       const lesson = await findOwnedLesson(ctx.prisma, ctx.userId, input.id);

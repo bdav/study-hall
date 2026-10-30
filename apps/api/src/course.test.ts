@@ -293,7 +293,7 @@ describe('courseRouter', () => {
       expect(course.proposal).toMatchObject({
         lessons: syllabus.lessons,
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v3',
+        promptVersion: 'syllabus-v4',
         acceptedAt: null,
         feedback: [],
       });
@@ -722,9 +722,9 @@ describe('courseRouter', () => {
       const { proposal } = await caller.course.getById({ id });
       expect(proposal).toMatchObject({
         lessons: regenerated.lessons,
-        feedback: ['More focus on the past tense'],
+        feedback: [{ chips: [], text: 'More focus on the past tense' }],
         model: 'claude-sonnet-5-5',
-        promptVersion: 'syllabus-v3',
+        promptVersion: 'syllabus-v4',
         acceptedAt: null,
       });
     });
@@ -764,9 +764,86 @@ describe('courseRouter', () => {
         second.indexOf('Fewer lessons'),
       );
       expect((await caller.course.getById({ id })).proposal?.feedback).toEqual([
-        'More focus on the past tense',
-        'Fewer lessons',
+        { chips: [], text: 'More focus on the past tense' },
+        { chips: [], text: 'Fewer lessons' },
       ]);
+    });
+
+    it('sends each chip as its instruction, with the words that add detail', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      ai.respondWith(regenerated);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        chips: ['FEWER_LESSONS', 'MORE_PRACTICAL'],
+        feedback: 'More on the past tense',
+      });
+
+      const { prompt } = ai.requests[1];
+      expect(prompt).toMatch(/fewer, larger lessons/i);
+      expect(prompt).toMatch(/practical/i);
+      expect(prompt).toContain('More on the past tense');
+      // Fixed instructions, not the chips' ids
+      expect(prompt).not.toContain('FEWER_LESSONS');
+      expect(prompt).not.toMatch(/more, smaller lessons/i);
+    });
+
+    it('sends every earlier round, chips and text, oldest first, and stores each', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+      ai.respondWith(regenerated);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        chips: ['START_EASIER'],
+        feedback: 'More on the past tense',
+      });
+
+      ai.respondWith(syllabus);
+      await caller.course.regenerateProposal({
+        courseId: id,
+        chips: ['MORE_IN_DEPTH'],
+      });
+
+      const second = ai.requests[2].prompt;
+      const order = [
+        /assume less/i,
+        /More on the past tense/,
+        /go further into each topic/i,
+      ].map((pattern) => second.search(pattern));
+      expect(order.every((index) => index >= 0)).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect((await caller.course.getById({ id })).proposal?.feedback).toEqual([
+        { chips: ['START_EASIER'], text: 'More on the past tense' },
+        { chips: ['MORE_IN_DEPTH'], text: null },
+      ]);
+    });
+
+    it('refuses a round with neither chip nor text, or both of a pair, without calling the model', async () => {
+      const caller = createCaller();
+      const { id } = await createCourse(caller);
+
+      for (const input of [
+        { courseId: id },
+        { courseId: id, feedback: '   ' },
+        { courseId: id, chips: ['FEWER_LESSONS', 'MORE_LESSONS'] as const },
+        {
+          courseId: id,
+          chips: ['START_EASIER', 'START_FURTHER_ALONG'] as const,
+        },
+        { courseId: id, chips: ['MORE_PRACTICAL', 'MORE_PRACTICAL'] as const },
+      ]) {
+        await expect(
+          caller.course.regenerateProposal({
+            ...input,
+            chips: input.chips && [...input.chips],
+          }),
+        ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+      }
+      expect(ai.requests).toHaveLength(1);
+      expect((await caller.course.getById({ id })).proposal?.feedback).toEqual(
+        [],
+      );
     });
 
     it('records the AI usage of the regeneration', async () => {
@@ -798,16 +875,6 @@ describe('courseRouter', () => {
       await expect(
         caller.course.regenerateProposal({ courseId: id, feedback: 'Shorter' }),
       ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
-      expect(ai.requests).toHaveLength(1);
-    });
-
-    it('refuses empty feedback', async () => {
-      const caller = createCaller();
-      const { id } = await createCourse(caller);
-
-      await expect(
-        caller.course.regenerateProposal({ courseId: id, feedback: '   ' }),
-      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
       expect(ai.requests).toHaveLength(1);
     });
 
