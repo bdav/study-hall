@@ -1,4 +1,10 @@
-import { useId, type ReactNode } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Check } from 'lucide-react';
 import { chipClassName } from '@/lib/utils';
 
@@ -12,6 +18,7 @@ export function ChoiceChips<Value extends string | number>({
   value,
   onChange,
   required,
+  lastApart,
   children,
 }: {
   label: string;
@@ -19,13 +26,15 @@ export function ChoiceChips<Value extends string | number>({
   value: Value | null;
   onChange: (value: Value) => void;
   required?: boolean;
+  /** The last option goes on a line of its own when the others wrap */
+  lastApart?: boolean;
   /** Below the chips, such as a field for an answer of the learner's own */
   children?: ReactNode;
 }) {
   const name = useId();
 
   return (
-    <ChipGroup label={label} below={children}>
+    <ChipGroup label={label} below={children} lastApart={lastApart}>
       {options.map((option) => (
         <Chip
           key={option.value}
@@ -50,12 +59,15 @@ export function CheckChips({
   options,
   chosen,
   onChange,
+  lastApart,
   children,
 }: {
   label: string;
   options: string[];
   chosen: string[];
   onChange: (chosen: string[]) => void;
+  /** The last option goes on a line of its own when the others wrap */
+  lastApart?: boolean;
   /** Below the chips, such as a field for an answer of the learner's own */
   children?: ReactNode;
 }) {
@@ -68,7 +80,7 @@ export function CheckChips({
   }
 
   return (
-    <ChipGroup label={label} below={children}>
+    <ChipGroup label={label} below={children} lastApart={lastApart}>
       {options.map((option) => (
         <Chip
           key={option}
@@ -85,19 +97,57 @@ export function CheckChips({
 function ChipGroup({
   label,
   below,
+  lastApart = false,
   children,
 }: {
   label: string;
   below?: ReactNode;
-  children: ReactNode;
+  lastApart?: boolean;
+  children: ReactNode[];
 }) {
+  const rest = lastApart ? children.slice(0, -1) : children;
+  const last = lastApart ? children.at(-1) : null;
+  const restRef = useRef<HTMLDivElement>(null);
+  const restWraps = useWraps(restRef, lastApart);
+
   return (
     <fieldset>
       <legend className="text-sm font-medium text-white/80">{label}</legend>
-      <div className="mt-2 flex flex-wrap gap-2">{children}</div>
+      <div ref={restRef} className="mt-2 flex flex-wrap gap-2">
+        {rest}
+        {!restWraps && last}
+      </div>
+      {restWraps && <div className="mt-2 flex">{last}</div>}
       {below}
     </fieldset>
   );
+}
+
+/**
+ * Whether the chips in a row, leaving out the last when it's kept apart,
+ * run onto more than one line, as the width allows; measured again as the
+ * row resizes.
+ */
+function useWraps(
+  ref: React.RefObject<HTMLDivElement | null>,
+  lastApart: boolean,
+) {
+  const [wraps, setWraps] = useState(false);
+
+  useLayoutEffect(() => {
+    const row = ref.current;
+    if (!row || !lastApart) return;
+    const observer = new ResizeObserver(() => {
+      const chips = [...row.children] as HTMLElement[];
+      // The rest are the chips before the last, wherever it is shown
+      const rest = chips.slice(0, wraps ? chips.length : -1);
+      setWraps(rest.length > 1 && rest.at(-1)!.offsetTop > rest[0].offsetTop);
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [ref, lastApart, wraps]);
+
+  return wraps;
 }
 
 function Chip({

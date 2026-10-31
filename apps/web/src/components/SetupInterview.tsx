@@ -322,6 +322,7 @@ function QuestionField({
           }),
         )}
         value={own !== null ? SOMETHING_ELSE : text}
+        lastApart
         onChange={(chosen) =>
           chosen === SOMETHING_ELSE
             ? onChange({ ...answer, own: own ?? '' })
@@ -340,6 +341,7 @@ function QuestionField({
         label={question.prompt}
         options={[...offered(question.options), SOMETHING_ELSE]}
         chosen={own !== null ? [SOMETHING_ELSE] : chips}
+        lastApart
         onChange={(chosen) =>
           // Something else clears the chips, and choosing a chip clears it
           own === null && chosen.includes(SOMETHING_ELSE)
