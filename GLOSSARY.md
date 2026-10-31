@@ -81,7 +81,7 @@ A course's confirmed brief: its title, topic, goal, prior knowledge, what the le
 _Avoid_: Setup answers, course settings
 
 **Setup Interview**:
-The short rounds of questions that draft a new course's Course Setup from what the learner says they want to learn and why. Each question comes with a suggested answer, and it asks only what is still open, for at most three rounds; the learner then checks the draft on the course form.
+The short rounds of questions that draft a new course's Course Setup from what the learner says they want to learn and why. Each question but the placement checklist ("Which of these can you already do?", which starts unticked) comes with a suggested answer, and it asks only what is still open, for at most three rounds; the learner then checks the draft on the course form.
 _Avoid_: Onboarding, questionnaire, wizard
 
 **Syllabus**:

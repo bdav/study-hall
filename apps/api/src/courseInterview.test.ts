@@ -69,7 +69,10 @@ const secondQuestions: InterviewQuestion[] = [
 
 /** A round the learner has answered with the suggested answers. */
 function answered(questions: InterviewQuestion[]) {
-  return { questions, answers: questions.map((q) => q.suggested) };
+  return {
+    questions,
+    answers: questions.map((q) => ('suggested' in q ? q.suggested : [])),
+  };
 }
 
 beforeAll(async () => {
@@ -223,6 +226,186 @@ describe('course.interviewRound', () => {
     expect(ai.requests).toHaveLength(0);
   });
 
+  describe('multiple choice, the placement checklist and Something else', () => {
+    const focusQuestion: InterviewQuestion = {
+      type: 'MULTIPLE_CHOICE',
+      prompt: 'What do you want to be able to do?',
+      options: ['Order food', 'Ask directions', 'Small talk'],
+      suggested: ['Order food', 'Ask directions'],
+    };
+    const placement: InterviewQuestion = {
+      type: 'PLACEMENT',
+      prompt: 'Which of these can you already do?',
+      options: [
+        'Greet someone',
+        'Count to ten',
+        'Order a coffee',
+        'Say where you are from',
+        'Ask the time',
+      ],
+    };
+
+    it('asks multiple-choice questions and the placement checklist', async () => {
+      ai.respondWith({
+        draft,
+        ready: false,
+        questions: [focusQuestion, placement],
+      });
+
+      const round = await createCaller().course.interviewRound({
+        opening,
+        rounds: [],
+      });
+
+      expect(round.questions).toEqual([focusQuestion, placement]);
+    });
+
+    it('offers suggested answers the options leave out', async () => {
+      ai.respondWith({
+        draft,
+        ready: false,
+        questions: [
+          { ...focusQuestion, suggested: ['Order food', 'Read menus'] },
+          firstQuestions[1],
+        ],
+      });
+
+      const round = await createCaller().course.interviewRound({
+        opening,
+        rounds: [],
+      });
+
+      expect(round.questions[0]).toMatchObject({
+        options: ['Read menus', 'Order food', 'Ask directions', 'Small talk'],
+      });
+    });
+
+    it("sends chosen chips, ticked items and typed answers back, typed ones as the learner's own words", async () => {
+      ai.respondWith({ draft, ready: true, questions: [] });
+
+      await createCaller().course.interviewRound({
+        opening,
+        rounds: [
+          {
+            questions: [focusQuestion, placement, firstQuestions[0]],
+            answers: [
+              ['Order food', 'Small talk'],
+              ['Greet someone', 'Count to ten'],
+              'Whatever my weekends allow',
+            ],
+          },
+        ],
+      });
+
+      const { prompt } = ai.requests[0];
+      expect(prompt).toContain('Order food; Small talk');
+      expect(prompt).toContain('Ticked: <answer>Greet someone; Count to ten');
+      expect(prompt).toMatch(
+        /own words[^\n]*\n?[^\n]*Whatever my weekends allow/,
+      );
+    });
+
+    it("adds ticked placement items to the draft's can already do list", async () => {
+      ai.respondWith({
+        draft: { ...draft, canAlreadyDo: ['Count to ten', 'Read a menu'] },
+        ready: false,
+        questions: firstQuestions,
+      });
+
+      const round = await createCaller().course.interviewRound({
+        opening,
+        rounds: [
+          {
+            questions: [placement, firstQuestions[1]],
+            answers: [['Greet someone', 'Count to ten'], 'None'],
+          },
+        ],
+      });
+
+      expect(round.draft.canAlreadyDo).toEqual([
+        'Count to ten',
+        'Read a menu',
+        'Greet someone',
+      ]);
+    });
+
+    it('leaves out of can already do what the learner left unticked', async () => {
+      ai.respondWith({
+        draft: { ...draft, canAlreadyDo: ['Order a coffee', 'Read a menu'] },
+        ready: true,
+        questions: [],
+      });
+
+      const round = await createCaller().course.interviewRound({
+        opening,
+        rounds: [
+          {
+            questions: [placement, firstQuestions[1]],
+            answers: [['Greet someone'], 'None'],
+          },
+        ],
+      });
+
+      // Order a coffee was on the checklist and left unticked
+      expect(round.draft.canAlreadyDo).toEqual([
+        'Read a menu',
+        'Greet someone',
+      ]);
+    });
+
+    it('keeps chosen chips, ticked items and typed answers in the transcript', async () => {
+      const caller = createCaller();
+      ai.respondWith({
+        lessons: [{ title: 'Greetings', objectives: ['Say hello'] }],
+      });
+      const interview = {
+        opening,
+        rounds: [
+          {
+            questions: [focusQuestion, placement, firstQuestions[0]],
+            answers: [
+              ['Order food'],
+              ['Greet someone', 'Count to ten'],
+              'Whatever my weekends allow',
+            ],
+          },
+        ],
+        model: 'claude-sonnet-5-5',
+        promptVersion: 'course-interview-v3',
+      };
+
+      const { id } = await caller.course.create({
+        title: 'Italian',
+        topic: 'Italian',
+        goal: 'Get by in Rome',
+        minutesPerWeek: 120,
+        sessionMinutes: 30,
+        depth: 'Balanced',
+        interview,
+      });
+
+      const course = await prisma.course.findUniqueOrThrow({ where: { id } });
+      expect(course.interview).toEqual(interview);
+    });
+
+    it.each([
+      ['a chip the question did not offer', [focusQuestion], [['Swim']]],
+      ['a typed placement answer', [placement], ['I can do all of it']],
+      ['a list for a free-text question', [firstQuestions[1]], [['None']]],
+    ])(
+      'refuses %s, without calling the model',
+      async (_, questions, answers) => {
+        await expect(
+          createCaller().course.interviewRound({
+            opening,
+            rounds: [{ questions, answers }],
+          }),
+        ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+        expect(ai.requests).toHaveLength(0);
+      },
+    );
+  });
+
   it('offers a suggested answer among its options', async () => {
     ai.respondWith({
       draft,
@@ -257,6 +440,25 @@ describe('course.interviewRound', () => {
     });
 
     expect(round.draft.sessionMinutes).toBe(45);
+  });
+
+  it('reads a blank deadline and no minutes in the draft as not given', async () => {
+    ai.respondWith({
+      draft: { ...draft, deadline: '', minutesPerWeek: 0, sessionMinutes: 0 },
+      ready: false,
+      questions: firstQuestions,
+    });
+
+    const round = await createCaller().course.interviewRound({
+      opening,
+      rounds: [],
+    });
+
+    expect(round.draft).toMatchObject({
+      deadline: null,
+      minutesPerWeek: null,
+      sessionMinutes: null,
+    });
   });
 
   it('records its AI usage as a Setup Interview call', async () => {

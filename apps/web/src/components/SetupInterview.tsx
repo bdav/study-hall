@@ -3,7 +3,7 @@ import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { ChoiceChips } from '@/components/ChoiceChips';
+import { CheckChips, ChoiceChips } from '@/components/ChoiceChips';
 import { Input } from '@/components/ui/input';
 import { glassFieldClassName } from '@/lib/utils';
 import type { DraftSetup } from '@/components/CourseSetupForm';
@@ -20,6 +20,7 @@ export type Transcript = NonNullable<
 >;
 
 type AnsweredRound = Interview['rounds'][number];
+type Answer = AnsweredRound['answers'][number];
 type Round = inferRouterOutputs<AppRouter>['course']['interviewRound'];
 type Question = Round['questions'][number];
 
@@ -155,9 +156,7 @@ export function SetupInterview({
           {rounds.map(({ answers }, index) => (
             <li key={index} className="text-sm text-white/70">
               <span className="sr-only">Round {index + 1}: </span>
-              <span>
-                {answers.filter(Boolean).join(' · ') || 'No answers given'}
-              </span>
+              <span>{summarize(answers)}</span>
             </li>
           ))}
         </ol>
@@ -178,9 +177,46 @@ export function SetupInterview({
   );
 }
 
+/** A round's answers on one line: "2 hours · Order food, Small talk". */
+function summarize(answers: Answer[]): string {
+  return (
+    answers
+      .map((answer) => (Array.isArray(answer) ? answer.join(', ') : answer))
+      .filter(Boolean)
+      .join(' · ') || 'No answers given'
+  );
+}
+
 /** The model and prompt version that asked a round, for the transcript. */
 function askedBy({ model, promptVersion }: Round) {
   return { model, promptVersion };
+}
+
+/** The choice that takes an answer of the learner's own in place of chips. */
+const SOMETHING_ELSE = 'Something else…';
+
+/**
+ * A question's answer as the learner is giving it: the chips chosen or the
+ * text, or, once they choose Something else, their own words.
+ */
+type AnswerState = { value: Answer; own: string | null };
+
+function startingAnswer(question: Question): AnswerState {
+  return {
+    value: 'suggested' in question ? question.suggested : [],
+    own: null,
+  };
+}
+
+/** A choice question's options, less any of the page's own Something else. */
+function offered(options: string[]): string[] {
+  return options.filter((option) => option !== SOMETHING_ELSE);
+}
+
+/** The answer the round sends: their own words in place of any chips. */
+function finalAnswer({ value, own }: AnswerState): Answer {
+  if (own !== null) return own.trim();
+  return typeof value === 'string' ? value.trim() : value;
 }
 
 /** A round's questions on one screen, each starting at its suggested answer. */
@@ -192,22 +228,20 @@ function RoundForm({
 }: {
   questions: Question[];
   disabled: boolean;
-  onNext: (answers: string[]) => void;
+  onNext: (answers: Answer[]) => void;
   children: ReactNode;
 }) {
-  const [answers, setAnswers] = useState(() =>
-    questions.map((question) => question.suggested),
-  );
+  const [answers, setAnswers] = useState(() => questions.map(startingAnswer));
 
-  function answer(index: number, value: string) {
+  function answer(index: number, state: AnswerState) {
     setAnswers((current) =>
-      current.map((other, i) => (i === index ? value : other)),
+      current.map((other, i) => (i === index ? state : other)),
     );
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    onNext(answers.map((value) => value.trim()));
+    onNext(answers.map(finalAnswer));
   }
 
   return (
@@ -217,8 +251,8 @@ function RoundForm({
           <QuestionField
             key={index}
             question={question}
-            value={answers[index]}
-            onChange={(value) => answer(index, value)}
+            answer={answers[index]}
+            onChange={(state) => answer(index, state)}
           />
         ))}
       </fieldset>
@@ -234,28 +268,105 @@ function RoundForm({
   );
 }
 
-function QuestionField({
-  question,
+/** The field for an answer of the learner's own, once they choose it. */
+function OwnAnswer({
   value,
   onChange,
 }: {
-  question: Question;
   value: string;
   onChange: (value: string) => void;
 }) {
+  return (
+    <Input
+      aria-label="Your answer"
+      placeholder="Your answer"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      maxLength={1000}
+      required
+      // Spaces alone aren't an answer
+      pattern=".*\S.*"
+      className={`mt-2 ${glassFieldClassName}`}
+    />
+  );
+}
+
+function QuestionField({
+  question,
+  answer,
+  onChange,
+}: {
+  question: Question;
+  answer: AnswerState;
+  onChange: (answer: AnswerState) => void;
+}) {
   const id = useId();
+  const { own } = answer;
+  const ownAnswer = own !== null && (
+    <OwnAnswer
+      value={own}
+      onChange={(text) => onChange({ ...answer, own: text })}
+    />
+  );
+  const text = typeof answer.value === 'string' ? answer.value : '';
+  const setText = (value: string) => onChange({ value, own: null });
 
   if (question.type === 'SINGLE_CHOICE') {
     return (
       <ChoiceChips
         label={question.prompt}
-        options={question.options.map((option) => ({
-          value: option,
-          label: option,
-        }))}
-        value={value}
-        onChange={onChange}
-      />
+        options={[...offered(question.options), SOMETHING_ELSE].map(
+          (option) => ({
+            value: option,
+            label: option,
+          }),
+        )}
+        value={own !== null ? SOMETHING_ELSE : text}
+        onChange={(chosen) =>
+          chosen === SOMETHING_ELSE
+            ? onChange({ ...answer, own: own ?? '' })
+            : setText(chosen)
+        }
+      >
+        {ownAnswer}
+      </ChoiceChips>
+    );
+  }
+
+  if (question.type === 'MULTIPLE_CHOICE') {
+    const chips = Array.isArray(answer.value) ? answer.value : [];
+    return (
+      <CheckChips
+        label={question.prompt}
+        options={[...offered(question.options), SOMETHING_ELSE]}
+        chosen={own !== null ? [SOMETHING_ELSE] : chips}
+        onChange={(chosen) =>
+          // Something else clears the chips, and choosing a chip clears it
+          own === null && chosen.includes(SOMETHING_ELSE)
+            ? onChange({ value: [], own: '' })
+            : onChange({
+                value: chosen.filter((option) => option !== SOMETHING_ELSE),
+                own: null,
+              })
+        }
+      >
+        {ownAnswer}
+      </CheckChips>
+    );
+  }
+
+  if (question.type === 'PLACEMENT') {
+    return (
+      <CheckChips
+        label={question.prompt}
+        options={question.options}
+        chosen={Array.isArray(answer.value) ? answer.value : []}
+        onChange={(ticked) => onChange({ value: ticked, own: null })}
+      >
+        <p className="mt-1 text-xs text-white/50">
+          Tick only what you can do now; the course leaves these out.
+        </p>
+      </CheckChips>
     );
   }
 
@@ -270,8 +381,8 @@ function QuestionField({
           type="date"
           // Today, where the learner is; blank when there's no date
           min={new Date().toLocaleDateString('en-CA')}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
           className={`mt-1 max-w-48 [color-scheme:dark] ${glassFieldClassName}`}
         />
         <p className="mt-1 text-xs text-white/50">
@@ -288,8 +399,8 @@ function QuestionField({
       </label>
       <textarea
         id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
         rows={2}
         maxLength={1000}
         className={textAreaClassName}

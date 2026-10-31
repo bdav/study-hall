@@ -31,8 +31,8 @@ import {
   INTERVIEW_SYSTEM_PROMPT,
   interviewOutputSchema,
   interviewSchema,
+  formDraft,
   MAX_INTERVIEW_ROUNDS,
-  nearestSessionLength,
   transcriptSchema,
   withSuggestionOffered,
 } from '../ai/courseInterview.js';
@@ -210,13 +210,8 @@ export const courseRouter = router({
         output.ready ||
         output.questions.length === 0 ||
         input.rounds.length >= MAX_INTERVIEW_ROUNDS;
-      const { draft } = output;
       return {
-        draft: {
-          ...draft,
-          sessionMinutes:
-            draft.sessionMinutes && nearestSessionLength(draft.sessionMinutes),
-        },
+        draft: formDraft(output.draft, input.rounds),
         ready,
         questions: ready ? [] : output.questions.map(withSuggestionOffered),
         // For the transcript course creation keeps

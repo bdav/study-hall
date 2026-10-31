@@ -607,6 +607,152 @@ describe('the Setup Interview', () => {
     );
   });
 
+  describe('multiple choice, the placement checklist and Something else', () => {
+    const focusQuestion = {
+      type: 'MULTIPLE_CHOICE' as const,
+      prompt: 'What do you want to be able to do?',
+      options: ['Order food', 'Ask directions', 'Small talk'],
+      suggested: ['Order food', 'Ask directions'],
+    };
+    const placement = {
+      type: 'PLACEMENT' as const,
+      prompt: 'Which of these can you already do?',
+      options: ['Greet someone', 'Count to ten', 'Order a coffee'],
+    };
+
+    /** Starts an interview whose first round asks these questions. */
+    async function startWith(questions: unknown[]) {
+      renderPage();
+      const user = userEvent.setup();
+      await user.type(
+        screen.getByLabelText('What do you want to learn, and why?'),
+        opening,
+      );
+      await user.click(screen.getByRole('button', { name: 'Start' }));
+      respond({
+        draft,
+        ready: false,
+        questions: questions as typeof firstQuestions,
+      });
+      return user;
+    }
+
+    /** The answers the last round call sent for its newest round. */
+    function sentAnswers() {
+      const [interview] = mockRound.mock.lastCall as [
+        { rounds: { answers: unknown[] }[] },
+      ];
+      return interview.rounds.at(-1)!.answers;
+    }
+
+    it('starts multiple choice at its suggested answers, any number chosen', async () => {
+      const user = await startWith([focusQuestion, placement]);
+      const focus = screen.getByRole('group', {
+        name: 'What do you want to be able to do?',
+      });
+
+      expect(
+        within(focus).getByRole('checkbox', { name: 'Order food' }),
+      ).toBeChecked();
+      expect(
+        within(focus).getByRole('checkbox', { name: 'Ask directions' }),
+      ).toBeChecked();
+      await user.click(
+        within(focus).getByRole('checkbox', { name: 'Ask directions' }),
+      );
+      await user.click(
+        within(focus).getByRole('checkbox', { name: 'Small talk' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(sentAnswers()[0]).toEqual(['Order food', 'Small talk']);
+    });
+
+    it('starts the placement checklist unticked, with no Something else', async () => {
+      const user = await startWith([focusQuestion, placement]);
+      const checklist = screen.getByRole('group', {
+        name: 'Which of these can you already do?',
+      });
+
+      for (const item of within(checklist).getAllByRole('checkbox')) {
+        expect(item).not.toBeChecked();
+      }
+      expect(
+        within(checklist).queryByRole('checkbox', { name: /something else/i }),
+      ).not.toBeInTheDocument();
+      await user.click(
+        within(checklist).getByRole('checkbox', { name: 'Count to ten' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(sentAnswers()[1]).toEqual(['Count to ten']);
+    });
+
+    it('takes a typed answer in place of a single choice with Something else', async () => {
+      const user = await startWith(firstQuestions);
+      const time = screen.getByRole('group', {
+        name: 'How much time a week can you give it?',
+      });
+
+      await user.click(
+        within(time).getByRole('radio', { name: 'Something else…' }),
+      );
+      await user.type(
+        screen.getByRole('textbox', { name: /your answer/i }),
+        'Whatever my weekends allow',
+      );
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(sentAnswers()[0]).toBe('Whatever my weekends allow');
+    });
+
+    it("won't send spaces alone as a typed answer", async () => {
+      const user = await startWith(firstQuestions);
+
+      await user.click(screen.getByRole('radio', { name: 'Something else…' }));
+      await user.type(
+        screen.getByRole('textbox', { name: /your answer/i }),
+        '   ',
+      );
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(mockRound).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes a typed answer in place of the chips on multiple choice', async () => {
+      const user = await startWith([focusQuestion, placement]);
+      const focus = screen.getByRole('group', {
+        name: 'What do you want to be able to do?',
+      });
+
+      await user.click(
+        within(focus).getByRole('checkbox', { name: 'Something else…' }),
+      );
+      expect(
+        within(focus).getByRole('checkbox', { name: 'Order food' }),
+      ).not.toBeChecked();
+      await user.type(
+        screen.getByRole('textbox', { name: /your answer/i }),
+        'Read train timetables',
+      );
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(sentAnswers()[0]).toBe('Read train timetables');
+    });
+
+    it('sums up chosen chips and ticked items in the collapsed round', async () => {
+      const user = await startWith([focusQuestion, placement]);
+      await user.click(screen.getByRole('checkbox', { name: 'Greet someone' }));
+
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      respond({ draft, ready: false, questions: secondQuestions });
+
+      expect(
+        screen.getByText('Order food, Ask directions · Greet someone'),
+      ).toBeInTheDocument();
+    });
+  });
+
   it('offers no way out of a round but answering it', async () => {
     await startInterview();
 
