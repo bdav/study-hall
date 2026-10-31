@@ -2993,5 +2993,89 @@ describe('StudyPage', () => {
       });
       expect(screen.getByRole('textbox')).toBeInTheDocument();
     });
+
+    /** startSession's mutate, starting the session at once, or never. */
+    function mockStart({ resolves = true } = {}) {
+      setupMocksWithStartSession();
+      const mutate = vi.fn();
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: typeof mockSession) => void }) => ({
+          mutate: mutate.mockImplementation(() => {
+            if (resolves) opts?.onSuccess?.(mockSession);
+          }),
+        })) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+      return mutate;
+    }
+
+    it.each([
+      ['the Next button', { name: 'Next' }],
+      ['the title card', { name: /test deck/i }],
+    ])('starts one session on Enter with %s focused', async (_, button) => {
+      // Still starting when a second start would come, as over the network
+      const start = mockStart({ resolves: false });
+      const user = userEvent.setup();
+      renderStudyPage();
+      screen.getByRole('button', button).focus();
+
+      await user.keyboard('{Enter}');
+
+      expect(start).toHaveBeenCalledTimes(1);
+    });
+
+    it("doesn't start again while a start is under way", async () => {
+      const start = mockStart({ resolves: false });
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      expect(start).toHaveBeenCalledTimes(1);
+    });
+
+    it('moves on one card on Enter with the Next button focused', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      async function answerAndPressEnterOnNext(answer: string) {
+        await user.type(await screen.findByRole('textbox'), `${answer}{Enter}`);
+        await screen.findByTestId('result');
+        screen.getByRole('button', { name: 'Next' }).focus();
+        await user.keyboard('{Enter}');
+      }
+
+      await answerAndPressEnterOnNext('4');
+      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
+      // On the last card, moving on twice would finish the session twice
+      await answerAndPressEnterOnNext('Paris');
+
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+      expect(
+        vi.mocked(trpc.study.finishSession.useMutation).mock.results.at(-1)
+          ?.value.mutateAsync,
+      ).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(/failed/i)).not.toBeInTheDocument();
+    });
+
+    it('accepts the answer on Enter with "My answer was correct" focused, without moving on', async () => {
+      setupMocksWithStartSession('incorrect');
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      await user.type(screen.getByRole('textbox'), 'four{Enter}');
+      await screen.findByTestId('result');
+      screen.getByRole('button', { name: 'My answer was correct' }).focus();
+
+      await user.keyboard('{Enter}');
+
+      await waitFor(() => {
+        expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
+      });
+      expect(screen.queryByText('Card 2 of 2')).not.toBeInTheDocument();
+    });
   });
 });

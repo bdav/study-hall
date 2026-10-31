@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
@@ -43,8 +43,12 @@ export function useStudySession(deckId: string | undefined) {
     ReadonlySet<string>
   >(new Set());
 
+  // A start under way, set at once so a second press in the same moment
+  // sees it, as the mutation's own pending state wouldn't yet
+  const startInFlight = useRef(false);
   const startSession = trpc.study.startSession.useMutation({
     onSuccess: (started) => {
+      startInFlight.current = false;
       setError(null);
       if (!started) {
         setStudyState({ phase: 'nothing-due' });
@@ -65,6 +69,7 @@ export function useStudySession(deckId: string | undefined) {
       setStudyState({ phase: 'answering' });
     },
     onError: () => {
+      startInFlight.current = false;
       setError('Failed to start study session. Please try again.');
     },
   });
@@ -90,8 +95,10 @@ export function useStudySession(deckId: string | undefined) {
         i >= history.length && item.isRetry && item.card.id === cardId,
     );
 
+  /** Starts a Study Session, unless one is already being started. */
   function handleStart() {
-    if (!deckId) return;
+    if (!deckId || startInFlight.current) return;
+    startInFlight.current = true;
     startSession.mutate({ deckId });
   }
 

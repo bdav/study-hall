@@ -66,6 +66,22 @@ function isInDialog(target: EventTarget | null) {
   );
 }
 
+/**
+ * Whether a key is the page's Enter shortcut: not in a dialog or the
+ * card's editor, nor on a button or link, which Enter activates instead
+ * (#81).
+ */
+function isPageEnter(e: KeyboardEvent) {
+  return (
+    e.key === 'Enter' &&
+    !isInDialog(e.target) &&
+    !(
+      e.target instanceof Element &&
+      e.target.closest('button, a[href], [role="button"]')
+    )
+  );
+}
+
 const flipButtonClasses =
   'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
 
@@ -502,7 +518,7 @@ export default function StudyPage() {
   useEffect(() => {
     if (studyState.phase !== 'idle') return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Enter' && !isInDialog(e.target)) slideToNext();
+      if (isPageEnter(e)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -512,7 +528,7 @@ export default function StudyPage() {
   useEffect(() => {
     if (studyState.phase !== 'result' || isEditing) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Enter' && !isInDialog(e.target)) slideToNext();
+      if (isPageEnter(e)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
