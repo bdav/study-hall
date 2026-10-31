@@ -4,6 +4,7 @@ import type { AppRouter } from 'api/app';
 import { Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { ChoiceChips } from '@/components/ChoiceChips';
+import { Input } from '@/components/ui/input';
 import { glassFieldClassName } from '@/lib/utils';
 import type { DraftSetup } from '@/components/CourseSetupForm';
 
@@ -169,13 +170,6 @@ export function SetupInterview({
         onNext={(answers) =>
           ask([...rounds, { questions: current.questions, answers }])
         }
-        onShowBrief={() =>
-          onDone(current.draft, {
-            opening: opening.trim(),
-            rounds,
-            ...askedBy(current),
-          })
-        }
       >
         {status}
         {failure}
@@ -194,13 +188,11 @@ function RoundForm({
   questions,
   disabled,
   onNext,
-  onShowBrief,
   children,
 }: {
   questions: Question[];
   disabled: boolean;
   onNext: (answers: string[]) => void;
-  onShowBrief: () => void;
   children: ReactNode;
 }) {
   const [answers, setAnswers] = useState(() =>
@@ -231,23 +223,13 @@ function RoundForm({
         ))}
       </fieldset>
       {children}
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <button
-          type="submit"
-          disabled={disabled}
-          className={primaryButtonClassName}
-        >
-          Next
-        </button>
-        <button
-          type="button"
-          onClick={onShowBrief}
-          disabled={disabled}
-          className={secondaryButtonClassName}
-        >
-          Show my brief
-        </button>
-      </div>
+      <button
+        type="submit"
+        disabled={disabled}
+        className={`mt-6 ${primaryButtonClassName}`}
+      >
+        Next
+      </button>
     </form>
   );
 }
@@ -274,6 +256,28 @@ function QuestionField({
         value={value}
         onChange={onChange}
       />
+    );
+  }
+
+  if (question.type === 'DATE') {
+    return (
+      <div>
+        <label htmlFor={id} className="block text-sm font-medium text-white/80">
+          {question.prompt}
+        </label>
+        <Input
+          id={id}
+          type="date"
+          // Today, where the learner is; blank when there's no date
+          min={new Date().toLocaleDateString('en-CA')}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`mt-1 max-w-48 [color-scheme:dark] ${glassFieldClassName}`}
+        />
+        <p className="mt-1 text-xs text-white/50">
+          Leave it blank if there isn&apos;t one.
+        </p>
+      </div>
     );
   }
 

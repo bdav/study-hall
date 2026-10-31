@@ -551,13 +551,53 @@ describe('the Setup Interview', () => {
     expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
   });
 
-  it('shows my brief at any round, from the latest draft, without another call', async () => {
-    const user = await startInterview();
+  it('asks for a date with the date picker, which can be left blank', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText('What do you want to learn, and why?'),
+      opening,
+    );
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+    const dateQuestion = {
+      type: 'DATE' as const,
+      prompt: 'Is there a date you need to be ready by?',
+      suggested: '2027-06-01',
+    };
+    respond({
+      draft,
+      ready: false,
+      questions: [dateQuestion, firstQuestions[1]] as typeof firstQuestions,
+    });
 
-    await user.click(screen.getByRole('button', { name: 'Show my brief' }));
+    const date = screen.getByLabelText(
+      'Is there a date you need to be ready by?',
+    );
+    expect(date).toHaveAttribute('type', 'date');
+    expect(date).toHaveValue('2027-06-01');
+    fireEvent.change(date, { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Next' }));
 
-    expect(mockRound).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
+    expect(mockRound).toHaveBeenLastCalledWith(
+      {
+        opening,
+        rounds: [
+          {
+            questions: [dateQuestion, firstQuestions[1]],
+            answers: ['', 'None'],
+          },
+        ],
+      },
+      expect.anything(),
+    );
+  });
+
+  it('offers no way out of a round but answering it', async () => {
+    await startInterview();
+
+    expect(
+      screen.queryByRole('button', { name: /brief|finish|skip/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('skips the interview to the form, empty', async () => {

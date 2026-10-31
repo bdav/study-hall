@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const INTERVIEW_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const INTERVIEW_PROMPT_VERSION = 'course-interview-v1';
+export const INTERVIEW_PROMPT_VERSION = 'course-interview-v2';
 
 /** The most rounds of questions a Setup Interview asks. */
 export const MAX_INTERVIEW_ROUNDS = 3;
@@ -21,10 +21,14 @@ export const SESSION_LENGTHS = [15, 30, 45, 60, 90] as const;
 
 const text = z.string().trim().min(1);
 
+/** A date with no time, "2027-06-01", or blank for none. */
+const dateOrNone = z.union([z.iso.date(), z.literal('')]);
+
 /**
- * One question of a round: single choice, answered with a chip, or free
- * text. Each comes with the answer the model suggests, which the page
- * starts selected or filled in.
+ * One question of a round: single choice, answered with a chip, free text,
+ * or a date, answered with the course form's date picker. Each comes with
+ * the answer the model suggests, which the page starts selected or filled
+ * in.
  */
 export const interviewQuestionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -39,6 +43,11 @@ export const interviewQuestionSchema = z.discriminatedUnion('type', [
     type: z.literal('FREE_TEXT'),
     prompt: text.max(300),
     suggested: z.string().trim().max(1000),
+  }),
+  z.object({
+    type: z.literal('DATE'),
+    prompt: text.max(300),
+    suggested: dateOrNone,
   }),
 ]);
 
@@ -86,7 +95,16 @@ export const answeredRoundSchema = z
   })
   .refine((round) => round.answers.length === round.questions.length, {
     message: 'Every question needs an answer',
-  });
+  })
+  .refine(
+    (round) =>
+      round.questions.every(
+        (question, index) =>
+          question.type !== 'DATE' ||
+          dateOrNone.safeParse(round.answers[index]).success,
+      ),
+    { message: 'A date question is answered with a date, or left blank' },
+  );
 
 export type AnsweredRound = z.infer<typeof answeredRoundSchema>;
 
@@ -136,7 +154,7 @@ What the Course Setup covers:
 How to ask:
 - Ask only what is unsettled. Never ask something the learner has already said, in their opening words or an earlier answer.
 - A round has two to four questions, on one screen, so ask together what goes together.
-- Every question comes with a suggested answer: the one most likely for this learner, given what they've said. For a SINGLE_CHOICE question, give two to six short options, and the suggested answer must be one of them. Use FREE_TEXT when no short list of options fits, with a suggested answer the learner can accept or edit.
+- Every question comes with a suggested answer: the one most likely for this learner, given what they've said. For a SINGLE_CHOICE question, give two to six short options, and the suggested answer must be one of them. Use FREE_TEXT when no short list of options fits, with a suggested answer the learner can accept or edit. Ask for a date, such as a deadline, with a DATE question, suggesting a date as YYYY-MM-DD or a blank suggestion for none; the learner leaves it blank when there isn't one.
 - Ask about what changes the course most first: the goal, time per week, session length and any deadline, then prior knowledge, focus, skip and materials.
 - When the learner's words leave open a choice the whole course depends on, such as which variety of a language, which exam board or which version of a framework, ask it, suggesting the most common option, and record the answer in the draft's notes, so every lesson follows it.
 - Don't ask about review days, how a study day is structured, or kinds of practice: the app schedules reviews and writes each lesson's exercises.
@@ -156,7 +174,7 @@ function describeRound({ questions, answers }: AnsweredRound): string[] {
     ...(question.type === 'SINGLE_CHOICE'
       ? [`  Options: ${question.options.join(' / ')}`]
       : []),
-    `  Answer: <answer>${answers[index] || '(left blank)'}</answer>`,
+    `  Answer: <answer>${answers[index] || (question.type === 'DATE' ? 'No date' : '(left blank)')}</answer>`,
   ]);
 }
 

@@ -176,6 +176,53 @@ describe('course.interviewRound', () => {
     expect(ai.requests[0].prompt).toMatch(/no rounds are left/i);
   });
 
+  it('asks for a date with a date question, a blank answer meaning none', async () => {
+    const dateQuestion: InterviewQuestion = {
+      type: 'DATE',
+      prompt: 'Is there a date you need to be ready by?',
+      suggested: '',
+    };
+    ai.respondWith({
+      draft,
+      ready: false,
+      questions: [dateQuestion, firstQuestions[1]],
+    });
+
+    const first = await createCaller().course.interviewRound({
+      opening,
+      rounds: [],
+    });
+    expect(first.questions[0]).toEqual(dateQuestion);
+
+    ai.respondWith({ draft, ready: true, questions: [] });
+    await createCaller().course.interviewRound({
+      opening,
+      rounds: [
+        { questions: [dateQuestion, firstQuestions[1]], answers: ['', 'None'] },
+      ],
+    });
+    expect(ai.requests[1].prompt).toMatch(
+      /Is there a date you need to be ready by\?\n\s+Answer: <answer>No date<\/answer>/,
+    );
+  });
+
+  it('refuses a date answer that is not a date, without calling the model', async () => {
+    await expect(
+      createCaller().course.interviewRound({
+        opening,
+        rounds: [
+          {
+            questions: [
+              { type: 'DATE', prompt: 'When is your exam?', suggested: '' },
+            ],
+            answers: ['next summer'],
+          },
+        ],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }));
+    expect(ai.requests).toHaveLength(0);
+  });
+
   it('offers a suggested answer among its options', async () => {
     ai.respondWith({
       draft,
