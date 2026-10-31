@@ -3,13 +3,33 @@ import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
 
-type HistoryEntry = GradedAnswer & { card: Flashcard };
+/** One item of a Study Session: a card, or a Retry of a missed one (#11). */
+type QueueItem = { itemId: string; card: Flashcard; isRetry: boolean };
 
-/** A Study Session's queue, in the order the server built it. */
-type StudySessionQueue = {
-  id: string;
-  items: { itemId: string; card: Flashcard }[];
-};
+/** An answered item, in the order answered: the queue's first items. */
+type HistoryEntry = GradedAnswer & { card: Flashcard; isRetry: boolean };
+
+/** A Study Session's queue, in the order the server keeps it. */
+type StudySessionQueue = { id: string; items: QueueItem[] };
+
+/**
+ * The queue with a missed card's Retry where the session put it: after the
+ * item it names, or at the end should that item be gone.
+ */
+function withRetry(
+  items: QueueItem[],
+  card: Flashcard,
+  retryItem: { id: string; afterItemId: string },
+) {
+  const after = items.findIndex(
+    (item) => item.itemId === retryItem.afterItemId,
+  );
+  return items.toSpliced(after === -1 ? items.length : after + 1, 0, {
+    itemId: retryItem.id,
+    card,
+    isRetry: true,
+  });
+}
 
 type StudyState =
   | { phase: 'idle' }
@@ -31,11 +51,13 @@ export function useStudySession(deckId: string | undefined) {
   );
   // Index of the current item in the session's queue
   const [position, setPosition] = useState(0);
+  // Whether the session has been finished on the server
+  const [finished, setFinished] = useState(false);
   const [answerInput, setAnswerInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  // Cards edited after they were answered, whose shown grade is for the
-  // card as it was
+  // Answers to cards edited since, whose shown grade is for the card as it
+  // was, by attempt
   const [editedAfterAnswer, setEditedAfterAnswer] = useState<
     ReadonlySet<string>
   >(new Set());
@@ -52,9 +74,11 @@ export function useStudySession(deckId: string | undefined) {
         items: started.items.map((item) => ({
           itemId: item.id,
           card: toFlashcard(item.card),
+          isRetry: item.isRetry,
         })),
       });
       setPosition(0);
+      setFinished(false);
       setAnswerInput('');
       setHistory([]);
       setStudyState({ phase: 'answering' });
@@ -73,6 +97,11 @@ export function useStudySession(deckId: string | undefined) {
   const currentItem = items[position] ?? null;
   const currentCard = currentItem?.card ?? null;
   const remainingCount = items.length - position;
+  // Progress counts cards, not answers: a Retry isn't another card
+  const sessionSize = items.filter((item) => !item.isRetry).length;
+  const cardNumber = items
+    .slice(0, position + 1)
+    .filter((item) => !item.isRetry).length;
 
   function handleStart() {
     if (!deckId) return;
@@ -85,7 +114,7 @@ export function useStudySession(deckId: string | undefined) {
 
     try {
       setError(null);
-      const { itemId, card } = currentItem;
+      const { itemId, card, isRetry } = currentItem;
       const attempt =
         userAnswer === null
           ? await dontKnow.mutateAsync({ itemId })
@@ -96,7 +125,14 @@ export function useStudySession(deckId: string | undefined) {
         ...gradeOf(attempt),
       };
 
-      setHistory((prev) => [...prev, { card, ...answered }]);
+      const { retryItem } = attempt;
+      if (retryItem) {
+        setStudySession(
+          (prev) =>
+            prev && { ...prev, items: withRetry(prev.items, card, retryItem) },
+        );
+      }
+      setHistory((prev) => [...prev, { card, isRetry, ...answered }]);
       setStudyState({ phase: 'result', ...answered, showingBack: true });
     } catch {
       setError('Failed to submit answer. Please try again.');
@@ -127,6 +163,7 @@ export function useStudySession(deckId: string | undefined) {
           return;
         }
       }
+      setFinished(true);
       setPosition(queueLength);
       setStudyState({ phase: 'complete' });
     },
@@ -165,6 +202,10 @@ export function useStudySession(deckId: string | undefined) {
     attemptId: string,
     canonicalAnswerId?: string,
   ) {
+    // It wasn't missed after all, so its Retry is dropped at once, before
+    // the learner can move on and leave this render's queue behind
+    const answered = history.find((entry) => entry.attemptId === attemptId);
+    if (answered) await dropUnanswered(answered.card.id);
     try {
       setError(null);
       const accepted = await acceptAnswer.mutateAsync({
@@ -195,8 +236,13 @@ export function useStudySession(deckId: string | undefined) {
    */
   const replaceCard = useCallback(
     (card: Flashcard) => {
-      if (history.some((entry) => entry.card.id === card.id)) {
-        setEditedAfterAnswer((prev) => new Set(prev).add(card.id));
+      const answers = history.filter((entry) => entry.card.id === card.id);
+      if (answers.length > 0) {
+        setEditedAfterAnswer((prev) => {
+          const next = new Set(prev);
+          for (const entry of answers) next.add(entry.attemptId);
+          return next;
+        });
       }
       showCard(card);
     },
@@ -204,26 +250,33 @@ export function useStudySession(deckId: string | undefined) {
   );
 
   /**
-   * Drops a card deleted from its deck from the session and its summary.
-   * Deleting the card in play moves on to the next card or the end of the
-   * session; deleting one being reviewed shows the next answered card, or
-   * the title card when none are left, and going forward carries on.
+   * Drops a card's items from the session: every one, and its answers from
+   * the summary, or only those not yet answered. Dropping the card in play
+   * moves on to the next card or the end of the session; dropping one being
+   * reviewed shows the next answered card, or the title card when none are
+   * left, and going forward carries on.
    */
-  const removeCard = useCallback(
-    async (cardId: string) => {
+  const dropCard = useCallback(
+    async (cardId: string, { keepAnswered }: { keepAnswered: boolean }) => {
       if (!studySession) return;
-      const index = studySession.items.findIndex(
-        (item) => item.card.id === cardId,
-      );
-      if (index === -1) return;
-      const remaining = studySession.items.filter((_, i) => i !== index);
-      const answered = history.filter((entry) => entry.card.id !== cardId);
+      // The queue's first items are the answered ones, in the summary's order
+      const isDropped = (item: QueueItem | undefined, index: number) =>
+        item?.card.id === cardId && !(keepAnswered && index < history.length);
+      const { items } = studySession;
+      const remaining = items.filter((item, i) => !isDropped(item, i));
+      if (remaining.length === items.length) return;
+      const answered = keepAnswered
+        ? history
+        : history.filter((entry) => entry.card.id !== cardId);
+      // The items after it move up in the queue
+      const nextPosition =
+        position -
+        items.filter((item, i) => i < position && isDropped(item, i)).length;
       setStudySession({ ...studySession, items: remaining });
       setHistory(answered);
+      setPosition(nextPosition);
 
       if (studyState.phase === 'reviewing') {
-        // The cards after it move up one place in the queue
-        if (index < position) setPosition(position - 1);
         setStudyState({
           phase: 'reviewing',
           reviewIndex: Math.min(studyState.reviewIndex, answered.length - 1),
@@ -231,15 +284,31 @@ export function useStudySession(deckId: string | undefined) {
         });
         return;
       }
+      if (!isDropped(items[position], position)) return;
 
       setAnswerInput('');
-      if (position >= remaining.length) {
+      if (nextPosition >= remaining.length) {
         await endSession(remaining.length);
       } else {
         setStudyState({ phase: 'answering' });
       }
     },
     [studySession, history, studyState, position, endSession],
+  );
+
+  /** Drops a card deleted from its deck from the session and its summary. */
+  const removeCard = useCallback(
+    (cardId: string) => dropCard(cardId, { keepAnswered: false }),
+    [dropCard],
+  );
+
+  /**
+   * Drops a card's items not yet answered, such as its Retry once its
+   * missed answer is accepted, or once it's marked known; its answers stay.
+   */
+  const dropUnanswered = useCallback(
+    (cardId: string) => dropCard(cardId, { keepAnswered: true }),
+    [dropCard],
   );
 
   const advanceOrFinish = useCallback(async () => {
@@ -306,8 +375,10 @@ export function useStudySession(deckId: string | undefined) {
         showingBack: true,
       });
     } else if (!currentCard) {
-      // Queue exhausted — return to complete screen
-      setStudyState({ phase: 'complete' });
+      // Queue exhausted — return to complete screen, finishing the session
+      // if dropping the cards left while reviewing emptied it
+      if (finished) setStudyState({ phase: 'complete' });
+      else await endSession(items.length);
     } else if (history.length <= position) {
       // We're on a card that hasn't been answered yet
       setStudyState({ phase: 'answering' });
@@ -315,7 +386,16 @@ export function useStudySession(deckId: string | undefined) {
       // Current card was already answered — advance past it
       await advanceOrFinish();
     }
-  }, [studyState, history, currentCard, position, advanceOrFinish]);
+  }, [
+    studyState,
+    history,
+    currentCard,
+    position,
+    advanceOrFinish,
+    finished,
+    endSession,
+    items.length,
+  ]);
 
   const canGoBack =
     studyState.phase === 'answering' ||
@@ -344,8 +424,9 @@ export function useStudySession(deckId: string | undefined) {
   return {
     studyState,
     currentCard,
-    position,
-    sessionSize: items.length,
+    cardNumber,
+    sessionSize,
+    isRetry: currentItem?.isRetry ?? false,
     remainingCount,
     isFlipped,
     toggleFlip,
@@ -364,6 +445,7 @@ export function useStudySession(deckId: string | undefined) {
     // the card wasn't edited after its answer
     showUnresetChange: showCard,
     removeCard,
+    dropUnanswered,
     editedAfterAnswer,
     handleNext,
     handleBack,

@@ -273,6 +273,8 @@ model StudySessionItem {
   cardId         String
   position       Int
   status         StudySessionItemStatus @default(PENDING)
+  // A Retry: a missed card brought back later in the session (#11)
+  isRetry        Boolean                @default(false)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   studySession   StudySession           @relation(fields: [studySessionId], references: [id], onDelete: Cascade)

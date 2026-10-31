@@ -867,6 +867,170 @@ describe('cards changed during a Study Session', () => {
   });
 });
 
+describe('missed cards coming back in the same Study Session', () => {
+  /** Cards "Card 1" to "Card n", answered "A1" to "An". */
+  function numberedCards(n: number): NewCard[] {
+    return Array.from({ length: n }, (_, i) => ({
+      front: `Card ${i + 1}`,
+      canonicalAnswers: [`A${i + 1}`],
+    }));
+  }
+
+  /** The session's items as they end up, in queue order. */
+  async function finishedQueue(id: string) {
+    const finished = await createCaller().study.finishSession({ id });
+    return finished.items.map(
+      (item) => `${item.card.front}${item.isRetry ? ' (retry)' : ''}`,
+    );
+  }
+
+  it('brings a missed card back after five other cards', async () => {
+    const { id, items } = await startedSession(numberedCards(8));
+
+    const missed = await createCaller().study.dontKnow({
+      itemId: items[0].id,
+    });
+
+    expect(missed.retryItem).toMatchObject({ afterItemId: items[5].id });
+    expect(await finishedQueue(id)).toEqual([
+      'Card 1',
+      'Card 2',
+      'Card 3',
+      'Card 4',
+      'Card 5',
+      'Card 6',
+      'Card 1 (retry)',
+      'Card 7',
+      'Card 8',
+    ]);
+  });
+
+  it('brings it back at the end when fewer than five cards are left', async () => {
+    const { id, items } = await startedSession(numberedCards(4));
+    const caller = createCaller();
+
+    await caller.study.dontKnow({ itemId: items[1].id });
+    await caller.study.submitAnswer({ itemId: items[2].id, userAnswer: 'x' });
+
+    expect(await finishedQueue(id)).toEqual([
+      'Card 1',
+      'Card 2',
+      'Card 3',
+      'Card 4',
+      'Card 2 (retry)',
+      'Card 3 (retry)',
+    ]);
+  });
+
+  it('brings back the last card next when no other card is left', async () => {
+    const { id, items } = await startedSession(numberedCards(2));
+
+    const missed = await createCaller().study.dontKnow({
+      itemId: items[1].id,
+    });
+
+    expect(missed.retryItem).toMatchObject({ afterItemId: items[1].id });
+    expect(await finishedQueue(id)).toEqual([
+      'Card 1',
+      'Card 2',
+      'Card 2 (retry)',
+    ]);
+  });
+
+  it('brings a card back at most twice', async () => {
+    const { id, items } = await startedSession(numberedCards(1));
+    const caller = createCaller();
+
+    const first = await caller.study.dontKnow({ itemId: items[0].id });
+    const second = await caller.study.dontKnow({ itemId: first.retryItem!.id });
+    const third = await caller.study.dontKnow({
+      itemId: second.retryItem!.id,
+    });
+
+    expect(third.retryItem).toBeNull();
+    expect(await finishedQueue(id)).toEqual([
+      'Card 1',
+      'Card 1 (retry)',
+      'Card 1 (retry)',
+    ]);
+  });
+
+  it("doesn't bring back a card answered right", async () => {
+    const { items } = await startedSession(numberedCards(2));
+
+    const answered = await createCaller().study.submitAnswer({
+      itemId: items[0].id,
+      userAnswer: 'A1',
+    });
+
+    expect(answered.retryItem).toBeNull();
+  });
+
+  it("saves a retry's answer as a retry attempt, leaving the card's progress as the first answer left it", async () => {
+    const { items } = await startedSession(numberedCards(1));
+    const caller = createCaller();
+    const missed = await caller.study.dontKnow({ itemId: items[0].id });
+    const afterMiss = await progressOf(items[0].cardId);
+
+    const retried = await caller.study.submitAnswer({
+      itemId: missed.retryItem!.id,
+      userAnswer: 'A1',
+    });
+
+    expect(missed).toMatchObject({ isRetry: false, attemptNumber: 1 });
+    expect(retried).toMatchObject({
+      recallGrade: 'NAILED',
+      isRetry: true,
+      attemptNumber: 2,
+    });
+    expect(await progressOf(items[0].cardId)).toEqual(afterMiss);
+  });
+
+  it('skips the retry once "My answer was correct" accepts the missed answer', async () => {
+    const { items } = await startedSession(numberedCards(3));
+    const caller = createCaller();
+    const missed = await caller.study.submitAnswer({
+      itemId: items[0].id,
+      userAnswer: 'A one',
+    });
+
+    await caller.study.acceptAnswer({ attemptId: missed.id });
+
+    const retry = await prisma.studySessionItem.findUniqueOrThrow({
+      where: { id: missed.retryItem!.id },
+    });
+    expect(retry.status).toBe('SKIPPED');
+  });
+
+  it("doesn't count a retry answered right toward graduating the card", async () => {
+    const deck = await deckWith(numberedCards(1));
+    const [card] = deck.cards;
+    const caller = createCaller();
+    // Session one: missed, then right when it comes back
+    const one = (await caller.study.startSession({ deckId: deck.id }))!;
+    const missed = await caller.study.dontKnow({ itemId: one.items[0].id });
+    await caller.study.submitAnswer({
+      itemId: missed.retryItem!.id,
+      userAnswer: 'A1',
+    });
+    await caller.study.finishSession({ id: one.id });
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId: card.id } },
+      data: { dueAt: new Date(Date.now() - 1000) },
+    });
+
+    // Session two: right. Counting the retry would make it two successes
+    // across two sessions, enough to graduate.
+    const two = (await caller.study.startSession({ deckId: deck.id }))!;
+    await caller.study.submitAnswer({
+      itemId: two.items[0].id,
+      userAnswer: 'A1',
+    });
+
+    expect((await progressOf(card.id)).lifecycleState).toBe('LEARNING');
+  });
+});
+
 /** Starts a session on a fresh deck holding the given cards. */
 async function startedSession(cards: NewCard[]) {
   const deck = await deckWith(cards);

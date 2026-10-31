@@ -325,8 +325,9 @@ export default function StudyPage() {
   const {
     studyState,
     currentCard,
-    position,
+    cardNumber,
     sessionSize,
+    isRetry,
     remainingCount,
     isFlipped,
     toggleFlip,
@@ -343,6 +344,7 @@ export default function StudyPage() {
     replaceCard,
     showUnresetChange,
     removeCard,
+    dropUnanswered,
     editedAfterAnswer,
     handleNext,
     handleBack,
@@ -410,9 +412,10 @@ export default function StudyPage() {
       : undefined;
   const isChoosingAnswer =
     !!displayResult && choosingAnswerFor === displayResult.attemptId;
+  // A Retry counts as the card it is, not another
   const progress = isReviewing
     ? undefined
-    : `Card ${position + 1} of ${sessionSize}`;
+    : `Card ${cardNumber} of ${sessionSize}${isRetry ? ' · retry' : ''}`;
 
   const onSlideNext = useCallback(() => {
     if (isIdle) handleStart();
@@ -592,10 +595,12 @@ export default function StudyPage() {
   }
 
   if (studyState.phase === 'complete') {
+    // Each card by its first answer, which scheduled it; retries didn't
+    const firstAnswers = history.filter((h) => !h.isRetry);
     const gradeCounts = summaryGradeOrder
       .map((grade) => ({
         grade,
-        count: history.filter((h) => h.recallGrade === grade).length,
+        count: firstAnswers.filter((h) => h.recallGrade === grade).length,
       }))
       .filter(({ count }) => count > 0);
 
@@ -618,7 +623,7 @@ export default function StudyPage() {
                 Session complete!
               </h2>
               <p className="mt-2 text-sm text-white/50">
-                You answered {history.length} of {sessionSize} cards.
+                You answered {firstAnswers.length} of {sessionSize} cards.
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 {gradeCounts.map(({ grade, count }) => (
@@ -711,12 +716,9 @@ export default function StudyPage() {
         onEdited={replaceCard}
         onChanged={showUnresetChange}
         onDeleted={() => removeCard(card.id)}
-        onMarkedKnown={() => {
-          // The card in play is done with; an answered one stays answered
-          if (!history.some((entry) => entry.card.id === card.id)) {
-            removeCard(card.id);
-          }
-        }}
+        // The card in play is done with, as is its Retry; an answered one
+        // stays answered
+        onMarkedKnown={() => dropUnanswered(card.id)}
         onDone={() => setEditing(null)}
       />
     ) : (
@@ -727,10 +729,15 @@ export default function StudyPage() {
         remainingCount,
         progress,
         toggleFlip,
-        editedAfterAnswer.has(card.id),
+        !!displayResult && editedAfterAnswer.has(displayResult.attemptId),
         acceptDisplayedAnswer,
         canMarkDisplayKnown
-          ? () => markKnown.mutate({ cardIds: [card.id] })
+          ? () => {
+              markKnown.mutate({ cardIds: [card.id] });
+              // Its Retry, if missed, is skipped with it, as the session
+              // does; dropped at once, before the learner can move on
+              dropUnanswered(card.id);
+            }
           : undefined,
         knownCards.get(card.id),
       )

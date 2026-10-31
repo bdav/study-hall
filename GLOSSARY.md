@@ -66,6 +66,10 @@ _Avoid_: Typo, near miss
 A finite, time-budgeted run through cards from one deck.
 _Avoid_: Session (ambiguous with login sessions), review session
 
+**Retry**:
+A missed card brought back later in the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did.
+_Avoid_: Relearn, repeat, reappearance
+
 ## Courses
 
 **Course**:

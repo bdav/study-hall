@@ -33,9 +33,17 @@ const withItems = {
 const STANDARD_SESSION_SIZE = 25;
 
 /**
+ * How many other cards a missed card comes back after, and how many times
+ * at most, in one session (`learning-model-and-scheduler.md` §10).
+ */
+const RETRY_SPACING = 5;
+const MAX_RETRIES = 2;
+
+/**
  * A learner's counted answers to a card, oldest first: those since its
  * progress last reset (`countsSinceReset`, as a query), as the scheduler
- * takes them, leaving out the attempt being applied.
+ * takes them, leaving out the attempt being applied and retries, which
+ * never change the card's progress.
  */
 async function findCountedAnswers(
   tx: Prisma.TransactionClient,
@@ -56,6 +64,7 @@ async function findCountedAnswers(
       cardId,
       studySession: { userId },
       createdAt: { gte: resetAt },
+      isRetry: false,
       ...(exceptAttemptId && { id: { not: exceptAttemptId } }),
     },
     orderBy: { createdAt: 'asc' },
@@ -182,11 +191,74 @@ export async function startStudySession(
 }
 
 /**
+ * Brings a missed card back later in its session: after RETRY_SPACING other
+ * cards still to answer, or at the end when fewer are left, and at most
+ * MAX_RETRIES times. Returns the new item and the item it follows, or null
+ * once the card has come back as often as it may.
+ */
+async function queueRetry(
+  tx: Prisma.TransactionClient,
+  missed: {
+    id: string;
+    studySessionId: string;
+    cardId: string;
+    position: number;
+  },
+) {
+  const { studySessionId, cardId } = missed;
+  // Read again under the session's lock, as a retry placed before it by
+  // another answer meanwhile would have moved it
+  const { position } = await tx.studySessionItem.findUniqueOrThrow({
+    where: { id: missed.id },
+    select: { position: true },
+  });
+  const retries = await tx.studySessionItem.count({
+    where: { studySessionId, cardId, isRetry: true },
+  });
+  if (retries >= MAX_RETRIES) return null;
+
+  const ahead = await tx.studySessionItem.findMany({
+    where: { studySessionId, status: 'PENDING', position: { gt: position } },
+    orderBy: { position: 'asc' },
+    select: { id: true, position: true },
+    take: RETRY_SPACING,
+  });
+  const after = ahead.at(-1) ?? { id: missed.id, position };
+
+  // Moving the later items down one place, last first, keeps their
+  // positions unique throughout
+  const later = await tx.studySessionItem.findMany({
+    where: { studySessionId, position: { gt: after.position } },
+    orderBy: { position: 'desc' },
+    select: { id: true, position: true },
+  });
+  for (const item of later) {
+    await tx.studySessionItem.update({
+      where: { id: item.id },
+      data: { position: item.position + 1 },
+    });
+  }
+  const retry = await tx.studySessionItem.create({
+    data: {
+      studySessionId,
+      cardId,
+      position: after.position + 1,
+      isRetry: true,
+    },
+  });
+  return { id: retry.id, afterItemId: after.id };
+}
+
+/**
  * Grades the answer to one Study Session item. In one transaction it
  * completes the item, saves the attempt and updates the card's progress
  * (`updated-plan.md` §11.3). A null answer is "I don't know", a MISSED
- * attempt (§5.2). Returns the attempt, whether it was an Accent Mismatch and
- * the Accepted Variant it matched, if any.
+ * attempt (§5.2). A missed card comes back later in the session
+ * (`queueRetry`), and the answer to one that came back is a retry, which
+ * leaves the card's progress as the first answer left it. Returns the
+ * attempt, whether it was an Accent Mismatch, the Accepted Variant it
+ * matched, if any, and the item the card comes back as, with the item it
+ * follows.
  */
 export async function answerItem(
   prisma: PrismaClient,
@@ -230,6 +302,12 @@ export async function answerItem(
   const progressKey = { userId_cardId: { userId, cardId: item.cardId } };
 
   return prisma.$transaction(async (tx) => {
+    // Answers in one session take turns, so they number their attempts and
+    // place their retries one at a time
+    await tx.studySession.update({
+      where: { id: item.studySessionId },
+      data: { updatedAt: new Date() },
+    });
     // Completing only a PENDING item keeps two concurrent answers from both
     // counting.
     const completed = await tx.studySessionItem.updateMany({
@@ -243,6 +321,9 @@ export async function answerItem(
       });
     }
 
+    const earlierInSession = await tx.cardAttempt.count({
+      where: { studySessionId: item.studySessionId, cardId: item.cardId },
+    });
     const attempt = await tx.cardAttempt.create({
       data: {
         studySessionId: item.studySessionId,
@@ -251,25 +332,37 @@ export async function answerItem(
         cardVersionId: await currentVersionId(tx, item.cardId),
         userAnswer,
         recallGrade,
+        attemptNumber: earlierInSession + 1,
+        isRetry: item.isRetry,
         gradingMethod: 'DETERMINISTIC',
       },
     });
 
-    const progress = await tx.cardProgress.findUniqueOrThrow({
-      where: progressKey,
-    });
-    const earlier = await findCountedAnswers(tx, {
-      userId,
-      cardId: item.cardId,
-      resetAt: progress.resetAt,
-      exceptAttemptId: attempt.id,
-    });
-    await tx.cardProgress.update({
-      where: progressKey,
-      data: applyAnswer(progress, toScheduledAnswer(attempt), earlier),
-    });
+    if (!item.isRetry) {
+      const progress = await tx.cardProgress.findUniqueOrThrow({
+        where: progressKey,
+      });
+      const earlier = await findCountedAnswers(tx, {
+        userId,
+        cardId: item.cardId,
+        resetAt: progress.resetAt,
+        exceptAttemptId: attempt.id,
+      });
+      await tx.cardProgress.update({
+        where: progressKey,
+        data: applyAnswer(progress, toScheduledAnswer(attempt), earlier),
+      });
+    }
 
-    return { ...attempt, accentMismatch, matchedAnswer, matchedVariant };
+    const retryItem =
+      recallGrade === 'MISSED' ? await queueRetry(tx, item) : null;
+    return {
+      ...attempt,
+      accentMismatch,
+      matchedAnswer,
+      matchedVariant,
+      retryItem,
+    };
   });
 }
 
@@ -279,8 +372,9 @@ export async function answerItem(
  * the one given, unless grading already accepts it, and is graded again.
  * The attempt becomes the final one, recording the MISSED it first had
  * (`updated-plan.md` §11.1), and the card's progress is rebuilt from its
- * counted attempts as if it had been graded so from the start. Returns the
- * new grade and the card.
+ * counted attempts as if it had been graded so from the start, and its
+ * retry waiting in the session is skipped. Returns the new grade and the
+ * card.
  */
 export async function acceptAnswer(
   prisma: PrismaClient,
@@ -369,6 +463,17 @@ export async function acceptAnswer(
         message: 'Answer already accepted',
       });
     }
+
+    // It wasn't missed after all, so it needn't come back
+    await tx.studySessionItem.updateMany({
+      where: {
+        studySessionId: attempt.studySessionId,
+        cardId: attempt.cardId,
+        isRetry: true,
+        status: 'PENDING',
+      },
+      data: { status: 'SKIPPED' },
+    });
 
     await tx.cardProgress.update({
       where: progressKey,

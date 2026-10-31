@@ -657,6 +657,8 @@ Repeated failures never block session completion.
 
 Same-session retries do not count toward stabilization requirements.
 
+As built (#11): the spacing is a fixed 5 cards still to answer, with no random variation; with fewer left, the card comes back at the end. A retry item is a `StudySessionItem` with `isRetry`, so the reappearance count is the card's retry items in the session rather than an in-memory map. A retry's answer is a `CardAttempt` with `isRetry`, which never changes `CardProgress` and which the scheduler leaves out of the answers it counts. Accepting a missed answer ("My answer was correct") or marking the card known skips its waiting retry, as it was not missed after all, or needs no more practice. A card edited after its miss still comes back for practice, but its progress, reset to NEW by the edit (ADR-0004), waits for its next session's answer.
+
 ⸻
 
 Session Retry Metadata
