@@ -12,14 +12,19 @@ import {
 } from '../services/studySessions.js';
 import { findActiveDeck } from '../services/decks.js';
 
-/** A Study Session's type, Quick, Standard or Deep; Standard unless given. */
-const sessionTypeSchema = z
-  .enum(['QUICK', 'STANDARD', 'DEEP'])
-  .default('STANDARD');
+/**
+ * How the learner chooses to study: a session's type, Quick, Standard or
+ * Deep, Standard unless given, and its mode, Study, Drill Weakest or Cram,
+ * Study unless given.
+ */
+const sessionChoiceInput = {
+  sessionType: z.enum(['QUICK', 'STANDARD', 'DEEP']).default('STANDARD'),
+  studyMode: z.enum(['STUDY', 'DRILL_WEAKEST', 'CRAM']).default('STUDY'),
+};
 
 export const studyRouter = router({
   queuePreview: protectedProcedure
-    .input(z.object({ deckId: z.string(), sessionType: sessionTypeSchema }))
+    .input(z.object({ deckId: z.string(), ...sessionChoiceInput }))
     .query(async ({ ctx, input }) => {
       const deck = await ctx.prisma.deck.findUnique({
         where: { id: input.deckId, userId: ctx.userId },
@@ -35,7 +40,7 @@ export const studyRouter = router({
       return previewQueue(
         ctx.prisma,
         { userId: ctx.userId, deckId: input.deckId },
-        input.sessionType,
+        input,
       );
     }),
 
@@ -56,7 +61,7 @@ export const studyRouter = router({
     }),
 
   startSession: protectedProcedure
-    .input(z.object({ deckId: z.string(), sessionType: sessionTypeSchema }))
+    .input(z.object({ deckId: z.string(), ...sessionChoiceInput }))
     .mutation(async ({ ctx, input }) => {
       await findActiveDeck(ctx.prisma, {
         userId: ctx.userId,
@@ -66,7 +71,7 @@ export const studyRouter = router({
       return startStudySession(
         ctx.prisma,
         { userId: ctx.userId, deckId: input.deckId },
-        { sessionType: input.sessionType },
+        input,
       );
     }),
 

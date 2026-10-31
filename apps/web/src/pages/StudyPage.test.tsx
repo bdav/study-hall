@@ -617,9 +617,12 @@ describe('StudyPage', () => {
     });
     renderStudyPage();
 
-    const title = screen.getByRole('button', { name: /test deck/i });
-    expect(title).toHaveTextContent('Nothing due · 2 in deck');
-    expect(title).toHaveTextContent(/next card due .*oct 28/i);
+    // Nothing to start, so the title card isn't a button
+    expect(
+      screen.queryByRole('button', { name: /test deck/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing due · 2 in deck')).toBeInTheDocument();
+    expect(screen.getByText(/next card due .*oct 28/i)).toBeInTheDocument();
   });
 
   it("shows the session's size on the title card once it has started", async () => {
@@ -3032,7 +3035,7 @@ describe('StudyPage', () => {
       expect(standard).toHaveAttribute('aria-pressed', 'true');
       expect(quick).toHaveAttribute('aria-pressed', 'false');
       expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
-        { deckId: 'deck-1', sessionType: 'STANDARD' },
+        { deckId: 'deck-1', sessionType: 'STANDARD', studyMode: 'STUDY' },
         expect.anything(),
       );
     });
@@ -3053,12 +3056,57 @@ describe('StudyPage', () => {
         sessionTypes().getByRole('button', { name: /quick/i }),
       ).toHaveAttribute('aria-pressed', 'true');
       expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
-        { deckId: 'deck-1', sessionType: 'QUICK' },
+        { deckId: 'deck-1', sessionType: 'QUICK', studyMode: 'STUDY' },
         expect.anything(),
       );
       expect(start).toHaveBeenCalledWith({
         deckId: 'deck-1',
         sessionType: 'QUICK',
+        studyMode: 'STUDY',
+      });
+    });
+
+    const modes = () =>
+      within(screen.getByRole('group', { name: 'Study mode' }));
+
+    it('offers Study, Drill weakest and Cram beside it, Study chosen to start', () => {
+      setupMocksWithStartSession();
+      renderStudyPage();
+
+      const study = modes().getByRole('button', { name: /study/i });
+      const drill = modes().getByRole('button', { name: /drill weakest/i });
+      const cram = modes().getByRole('button', { name: /cram/i });
+      expect(study).toHaveTextContent('StudyA balanced mix');
+      expect(drill).toHaveTextContent('Drill weakestShaky cards, no new');
+      expect(cram).toHaveTextContent('CramMore new, reviews early');
+      expect(study).toHaveAttribute('aria-pressed', 'true');
+      expect(drill).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('previews and starts the mode chosen', async () => {
+      const start = vi.fn();
+      setupMocksWithStartSession();
+      vi.mocked(trpc.study.startSession.useMutation).mockReturnValue({
+        mutate: start,
+      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(modes().getByRole('button', { name: /drill weakest/i }));
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+        {
+          deckId: 'deck-1',
+          sessionType: 'STANDARD',
+          studyMode: 'DRILL_WEAKEST',
+        },
+        expect.anything(),
+      );
+      expect(start).toHaveBeenCalledWith({
+        deckId: 'deck-1',
+        sessionType: 'STANDARD',
+        studyMode: 'DRILL_WEAKEST',
       });
     });
 
@@ -3074,6 +3122,50 @@ describe('StudyPage', () => {
       expect(
         sessionTypes().getByRole('button', { name: /deep/i }),
       ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it("says when a mode has nothing to study, and doesn't start it, so another can be chosen", async () => {
+      const start = vi.fn();
+      setupMocksWithStartSession();
+      vi.mocked(trpc.study.startSession.useMutation).mockReturnValue({
+        mutate: start,
+      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
+      mockQueuePreview({
+        sessionSize: 0,
+        dueCount: 0,
+        newCount: 2,
+        nextDueAt: null,
+      });
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(modes().getByRole('button', { name: /drill weakest/i }));
+
+      await user.keyboard('{Enter}');
+
+      expect(
+        screen.queryByRole('button', { name: /test deck/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText('Nothing to drill · 2 in deck'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+      expect(start).not.toHaveBeenCalled();
+      expect(modes().getByRole('button', { name: /study/i })).toBeVisible();
+    });
+
+    it('remembers the mode chosen', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      const { unmount } = renderStudyPage();
+      await user.click(modes().getByRole('button', { name: /cram/i }));
+      unmount();
+
+      renderStudyPage();
+
+      expect(modes().getByRole('button', { name: /cram/i })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
     });
 
     it('is not offered once a session has started, or while one can be resumed', async () => {

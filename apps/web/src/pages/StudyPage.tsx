@@ -24,8 +24,12 @@ import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
 import { useStudySession } from '@/hooks/useStudySession';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
-import { SessionTypePicker } from '@/components/SessionTypePicker';
-import { SESSION_TYPES } from '@/lib/sessionTypes';
+import { SessionPicker } from '@/components/SessionPicker';
+import {
+  SESSION_TYPES,
+  STUDY_MODES,
+  type StudyMode,
+} from '@/lib/sessionChoices';
 import {
   useSlideAnimation,
   type CardSnapshot,
@@ -246,14 +250,18 @@ function TitleCardDetails({
   sessionSize,
   preview,
   resumable,
+  studyMode,
 }: {
   deckSize: number;
   sessionSize: number | null;
   preview: { sessionSize: number; nextDueAt: string | null } | undefined;
   /** An unfinished session, which starting resumes (#10). */
   resumable: { answered: number; size: number } | null;
+  /** Drill Weakest has nothing to drill, rather than nothing due (#9). */
+  studyMode: StudyMode;
 }) {
   const className = 'mt-4 text-sm text-white/50';
+  const isDrill = studyMode === 'DRILL_WEAKEST';
   if (sessionSize !== null) {
     return <p className={className}>{cardCount(sessionSize)}</p>;
   }
@@ -277,8 +285,10 @@ function TitleCardDetails({
   }
   return (
     <>
-      <p className={className}>Nothing due · {deckSize} in deck</p>
-      {preview.nextDueAt && (
+      <p className={className}>
+        {isDrill ? 'Nothing to drill' : 'Nothing due'} · {deckSize} in deck
+      </p>
+      {!isDrill && preview.nextDueAt && (
         <p className="mt-1 text-xs text-white/40">
           Next card due {nextDueFormat.format(new Date(preview.nextDueAt))}
         </p>
@@ -342,15 +352,27 @@ export default function StudyPage() {
     null,
   );
 
-  // Quick, Standard or Deep, remembered by the browser (#8)
+  // How to study, remembered by the browser: Quick, Standard or Deep (#8),
+  // and Study, Drill Weakest or Cram (#9)
   const [sessionType, setSessionType] = useStoredChoice(
     'study-hall:session-type',
     SESSION_TYPES.map((type) => type.value),
     'STANDARD',
   );
+  const [studyMode, setStudyMode] = useStoredChoice(
+    'study-hall:study-mode',
+    STUDY_MODES.map((mode) => mode.value),
+    'STUDY',
+  );
   const queuePreviewQuery = trpc.study.queuePreview.useQuery(
-    { deckId: deckId ?? '', sessionType },
-    { enabled: !!deckId },
+    { deckId: deckId ?? '', sessionType, studyMode },
+    {
+      enabled: !!deckId,
+      // With nothing to study the title card starts nothing, so look again
+      // now and then for cards come due
+      refetchInterval: (query) =>
+        query.state.data?.sessionSize === 0 ? 60_000 : false,
+    },
   );
   const deckQuery = trpc.deck.getById.useQuery(
     { id: deckId ?? '' },
@@ -394,7 +416,7 @@ export default function StudyPage() {
     handleForward,
     canGoBack,
     reviewEntry,
-  } = useStudySession(deckId, sessionType);
+  } = useStudySession(deckId, { sessionType, studyMode });
 
   const isReviewing = studyState.phase === 'reviewing';
   const isIdle = studyState.phase === 'idle';
@@ -410,6 +432,7 @@ export default function StudyPage() {
       sessionSize={isIdle ? null : sessionSize}
       preview={preview}
       resumable={isIdle ? resumable : null}
+      studyMode={studyMode}
     />
   );
 
@@ -463,6 +486,10 @@ export default function StudyPage() {
     : isRetry
       ? `Retry ${retryNumber} of ${retryCount}`
       : `Card ${cardNumber} of ${sessionSize}`;
+
+  // Before a session, the title card starts one, unless the mode chosen has
+  // nothing to study, when another mode or length can be chosen
+  const canStart = isIdle && !(!resumable && preview?.sessionSize === 0);
 
   const onSlideNext = useCallback(() => {
     if (isIdle) handleStart();
@@ -541,13 +568,13 @@ export default function StudyPage() {
 
   // Enter key starts session during idle phase (with slide)
   useEffect(() => {
-    if (studyState.phase !== 'idle') return;
+    if (!canStart) return;
     function onKeyDown(e: KeyboardEvent) {
       if (isPageEnter(e)) slideToNext();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [studyState.phase, slideToNext]);
+  }, [canStart, slideToNext]);
 
   // Enter key advances during result phase (with slide), unless editing
   useEffect(() => {
@@ -561,8 +588,9 @@ export default function StudyPage() {
 
   // Next and Previous, as buttons and as swipes across the card. A session
   // that's complete has only Previous
-  const canGoForward =
-    studyState.phase !== 'answering' && studyState.phase !== 'complete';
+  const canGoForward = isIdle
+    ? canStart
+    : studyState.phase !== 'answering' && studyState.phase !== 'complete';
   const canGoPrevious = !isAtTitle && canGoBack;
   const swipe = useSwipe((direction) => {
     if (isEditing) return;
@@ -803,7 +831,12 @@ export default function StudyPage() {
 
       <div className="flex w-full flex-1 flex-col items-center justify-center">
         {isIdle && !resumable && (
-          <SessionTypePicker value={sessionType} onChange={setSessionType} />
+          <SessionPicker
+            sessionType={sessionType}
+            onSessionType={setSessionType}
+            studyMode={studyMode}
+            onStudyMode={setStudyMode}
+          />
         )}
         <div
           className="relative w-full max-w-md"
@@ -860,9 +893,9 @@ export default function StudyPage() {
               <CardStack
                 queueLength={titleQueueLength}
                 className={
-                  isIdle ? 'animate-pulse-halo-border cursor-pointer' : ''
+                  canStart ? 'animate-pulse-halo-border cursor-pointer' : ''
                 }
-                onClick={isIdle ? slideToNext : undefined}
+                onClick={canStart ? slideToNext : undefined}
               >
                 <p className="text-3xl font-bold text-white">{deck.name}</p>
                 {titleDetails}

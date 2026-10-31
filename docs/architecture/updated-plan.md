@@ -1272,6 +1272,8 @@ Cram is:
 
 Attempts still update ordinary scheduler state.
 
+As built (#9, `queueGenerator.ts`): with date-driven pacing deferred, Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40% and weak STABLE a tenth, due LEARNING up to half and due STABLE up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak STABLE cards up to 80% whether due or not, then due LEARNING, then due STABLE as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
+
 Example shift:
 
 Bucket	Study	Cram All

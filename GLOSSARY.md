@@ -66,6 +66,10 @@ _Avoid_: Typo, near miss
 A finite, time-budgeted run through cards from one deck.
 _Avoid_: Session (ambiguous with login sessions), review session
 
+**Study Mode**:
+How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; or Cram, more new cards and reviews before they're due. Every mode schedules answers the same way.
+_Avoid_: Session type (that's its length: Quick, Standard or Deep)
+
 **Retry**:
 A missed card brought back at the end of the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did.
 _Avoid_: Relearn, repeat, reappearance

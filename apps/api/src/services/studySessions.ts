@@ -3,6 +3,7 @@ import {
   type PrismaClient,
   type RecallGrade,
   type SessionType,
+  type StudyMode,
 } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { NO_MATCH, type Grading } from './answerGrader.js';
@@ -157,19 +158,22 @@ export async function countDueAndNewCards(
   return { dueCount, newCount };
 }
 
+/** How the learner chooses to study: a session's type and mode. */
+export type SessionChoice = { sessionType: SessionType; studyMode: StudyMode };
+
 /**
- * What a Study Session of the given type started now would hold: its size,
- * as starting it would compose it, and, for when it would hold nothing,
- * when the next card in review comes due.
+ * What a Study Session of the given type and mode started now would hold:
+ * its size, as starting it would compose it, and, for when it would hold
+ * nothing, when the next card in review comes due.
  */
 export async function previewQueue(
   prisma: PrismaClient,
   deck: LearnerDeck,
-  sessionType: SessionType,
+  { sessionType, studyMode }: SessionChoice,
 ) {
   const [{ dueCount, newCount }, candidates, next] = await Promise.all([
     countDueAndNewCards(prisma, deck),
-    findQueueCandidates(prisma, deck),
+    findQueueCandidates(prisma, deck, { studyMode }),
     prisma.cardProgress.findFirst({
       where: {
         ...deck,
@@ -182,7 +186,12 @@ export async function previewQueue(
   ]);
   return {
     // Its order varies with the seed, never its size
-    sessionSize: composeQueue({ candidates, sessionType, seed: 0 }).length,
+    sessionSize: composeQueue({
+      candidates,
+      sessionType,
+      studyMode,
+      seed: 0,
+    }).length,
     dueCount,
     newCount,
     nextDueAt: next?.dueAt ?? null,
@@ -212,20 +221,21 @@ async function abandonStaleSessions(
 }
 
 /**
- * Starts a Study Session of the given type on a deck, or resumes the
- * learner's unfinished one if it's recent enough (`findResumableSession`),
- * abandoning one that's too old. The queue is composed from the deck's
- * due and NEW cards by the session type (`composeQueue`), in an order fixed
- * by `seed`, random unless given. Returns null, and starts nothing, when
- * the deck has nothing to study.
+ * Starts a Study Session of the given type and mode on a deck, or resumes
+ * the learner's unfinished one if it's recent enough
+ * (`findResumableSession`), abandoning one that's too old. The queue is
+ * composed from the deck's cards by the session type and mode
+ * (`composeQueue`), in an order fixed by `seed`, random unless given.
+ * Returns null, and starts nothing, when the deck has nothing to study.
  */
 export async function startStudySession(
   prisma: PrismaClient,
   { userId, deckId }: LearnerDeck,
   {
     sessionType,
+    studyMode,
     seed = Math.floor(Math.random() * 2 ** 32),
-  }: { sessionType: SessionType; seed?: number },
+  }: SessionChoice & { seed?: number },
 ) {
   // One cutoff for both, so no session falls between them
   const cutoff = resumeCutoff();
@@ -238,8 +248,13 @@ export async function startStudySession(
   if (resumable) return resumable;
 
   const queue = composeQueue({
-    candidates: await findQueueCandidates(prisma, { userId, deckId }),
+    candidates: await findQueueCandidates(
+      prisma,
+      { userId, deckId },
+      { studyMode },
+    ),
     sessionType,
+    studyMode,
     seed,
   });
   if (queue.length === 0) return null;
@@ -250,6 +265,7 @@ export async function startStudySession(
         userId,
         deckId,
         sessionType,
+        studyMode,
         items: {
           create: queue.map((cardId, position) => ({ cardId, position })),
         },

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { type PrismaClient } from '@prisma/client';
+import { type PrismaClient, type StudyMode } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
@@ -1326,6 +1326,126 @@ describe('session types and queue buckets', () => {
     expect(await startedFronts(deck.id)).toEqual(
       numbered(10).map((card) => card.front),
     );
+  });
+});
+
+describe('study modes', () => {
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+
+  /** Cards "Card 1" to "Card n", answered "A1" to "An". */
+  function numbered(n: number): NewCard[] {
+    return Array.from({ length: n }, (_, i) => ({
+      front: `Card ${i + 1}`,
+      canonicalAnswers: [`A${i + 1}`],
+    }));
+  }
+
+  /** Sets a card's progress, as the scheduler would have left it. */
+  function setProgress(
+    cardId: string,
+    data: Parameters<typeof prisma.cardProgress.update>[0]['data'],
+  ) {
+    return prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId } },
+      data,
+    });
+  }
+
+  async function started(deckId: string, studyMode: StudyMode) {
+    return createCaller().study.startSession({ deckId, studyMode });
+  }
+
+  const fronts = (session: Awaited<ReturnType<typeof started>>) =>
+    session!.items.map((item) => item.card.front).sort();
+
+  it('records the mode a session starts with, Study unless given', async () => {
+    const one = await deckWith(numbered(3));
+    const two = await deckWith(numbered(3));
+
+    expect((await started(one.id, 'CRAM'))?.studyMode).toBe('CRAM');
+    expect(
+      (await createCaller().study.startSession({ deckId: two.id }))?.studyMode,
+    ).toBe('STUDY');
+  });
+
+  it('drills weak cards before they are due, with no NEW cards', async () => {
+    const deck = await deckWith(numbered(4));
+    for (const card of deck.cards.slice(0, 2)) {
+      await setProgress(card.id, {
+        lifecycleState: 'STABLE',
+        masteryScore: 2,
+        dueAt: new Date(Date.now() + day),
+        lastReviewedAt: new Date(Date.now() - day),
+      });
+    }
+
+    expect(fronts(await started(deck.id, 'DRILL_WEAKEST'))).toEqual([
+      'Card 1',
+      'Card 2',
+    ]);
+  });
+
+  it("doesn't drill a card marked known since it was last answered", async () => {
+    const deck = await deckWith(numbered(2));
+    const [weak, known] = deck.cards;
+    await setProgress(weak.id, {
+      lifecycleState: 'STABLE',
+      masteryScore: 2,
+      dueAt: new Date(Date.now() + day),
+      lastReviewedAt: new Date(Date.now() - day),
+    });
+    await createCaller().card.markKnown({ cardIds: [known.id] });
+
+    expect(fronts(await started(deck.id, 'DRILL_WEAKEST'))).toEqual(['Card 1']);
+  });
+
+  it('has nothing to drill in a deck of NEW cards, and previews it so', async () => {
+    const deck = await deckWith(numbered(3));
+    const caller = createCaller();
+
+    const preview = await caller.study.queuePreview({
+      deckId: deck.id,
+      studyMode: 'DRILL_WEAKEST',
+    });
+
+    expect(preview.sessionSize).toBe(0);
+    expect(await started(deck.id, 'DRILL_WEAKEST')).toBeNull();
+  });
+
+  it('crams a card once half its interval has passed, but not before', async () => {
+    const deck = await deckWith(numbered(3));
+    const [halfway, early] = deck.cards;
+    // 4-day intervals: three quarters gone, and one quarter
+    await setProgress(halfway.id, {
+      lifecycleState: 'STABLE',
+      masteryScore: 6,
+      lastIntervalDays: 4,
+      dueAt: new Date(Date.now() + day),
+    });
+    await setProgress(early.id, {
+      lifecycleState: 'STABLE',
+      masteryScore: 6,
+      lastIntervalDays: 4,
+      dueAt: new Date(Date.now() + 3 * day),
+    });
+
+    expect(fronts(await started(deck.id, 'CRAM'))).toEqual([
+      'Card 1',
+      'Card 3',
+    ]);
+  });
+
+  it("doesn't review early in Study mode", async () => {
+    const deck = await deckWith(numbered(2));
+    await setProgress(deck.cards[0].id, {
+      lifecycleState: 'STABLE',
+      masteryScore: 6,
+      lastIntervalDays: 4,
+      dueAt: new Date(Date.now() + day),
+    });
+
+    expect(fronts(await started(deck.id, 'STUDY'))).toEqual(['Card 2']);
   });
 });
 
