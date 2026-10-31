@@ -242,14 +242,27 @@ function TitleCardDetails({
   deckSize,
   sessionSize,
   preview,
+  resumable,
 }: {
   deckSize: number;
   sessionSize: number | null;
   preview: { sessionSize: number; nextDueAt: string | null } | undefined;
+  /** An unfinished session, which starting resumes (#10). */
+  resumable: { answered: number; size: number } | null;
 }) {
   const className = 'mt-4 text-sm text-white/50';
   if (sessionSize !== null) {
     return <p className={className}>{cardCount(sessionSize)}</p>;
+  }
+  if (resumable) {
+    return (
+      <>
+        <p className="mt-4 text-base text-white/80">Resume session?</p>
+        <p className="mt-1 text-sm text-white/50">
+          {resumable.answered} of {resumable.size} answered
+        </p>
+      </>
+    );
   }
   if (!preview) return <p className={className}>{deckSize} in deck</p>;
   if (preview.sessionSize > 0) {
@@ -340,6 +353,8 @@ export default function StudyPage() {
 
   const {
     studyState,
+    resumable,
+    handleAbandon,
     currentCard,
     cardNumber,
     sessionSize,
@@ -385,6 +400,7 @@ export default function StudyPage() {
       deckSize={cards.length}
       sessionSize={isIdle ? null : sessionSize}
       preview={preview}
+      resumable={isIdle ? resumable : null}
     />
   );
 
@@ -1015,6 +1031,18 @@ export default function StudyPage() {
               <p className="text-3xl">&nbsp;</p>
             </div>
           ) : null}
+
+          {isIdle && resumable && (
+            <div className="mt-2 text-center">
+              <button
+                type="button"
+                onClick={handleAbandon}
+                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+              >
+                Abandon session
+              </button>
+            </div>
+          )}
 
           {(studyState.phase === 'answering' ||
             studyState.phase === 'result') && (

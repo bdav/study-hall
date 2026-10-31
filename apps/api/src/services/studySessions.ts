@@ -1,8 +1,4 @@
-import {
-  type Prisma,
-  type PrismaClient,
-  type RecallGrade,
-} from '@prisma/client';
+import { Prisma, type PrismaClient, type RecallGrade } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
@@ -21,13 +17,49 @@ import {
 import { countsSinceReset } from './countedAttempts.js';
 import { assertDeckActive } from './decks.js';
 
-/** Include for returning a Study Session with its items in queue order. */
+/**
+ * Include for returning a Study Session with its items in queue order, each
+ * with its answer, once answered.
+ */
 const withItems = {
   items: {
     orderBy: { position: 'asc' },
-    include: { card: { include: withCanonicalAnswers } },
+    include: {
+      card: { include: withCanonicalAnswers },
+      attempts: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { id: true, userAnswer: true, recallGrade: true },
+      },
+    },
   },
 } as const;
+
+/**
+ * How long after its last activity an unfinished Study Session can be
+ * resumed (`updated-plan.md` §12.4); after that it's abandoned.
+ */
+const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** The time before which a session's last activity makes it too old to resume. */
+function resumeCutoff() {
+  return new Date(Date.now() - RESUME_WINDOW_MS);
+}
+
+/**
+ * The learner's unfinished Study Session on a deck that can still be
+ * resumed, active since `cutoff`, with its queue; null when there's none.
+ */
+export function findResumableSession(
+  prisma: PrismaClient,
+  { userId, deckId }: LearnerDeck,
+  cutoff = resumeCutoff(),
+) {
+  return prisma.studySession.findFirst({
+    where: { userId, deckId, status: 'ACTIVE', updatedAt: { gte: cutoff } },
+    include: withItems,
+  });
+}
 
 /** The most cards a Standard session holds (`updated-plan.md` §12.1). */
 const STANDARD_SESSION_SIZE = 25;
@@ -151,15 +183,49 @@ export async function previewQueue(prisma: PrismaClient, deck: LearnerDeck) {
 }
 
 /**
- * Starts a Standard Study Session on a deck. The queue is the deck's due
- * cards, earliest due first, then its NEW cards in deck order. Bucket shares
- * and interleaving come with the queue generator (#8). Returns null, and
- * starts nothing, when the deck has nothing to study.
+ * Abandons the learner's unfinished Study Sessions on a deck that are too
+ * old to resume, ending each at its last activity. Their queues are left
+ * as they were (`updated-plan.md` §12.4).
+ */
+async function abandonStaleSessions(
+  prisma: PrismaClient,
+  { userId, deckId }: LearnerDeck,
+  cutoff: Date,
+) {
+  const stale = await prisma.studySession.findMany({
+    where: { userId, deckId, status: 'ACTIVE', updatedAt: { lt: cutoff } },
+    select: { id: true, updatedAt: true },
+  });
+  for (const { id, updatedAt } of stale) {
+    await prisma.studySession.updateMany({
+      where: { id, status: 'ACTIVE' },
+      data: { status: 'ABANDONED', endedAt: updatedAt },
+    });
+  }
+}
+
+/**
+ * Starts a Standard Study Session on a deck, or resumes the learner's
+ * unfinished one if it's recent enough (`findResumableSession`), abandoning
+ * one that's too old. The queue is the deck's due cards, earliest due
+ * first, then its NEW cards in deck order. Bucket shares and interleaving
+ * come with the queue generator (#8). Returns null, and starts nothing,
+ * when the deck has nothing to study.
  */
 export async function startStudySession(
   prisma: PrismaClient,
   { userId, deckId }: LearnerDeck,
 ) {
+  // One cutoff for both, so no session falls between them
+  const cutoff = resumeCutoff();
+  await abandonStaleSessions(prisma, { userId, deckId }, cutoff);
+  const resumable = await findResumableSession(
+    prisma,
+    { userId, deckId },
+    cutoff,
+  );
+  if (resumable) return resumable;
+
   const dueCards = await prisma.cardProgress.findMany({
     where: dueCardsWhere({ userId, deckId }),
     orderBy: { dueAt: 'asc' },
@@ -176,17 +242,30 @@ export async function startStudySession(
 
   if (queue.length === 0) return null;
 
-  return prisma.studySession.create({
-    data: {
-      userId,
-      deckId,
-      sessionType: 'STANDARD',
-      items: {
-        create: queue.map(({ cardId }, position) => ({ cardId, position })),
+  try {
+    return await prisma.studySession.create({
+      data: {
+        userId,
+        deckId,
+        sessionType: 'STANDARD',
+        items: {
+          create: queue.map(({ cardId }, position) => ({ cardId, position })),
+        },
       },
-    },
-    include: withItems,
-  });
+      include: withItems,
+    });
+  } catch (error) {
+    // Another start got there first: a learner has one unfinished session
+    // on a deck (StudySession_one_active_per_deck), which this resumes
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const started = await findResumableSession(prisma, { userId, deckId });
+      if (started) return started;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -459,11 +538,8 @@ export async function acceptAnswer(
   });
 }
 
-/**
- * Finishes a Study Session, at its last card or early: unanswered items are
- * skipped, and the session is completed with an end time.
- */
-export async function finishStudySession(
+/** Refuses a Study Session that isn't the learner's, or is over. */
+async function assertSessionActive(
   prisma: PrismaClient,
   { userId, id }: { userId: string; id: string },
 ) {
@@ -482,6 +558,17 @@ export async function finishStudySession(
       message: 'Session already finished',
     });
   }
+}
+
+/**
+ * Finishes a Study Session, at its last card or early: unanswered items are
+ * skipped, and the session is completed with an end time.
+ */
+export async function finishStudySession(
+  prisma: PrismaClient,
+  { userId, id }: { userId: string; id: string },
+) {
+  await assertSessionActive(prisma, { userId, id });
 
   return prisma.$transaction(async (tx) => {
     await tx.studySessionItem.updateMany({
@@ -493,5 +580,32 @@ export async function finishStudySession(
       data: { status: 'COMPLETED', endedAt: new Date() },
       include: withItems,
     });
+  });
+}
+
+/**
+ * Abandons a Study Session the learner chooses not to resume: it ends now,
+ * its queue left as it was (`updated-plan.md` §12.4).
+ */
+export async function abandonStudySession(
+  prisma: PrismaClient,
+  { userId, id }: { userId: string; id: string },
+) {
+  await assertSessionActive(prisma, { userId, id });
+  // Abandoning only an active session keeps a finish at the same moment
+  // from being overwritten
+  const abandoned = await prisma.studySession.updateMany({
+    where: { id, status: 'ACTIVE' },
+    data: { status: 'ABANDONED', endedAt: new Date() },
+  });
+  if (abandoned.count === 0) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Session already finished',
+    });
+  }
+  return prisma.studySession.findUniqueOrThrow({
+    where: { id },
+    include: withItems,
   });
 }

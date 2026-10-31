@@ -498,10 +498,13 @@ describe('studyRouter', () => {
       await scheduleCard(cardId, new Date(Date.now() - 60 * 1000));
       const caller = createCaller();
       const session = await caller.study.startSession({ deckId });
-      return caller.study.submitAnswer({
+      const attempt = await caller.study.submitAnswer({
         itemId: session!.items[0].id,
         userAnswer,
       });
+      // So the next answer is in a session of its own
+      await caller.study.finishSession({ id: session!.id });
+      return attempt;
     }
 
     it("replays the card's earlier answers with the corrected one", async () => {
@@ -1014,6 +1017,159 @@ describe('missed cards coming back in the same Study Session', () => {
     });
 
     expect((await progressOf(card.id)).lifecycleState).toBe('LEARNING');
+  });
+});
+
+describe('resuming and abandoning Study Sessions', () => {
+  const hour = 60 * 60 * 1000;
+  const minute = 60 * 1000;
+
+  /** Makes the session's last activity the given time ago. */
+  async function setLastActive(id: string, ago: number) {
+    await prisma.studySession.update({
+      where: { id },
+      data: { updatedAt: new Date(Date.now() - ago) },
+    });
+  }
+
+  it('offers a session active within the last 24 hours to resume, with its queue and answers so far', async () => {
+    const { id, deckId, items } = await startedSession(capitals);
+    const caller = createCaller();
+    await caller.study.submitAnswer({ itemId: items[0].id, userAnswer: 'x' });
+    await setLastActive(id, 24 * hour - minute);
+
+    const active = await caller.study.activeSession({ deckId });
+
+    expect(active?.id).toBe(id);
+    expect(
+      active?.items.map((item) => ({
+        front: item.card.front,
+        status: item.status,
+        answer: item.attempts[0]?.userAnswer,
+      })),
+    ).toEqual([
+      { front: 'Capital of France', status: 'COMPLETED', answer: 'x' },
+      { front: 'Capital of Japan', status: 'PENDING', answer: undefined },
+      { front: 'Capital of Brazil', status: 'PENDING', answer: undefined },
+      { front: 'Capital of France', status: 'PENDING', answer: undefined },
+    ]);
+  });
+
+  it('offers none to resume once its last activity is over 24 hours ago', async () => {
+    const { id, deckId } = await startedSession(capitals);
+    await setLastActive(id, 24 * hour + minute);
+
+    expect(await createCaller().study.activeSession({ deckId })).toBeNull();
+  });
+
+  it('resumes the recent session rather than starting another', async () => {
+    const { id, deckId } = await startedSession(capitals);
+    await setLastActive(id, 24 * hour - minute);
+
+    const started = await createCaller().study.startSession({ deckId });
+
+    expect(started?.id).toBe(id);
+  });
+
+  it('abandons a session too old to resume, at its last activity and with its queue as it was, then starts a new one', async () => {
+    const { id, deckId, items } = await startedSession(capitals);
+    const caller = createCaller();
+    await caller.study.submitAnswer({
+      itemId: items[0].id,
+      userAnswer: 'Paris',
+    });
+    await setLastActive(id, 24 * hour + minute);
+    const { updatedAt: lastActivity } =
+      await prisma.studySession.findUniqueOrThrow({ where: { id } });
+
+    const started = await caller.study.startSession({ deckId });
+
+    expect(started?.id).not.toBe(id);
+    const abandoned = await prisma.studySession.findUniqueOrThrow({
+      where: { id },
+      include: { items: { orderBy: { position: 'asc' } } },
+    });
+    expect(abandoned).toMatchObject({
+      status: 'ABANDONED',
+      endedAt: lastActivity,
+    });
+    expect(abandoned.items.map((item) => item.status)).toEqual([
+      'COMPLETED',
+      'PENDING',
+      'PENDING',
+    ]);
+  });
+
+  it('abandons a session on request, ending it now with its queue as it was', async () => {
+    const { id, deckId, items } = await startedSession(capitals);
+    const caller = createCaller();
+    await caller.study.submitAnswer({
+      itemId: items[0].id,
+      userAnswer: 'Paris',
+    });
+    const before = Date.now();
+
+    const abandoned = await caller.study.abandonSession({ id });
+
+    expect(abandoned.status).toBe('ABANDONED');
+    expect(abandoned.endedAt!.getTime()).toBeGreaterThanOrEqual(before);
+    expect(abandoned.items.map((item) => item.status)).toEqual([
+      'COMPLETED',
+      'PENDING',
+      'PENDING',
+    ]);
+    expect(await caller.study.activeSession({ deckId })).toBeNull();
+    expect((await caller.study.startSession({ deckId }))?.id).not.toBe(id);
+  });
+
+  it('refuses to abandon a finished session, or close one to answers by abandoning it', async () => {
+    const { id, items } = await startedSession(capitals);
+    const caller = createCaller();
+    await caller.study.abandonSession({ id });
+
+    await expect(caller.study.abandonSession({ id })).rejects.toThrow(
+      /finished/i,
+    );
+    await expect(caller.study.finishSession({ id })).rejects.toThrow(
+      /finished/i,
+    );
+    await expect(
+      caller.study.submitAnswer({ itemId: items[0].id, userAnswer: 'Paris' }),
+    ).rejects.toThrow(/finished/i);
+  });
+
+  it("refuses to abandon another user's session", async () => {
+    const { id } = await startedSession(capitals);
+    const other = await prisma.user.create({
+      data: { email: `abandon-${Date.now()}@example.com`, passwordHash: 'x' },
+    });
+    const otherCaller = appRouter.createCaller({
+      prisma,
+      userId: other.id,
+      sessionToken: null,
+      ai: createFakeAiProvider(),
+    });
+
+    await expect(
+      otherCaller.study.abandonSession({ id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('starts one session when two starts arrive at once', async () => {
+    const deck = await deckWith(capitals);
+    const caller = createCaller();
+
+    const [first, second] = await Promise.all([
+      caller.study.startSession({ deckId: deck.id }),
+      caller.study.startSession({ deckId: deck.id }),
+    ]);
+
+    expect(second?.id).toBe(first?.id);
+    expect(
+      await prisma.studySession.count({
+        where: { deckId: deck.id, status: 'ACTIVE' },
+      }),
+    ).toBe(1);
   });
 });
 

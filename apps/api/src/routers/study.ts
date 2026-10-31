@@ -2,9 +2,11 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
 import {
+  abandonStudySession,
   acceptAnswer,
   answerItem,
   finishStudySession,
+  findResumableSession,
   previewQueue,
   startStudySession,
 } from '../services/studySessions.js';
@@ -26,6 +28,22 @@ export const studyRouter = router({
       }
 
       return previewQueue(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
+      });
+    }),
+
+  activeSession: protectedProcedure
+    .input(z.object({ deckId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const deck = await ctx.prisma.deck.findUnique({
+        where: { id: input.deckId, userId: ctx.userId },
+      });
+      if (!deck) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Deck not found' });
+      }
+
+      return findResumableSession(ctx.prisma, {
         userId: ctx.userId,
         deckId: input.deckId,
       });
@@ -70,6 +88,15 @@ export const studyRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       return finishStudySession(ctx.prisma, {
+        userId: ctx.userId,
+        id: input.id,
+      });
+    }),
+
+  abandonSession: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return abandonStudySession(ctx.prisma, {
         userId: ctx.userId,
         id: input.id,
       });

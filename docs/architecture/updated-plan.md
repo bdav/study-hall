@@ -957,6 +957,8 @@ If older:
 
 Do not mutate stale historical queues.
 
+As built (#10): the window runs from the session's last activity (`updatedAt`, touched by each answer). A session too old to resume is abandoned when the learner next starts one on the deck, its end time set to its last activity rather than the moment it was found stale. Starting while a recent session is unfinished resumes it, so the study page offers "Resume session?" and starts by resuming, with Abandon session to end it (now) and start afresh. A partial unique index keeps one unfinished session per learner and deck; two starts at once get the same session.
+
 ⸻
 
 13. Queue Generation

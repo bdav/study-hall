@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
@@ -11,6 +13,73 @@ type HistoryEntry = GradedAnswer & { card: Flashcard; isRetry: boolean };
 
 /** A Study Session's queue, in the order the server keeps it. */
 type StudySessionQueue = { id: string; items: QueueItem[] };
+
+/** A Study Session as the server returns it, new or unfinished. */
+type ServerSession = NonNullable<
+  inferRouterOutputs<AppRouter>['study']['activeSession']
+>;
+
+/**
+ * A session's items still in play: those answered, then those to come;
+ * items skipped, such as a card marked known, are done with.
+ */
+function itemsInPlay(session: ServerSession) {
+  return session.items.filter(
+    (item) =>
+      item.status === 'PENDING' ||
+      (item.status === 'COMPLETED' && item.attempts.length > 0),
+  );
+}
+
+/**
+ * The queue and answers so far of a session the server returns, a new one
+ * or one being resumed. An answer is shown with its grade; how it matched
+ * isn't kept, so isn't shown.
+ */
+function toQueueAndHistory(session: ServerSession) {
+  const items = itemsInPlay(session).map((item) => ({
+    itemId: item.id,
+    card: toFlashcard(item.card),
+    isRetry: item.isRetry,
+    answer: item.attempts[0],
+  }));
+  const history: HistoryEntry[] = items.flatMap(({ card, isRetry, answer }) =>
+    answer
+      ? [
+          {
+            card,
+            isRetry,
+            attemptId: answer.id,
+            userAnswer: answer.userAnswer,
+            recallGrade: answer.recallGrade,
+            accentMismatch: false,
+            matchedAnswer: null,
+            matchedVariant: null,
+          },
+        ]
+      : [],
+  );
+  return {
+    queue: {
+      id: session.id,
+      items: items.map(({ itemId, card, isRetry }) => ({
+        itemId,
+        card,
+        isRetry,
+      })),
+    },
+    history,
+  };
+}
+
+/** How far an unfinished session got: its cards answered of its size. */
+function progressOf(session: ServerSession) {
+  const cards = itemsInPlay(session).filter((item) => !item.isRetry);
+  return {
+    answered: cards.filter((item) => item.status === 'COMPLETED').length,
+    size: cards.length,
+  };
+}
 
 type StudyState =
   | { phase: 'idle' }
@@ -46,6 +115,14 @@ export function useStudySession(deckId: string | undefined) {
   // A start under way, set at once so a second press in the same moment
   // sees it, as the mutation's own pending state wouldn't yet
   const startInFlight = useRef(false);
+  const utils = trpc.useUtils();
+  const finishSession = trpc.study.finishSession.useMutation();
+  // The deck's unfinished session, which starting resumes; not kept once
+  // off screen, so a session finished since isn't offered meanwhile
+  const activeSession = trpc.study.activeSession.useQuery(
+    { deckId: deckId ?? '' },
+    { enabled: !!deckId, gcTime: 0 },
+  );
   const startSession = trpc.study.startSession.useMutation({
     onSuccess: (started) => {
       startInFlight.current = false;
@@ -54,19 +131,21 @@ export function useStudySession(deckId: string | undefined) {
         setStudyState({ phase: 'nothing-due' });
         return;
       }
-      setStudySession({
-        id: started.id,
-        items: started.items.map((item) => ({
-          itemId: item.id,
-          card: toFlashcard(item.card),
-          isRetry: item.isRetry,
-        })),
-      });
-      setPosition(0);
-      setFinished(false);
+      // A new session, or an unfinished one resumed at its next card
+      const { queue, history: answered } = toQueueAndHistory(started);
+      setStudySession(queue);
+      setPosition(answered.length);
       setAnswerInput('');
-      setHistory([]);
-      setStudyState({ phase: 'answering' });
+      setHistory(answered);
+      if (answered.length < queue.items.length) {
+        setFinished(false);
+        setStudyState({ phase: 'answering' });
+      } else {
+        // Every card answered, but not yet finished
+        finishSession.mutate({ id: queue.id });
+        setFinished(true);
+        setStudyState({ phase: 'complete' });
+      }
     },
     onError: () => {
       startInFlight.current = false;
@@ -76,8 +155,17 @@ export function useStudySession(deckId: string | undefined) {
 
   const submitAnswer = trpc.study.submitAnswer.useMutation();
   const dontKnow = trpc.study.dontKnow.useMutation();
-  const finishSession = trpc.study.finishSession.useMutation();
   const acceptAnswer = trpc.study.acceptAnswer.useMutation();
+  // Abandoning the unfinished session offers a new one in its place
+  const abandonSession = trpc.study.abandonSession.useMutation({
+    onSuccess: () => {
+      utils.study.activeSession.invalidate({ deckId });
+      utils.study.queuePreview.invalidate({ deckId });
+    },
+  });
+  const resumable = activeSession.data
+    ? { id: activeSession.data.id, ...progressOf(activeSession.data) }
+    : null;
 
   const items = studySession?.items ?? [];
   const currentItem = items[position] ?? null;
@@ -95,7 +183,15 @@ export function useStudySession(deckId: string | undefined) {
         i >= history.length && item.isRetry && item.card.id === cardId,
     );
 
-  /** Starts a Study Session, unless one is already being started. */
+  /** Abandons the deck's unfinished session, rather than resuming it. */
+  function handleAbandon() {
+    if (resumable) abandonSession.mutate({ id: resumable.id });
+  }
+
+  /**
+   * Starts a Study Session, or resumes the deck's unfinished one, unless one
+   * is already being started.
+   */
   function handleStart() {
     if (!deckId || startInFlight.current) return;
     startInFlight.current = true;
@@ -424,6 +520,8 @@ export function useStudySession(deckId: string | undefined) {
 
   return {
     studyState,
+    resumable,
+    handleAbandon,
     currentCard,
     cardNumber,
     sessionSize,

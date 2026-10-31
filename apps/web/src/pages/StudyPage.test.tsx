@@ -16,6 +16,8 @@ import { trpc } from '@/lib/trpc';
 const mockInvalidateDeck = vi.fn();
 const mockInvalidateCards = vi.fn();
 const mockInvalidateHistory = vi.fn();
+const mockInvalidateActiveSession = vi.fn();
+const mockInvalidateQueuePreview = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -24,6 +26,10 @@ vi.mock('@/lib/trpc', () => ({
       card: {
         listByDeck: { invalidate: mockInvalidateCards },
         history: { invalidate: mockInvalidateHistory },
+      },
+      study: {
+        activeSession: { invalidate: mockInvalidateActiveSession },
+        queuePreview: { invalidate: mockInvalidateQueuePreview },
       },
     })),
     card: {
@@ -45,7 +51,9 @@ vi.mock('@/lib/trpc', () => ({
       dontKnow: { useMutation: vi.fn() },
       finishSession: { useMutation: vi.fn() },
       acceptAnswer: { useMutation: vi.fn() },
+      abandonSession: { useMutation: vi.fn() },
       queuePreview: { useQuery: vi.fn() },
+      activeSession: { useQuery: vi.fn() },
     },
   },
 }));
@@ -91,10 +99,17 @@ const mockDeck = {
   ],
 };
 
-// The session startSession hands back: one item per deck card, in order.
+// The session startSession hands back: one item per deck card, in order,
+// none answered yet.
 const mockSession = {
   id: 'session-1',
-  items: mockDeck.cards.map((card, i) => ({ id: `item-${i + 1}`, card })),
+  items: mockDeck.cards.map((card, i) => ({
+    id: `item-${i + 1}`,
+    card,
+    status: 'PENDING',
+    isRetry: false,
+    attempts: [] as { id: string; userAnswer: string; recallGrade: string }[],
+  })),
 };
 
 function renderStudyPage(deckId = 'deck-1') {
@@ -362,7 +377,7 @@ async function startStudyingWithVariants() {
     ...mockSession,
     items: [
       {
-        id: 'item-1',
+        ...mockSession.items[0],
         card: cardOneWithVariants([{ id: 'variant-four', text: 'four' }]),
       },
       mockSession.items[1],
@@ -517,12 +532,31 @@ function mockCardHistory(
   })) as unknown as typeof trpc.card.history.useQuery);
 }
 
+const mockAbandonSession = vi.fn();
+
+/**
+ * The deck's unfinished session to resume, none by default, and abandoning
+ * it succeeding.
+ */
+function mockActiveSession(session: unknown = null) {
+  vi.mocked(trpc.study.activeSession.useQuery).mockReturnValue({
+    data: session,
+  } as unknown as ReturnType<typeof trpc.study.activeSession.useQuery>);
+  vi.mocked(trpc.study.abandonSession.useMutation).mockImplementation(((opts?: {
+    onSuccess?: () => void;
+  }) => ({
+    mutate: mockAbandonSession.mockImplementation(() => opts?.onSuccess?.()),
+    isPending: false,
+  })) as unknown as typeof trpc.study.abandonSession.useMutation);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
   mockAcceptAnswerMutation();
   mockQueuePreview();
   mockCardHistory();
+  mockActiveSession();
 });
 
 describe('StudyPage', () => {
@@ -1469,7 +1503,10 @@ describe('StudyPage', () => {
       };
       const session = {
         ...mockSession,
-        items: [{ id: 'item-1', card: twoAnswers }, mockSession.items[1]],
+        items: [
+          { ...mockSession.items[0], card: twoAnswers },
+          mockSession.items[1],
+        ],
       };
       vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
         ((opts?: { onSuccess?: (data: typeof session) => void }) => ({
@@ -2970,6 +3007,159 @@ describe('StudyPage', () => {
           screen.getByRole('button', { name: /flip to front/i }),
         ).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('an unfinished session', () => {
+    // Card 1 answered, card 2 still to come
+    const unfinished = {
+      id: 'session-1',
+      items: [
+        {
+          ...mockSession.items[0],
+          status: 'COMPLETED',
+          isRetry: false,
+          attempts: [
+            { id: 'attempt-1', userAnswer: '4', recallGrade: 'NAILED' },
+          ],
+        },
+        {
+          ...mockSession.items[1],
+          status: 'PENDING',
+          isRetry: false,
+          attempts: [],
+        },
+      ],
+    };
+
+    it('offers to resume it, saying how far it got', () => {
+      setupMocksWithStartSession();
+      mockActiveSession(unfinished);
+      renderStudyPage();
+
+      expect(screen.getByText('Resume session?')).toBeInTheDocument();
+      expect(screen.getByText('1 of 2 answered')).toBeInTheDocument();
+    });
+
+    it('resumes from the next card still to answer', async () => {
+      setupMocksWithStartSession();
+      mockActiveSession(unfinished);
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: typeof unfinished) => void }) => ({
+          mutate: vi.fn(() => opts?.onSuccess?.(unfinished)),
+        })) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
+      expect(screen.getByText('Capital of France?')).toBeInTheDocument();
+      // The answer given before is there to look back on
+      await user.click(screen.getByRole('button', { name: /previous/i }));
+      expect(await screen.findByTestId('result')).toHaveTextContent(
+        'Nailed it',
+      );
+    });
+
+    it('abandons it on request, offering a new session instead', async () => {
+      setupMocksWithStartSession();
+      mockActiveSession(unfinished);
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: 'Abandon session' }));
+
+      expect(mockAbandonSession).toHaveBeenCalledWith({ id: 'session-1' });
+      expect(mockInvalidateActiveSession).toHaveBeenCalled();
+      expect(mockInvalidateQueuePreview).toHaveBeenCalled();
+    });
+
+    /** Starting resumes the given session. */
+    function startResumes(session: unknown) {
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: unknown) => void }) => ({
+          mutate: vi.fn(() => opts?.onSuccess?.(session)),
+        })) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+    }
+
+    it('resumes past a card marked known, at the Retries after the cards', async () => {
+      // Card 1 missed, card 2 marked known, card 1's Retry to come
+      const withRetry = {
+        id: 'session-1',
+        items: [
+          {
+            ...unfinished.items[0],
+            attempts: [
+              { id: 'attempt-1', userAnswer: '5', recallGrade: 'MISSED' },
+            ],
+          },
+          { ...unfinished.items[1], status: 'SKIPPED' },
+          {
+            ...mockSession.items[0],
+            id: 'retry-1',
+            status: 'PENDING',
+            isRetry: true,
+            attempts: [],
+          },
+        ],
+      };
+      setupMocksWithStartSession();
+      mockActiveSession(withRetry);
+      startResumes(withRetry);
+      const user = userEvent.setup();
+      renderStudyPage();
+      expect(screen.getByText('1 of 1 answered')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(await screen.findByText('Retry 1 of 1')).toBeInTheDocument();
+    });
+
+    it('finishes a resumed session whose every card is answered', async () => {
+      const answered = {
+        id: 'session-1',
+        items: [
+          unfinished.items[0],
+          {
+            ...unfinished.items[1],
+            status: 'COMPLETED',
+            attempts: [
+              { id: 'attempt-2', userAnswer: 'Paris', recallGrade: 'NAILED' },
+            ],
+          },
+        ],
+      };
+      setupMocksWithStartSession();
+      mockActiveSession(answered);
+      startResumes(answered);
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/you answered 2 of 2 cards/i),
+      ).toBeInTheDocument();
+      expect(
+        vi.mocked(trpc.study.finishSession.useMutation).mock.results.at(-1)
+          ?.value.mutate,
+      ).toHaveBeenCalledWith({ id: 'session-1' });
+    });
+
+    it('offers no resuming when there is none', () => {
+      setupMocksWithStartSession();
+      renderStudyPage();
+
+      expect(screen.queryByText('Resume session?')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Abandon session' }),
+      ).not.toBeInTheDocument();
     });
   });
 
