@@ -1053,6 +1053,8 @@ Due LEARNING may exceed target because early stabilization is fragile.
 
 Unused budget redistributes.
 
+As built (#8, `queueGenerator.ts`): sessions aim for their type's maximum. NEW takes 20%, or 10% when due LEARNING and weak STABLE candidates could fill half the session, and at least one card while any are NEW; weak STABLE up to 20%; due LEARNING up to half, past its target but never crowding out due STABLE; due STABLE up to 60%. Unused budget goes first to reviews past their caps, due LEARNING first, and to NEW only to reach the type's minimum, so an all-NEW deck's session is the minimum. In Study mode a weak STABLE card is drawn only once due: weakness prioritizes among due cards, and reviewing weak cards early is Drill Weakest's (#9). Sessions aren't sized by time estimates; the card bounds stand in for the target durations.
+
 ⸻
 
 13.4 Due Backlog Handling

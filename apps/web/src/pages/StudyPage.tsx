@@ -23,6 +23,9 @@ import { CardStack } from '@/components/CardStack';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
 import { useStudySession } from '@/hooks/useStudySession';
+import { useStoredChoice } from '@/hooks/useStoredChoice';
+import { SessionTypePicker } from '@/components/SessionTypePicker';
+import { SESSION_TYPES } from '@/lib/sessionTypes';
 import {
   useSlideAnimation,
   type CardSnapshot,
@@ -339,8 +342,14 @@ export default function StudyPage() {
     null,
   );
 
+  // Quick, Standard or Deep, remembered by the browser (#8)
+  const [sessionType, setSessionType] = useStoredChoice(
+    'study-hall:session-type',
+    SESSION_TYPES.map((type) => type.value),
+    'STANDARD',
+  );
   const queuePreviewQuery = trpc.study.queuePreview.useQuery(
-    { deckId: deckId ?? '' },
+    { deckId: deckId ?? '', sessionType },
     { enabled: !!deckId },
   );
   const deckQuery = trpc.deck.getById.useQuery(
@@ -385,7 +394,7 @@ export default function StudyPage() {
     handleForward,
     canGoBack,
     reviewEntry,
-  } = useStudySession(deckId);
+  } = useStudySession(deckId, sessionType);
 
   const isReviewing = studyState.phase === 'reviewing';
   const isIdle = studyState.phase === 'idle';
@@ -793,6 +802,9 @@ export default function StudyPage() {
       {error && <p className="mb-4 text-destructive">{error}</p>}
 
       <div className="flex w-full flex-1 flex-col items-center justify-center">
+        {isIdle && !resumable && (
+          <SessionTypePicker value={sessionType} onChange={setSessionType} />
+        )}
         <div
           className="relative w-full max-w-md"
           onTouchStart={swipe.onTouchStart}

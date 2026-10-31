@@ -1,11 +1,15 @@
-import { Prisma, type PrismaClient, type RecallGrade } from '@prisma/client';
+import {
+  Prisma,
+  type PrismaClient,
+  type RecallGrade,
+  type SessionType,
+} from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
   addAcceptedVariant,
   alreadyAccepts,
   currentVersionId,
-  deckOrder,
   gradeCardAnswer,
   withCanonicalAnswers,
 } from './cards.js';
@@ -16,6 +20,7 @@ import {
 } from './progressUpdater.js';
 import { countsSinceReset } from './countedAttempts.js';
 import { assertDeckActive } from './decks.js';
+import { composeQueue, findQueueCandidates } from './queueGenerator.js';
 
 /**
  * Include for returning a Study Session with its items in queue order, each
@@ -60,9 +65,6 @@ export function findResumableSession(
     include: withItems,
   });
 }
-
-/** The most cards a Standard session holds (`updated-plan.md` §12.1). */
-const STANDARD_SESSION_SIZE = 25;
 
 /**
  * How many times at most a missed card comes back in one session
@@ -141,9 +143,8 @@ function newCardsWhere({
 }
 
 /**
- * How many of a deck's cards are due and how many are NEW, by the rules a
- * Study Session's queue uses. A Standard session takes at most
- * STANDARD_SESSION_SIZE of them.
+ * How many of a deck's cards are due and how many are NEW, the cards a
+ * Study Session draws from (`findQueueCandidates`).
  */
 export async function countDueAndNewCards(
   prisma: PrismaClient,
@@ -157,13 +158,18 @@ export async function countDueAndNewCards(
 }
 
 /**
- * What a Standard Study Session started now would hold: its size, from the
- * deck's due and NEW cards, and, for when it would hold nothing, when the
- * next card in review comes due.
+ * What a Study Session of the given type started now would hold: its size,
+ * as starting it would compose it, and, for when it would hold nothing,
+ * when the next card in review comes due.
  */
-export async function previewQueue(prisma: PrismaClient, deck: LearnerDeck) {
-  const [{ dueCount, newCount }, next] = await Promise.all([
+export async function previewQueue(
+  prisma: PrismaClient,
+  deck: LearnerDeck,
+  sessionType: SessionType,
+) {
+  const [{ dueCount, newCount }, candidates, next] = await Promise.all([
     countDueAndNewCards(prisma, deck),
+    findQueueCandidates(prisma, deck),
     prisma.cardProgress.findFirst({
       where: {
         ...deck,
@@ -175,7 +181,8 @@ export async function previewQueue(prisma: PrismaClient, deck: LearnerDeck) {
     }),
   ]);
   return {
-    sessionSize: Math.min(STANDARD_SESSION_SIZE, dueCount + newCount),
+    // Its order varies with the seed, never its size
+    sessionSize: composeQueue({ candidates, sessionType, seed: 0 }).length,
     dueCount,
     newCount,
     nextDueAt: next?.dueAt ?? null,
@@ -205,16 +212,20 @@ async function abandonStaleSessions(
 }
 
 /**
- * Starts a Standard Study Session on a deck, or resumes the learner's
- * unfinished one if it's recent enough (`findResumableSession`), abandoning
- * one that's too old. The queue is the deck's due cards, earliest due
- * first, then its NEW cards in deck order. Bucket shares and interleaving
- * come with the queue generator (#8). Returns null, and starts nothing,
- * when the deck has nothing to study.
+ * Starts a Study Session of the given type on a deck, or resumes the
+ * learner's unfinished one if it's recent enough (`findResumableSession`),
+ * abandoning one that's too old. The queue is composed from the deck's
+ * due and NEW cards by the session type (`composeQueue`), in an order fixed
+ * by `seed`, random unless given. Returns null, and starts nothing, when
+ * the deck has nothing to study.
  */
 export async function startStudySession(
   prisma: PrismaClient,
   { userId, deckId }: LearnerDeck,
+  {
+    sessionType,
+    seed = Math.floor(Math.random() * 2 ** 32),
+  }: { sessionType: SessionType; seed?: number },
 ) {
   // One cutoff for both, so no session falls between them
   const cutoff = resumeCutoff();
@@ -226,20 +237,11 @@ export async function startStudySession(
   );
   if (resumable) return resumable;
 
-  const dueCards = await prisma.cardProgress.findMany({
-    where: dueCardsWhere({ userId, deckId }),
-    orderBy: { dueAt: 'asc' },
-    select: { cardId: true },
-    take: STANDARD_SESSION_SIZE,
+  const queue = composeQueue({
+    candidates: await findQueueCandidates(prisma, { userId, deckId }),
+    sessionType,
+    seed,
   });
-  const newCards = await prisma.cardProgress.findMany({
-    where: newCardsWhere({ userId, deckId }),
-    orderBy: deckOrder.map((order) => ({ card: order })),
-    select: { cardId: true },
-    take: STANDARD_SESSION_SIZE - dueCards.length,
-  });
-  const queue = [...dueCards, ...newCards];
-
   if (queue.length === 0) return null;
 
   try {
@@ -247,9 +249,9 @@ export async function startStudySession(
       data: {
         userId,
         deckId,
-        sessionType: 'STANDARD',
+        sessionType,
         items: {
-          create: queue.map(({ cardId }, position) => ({ cardId, position })),
+          create: queue.map((cardId, position) => ({ cardId, position })),
         },
       },
       include: withItems,

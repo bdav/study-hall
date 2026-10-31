@@ -3010,6 +3010,91 @@ describe('StudyPage', () => {
     });
   });
 
+  describe('choosing a session type', () => {
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    const sessionTypes = () =>
+      within(screen.getByRole('group', { name: 'Session length' }));
+
+    it('offers Quick, Standard and Deep with their sizes, Standard chosen to start', () => {
+      setupMocksWithStartSession();
+      renderStudyPage();
+
+      const quick = sessionTypes().getByRole('button', { name: /quick/i });
+      const standard = sessionTypes().getByRole('button', {
+        name: /standard/i,
+      });
+      const deep = sessionTypes().getByRole('button', { name: /deep/i });
+      expect(quick).toHaveTextContent('Quick5–12 cards');
+      expect(standard).toHaveTextContent('Standard10–25 cards');
+      expect(deep).toHaveTextContent('Deep20–50 cards');
+      expect(standard).toHaveAttribute('aria-pressed', 'true');
+      expect(quick).toHaveAttribute('aria-pressed', 'false');
+      expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+        { deckId: 'deck-1', sessionType: 'STANDARD' },
+        expect.anything(),
+      );
+    });
+
+    it('previews and starts the session type chosen', async () => {
+      const start = vi.fn();
+      setupMocksWithStartSession();
+      vi.mocked(trpc.study.startSession.useMutation).mockReturnValue({
+        mutate: start,
+      } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(sessionTypes().getByRole('button', { name: /quick/i }));
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(
+        sessionTypes().getByRole('button', { name: /quick/i }),
+      ).toHaveAttribute('aria-pressed', 'true');
+      expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+        { deckId: 'deck-1', sessionType: 'QUICK' },
+        expect.anything(),
+      );
+      expect(start).toHaveBeenCalledWith({
+        deckId: 'deck-1',
+        sessionType: 'QUICK',
+      });
+    });
+
+    it('remembers the session type chosen', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      const { unmount } = renderStudyPage();
+      await user.click(sessionTypes().getByRole('button', { name: /deep/i }));
+      unmount();
+
+      renderStudyPage();
+
+      expect(
+        sessionTypes().getByRole('button', { name: /deep/i }),
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('is not offered once a session has started, or while one can be resumed', async () => {
+      setupMocksWithStartSession();
+      const user = userEvent.setup();
+      const { unmount } = renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      expect(
+        screen.queryByRole('group', { name: 'Session length' }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      mockActiveSession({ id: 'session-1', items: mockSession.items });
+      renderStudyPage();
+
+      expect(
+        screen.queryByRole('group', { name: 'Session length' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe('an unfinished session', () => {
     // Card 1 answered, card 2 still to come
     const unfinished = {

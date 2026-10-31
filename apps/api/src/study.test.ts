@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { type PrismaClient } from '@prisma/client';
-import { createDeckWithCards, createTestPrisma } from './test-helpers.js';
+import {
+  createDeckWithCards,
+  createTestPrisma,
+  recordStudySession,
+} from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
 import { type NewCard } from './services/cards.js';
@@ -117,7 +121,7 @@ describe('studyRouter', () => {
       ]);
     });
 
-    it('puts due cards first, earliest due first, and leaves out cards not yet due', async () => {
+    it('draws on due and NEW cards, leaving out cards not yet due', async () => {
       const deck = await deckWith([
         { front: 'Due an hour ago', canonicalAnswers: ['A'] },
         { front: 'Due tomorrow', canonicalAnswers: ['B'] },
@@ -133,14 +137,14 @@ describe('studyRouter', () => {
         deckId: deck.id,
       });
 
-      expect(session?.items.map((item) => item.card.front)).toEqual([
-        'Due two hours ago',
+      expect(session?.items.map((item) => item.card.front).sort()).toEqual([
         'Due an hour ago',
+        'Due two hours ago',
         'New',
       ]);
     });
 
-    it('fills at most 25 items, the Standard size, due cards before NEW ones', async () => {
+    it('takes NEW cards, in deck order, only as far as the minimum when few are due', async () => {
       const deck = await deckWith(
         Array.from({ length: 30 }, (_, i) => ({
           front: `Q${i}`,
@@ -154,9 +158,13 @@ describe('studyRouter', () => {
         deckId: deck.id,
       });
 
-      expect(session?.items).toHaveLength(25);
-      expect(session?.items[0].card.front).toBe('Q29');
-      expect(session?.items[24].card.front).toBe('Q23');
+      // A Standard session's minimum of 10: the due card and 9 NEW ones
+      const fronts = session!.items.map((item) => item.card.front);
+      expect(fronts).toHaveLength(10);
+      expect(fronts).toContain('Q29');
+      expect(fronts.filter((front) => front !== 'Q29')).toEqual(
+        Array.from({ length: 9 }, (_, i) => `Q${i}`),
+      );
     });
 
     it('starts no session when nothing is due and nothing is NEW', async () => {
@@ -194,7 +202,7 @@ describe('studyRouter', () => {
       });
     });
 
-    it('holds at most 25, the Standard size', async () => {
+    it("holds what starting would: an all-NEW deck's minimum", async () => {
       const deck = await deckWith(
         Array.from({ length: 30 }, (_, i) => ({
           front: `Q${i}`,
@@ -206,7 +214,7 @@ describe('studyRouter', () => {
         deckId: deck.id,
       });
 
-      expect(preview).toMatchObject({ sessionSize: 25, newCount: 30 });
+      expect(preview).toMatchObject({ sessionSize: 10, newCount: 30 });
     });
 
     it('says when the next card is due when nothing is due now', async () => {
@@ -1170,6 +1178,154 @@ describe('resuming and abandoning Study Sessions', () => {
         where: { deckId: deck.id, status: 'ACTIVE' },
       }),
     ).toBe(1);
+  });
+});
+
+describe('session types and queue buckets', () => {
+  const hour = 60 * 60 * 1000;
+
+  /** Cards "Card 1" to "Card n", answered "A1" to "An". */
+  function numbered(n: number): NewCard[] {
+    return Array.from({ length: n }, (_, i) => ({
+      front: `Card ${i + 1}`,
+      canonicalAnswers: [`A${i + 1}`],
+    }));
+  }
+
+  /**
+   * A deck of n STABLE cards, all due, Card 1 most overdue: a backlog
+   * bigger than a Standard session when n is over 25.
+   */
+  async function stableBacklog(n: number) {
+    const deck = await deckWith(numbered(n));
+    for (const [i, card] of deck.cards.entries()) {
+      await prisma.cardProgress.update({
+        where: { userId_cardId: { userId, cardId: card.id } },
+        data: {
+          lifecycleState: 'STABLE',
+          masteryScore: 6,
+          dueAt: new Date(Date.now() - (n - i) * hour),
+        },
+      });
+    }
+    return deck;
+  }
+
+  /** A miss of the card in a finished session of its own. */
+  function missIn(deckId: string, cardId: string) {
+    return recordStudySession(prisma, {
+      userId,
+      deckId,
+      answers: [{ cardId, userAnswer: 'wrong' }],
+    });
+  }
+
+  async function startedFronts(deckId: string) {
+    const session = await createCaller().study.startSession({ deckId });
+    return session!.items.map((item) => item.card.front);
+  }
+
+  it('sizes the session by its type, as its preview says, however big the backlog', async () => {
+    const deck = await stableBacklog(60);
+    const caller = createCaller();
+
+    for (const [sessionType, size] of [
+      ['QUICK', 12],
+      ['STANDARD', 25],
+      ['DEEP', 50],
+    ] as const) {
+      const preview = await caller.study.queuePreview({
+        deckId: deck.id,
+        sessionType,
+      });
+      const session = await caller.study.startSession({
+        deckId: deck.id,
+        sessionType,
+      });
+
+      expect(preview.sessionSize).toBe(size);
+      expect(session).toMatchObject({ sessionType });
+      expect(session?.items).toHaveLength(size);
+      await caller.study.abandonSession({ id: session!.id });
+    }
+  });
+
+  it('starts a Standard session when no type is given', async () => {
+    const deck = await stableBacklog(30);
+
+    const session = await createCaller().study.startSession({
+      deckId: deck.id,
+    });
+
+    expect(session?.sessionType).toBe('STANDARD');
+    expect(session?.items).toHaveLength(25);
+  });
+
+  it('brings in a weak card, mastery 3 or less, ahead of a backlog of more overdue ones', async () => {
+    const deck = await stableBacklog(30);
+    const leastOverdue = deck.cards[29];
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId: leastOverdue.id } },
+      data: { masteryScore: 3 },
+    });
+
+    expect(await startedFronts(deck.id)).toContain('Card 30');
+  });
+
+  it('brings in a weak card, missed twice in its last five answers, ahead of the backlog', async () => {
+    const deck = await stableBacklog(30);
+    const leastOverdue = deck.cards[29];
+    await missIn(deck.id, leastOverdue.id);
+    await missIn(deck.id, leastOverdue.id);
+
+    expect(await startedFronts(deck.id)).toContain('Card 30');
+  });
+
+  it("doesn't count a Retry's miss toward weakness", async () => {
+    const deck = await stableBacklog(30);
+    const leastOverdue = deck.cards[29];
+    // One miss, then its Retry missed too
+    await recordStudySession(prisma, {
+      userId,
+      deckId: deck.id,
+      answers: [
+        { cardId: leastOverdue.id, userAnswer: 'wrong' },
+        { cardId: leastOverdue.id, userAnswer: 'wrong' },
+      ],
+    });
+
+    expect(await startedFronts(deck.id)).not.toContain('Card 30');
+  });
+
+  it('counts only misses since the card last started over', async () => {
+    const deck = await stableBacklog(30);
+    const leastOverdue = deck.cards[29];
+    await missIn(deck.id, leastOverdue.id);
+    await missIn(deck.id, leastOverdue.id);
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId: leastOverdue.id } },
+      data: { resetAt: new Date() },
+    });
+
+    expect(await startedFronts(deck.id)).not.toContain('Card 30');
+  });
+
+  it('leaves out a weak card not yet due', async () => {
+    const deck = await stableBacklog(3);
+    await prisma.cardProgress.update({
+      where: { userId_cardId: { userId, cardId: deck.cards[0].id } },
+      data: { masteryScore: 2, dueAt: new Date(Date.now() + hour) },
+    });
+
+    expect((await startedFronts(deck.id)).sort()).toEqual(['Card 2', 'Card 3']);
+  });
+
+  it("starts an all-NEW deck with its first cards in deck order, the session type's minimum", async () => {
+    const deck = await deckWith(numbered(30));
+
+    expect(await startedFronts(deck.id)).toEqual(
+      numbered(10).map((card) => card.front),
+    );
   });
 });
 

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
+import { type SessionType } from '@/lib/sessionTypes';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
 
@@ -94,7 +95,10 @@ type StudyState =
     }
   | { phase: 'complete' };
 
-export function useStudySession(deckId: string | undefined) {
+export function useStudySession(
+  deckId: string | undefined,
+  sessionType: SessionType,
+) {
   const [studyState, setStudyState] = useState<StudyState>({ phase: 'idle' });
   const [studySession, setStudySession] = useState<StudySessionQueue | null>(
     null,
@@ -195,7 +199,7 @@ export function useStudySession(deckId: string | undefined) {
   function handleStart() {
     if (!deckId || startInFlight.current) return;
     startInFlight.current = true;
-    startSession.mutate({ deckId });
+    startSession.mutate({ deckId, sessionType });
   }
 
   /** Saves the current card's answer and shows its result. */
