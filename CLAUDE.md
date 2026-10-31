@@ -10,7 +10,7 @@ Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted
 
 ## Implementation Order
 
-**Completed: 64/69 planned issues**
+**Completed: 64/70 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, Study Sessions, then generating cards.
 
@@ -87,6 +87,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #78 Revise the lessons ahead in an accepted Syllabus
 9. Study sessions
    - [x] #11 Missed cards come back in the same Study Session
+   - [ ] #81 Pressing Enter on the title card starts two Study Sessions
    - [ ] #10 Resume and abandon Study Sessions
    - [ ] #8 Queue buckets and session types
    - [ ] #9 Study modes: Drill Weakest and Cram
