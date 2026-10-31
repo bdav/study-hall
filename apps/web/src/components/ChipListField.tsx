@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { withTyped } from '@/lib/lists';
@@ -9,7 +9,8 @@ import { withTyped } from '@/lib/lists';
  * the item rather than submitting the form. The text being typed is the
  * caller's, so the form can add it should the learner submit without
  * adding it (`withTyped`). `inputClassName` styles the field like the
- * form's others.
+ * form's others; `hint` says how the list is used, and `labelAside` sits
+ * beside the label, outside its name.
  */
 export function ChipListField({
   label,
@@ -21,6 +22,8 @@ export function ChipListField({
   onTextChange,
   maxLength,
   inputClassName,
+  hint,
+  labelAside,
 }: {
   label: string;
   inputLabel: string;
@@ -31,8 +34,11 @@ export function ChipListField({
   onTextChange: (text: string) => void;
   maxLength?: number;
   inputClassName?: string;
+  hint?: string;
+  labelAside?: ReactNode;
 }) {
   const labelId = useId();
+  const hintId = useId();
   const inputId = useId();
   const canAdd = text.trim() !== '';
 
@@ -44,9 +50,17 @@ export function ChipListField({
 
   return (
     <div>
-      <p id={labelId} className="text-sm font-medium text-white/80">
-        {label}
-      </p>
+      <div className="flex items-baseline gap-2">
+        <p id={labelId} className="text-sm font-medium text-white/80">
+          {label}
+        </p>
+        {labelAside}
+      </div>
+      {hint && (
+        <p id={hintId} className="text-xs text-white/55">
+          {hint}
+        </p>
+      )}
       {items.length > 0 && (
         <ul aria-labelledby={labelId} className="mt-2 flex flex-wrap gap-2">
           {items.map((item) => (
@@ -78,6 +92,7 @@ export function ChipListField({
           value={text}
           placeholder={placeholder}
           maxLength={maxLength}
+          aria-describedby={hint ? hintId : undefined}
           onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {

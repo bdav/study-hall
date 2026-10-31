@@ -289,6 +289,145 @@ describe('NewCoursePage', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
+  describe('explaining itself', () => {
+    it('groups the fields under headings', () => {
+      renderForm();
+
+      expect(
+        screen
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent),
+      ).toEqual([
+        "What you're learning",
+        "Where you're starting",
+        'Your time',
+        'Shaping the course',
+      ]);
+    });
+
+    it.each([
+      ['Topic', /what the course is about/i],
+      ['Course title', /left blank, it's the topic/i],
+      ['Goal or target level', /syllabus works toward it/i],
+      ['Prior knowledge', /lessons start/i],
+      ['Something you can already do', /syllabus leaves these out/i],
+      ['Deadline', /sized to fit the time until it/i],
+      ['Focus on', /weights/i],
+      ['Skip', /leaves out/i],
+      ['Materials', /follow its order and coverage/i],
+      ['Notes', /syllabus, lessons and tutor/i],
+    ])('says how the course uses %s', (label, hint) => {
+      renderForm();
+
+      expect(screen.getByLabelText(label)).toHaveAccessibleDescription(hint);
+    });
+
+    it.each([
+      ['Time per week', /how many weeks/i],
+      ['Session length', /each lesson fits one session/i],
+      ['Preferred depth', /how far/i],
+    ])('says how the course uses %s, chosen from chips', (group, hint) => {
+      renderForm();
+
+      expect(
+        screen.getByRole('group', { name: group }),
+      ).toHaveAccessibleDescription(hint);
+    });
+
+    it('tells required fields from optional ones', () => {
+      renderForm();
+
+      for (const label of ['Topic', 'Goal or target level']) {
+        expect(screen.getByLabelText(label)).toBeRequired();
+      }
+      for (const group of ['Time per week', 'Session length']) {
+        expect(
+          within(screen.getByRole('group', { name: group })).getAllByRole(
+            'radio',
+          )[0],
+        ).toBeRequired();
+      }
+      // Course title, prior knowledge, can already do, deadline, focus,
+      // skip, materials and notes
+      expect(screen.getAllByText('Optional')).toHaveLength(8);
+    });
+
+    it('names each missing required field beside it, once the learner tries to go on', async () => {
+      renderForm();
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText('Topic'), 'Italian');
+
+      await user.click(
+        screen.getByRole('button', { name: /generate syllabus/i }),
+      );
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(
+        screen.getByLabelText('Goal or target level'),
+      ).toHaveAccessibleDescription(/add a goal/i);
+      expect(
+        screen.getByRole('group', { name: 'Time per week' }),
+      ).toHaveAccessibleDescription(/choose your time per week/i);
+      expect(
+        screen.getByRole('group', { name: 'Session length' }),
+      ).toHaveAccessibleDescription(/choose a session length/i);
+      expect(screen.queryByText(/add a topic/i)).not.toBeInTheDocument();
+      // The first missing field takes the focus
+      expect(screen.getByLabelText('Goal or target level')).toHaveFocus();
+    });
+
+    it('asks for the hours of a custom time per week', async () => {
+      renderForm();
+      const user = await fillForm();
+      await user.click(screen.getByRole('radio', { name: 'Custom' }));
+
+      await user.click(
+        screen.getByRole('button', { name: /generate syllabus/i }),
+      );
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(
+        screen.getByLabelText('Hours per week'),
+      ).toHaveAccessibleDescription(/enter your hours per week/i);
+    });
+
+    it('refuses a deadline before today, saying so beside it', async () => {
+      renderForm();
+      const user = await fillForm();
+      fireEvent.change(screen.getByLabelText('Deadline'), {
+        target: { value: '2020-01-01' },
+      });
+
+      await user.click(
+        screen.getByRole('button', { name: /generate syllabus/i }),
+      );
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Deadline')).toHaveAccessibleDescription(
+        /from today on/i,
+      );
+    });
+
+    it('says how to give a custom time per week', async () => {
+      renderForm();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('radio', { name: 'Custom' }));
+
+      expect(
+        screen.getByLabelText('Hours per week'),
+      ).toHaveAccessibleDescription(/such as 4 or 1\.5/i);
+    });
+
+    it('says no field is missing until the learner tries to go on', () => {
+      renderForm();
+
+      expect(
+        screen.queryByText(/choose a session length/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it('shows a loader in place of the form while the syllabus is written', () => {
     renderPage({ mutation: { isPending: true } });
 
@@ -551,6 +690,24 @@ describe('the Setup Interview', () => {
         'Order a coffee',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('names a required field the draft left missing straight away', async () => {
+    const user = await startInterview();
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    respond({
+      draft: { ...draft, minutesPerWeek: null as unknown as number },
+      ready: true,
+      questions: [],
+    });
+
+    expect(
+      screen.getByRole('group', { name: 'Time per week' }),
+    ).toHaveAccessibleDescription(/choose your time per week/i);
+    expect(
+      screen.queryByText(/choose a session length/i),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the draft after three rounds, whatever comes back', async () => {

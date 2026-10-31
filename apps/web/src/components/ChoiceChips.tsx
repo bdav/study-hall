@@ -7,10 +7,11 @@ import {
 } from 'react';
 import { Check } from 'lucide-react';
 import { chipClassName } from '@/lib/utils';
+import { FieldError } from '@/components/FieldError';
 
 /**
  * Asks for one of a few answers with a tap: radio buttons shown as chips,
- * none chosen to start. A required choice holds off the form until made.
+ * none chosen to start. A required one is marked so; the form checks it.
  */
 export function ChoiceChips<Value extends string | number>({
   label,
@@ -19,6 +20,8 @@ export function ChoiceChips<Value extends string | number>({
   onChange,
   required,
   lastApart,
+  hint,
+  error,
   children,
 }: {
   label: string;
@@ -26,6 +29,10 @@ export function ChoiceChips<Value extends string | number>({
   value: Value | null;
   onChange: (value: Value) => void;
   required?: boolean;
+  /** How the answer is used, below the label */
+  hint?: string;
+  /** What's wrong with the answer, such as that it's missing */
+  error?: string | null;
   /** The last option goes on a line of its own when the others wrap */
   lastApart?: boolean;
   /** Below the chips, such as a field for an answer of the learner's own */
@@ -34,7 +41,13 @@ export function ChoiceChips<Value extends string | number>({
   const name = useId();
 
   return (
-    <ChipGroup label={label} below={children} lastApart={lastApart}>
+    <ChipGroup
+      label={label}
+      below={children}
+      lastApart={lastApart}
+      hint={hint}
+      error={error}
+    >
       {options.map((option) => (
         <Chip
           key={option.value}
@@ -98,26 +111,43 @@ function ChipGroup({
   label,
   below,
   lastApart = false,
+  hint,
+  error,
   children,
 }: {
   label: string;
   below?: ReactNode;
   lastApart?: boolean;
+  hint?: string;
+  error?: string | null;
   children: ReactNode[];
 }) {
+  const hintId = useId();
+  const errorId = useId();
   const rest = lastApart ? children.slice(0, -1) : children;
   const last = lastApart ? children.at(-1) : null;
   const restRef = useRef<HTMLDivElement>(null);
   const restWraps = useWraps(restRef, lastApart);
 
   return (
-    <fieldset>
+    <fieldset
+      aria-describedby={
+        [error && errorId, hint && hintId].filter(Boolean).join(' ') ||
+        undefined
+      }
+    >
       <legend className="text-sm font-medium text-white/80">{label}</legend>
+      {hint && (
+        <p id={hintId} className="text-xs text-white/55">
+          {hint}
+        </p>
+      )}
       <div ref={restRef} className="mt-2 flex flex-wrap gap-2">
         {rest}
         {!restWraps && last}
       </div>
       {restWraps && <div className="mt-2 flex">{last}</div>}
+      {error && <FieldError id={errorId}>{error}</FieldError>}
       {below}
     </fieldset>
   );
