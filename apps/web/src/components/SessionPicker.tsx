@@ -22,7 +22,7 @@ export function SessionPicker({
   onStudyMode: (value: StudyMode) => void;
 }) {
   return (
-    <div className="mb-4 flex w-full max-w-md flex-col gap-3">
+    <div className="mx-auto mt-6 flex w-full max-w-md flex-col gap-3">
       <ChoiceRow
         label="Session length"
         options={SESSION_TYPES}

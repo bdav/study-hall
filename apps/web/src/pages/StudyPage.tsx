@@ -830,14 +830,6 @@ export default function StudyPage() {
       {error && <p className="mb-4 text-destructive">{error}</p>}
 
       <div className="flex w-full flex-1 flex-col items-center justify-center">
-        {isIdle && !resumable && (
-          <SessionPicker
-            sessionType={sessionType}
-            onSessionType={setSessionType}
-            studyMode={studyMode}
-            onStudyMode={setStudyMode}
-          />
-        )}
         <div
           className="relative w-full max-w-md"
           onTouchStart={swipe.onTouchStart}
@@ -1069,6 +1061,14 @@ export default function StudyPage() {
                 />
               )}
             </>
+          ) : isIdle && !resumable ? (
+            // How to study, below the title card before a session
+            <SessionPicker
+              sessionType={sessionType}
+              onSessionType={setSessionType}
+              studyMode={studyMode}
+              onStudyMode={setStudyMode}
+            />
           ) : studyState.phase !== 'answering' ? (
             // Holds the answer's place, label included
             <div className="py-2 text-center" aria-hidden>
