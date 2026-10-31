@@ -26,8 +26,8 @@ import { useStudySession } from '@/hooks/useStudySession';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
 import { SessionPicker } from '@/components/SessionPicker';
 import {
-  SESSION_TYPES,
   STUDY_MODES,
+  type SessionType,
   type StudyMode,
 } from '@/lib/sessionChoices';
 import {
@@ -352,13 +352,9 @@ export default function StudyPage() {
     null,
   );
 
-  // How to study, remembered by the browser: Quick, Standard or Deep (#8),
-  // and Study, Drill Weakest or Cram (#9)
-  const [sessionType, setSessionType] = useStoredChoice(
-    'study-hall:session-type',
-    SESSION_TYPES.map((type) => type.value),
-    'STANDARD',
-  );
+  // How to study: Quick, Standard or Deep (#8), Standard each time the page
+  // opens, and Study, Drill Weakest or Cram (#9), remembered by the browser
+  const [sessionType, setSessionType] = useState<SessionType>('STANDARD');
   const [studyMode, setStudyMode] = useStoredChoice(
     'study-hall:study-mode',
     STUDY_MODES.map((mode) => mode.value),

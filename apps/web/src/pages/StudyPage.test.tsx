@@ -3110,17 +3110,17 @@ describe('StudyPage', () => {
       });
     });
 
-    it('remembers the session type chosen', async () => {
+    it('opens at Standard each time, whatever length was chosen before', async () => {
       setupMocksWithStartSession();
       const user = userEvent.setup();
       const { unmount } = renderStudyPage();
-      await user.click(sessionTypes().getByRole('button', { name: /deep/i }));
+      await user.click(sessionTypes().getByRole('button', { name: /quick/i }));
       unmount();
 
       renderStudyPage();
 
       expect(
-        sessionTypes().getByRole('button', { name: /deep/i }),
+        sessionTypes().getByRole('button', { name: /standard/i }),
       ).toHaveAttribute('aria-pressed', 'true');
     });
 
