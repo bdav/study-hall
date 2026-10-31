@@ -33,10 +33,9 @@ const withItems = {
 const STANDARD_SESSION_SIZE = 25;
 
 /**
- * How many other cards a missed card comes back after, and how many times
- * at most, in one session (`learning-model-and-scheduler.md` §10).
+ * How many times at most a missed card comes back in one session
+ * (`learning-model-and-scheduler.md` §10).
  */
-const RETRY_SPACING = 5;
 const MAX_RETRIES = 2;
 
 /**
@@ -191,74 +190,43 @@ export async function startStudySession(
 }
 
 /**
- * Brings a missed card back later in its session: after RETRY_SPACING other
- * cards still to answer, or at the end when fewer are left, and at most
- * MAX_RETRIES times. Returns the new item and the item it follows, or null
- * once the card has come back as often as it may.
+ * Brings a missed card back at the end of its session, after every card
+ * and earlier Retry, at most MAX_RETRIES times. Returns the new item, or
+ * null once the card has come back as often as it may.
  */
 async function queueRetry(
   tx: Prisma.TransactionClient,
-  missed: {
-    id: string;
-    studySessionId: string;
-    cardId: string;
-    position: number;
-  },
+  { studySessionId, cardId }: { studySessionId: string; cardId: string },
 ) {
-  const { studySessionId, cardId } = missed;
-  // Read again under the session's lock, as a retry placed before it by
-  // another answer meanwhile would have moved it
-  const { position } = await tx.studySessionItem.findUniqueOrThrow({
-    where: { id: missed.id },
-    select: { position: true },
-  });
   const retries = await tx.studySessionItem.count({
     where: { studySessionId, cardId, isRetry: true },
   });
   if (retries >= MAX_RETRIES) return null;
 
-  const ahead = await tx.studySessionItem.findMany({
-    where: { studySessionId, status: 'PENDING', position: { gt: position } },
-    orderBy: { position: 'asc' },
-    select: { id: true, position: true },
-    take: RETRY_SPACING,
+  const last = await tx.studySessionItem.aggregate({
+    where: { studySessionId },
+    _max: { position: true },
   });
-  const after = ahead.at(-1) ?? { id: missed.id, position };
-
-  // Moving the later items down one place, last first, keeps their
-  // positions unique throughout
-  const later = await tx.studySessionItem.findMany({
-    where: { studySessionId, position: { gt: after.position } },
-    orderBy: { position: 'desc' },
-    select: { id: true, position: true },
-  });
-  for (const item of later) {
-    await tx.studySessionItem.update({
-      where: { id: item.id },
-      data: { position: item.position + 1 },
-    });
-  }
-  const retry = await tx.studySessionItem.create({
+  return tx.studySessionItem.create({
     data: {
       studySessionId,
       cardId,
-      position: after.position + 1,
+      position: (last._max.position ?? -1) + 1,
       isRetry: true,
     },
+    select: { id: true },
   });
-  return { id: retry.id, afterItemId: after.id };
 }
 
 /**
  * Grades the answer to one Study Session item. In one transaction it
  * completes the item, saves the attempt and updates the card's progress
  * (`updated-plan.md` §11.3). A null answer is "I don't know", a MISSED
- * attempt (§5.2). A missed card comes back later in the session
- * (`queueRetry`), and the answer to one that came back is a retry, which
- * leaves the card's progress as the first answer left it. Returns the
- * attempt, whether it was an Accent Mismatch, the Accepted Variant it
- * matched, if any, and the item the card comes back as, with the item it
- * follows.
+ * attempt (§5.2). A missed card comes back at the end of the session
+ * (`queueRetry`), and the answer to its Retry leaves the card's progress
+ * as the first answer left it. Returns the attempt, whether it was an
+ * Accent Mismatch, the Accepted Variant it matched, if any, and the item
+ * the card comes back as.
  */
 export async function answerItem(
   prisma: PrismaClient,
@@ -303,7 +271,7 @@ export async function answerItem(
 
   return prisma.$transaction(async (tx) => {
     // Answers in one session take turns, so they number their attempts and
-    // place their retries one at a time
+    // queue their Retries one at a time
     await tx.studySession.update({
       where: { id: item.studySessionId },
       data: { updatedAt: new Date() },

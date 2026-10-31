@@ -777,89 +777,124 @@ describe('StudyPage', () => {
   });
 
   describe('a missed card coming back', () => {
-    /** "I don't know" on the first card brings it back after `afterItemId`. */
-    function missFirstCardComingBackAfter(afterItemId: string) {
+    /**
+     * Answers graded as the server grades them, each miss bringing its card
+     * back as a Retry at the end of the session: "I don't know" and wrong
+     * answers are missed, the card's answer nailed.
+     */
+    function mockMissesComingBack() {
       setupMocksWithStartSession();
+      let retries = 0;
+      const answer = (itemId: string, userAnswer: string | null) => {
+        const missed = userAnswer !== '4' && userAnswer !== 'Paris';
+        return Promise.resolve({
+          id: `attempt-${itemId}`,
+          userAnswer,
+          recallGrade: missed ? 'MISSED' : 'NAILED',
+          retryItem: missed ? { id: `retry-${++retries}` } : null,
+        });
+      };
+      vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+        mutate: vi.fn(),
+        mutateAsync: vi.fn(
+          ({ itemId, userAnswer }: { itemId: string; userAnswer: string }) =>
+            answer(itemId, userAnswer),
+        ),
+      } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
       vi.mocked(trpc.study.dontKnow.useMutation).mockReturnValue({
         mutate: vi.fn(),
         mutateAsync: vi.fn(({ itemId }: { itemId: string }) =>
-          Promise.resolve({
-            id: `attempt-${itemId}`,
-            userAnswer: null,
-            recallGrade: 'MISSED',
-            retryItem:
-              itemId === 'item-1' ? { id: 'retry-1', afterItemId } : null,
-          }),
+          answer(itemId, null),
         ),
       } as unknown as ReturnType<typeof trpc.study.dontKnow.useMutation>);
+    }
+
+    async function startStudying() {
+      mockMissesComingBack();
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      return user;
     }
 
     async function next(user: ReturnType<typeof userEvent.setup>) {
       await user.click(await screen.findByRole('button', { name: /next/i }));
     }
 
-    it('comes back where the session puts it, labelled a retry, without moving the card count', async () => {
-      missFirstCardComingBackAfter('item-2');
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.click(screen.getByRole('button', { name: /i don't know/i }));
-      await next(user);
-      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
-      await user.type(screen.getByRole('textbox'), 'Paris{Enter}');
-      await next(user);
-
-      expect(await screen.findByText('What is 2+2?')).toBeInTheDocument();
-      expect(screen.getByText('Card 2 of 2 · retry')).toBeInTheDocument();
-      expect(
-        vi.mocked(trpc.study.dontKnow.useMutation).mock.results[0]?.value
-          .mutateAsync,
-      ).toHaveBeenCalledWith({ itemId: 'item-1' });
-    });
-
-    it('comes back next when the session puts it after the card just answered', async () => {
-      missFirstCardComingBackAfter('item-1');
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.click(screen.getByRole('button', { name: /i don't know/i }));
-      await next(user);
-
-      expect(
-        await screen.findByText('Card 1 of 2 · retry'),
-      ).toBeInTheDocument();
-    });
-
-    /** A typed answer to the first card, missed, comes back next. */
-    async function missTypedFirstCard() {
-      setupMocksWithStartSession();
-      vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
-        mutate: vi.fn(),
-        mutateAsync: vi.fn(
-          ({ itemId, userAnswer }: { itemId: string; userAnswer: string }) =>
-            Promise.resolve({
-              id: 'attempt-1',
-              userAnswer,
-              recallGrade: 'MISSED',
-              retryItem:
-                itemId === 'item-1'
-                  ? { id: 'retry-1', afterItemId: 'item-1' }
-                  : null,
-            }),
-        ),
-      } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
-      const user = userEvent.setup();
-      renderStudyPage();
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.type(screen.getByRole('textbox'), 'four{Enter}');
+    async function answer(
+      user: ReturnType<typeof userEvent.setup>,
+      text: string,
+    ) {
+      await user.type(await screen.findByRole('textbox'), `${text}{Enter}`);
       await screen.findByTestId('result');
-      return user;
     }
 
+    async function dontKnow(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(
+        await screen.findByRole('button', { name: /i don't know/i }),
+      );
+      await screen.findByTestId('result');
+    }
+
+    it('comes back after the last card, counted as a Retry, not another card', async () => {
+      const user = await startStudying();
+
+      await dontKnow(user);
+      await next(user);
+      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
+      await answer(user, 'Paris');
+      await next(user);
+
+      expect(await screen.findByText('Retry 1 of 1')).toBeInTheDocument();
+    });
+
+    it('counts up the Retries as more are missed', async () => {
+      const user = await startStudying();
+      await dontKnow(user);
+      await next(user);
+      await dontKnow(user);
+      await next(user);
+      expect(await screen.findByText('Retry 1 of 2')).toBeInTheDocument();
+
+      // Missed again, so it comes back once more
+      await dontKnow(user);
+      await next(user);
+
+      expect(await screen.findByText('Retry 2 of 3')).toBeInTheDocument();
+    });
+
+    it("leaves out when it's next reviewed while its Retry is waiting", async () => {
+      const user = await startStudying();
+
+      await dontKnow(user);
+
+      const history = await screen.findByRole('region', {
+        name: /your history with this card/i,
+      });
+      expect(history).toHaveTextContent('Still learning');
+      expect(history).not.toHaveTextContent('Next review');
+    });
+
+    it("says when it's next reviewed once no Retry is waiting", async () => {
+      const user = await startStudying();
+      await dontKnow(user);
+      await next(user);
+      await answer(user, 'Paris');
+      await next(user);
+
+      await answer(user, '4');
+
+      const history = await screen.findByRole('region', {
+        name: /your history with this card/i,
+      });
+      expect(history).toHaveTextContent(
+        'Still learning · Next review in 2 days',
+      );
+    });
+
     it('doesn\'t come back once "My answer was correct" accepts the missed answer', async () => {
-      const user = await missTypedFirstCard();
+      const user = await startStudying();
+      await answer(user, 'four');
 
       await user.click(
         screen.getByRole('button', { name: 'My answer was correct' }),
@@ -868,39 +903,35 @@ describe('StudyPage', () => {
         expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
       });
       await next(user);
+      await answer(user, 'Paris');
+      await next(user);
 
-      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
-      expect(screen.queryByText(/retry/)).not.toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("doesn't come back once marked known", async () => {
+      const user = await startStudying();
+      await answer(user, 'four');
+
+      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+      await next(user);
+      await answer(user, 'Paris');
+      await next(user);
+
+      expect(
+        await screen.findByRole('heading', { name: /session complete/i }),
+      ).toBeInTheDocument();
     });
 
     it('finishes the session when accepting an answer reviewed with Back drops the last card to come', async () => {
-      setupMocksWithStartSession();
-      // Card 2 is missed and comes back last
-      vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
-        mutate: vi.fn(),
-        mutateAsync: vi.fn(
-          ({ itemId, userAnswer }: { itemId: string; userAnswer: string }) =>
-            Promise.resolve({
-              id: `attempt-${itemId}`,
-              userAnswer,
-              recallGrade: itemId === 'item-2' ? 'MISSED' : 'NAILED',
-              retryItem:
-                itemId === 'item-2'
-                  ? { id: 'retry-2', afterItemId: 'item-2' }
-                  : null,
-            }),
-        ),
-      } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
-      const user = userEvent.setup();
-      renderStudyPage();
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.type(screen.getByRole('textbox'), '4{Enter}');
+      const user = await startStudying();
+      await answer(user, '4');
       await next(user);
-      await user.type(await screen.findByRole('textbox'), 'Lyon{Enter}');
+      await answer(user, 'Lyon');
       await next(user);
-      expect(
-        await screen.findByText('Card 2 of 2 · retry'),
-      ).toBeInTheDocument();
+      expect(await screen.findByText('Retry 1 of 1')).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: /previous/i }));
       await user.click(
@@ -920,27 +951,13 @@ describe('StudyPage', () => {
       ).toHaveBeenCalledWith({ id: 'session-1' });
     });
 
-    it("doesn't come back once marked known", async () => {
-      const user = await missTypedFirstCard();
-
-      await user.click(screen.getByRole('button', { name: 'Mark known' }));
+    it('sums up the cards, by their first answers, not the Retries', async () => {
+      const user = await startStudying();
+      await dontKnow(user);
       await next(user);
-
-      expect(await screen.findByText('Card 2 of 2')).toBeInTheDocument();
-      expect(screen.queryByText(/retry/)).not.toBeInTheDocument();
-    });
-
-    it('sums up the cards, by their first answers, not the retries', async () => {
-      missFirstCardComingBackAfter('item-2');
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.click(screen.getByRole('button', { name: /i don't know/i }));
+      await answer(user, 'Paris');
       await next(user);
-      await user.type(await screen.findByRole('textbox'), 'Paris{Enter}');
-      await next(user);
-      await user.type(await screen.findByRole('textbox'), '4{Enter}');
+      await answer(user, '4');
       await next(user);
 
       expect(

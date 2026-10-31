@@ -12,25 +12,6 @@ type HistoryEntry = GradedAnswer & { card: Flashcard; isRetry: boolean };
 /** A Study Session's queue, in the order the server keeps it. */
 type StudySessionQueue = { id: string; items: QueueItem[] };
 
-/**
- * The queue with a missed card's Retry where the session put it: after the
- * item it names, or at the end should that item be gone.
- */
-function withRetry(
-  items: QueueItem[],
-  card: Flashcard,
-  retryItem: { id: string; afterItemId: string },
-) {
-  const after = items.findIndex(
-    (item) => item.itemId === retryItem.afterItemId,
-  );
-  return items.toSpliced(after === -1 ? items.length : after + 1, 0, {
-    itemId: retryItem.id,
-    card,
-    isRetry: true,
-  });
-}
-
 type StudyState =
   | { phase: 'idle' }
   // The deck has no due or NEW cards, so no session started
@@ -97,11 +78,17 @@ export function useStudySession(deckId: string | undefined) {
   const currentItem = items[position] ?? null;
   const currentCard = currentItem?.card ?? null;
   const remainingCount = items.length - position;
-  // Progress counts cards, not answers: a Retry isn't another card
+  // Progress counts cards, then Retries, which come after them all
   const sessionSize = items.filter((item) => !item.isRetry).length;
-  const cardNumber = items
-    .slice(0, position + 1)
-    .filter((item) => !item.isRetry).length;
+  const cardNumber = Math.min(position + 1, sessionSize);
+  const retryCount = items.length - sessionSize;
+  const retryNumber = position + 1 - sessionSize;
+  // Whether a card has a Retry still to come in the session
+  const hasRetryWaiting = (cardId: string) =>
+    items.some(
+      (item, i) =>
+        i >= history.length && item.isRetry && item.card.id === cardId,
+    );
 
   function handleStart() {
     if (!deckId) return;
@@ -127,9 +114,16 @@ export function useStudySession(deckId: string | undefined) {
 
       const { retryItem } = attempt;
       if (retryItem) {
+        // At the end of the session, as the server queued it
         setStudySession(
           (prev) =>
-            prev && { ...prev, items: withRetry(prev.items, card, retryItem) },
+            prev && {
+              ...prev,
+              items: [
+                ...prev.items,
+                { itemId: retryItem.id, card, isRetry: true },
+              ],
+            },
         );
       }
       setHistory((prev) => [...prev, { card, isRetry, ...answered }]);
@@ -427,6 +421,9 @@ export function useStudySession(deckId: string | undefined) {
     cardNumber,
     sessionSize,
     isRetry: currentItem?.isRetry ?? false,
+    retryNumber,
+    retryCount,
+    hasRetryWaiting,
     remainingCount,
     isFlipped,
     toggleFlip,

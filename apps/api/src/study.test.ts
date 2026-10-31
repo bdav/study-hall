@@ -884,32 +884,12 @@ describe('missed cards coming back in the same Study Session', () => {
     );
   }
 
-  it('brings a missed card back after five other cards', async () => {
+  it('brings missed cards back at the end of the session, in the order missed', async () => {
     const { id, items } = await startedSession(numberedCards(8));
-
-    const missed = await createCaller().study.dontKnow({
-      itemId: items[0].id,
-    });
-
-    expect(missed.retryItem).toMatchObject({ afterItemId: items[5].id });
-    expect(await finishedQueue(id)).toEqual([
-      'Card 1',
-      'Card 2',
-      'Card 3',
-      'Card 4',
-      'Card 5',
-      'Card 6',
-      'Card 1 (retry)',
-      'Card 7',
-      'Card 8',
-    ]);
-  });
-
-  it('brings it back at the end when fewer than five cards are left', async () => {
-    const { id, items } = await startedSession(numberedCards(4));
     const caller = createCaller();
 
-    await caller.study.dontKnow({ itemId: items[1].id });
+    await caller.study.dontKnow({ itemId: items[0].id });
+    await caller.study.submitAnswer({ itemId: items[1].id, userAnswer: 'A2' });
     await caller.study.submitAnswer({ itemId: items[2].id, userAnswer: 'x' });
 
     expect(await finishedQueue(id)).toEqual([
@@ -917,23 +897,29 @@ describe('missed cards coming back in the same Study Session', () => {
       'Card 2',
       'Card 3',
       'Card 4',
-      'Card 2 (retry)',
+      'Card 5',
+      'Card 6',
+      'Card 7',
+      'Card 8',
+      'Card 1 (retry)',
       'Card 3 (retry)',
     ]);
   });
 
-  it('brings back the last card next when no other card is left', async () => {
+  it('brings a retry missed again back at the end again', async () => {
     const { id, items } = await startedSession(numberedCards(2));
+    const caller = createCaller();
+    const first = await caller.study.dontKnow({ itemId: items[0].id });
+    await caller.study.dontKnow({ itemId: items[1].id });
 
-    const missed = await createCaller().study.dontKnow({
-      itemId: items[1].id,
-    });
+    await caller.study.dontKnow({ itemId: first.retryItem!.id });
 
-    expect(missed.retryItem).toMatchObject({ afterItemId: items[1].id });
     expect(await finishedQueue(id)).toEqual([
       'Card 1',
       'Card 2',
+      'Card 1 (retry)',
       'Card 2 (retry)',
+      'Card 1 (retry)',
     ]);
   });
 

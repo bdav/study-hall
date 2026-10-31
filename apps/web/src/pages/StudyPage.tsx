@@ -328,6 +328,9 @@ export default function StudyPage() {
     cardNumber,
     sessionSize,
     isRetry,
+    retryNumber,
+    retryCount,
+    hasRetryWaiting,
     remainingCount,
     isFlipped,
     toggleFlip,
@@ -412,10 +415,13 @@ export default function StudyPage() {
       : undefined;
   const isChoosingAnswer =
     !!displayResult && choosingAnswerFor === displayResult.attemptId;
-  // A Retry counts as the card it is, not another
+  // Retries, after every card, are counted on their own; their total grows
+  // as more are missed
   const progress = isReviewing
     ? undefined
-    : `Card ${cardNumber} of ${sessionSize}${isRetry ? ' · retry' : ''}`;
+    : isRetry
+      ? `Retry ${retryNumber} of ${retryCount}`
+      : `Card ${cardNumber} of ${sessionSize}`;
 
   const onSlideNext = useCallback(() => {
     if (isIdle) handleStart();
@@ -978,7 +984,12 @@ export default function StudyPage() {
                 )}
               </div>
               {displayCard && (
-                <CardHistory key={displayCard.id} cardId={displayCard.id} />
+                <CardHistory
+                  key={displayCard.id}
+                  cardId={displayCard.id}
+                  // Coming back in this session, whatever its schedule says
+                  showsNextReview={!hasRetryWaiting(displayCard.id)}
+                />
               )}
             </>
           ) : studyState.phase !== 'answering' ? (

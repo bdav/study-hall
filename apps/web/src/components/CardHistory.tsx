@@ -48,12 +48,19 @@ const BEFORE = 'before';
 /**
  * The learner's history with a card, below it once answered (ADR-0008): for
  * its current Card Version, the recent answers with their final grades and
- * dates, how many were right, its state in plain words and when it's next
- * due; a picker of version numbers shows an earlier version instead, as a
+ * dates, how many were right, its state in plain words and, unless told
+ * not to, when it's next due; a picker of version numbers shows an earlier version instead, as a
  * block of its front and each answer with the Accepted Variants it ended
  * with, above the answers given to it. Read only.
  */
-export function CardHistory({ cardId }: { cardId: string }) {
+export function CardHistory({
+  cardId,
+  showsNextReview = true,
+}: {
+  cardId: string;
+  /** Off while the card is still to come back in the Study Session. */
+  showsNextReview?: boolean;
+}) {
   const headingId = useId();
   // A Card Version's id, or BEFORE; the current version until chosen
   const [chosen, setChosen] = useState<string | null>(null);
@@ -84,7 +91,7 @@ export function CardHistory({ cardId }: { cardId: string }) {
     history.progress &&
     [
       lifecycleLabels[history.progress.lifecycleState],
-      nextReview(history.progress.dueAt),
+      showsNextReview && nextReview(history.progress.dueAt),
     ]
       .filter(Boolean)
       .join(' · ');
