@@ -444,6 +444,21 @@ describe('the Setup Interview', () => {
     return user;
   }
 
+  it('links back to Courses, from the opening box and from the form', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    expect(screen.getByRole('link', { name: 'Courses' })).toHaveAttribute(
+      'href',
+      '/courses',
+    );
+    await user.click(screen.getByRole('button', { name: /skip/i }));
+    expect(screen.getByRole('link', { name: 'Courses' })).toHaveAttribute(
+      'href',
+      '/courses',
+    );
+  });
+
   it('opens with one box asking what the learner wants to learn, and why', () => {
     renderPage();
 

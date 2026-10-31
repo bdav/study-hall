@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { WritingLoader } from '@/components/WritingLoader';
 import {
@@ -93,6 +94,9 @@ export default function NewCoursePage() {
       {/* Kept as the learner left it underneath, should generating fail */}
       <div hidden={createCourse.isPending} className="flex flex-1 flex-col">
         <CenteredPage>
+          <div className="mb-3 w-full max-w-xl">
+            <BackLink to="/courses">Courses</BackLink>
+          </div>
           {stage.step === 'interview' ? (
             <SetupInterview
               onDone={(draft, interview) =>
