@@ -4,6 +4,7 @@ import { Archive, ChevronRight } from 'lucide-react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ReviseSyllabus } from '@/components/ReviseSyllabus';
 import {
   AddField,
   EditableLessonList,
@@ -188,6 +189,7 @@ export function SyllabusEditor({
         disabled={false}
         className="mt-3 rounded-xl border border-dashed border-white/30 p-4"
       />
+      <ReviseSyllabus courseId={courseId} />
       <ArchivedLessons courseId={courseId} onRestored={saving.onSuccess} />
       <ConfirmDialog
         open={toArchive !== null}

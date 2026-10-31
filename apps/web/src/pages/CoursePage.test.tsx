@@ -30,7 +30,19 @@ vi.mock('@/lib/trpc', () => ({
       },
       lesson: { getById: { invalidate: vi.fn() } },
     })),
+    auth: { me: { useQuery: vi.fn(() => ({ data: undefined })) } },
     course: {
+      proposeSyllabusRevision: {
+        useMutation: vi.fn(() => ({
+          mutate: vi.fn(),
+          reset: vi.fn(),
+          isPending: false,
+          error: null,
+        })),
+      },
+      applySyllabusRevision: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+      },
       getById: { useQuery: vi.fn() },
       acceptProposal: { useMutation: vi.fn() },
       discardProposal: { useMutation: vi.fn() },

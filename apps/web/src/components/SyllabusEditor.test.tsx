@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, vi } from 'vitest';
 import { SyllabusEditor } from './SyllabusEditor';
@@ -12,7 +12,10 @@ vi.mock('@/lib/trpc', () => ({
         listArchivedLessons: { invalidate: vi.fn() },
       },
     })),
+    auth: { me: { useQuery: vi.fn() } },
     course: {
+      proposeSyllabusRevision: { useMutation: vi.fn() },
+      applySyllabusRevision: { useMutation: vi.fn() },
       updateLesson: { useMutation: vi.fn() },
       reorderLessons: { useMutation: vi.fn() },
       addLesson: { useMutation: vi.fn() },
@@ -46,10 +49,26 @@ const archivedLessons = [
   { id: 'lesson-5', title: 'Weather', archivedAt: '2026-10-20T12:00:00.000Z' },
 ];
 
+const mockPropose = vi.fn();
+
 function renderEditor(
   props: Partial<Parameters<typeof SyllabusEditor>[0]> = {},
   archived: typeof archivedLessons = [],
+  { canUseAI = true } = {},
 ) {
+  vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
+    data: { user: { id: 'user-1', email: 'me@example.com', canUseAI } },
+  } as never);
+  vi.mocked(trpc.course.proposeSyllabusRevision.useMutation).mockReturnValue({
+    mutate: mockPropose,
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+  } as never);
+  vi.mocked(trpc.course.applySyllabusRevision.useMutation).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  } as never);
   vi.mocked(trpc.course.listArchivedLessons.useQuery).mockReturnValue({
     data: archived,
   } as never);
@@ -74,6 +93,100 @@ function lesson(number: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('asking for changes', () => {
+  const proposal = {
+    model: 'claude-sonnet-5-5',
+    promptVersion: 'syllabus-revision-v1',
+    note: null,
+    lessons: lessons.map(({ id, title }) => ({
+      id,
+      title,
+      status: 'NOT_STARTED',
+    })),
+    edits: [],
+    archives: [{ lessonId: 'lesson-3', title: 'Numbers' }],
+    additions: [],
+    order: null,
+    pacing: null,
+  };
+
+  it("offers chips and a box for the learner's own words below the lessons", () => {
+    renderEditor();
+
+    const form = screen.getByRole('region', { name: 'Ask for changes' });
+    const chips = within(form).getByRole('group', {
+      name: 'What should change?',
+    });
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((chip) => chip.textContent),
+    ).toEqual([
+      'Fewer lessons',
+      'More lessons',
+      'Speed up',
+      'Slow down',
+      'More practical',
+      'More in depth',
+    ]);
+    for (const chip of within(chips).getAllByRole('button')) {
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+    }
+    expect(
+      within(form).getByRole('button', { name: 'Propose changes' }),
+    ).toBeDisabled();
+  });
+
+  it("asks for changes from the chips chosen, one of each pair, and the learner's words", async () => {
+    renderEditor();
+    const user = userEvent.setup();
+    const form = within(
+      screen.getByRole('region', { name: 'Ask for changes' }),
+    );
+
+    await user.click(form.getByRole('button', { name: 'Speed up' }));
+    await user.click(form.getByRole('button', { name: 'Slow down' }));
+    await user.type(
+      form.getByRole('textbox', { name: 'In your own words' }),
+      'More review',
+    );
+    await user.click(form.getByRole('button', { name: 'Propose changes' }));
+
+    expect(mockPropose).toHaveBeenCalledWith(
+      { courseId: 'course-1', chips: ['SLOW_DOWN'], feedback: 'More review' },
+      expect.anything(),
+    );
+  });
+
+  it('opens the proposed changes for review', async () => {
+    renderEditor();
+    const user = userEvent.setup();
+    const form = within(
+      screen.getByRole('region', { name: 'Ask for changes' }),
+    );
+    await user.click(form.getByRole('button', { name: 'Fewer lessons' }));
+    await user.click(form.getByRole('button', { name: 'Propose changes' }));
+
+    const [, options] = mockPropose.mock.lastCall as [
+      unknown,
+      { onSuccess: (data: typeof proposal) => void },
+    ];
+    act(() => options.onSuccess(proposal));
+
+    expect(
+      screen.getByRole('dialog', { name: 'Revise syllabus' }),
+    ).toBeInTheDocument();
+  });
+
+  it('is offered only to learners who can use AI', () => {
+    renderEditor({}, [], { canUseAI: false });
+
+    expect(
+      screen.queryByRole('region', { name: 'Ask for changes' }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('SyllabusEditor', () => {

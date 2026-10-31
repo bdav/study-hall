@@ -4,6 +4,19 @@ import { type Prisma, type PrismaClient } from '@prisma/client';
 import { aiProcedure, protectedProcedure, router } from './trpc.js';
 import { continueTarget, lessonStatus } from '../services/syllabus.js';
 import { pacing } from '../services/pacing.js';
+import {
+  buildSyllabusRevisionPrompt,
+  isFixed,
+  OPPOSITE_REVISION_CHIPS,
+  revisionRoundSchema,
+  type RevisionLesson,
+  SYLLABUS_REVISION_MODEL,
+  SYLLABUS_REVISION_PROMPT_VERSION,
+  SYLLABUS_REVISION_SYSTEM_PROMPT,
+  syllabusRevisionChipSchema,
+  syllabusRevisionOutputSchema,
+  toProposedRevision,
+} from '../ai/syllabusRevision.js';
 import { countDueAndNewCards } from '../services/studySessions.js';
 import { generateStructured } from '../ai/generate.js';
 import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
@@ -601,6 +614,370 @@ export const courseRouter = router({
           where: { id: lesson.id, archivedAt: null },
           data: { archivedAt: new Date() },
         });
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Proposes changes to the lessons of an accepted Syllabus the learner
+   * hasn't started, from their chips and words, for them to review: edits,
+   * archives, new lessons and a new order. Opened and complete lessons are
+   * fixed. When refining, every earlier round and the proposal as the
+   * learner left it come too, and the whole revision is proposed again.
+   * Nothing changes until the learner applies it (`applySyllabusRevision`).
+   */
+  proposeSyllabusRevision: aiProcedure
+    .input(
+      z
+        .object({
+          courseId: z.string(),
+          chips: z.array(syllabusRevisionChipSchema),
+          feedback: z.string().trim().max(MAX_FEEDBACK_LENGTH).optional(),
+          refining: z
+            .object({
+              rounds: z.array(revisionRoundSchema).max(50),
+              proposal: z.object({
+                edits: z
+                  .array(
+                    z.object({
+                      lessonId: z.string(),
+                      title: lessonTitleSchema,
+                      objectives: objectivesSchema,
+                      included: z.boolean(),
+                    }),
+                  )
+                  .max(MAX_LESSONS),
+                archives: z
+                  .array(
+                    z.object({ lessonId: z.string(), included: z.boolean() }),
+                  )
+                  .max(MAX_LESSONS),
+                additions: z
+                  .array(
+                    z.object({
+                      title: lessonTitleSchema,
+                      objectives: objectivesSchema,
+                      afterLessonId: z.string().nullable(),
+                      included: z.boolean(),
+                    }),
+                  )
+                  .max(MAX_LESSONS),
+                order: z
+                  .object({
+                    lessonIds: z.array(z.string()).max(MAX_LESSONS),
+                    included: z.boolean(),
+                  })
+                  .nullable(),
+              }),
+            })
+            .optional(),
+        })
+        .refine((input) => input.chips.length > 0 || Boolean(input.feedback), {
+          message: 'Choose what should change, or say it in your own words',
+        })
+        .refine((input) => isChipChoice(input.chips, OPPOSITE_REVISION_CHIPS), {
+          message: 'Choose each chip once, and one of each opposite pair',
+        }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const course = await findEditableCourse(
+        ctx.prisma,
+        ctx.userId,
+        input.courseId,
+      );
+      const syllabus = await ctx.prisma.lesson.findMany({
+        where: { courseId: course.id, archivedAt: null },
+        orderBy: { position: 'asc' },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { summary: true },
+          },
+        },
+      });
+      const lessons: RevisionLesson[] = syllabus.map((lesson) => {
+        const status = lessonStatus(lesson);
+        return {
+          id: lesson.id,
+          title: lesson.title,
+          objectives: lesson.objectives,
+          status,
+          summary:
+            status === 'NOT_STARTED'
+              ? null
+              : (lesson.versions[0]?.summary ?? null),
+        };
+      });
+
+      // The prompt names lessons by their number in the Syllabus; a lesson
+      // archived meanwhile drops out of the proposal being refined
+      const numberOf = new Map(lessons.map((lesson, i) => [lesson.id, i + 1]));
+      const refining = input.refining && {
+        edits: input.refining.proposal.edits.flatMap(
+          ({ lessonId, ...edit }) => {
+            const lesson = numberOf.get(lessonId);
+            return lesson ? [{ lesson, ...edit }] : [];
+          },
+        ),
+        archives: input.refining.proposal.archives.flatMap(
+          ({ lessonId, included }) => {
+            const lesson = numberOf.get(lessonId);
+            return lesson ? [{ lesson, included }] : [];
+          },
+        ),
+        // One whose place left the Syllabus meanwhile goes with it
+        additions: input.refining.proposal.additions.flatMap(
+          ({ afterLessonId, ...addition }) => {
+            if (afterLessonId === null) return [{ ...addition, after: 0 }];
+            const after = numberOf.get(afterLessonId);
+            return after ? [{ ...addition, after }] : [];
+          },
+        ),
+        order: input.refining.proposal.order && {
+          lessons: input.refining.proposal.order.lessonIds.flatMap(
+            (id) => numberOf.get(id) ?? [],
+          ),
+          included: input.refining.proposal.order.included,
+        },
+      };
+
+      const { output, model, promptVersion } = await generateStructured(ctx, {
+        userId: ctx.userId,
+        purpose: 'SYLLABUS_REVISION',
+        model: SYLLABUS_REVISION_MODEL,
+        promptVersion: SYLLABUS_REVISION_PROMPT_VERSION,
+        system: SYLLABUS_REVISION_SYSTEM_PROMPT,
+        prompt: buildSyllabusRevisionPrompt({
+          setup: courseSetupSchema.parse(course),
+          lessons,
+          rounds: [
+            ...(input.refining?.rounds ?? []),
+            { chips: input.chips, text: input.feedback || null },
+          ],
+          refining,
+        }),
+        outputSchema: syllabusRevisionOutputSchema,
+      });
+
+      const proposal = toProposedRevision(output, lessons);
+      // How the lessons left fit the learner's time, at every count the
+      // ticked changes can reach, so the preview needs no arithmetic
+      const now = new Date();
+      const lessonsLeft = lessons.filter(
+        (lesson) => lesson.status !== 'COMPLETE',
+      ).length;
+      const fewest = Math.max(0, lessonsLeft - proposal.archives.length);
+      const most = lessonsLeft + proposal.additions.length;
+      const byLessonsLeft = Array.from({ length: most - fewest + 1 }, (_, i) =>
+        pacing(fewest + i, course, now),
+      ).filter((line) => line !== null);
+
+      return {
+        model,
+        promptVersion,
+        note: output.note || null,
+        ...proposal,
+        lessons: lessons.map(({ id, title, status }) => ({
+          id,
+          title,
+          status,
+        })),
+        pacing:
+          byLessonsLeft.length > 0 ? { lessonsLeft, byLessonsLeft } : null,
+      };
+    }),
+
+  /**
+   * Applies the changes the learner approved from a revision, as they left
+   * them, in one transaction holding the course's lock, by the same rules as
+   * editing the Syllabus: archived lessons keep their slots and history
+   * (ADR-0003), new ones take fresh slots, a Syllabus holds one to
+   * MAX_LESSONS lessons, and fixed lessons keep their places. A change to a
+   * lesson opened meanwhile, or to an archived course, is refused, and
+   * nothing is applied.
+   */
+  applySyllabusRevision: protectedProcedure
+    .input(
+      z
+        .object({
+          courseId: z.string(),
+          edits: z
+            .array(
+              z
+                .object({
+                  lessonId: z.string(),
+                  title: lessonTitleSchema.optional(),
+                  objectives: objectivesSchema.optional(),
+                })
+                .refine(
+                  (edit) =>
+                    edit.title !== undefined || edit.objectives !== undefined,
+                  {
+                    message:
+                      'An edit changes the title, the objectives or both',
+                  },
+                ),
+            )
+            .max(MAX_LESSONS),
+          archives: z.array(z.string()).max(MAX_LESSONS),
+          additions: z
+            .array(
+              z.object({
+                title: lessonTitleSchema,
+                objectives: objectivesSchema,
+                afterLessonId: z.string().nullable(),
+              }),
+            )
+            .max(MAX_LESSONS),
+          order: z.array(z.string()).max(MAX_LESSONS).nullable(),
+        })
+        .refine(
+          ({ edits, archives, additions, order }) =>
+            edits.length + archives.length + additions.length > 0 || order,
+          { message: 'A revision changes at least one lesson' },
+        )
+        .refine(
+          ({ edits, archives }) => {
+            const changed = [
+              ...edits.map((edit) => edit.lessonId),
+              ...archives,
+            ];
+            return new Set(changed).size === changed.length;
+          },
+          { message: 'A revision changes each lesson once' },
+        ),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await findEditableCourse(ctx.prisma, ctx.userId, input.courseId);
+
+      await ctx.prisma.$transaction(async (tx) => {
+        await lockCourse(tx, input.courseId);
+        await assertCourseActive(tx, input.courseId);
+        const lessons = await tx.lesson.findMany({
+          where: { courseId: input.courseId, archivedAt: null },
+          orderBy: { position: 'asc' },
+        });
+        const byId = new Map(lessons.map((lesson) => [lesson.id, lesson]));
+        const fixed = (id: string) =>
+          isFixed({ status: lessonStatus(byId.get(id)!) });
+        const changedMeanwhile = () =>
+          new TRPCError({
+            code: 'CONFLICT',
+            message:
+              'The syllabus has changed since these changes were proposed. Ask for changes again.',
+          });
+        const openedMeanwhile = (id: string) =>
+          new TRPCError({
+            code: 'CONFLICT',
+            message: `"${byId.get(id)!.title}" has been opened since these changes were proposed, so it can't change. Ask for changes again.`,
+          });
+
+        for (const id of [
+          ...input.edits.map((edit) => edit.lessonId),
+          ...input.archives,
+        ]) {
+          if (!byId.has(id)) throw changedMeanwhile();
+          if (fixed(id)) throw openedMeanwhile(id);
+        }
+
+        // The Syllabus in its new order: fixed lessons in their places
+        const current = lessons.map((lesson) => lesson.id);
+        if (input.order) {
+          const order = input.order;
+          if (
+            order.length !== current.length ||
+            new Set(order).size !== order.length ||
+            order.some((id) => !byId.has(id))
+          ) {
+            throw changedMeanwhile();
+          }
+          const moved = current.find(
+            (id) => fixed(id) && order.indexOf(id) !== current.indexOf(id),
+          );
+          if (moved) throw openedMeanwhile(moved);
+        }
+
+        // New lessons after the lesson each follows, several after one in
+        // the order given, then archived lessons out
+        type Place = string | { addition: number };
+        const places: Place[] = [...(input.order ?? current)];
+        const lastAfter = new Map<string | null, Place>();
+        input.additions.forEach(({ afterLessonId }, addition) => {
+          if (afterLessonId !== null && !byId.has(afterLessonId)) {
+            throw changedMeanwhile();
+          }
+          const previous = lastAfter.get(afterLessonId);
+          const index =
+            previous !== undefined
+              ? places.indexOf(previous) + 1
+              : afterLessonId === null
+                ? 0
+                : places.indexOf(afterLessonId) + 1;
+          const place = { addition };
+          places.splice(index, 0, place);
+          lastAfter.set(afterLessonId, place);
+        });
+        const archived = new Set(input.archives);
+        const syllabus = places.filter(
+          (place) => typeof place !== 'string' || !archived.has(place),
+        );
+
+        if (syllabus.length === 0) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message:
+              'A syllabus keeps at least one lesson. Archive the course instead.',
+          });
+        }
+        if (syllabus.length > MAX_LESSONS) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `A syllabus holds at most ${MAX_LESSONS} lessons`,
+          });
+        }
+
+        if (archived.size > 0) {
+          await tx.lesson.updateMany({
+            where: { id: { in: [...archived] }, archivedAt: null },
+            data: { archivedAt: new Date() },
+          });
+        }
+        for (const { lessonId, title, objectives } of input.edits) {
+          await tx.lesson.update({
+            where: { id: lessonId },
+            data: { title, objectives },
+          });
+        }
+
+        // The slots the lessons kept, archived ones keeping theirs, then
+        // fresh ones for the new lessons, in the new order
+        const fresh = await slotAfterLast(tx, input.courseId);
+        const slots = [
+          ...lessons
+            .filter((lesson) => !archived.has(lesson.id))
+            .map((lesson) => lesson.position),
+          ...input.additions.map((_, i) => fresh + i),
+        ];
+        for (const [index, place] of syllabus.entries()) {
+          if (typeof place === 'string') {
+            await tx.lesson.update({
+              where: { id: place },
+              data: { position: slots[index] },
+            });
+          } else {
+            const { title, objectives } = input.additions[place.addition];
+            await tx.lesson.create({
+              data: {
+                courseId: input.courseId,
+                title,
+                objectives,
+                position: slots[index],
+              },
+            });
+          }
+        }
       });
 
       return { success: true };
