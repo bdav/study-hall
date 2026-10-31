@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -88,6 +95,8 @@ async function fillForm() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The page keeps the interview here, so a reload resumes it
+  sessionStorage.clear();
 });
 
 describe('NewCoursePage', () => {
@@ -960,34 +969,210 @@ describe('the Setup Interview', () => {
     });
   });
 
-  it('keeps the answers on screen when a round fails', async () => {
-    const { rerender } = renderPage();
-    const user = userEvent.setup();
-    await user.type(
-      screen.getByLabelText('What do you want to learn, and why?'),
-      opening,
-    );
-    await user.click(screen.getByRole('button', { name: 'Start' }));
-    respond({ draft, ready: false, questions: firstQuestions });
-    const known = screen.getByLabelText('What Italian do you know already?');
-    await user.clear(known);
-    await user.type(known, 'A little');
+  describe('surviving failures and reloads', () => {
+    function renderAgain(rerender: (ui: React.ReactElement) => void) {
+      rerender(
+        <MemoryRouter>
+          <NewCoursePage />
+        </MemoryRouter>,
+      );
+    }
 
-    await user.click(screen.getByRole('button', { name: 'Next' }));
-    vi.mocked(trpc.course.interviewRound.useMutation).mockReturnValue({
-      mutate: mockRound,
-      isPending: false,
-      error: { message: "The AI didn't answer. Please try again." },
-    } as unknown as RoundMutation);
-    rerender(
-      <MemoryRouter>
-        <NewCoursePage />
-      </MemoryRouter>,
-    );
+    /** Makes the round call in flight fail, as the API would. */
+    function failRound(
+      rerender: (ui: React.ReactElement) => void,
+      error: { message: string; data?: { code: string } },
+    ) {
+      vi.mocked(trpc.course.interviewRound.useMutation).mockReturnValue({
+        mutate: mockRound,
+        isPending: false,
+        error,
+      } as unknown as RoundMutation);
+      renderAgain(rerender);
+    }
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
-    expect(
-      screen.getByLabelText('What Italian do you know already?'),
-    ).toHaveValue('A little');
+    it('keeps the answers on a failed round, and Try again sends them again', async () => {
+      const { rerender } = renderPage();
+      const user = userEvent.setup();
+      await user.type(
+        screen.getByLabelText('What do you want to learn, and why?'),
+        opening,
+      );
+      await user.click(screen.getByRole('button', { name: 'Start' }));
+      respond({ draft, ready: false, questions: firstQuestions });
+      const known = screen.getByLabelText('What Italian do you know already?');
+      await user.clear(known);
+      await user.type(known, 'A little');
+
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      failRound(rerender, {
+        message: "The AI didn't produce a usable answer. Please try again.",
+      });
+
+      expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
+      expect(
+        screen.getByLabelText('What Italian do you know already?'),
+      ).toHaveValue('A little');
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(mockRound).toHaveBeenCalledTimes(3);
+      expect(mockRound).toHaveBeenLastCalledWith(
+        {
+          opening,
+          rounds: [
+            { questions: firstQuestions, answers: ['2 hours', 'A little'] },
+          ],
+        },
+        expect.anything(),
+      );
+    });
+
+    it('offers Try again when the first round fails, keeping the opening words', async () => {
+      const { rerender } = renderPage();
+      const user = userEvent.setup();
+      await user.type(
+        screen.getByLabelText('What do you want to learn, and why?'),
+        opening,
+      );
+      await user.click(screen.getByRole('button', { name: 'Start' }));
+      failRound(rerender, { message: 'Please try again.' });
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+      expect(mockRound).toHaveBeenLastCalledWith(
+        { opening, rounds: [] },
+        expect.anything(),
+      );
+    });
+
+    it('says AI features are paused, not broken, once the monthly cap is reached', async () => {
+      const { rerender } = renderPage();
+      const user = userEvent.setup();
+      await user.type(
+        screen.getByLabelText('What do you want to learn, and why?'),
+        opening,
+      );
+      await user.click(screen.getByRole('button', { name: 'Start' }));
+      failRound(rerender, {
+        message:
+          "AI features are paused until next month because this month's AI spending cap has been reached.",
+        data: { code: 'TOO_MANY_REQUESTS' },
+      });
+
+      expect(
+        screen.getByRole('heading', { name: /AI features are paused/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Try again' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('picks the interview up where it was after a reload', async () => {
+      const first = await startInterview();
+      await first.click(screen.getByRole('button', { name: 'Next' }));
+      respond({ draft, ready: false, questions: secondQuestions });
+      cleanup();
+
+      renderPage();
+
+      expect(screen.getByText('2 hours · None')).toBeInTheDocument();
+      expect(
+        screen.getByRole('group', { name: 'How long is a sitting?' }),
+      ).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      expect(mockRound).toHaveBeenLastCalledWith(
+        {
+          opening,
+          rounds: [
+            { questions: firstQuestions, answers: ['2 hours', 'None'] },
+            {
+              questions: secondQuestions,
+              answers: ['30 minutes', 'Grammar drills'],
+            },
+          ],
+        },
+        expect.anything(),
+      );
+    });
+
+    it('picks the form up with its draft after a reload', async () => {
+      const user = await startInterview();
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      respond({ draft, ready: true, questions: [] });
+      cleanup();
+
+      renderPage();
+
+      expect(screen.getByLabelText('Topic')).toHaveValue('Italian');
+      expect(
+        screen.getByRole('button', { name: 'Looks right' }),
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      ['a shape it no longer uses', '{"opening":3,"steps":[]}'],
+      ['nothing', 'null'],
+      ['something unreadable', '{not json'],
+    ])('starts afresh when the tab kept %s', (_, kept) => {
+      sessionStorage.setItem('new-course:interview', kept);
+      sessionStorage.setItem('new-course:stage', kept);
+
+      renderPage();
+
+      expect(
+        screen.getByLabelText('What do you want to learn, and why?'),
+      ).toHaveValue('');
+    });
+
+    it('starts over from the interview, back at an empty opening box', async () => {
+      const user = await startInterview();
+
+      await user.click(screen.getByRole('button', { name: 'Start over' }));
+
+      expect(
+        screen.getByLabelText('What do you want to learn, and why?'),
+      ).toHaveValue('');
+      cleanup();
+      renderPage();
+      expect(
+        screen.getByLabelText('What do you want to learn, and why?'),
+      ).toHaveValue('');
+    });
+
+    it('starts over from the form', async () => {
+      renderForm();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Start over' }));
+
+      expect(
+        screen.getByLabelText('What do you want to learn, and why?'),
+      ).toBeInTheDocument();
+    });
+
+    it('offers no Start over before anything has been said', () => {
+      renderPage();
+
+      expect(
+        screen.queryByRole('button', { name: 'Start over' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('starts afresh once the course is created', async () => {
+      const user = await startInterview();
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      respond({ draft, ready: true, questions: [] });
+      const options = vi.mocked(trpc.course.create.useMutation).mock
+        .lastCall![0] as { onSuccess: (data: { id: string }) => void };
+      act(() => options.onSuccess({ id: 'course-1' }));
+      cleanup();
+
+      renderPage();
+
+      expect(
+        screen.getByLabelText('What do you want to learn, and why?'),
+      ).toHaveValue('');
+    });
   });
 });

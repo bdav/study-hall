@@ -1,58 +1,44 @@
-import { useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useTabState } from '@/hooks/useTabState';
+import {
+  FIRST_STAGE,
+  forgetNewCourse,
+  INTERVIEW,
+  NO_INTERVIEW,
+  STAGE,
+  type Transcript,
+} from '@/lib/newCourse';
+import { AiUnavailableNotice } from '@/components/AiUnavailableNotice';
 import { BackLink } from '@/components/BackLink';
 import { CenteredPage } from '@/components/CenteredPage';
 import { WritingLoader } from '@/components/WritingLoader';
 import {
   CourseSetupForm,
   type CourseSetup,
-  type DraftSetup,
 } from '@/components/CourseSetupForm';
-import { SetupInterview, type Transcript } from '@/components/SetupInterview';
-
-/**
- * Where course creation is: the Setup Interview (from its opening box), or
- * the course form, filled in from the interview's draft or empty after
- * Skip.
- */
-type Stage =
-  | { step: 'interview' }
-  | { step: 'form'; draft: DraftSetup | null; interview: Transcript | null };
-
-/** Shown instead of the form when AI can't be used, pointing to flashcards. */
-function AiUnavailableNotice({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <CenteredPage centered>
-      <div className="max-w-md text-center text-white">
-        <h1 className="text-2xl font-bold">{title}</h1>
-        <p className="mt-2 text-white/70">{children}</p>
-        <p className="mt-4 text-white/70">
-          Standalone{' '}
-          <Link to="/flashcards" className="underline hover:text-white">
-            flashcards
-          </Link>{' '}
-          are fully available.
-        </p>
-      </div>
-    </CenteredPage>
-  );
-}
+import { SetupInterview } from '@/components/SetupInterview';
 
 export default function NewCoursePage() {
-  const [stage, setStage] = useState<Stage>({ step: 'interview' });
+  // Kept for the tab, so a reload picks it up where it was
+  const [stage, setStage] = useTabState(
+    STAGE.key,
+    STAGE.initial,
+    STAGE.isValid,
+  );
+  const [interview, setInterview] = useTabState(
+    INTERVIEW.key,
+    INTERVIEW.initial,
+    INTERVIEW.isValid,
+  );
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery();
 
   const createCourse = trpc.course.create.useMutation({
     onSuccess: (data) => {
+      // The next new course starts afresh
+      forgetNewCourse();
       utils.course.list.invalidate();
       navigate(`/courses/${data.id}`);
     },
@@ -60,25 +46,40 @@ export default function NewCoursePage() {
 
   if (me.data?.user && !me.data.user.canUseAI) {
     return (
-      <AiUnavailableNotice title="Courses need AI access">
-        Your account doesn&apos;t have access to AI features yet, and courses
-        use them to build your syllabus and lessons.
-      </AiUnavailableNotice>
+      <CenteredPage centered>
+        <AiUnavailableNotice title="Courses need AI access">
+          Your account doesn&apos;t have access to AI features yet, and courses
+          use them to build your syllabus and lessons.
+        </AiUnavailableNotice>
+      </CenteredPage>
     );
   }
 
   // The monthly AI spending cap was reached: AI is paused, not broken
   if (createCourse.error?.data?.code === 'TOO_MANY_REQUESTS') {
     return (
-      <AiUnavailableNotice title="AI features are paused">
-        {createCourse.error.message}
-      </AiUnavailableNotice>
+      <CenteredPage centered>
+        <AiUnavailableNotice title="AI features are paused">
+          {createCourse.error.message}
+        </AiUnavailableNotice>
+      </CenteredPage>
     );
   }
 
-  function create(setup: CourseSetup, interview: Transcript | null) {
-    createCourse.mutate(interview ? { ...setup, interview } : setup);
+  function create(setup: CourseSetup, transcript: Transcript | null) {
+    createCourse.mutate(
+      transcript ? { ...setup, interview: transcript } : setup,
+    );
   }
+
+  /** Back to an empty opening box, forgetting everything said so far. */
+  function startOver() {
+    forgetNewCourse();
+    setStage(FIRST_STAGE);
+    setInterview(NO_INTERVIEW);
+  }
+
+  const hasBegun = stage.step === 'form' || interview.current !== null;
 
   return (
     <>
@@ -94,13 +95,24 @@ export default function NewCoursePage() {
       {/* Kept as the learner left it underneath, should generating fail */}
       <div hidden={createCourse.isPending} className="flex flex-1 flex-col">
         <CenteredPage>
-          <div className="mb-3 w-full max-w-xl">
+          <div className="mb-3 flex w-full max-w-xl items-center justify-between gap-4">
             <BackLink to="/courses">Courses</BackLink>
+            {hasBegun && (
+              <button
+                type="button"
+                onClick={startOver}
+                className="text-sm text-white/60 hover:text-white"
+              >
+                Start over
+              </button>
+            )}
           </div>
           {stage.step === 'interview' ? (
             <SetupInterview
-              onDone={(draft, interview) =>
-                setStage({ step: 'form', draft, interview })
+              interview={interview}
+              onChange={setInterview}
+              onDone={(draft, transcript) =>
+                setStage({ step: 'form', draft, interview: transcript })
               }
               onSkip={() =>
                 setStage({ step: 'form', draft: null, interview: null })

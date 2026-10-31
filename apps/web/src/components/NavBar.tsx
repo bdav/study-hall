@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { forgetNewCourse } from '@/lib/newCourse';
 
 /** The top-level areas, each owning the paths that start with its prefixes. */
 const AREAS = [
@@ -48,6 +49,8 @@ export function NavBar() {
   const canUseAI = Boolean(me.data?.user?.canUseAI);
   const logout = trpc.auth.logout.useMutation({
     onSuccess: () => {
+      // A course left half set up isn't the next account's
+      forgetNewCourse();
       utils.auth.me.invalidate();
       navigate('/login');
     },

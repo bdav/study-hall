@@ -4,20 +4,14 @@ import type { AppRouter } from 'api/app';
 import { Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { CheckChips, ChoiceChips } from '@/components/ChoiceChips';
+import { AiUnavailableNotice } from '@/components/AiUnavailableNotice';
+import type { InterviewState, Transcript } from '@/lib/newCourse';
 import { Input } from '@/components/ui/input';
 import { glassFieldClassName } from '@/lib/utils';
 import type { DraftSetup } from '@/components/CourseSetupForm';
 
 /** The interview so far, as the page holds it and sends it each round. */
 type Interview = inferRouterInputs<AppRouter>['course']['interviewRound'];
-
-/**
- * The interview as course creation keeps it, with the model and prompt
- * version that asked its latest round.
- */
-export type Transcript = NonNullable<
-  inferRouterInputs<AppRouter>['course']['create']['interview']
->;
 
 type AnsweredRound = Interview['rounds'][number];
 type Answer = AnsweredRound['answers'][number];
@@ -39,19 +33,21 @@ const secondaryButtonClassName =
  * A Setup Interview: the learner says what they want to learn and why, then
  * answers up to three rounds of questions, each with its suggested answer
  * already chosen, and the Course Setup it drafts goes to the course form.
- * It only moves forward: a wrong answer is corrected on the form.
+ * It only moves forward: a wrong answer is corrected on the form. The page
+ * holds the interview so far (`interview`), keeping it for the tab.
  */
 export function SetupInterview({
+  interview: { opening, rounds, current },
+  onChange: setInterview,
   onDone,
   onSkip,
 }: {
+  interview: InterviewState;
+  onChange: (interview: InterviewState) => void;
   /** The latest draft, and the interview that drafted it. */
   onDone: (draft: DraftSetup, transcript: Transcript) => void;
   onSkip: () => void;
 }) {
-  const [opening, setOpening] = useState('');
-  const [rounds, setRounds] = useState<AnsweredRound[]>([]);
-  const [current, setCurrent] = useState<Round | null>(null);
   const interviewRound = trpc.course.interviewRound.useMutation();
   const isAsking = interviewRound.isPending;
 
@@ -68,8 +64,7 @@ export function SetupInterview({
           onDone(round.draft, { ...interview, ...askedBy(round) });
           return;
         }
-        setRounds(answered);
-        setCurrent(round);
+        setInterview({ opening, rounds: answered, current: round });
       },
     });
   }
@@ -88,10 +83,25 @@ export function SetupInterview({
       Thinking about what to ask…
     </p>
   );
-  const failure = interviewRound.error && (
-    <p role="alert" className="mt-4 text-sm text-red-400">
-      {interviewRound.error.message}
-    </p>
+  // The monthly AI spending cap was reached: AI is paused, not broken
+  if (interviewRound.error?.data?.code === 'TOO_MANY_REQUESTS') {
+    return (
+      <AiUnavailableNotice title="AI features are paused">
+        {interviewRound.error.message}
+      </AiUnavailableNotice>
+    );
+  }
+
+  // Inside the round's form, so Try again sends it again as it now stands
+  const failure = interviewRound.error && !isAsking && (
+    <div className="mt-4 flex flex-wrap items-center gap-3">
+      <p role="alert" className="text-sm text-red-400">
+        {interviewRound.error.message}
+      </p>
+      <button type="submit" className={secondaryButtonClassName}>
+        Try again
+      </button>
+    </div>
   );
 
   if (!current) {
@@ -112,7 +122,9 @@ export function SetupInterview({
           <textarea
             id="opening"
             value={opening}
-            onChange={(e) => setOpening(e.target.value)}
+            onChange={(e) =>
+              setInterview({ opening: e.target.value, rounds, current })
+            }
             placeholder="Italian, because I'm going to Rome in June and want to get by"
             rows={4}
             maxLength={2000}

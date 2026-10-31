@@ -150,6 +150,22 @@ describe('NavBar', () => {
     expect(mockMutate).toHaveBeenCalled();
   });
 
+  it('forgets a new course left half set up on logging out, so the next account starts afresh', () => {
+    sessionStorage.setItem('new-course:stage', '{"step":"interview"}');
+    sessionStorage.setItem(
+      'new-course:interview',
+      '{"opening":"Italian","rounds":[],"current":null}',
+    );
+    renderNavBar();
+
+    const options = vi.mocked(trpc.auth.logout.useMutation).mock
+      .lastCall![0] as { onSuccess: () => void };
+    options.onSuccess();
+
+    expect(sessionStorage.getItem('new-course:stage')).toBeNull();
+    expect(sessionStorage.getItem('new-course:interview')).toBeNull();
+  });
+
   it('shows the areas and Log out as icons alone on narrow screens, keeping their names', () => {
     renderNavBar();
 
