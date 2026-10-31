@@ -56,7 +56,8 @@ export function PinnedHeader({
             {title}
           </h1>
           {subtitle && (
-            <p className="hidden truncate text-sm text-white/60 sm:block">
+            // Wraps rather than cutting off, so the whole goal shows
+            <p className="hidden text-sm break-words text-white/60 sm:block">
               {subtitle}
             </p>
           )}

@@ -6,13 +6,17 @@ import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ReviseSyllabus } from '@/components/ReviseSyllabus';
 import {
+  LessonStatusBadge,
+  type LessonStatus,
+} from '@/components/LessonStatusBadge';
+import {
   AddField,
   EditableLessonList,
   type EditableLesson,
   type LessonFields,
 } from '@/components/EditableLessonList';
 
-type SyllabusLesson = LessonFields & { id: string };
+type SyllabusLesson = LessonFields & { id: string; status: LessonStatus };
 
 function toItems(lessons: SyllabusLesson[]): EditableLesson[] {
   return lessons.map(({ id, title, objectives }) => ({
@@ -171,6 +175,10 @@ export function SyllabusEditor({
       <EditableLessonList
         label="Syllabus"
         lessons={items}
+        aside={(id) => {
+          const status = lessons.find((lesson) => lesson.id === id)?.status;
+          return status && <LessonStatusBadge status={status} />;
+        }}
         removal={{ verb: 'Archive', Icon: Archive }}
         // A Syllabus keeps a lesson; archiving the course is for the rest
         canRemove={items.length > 1}

@@ -4,7 +4,8 @@ import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { useState } from 'react';
-import { ChevronRight, Circle, CircleCheck, CircleDot } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import { LessonStatusBadge } from '@/components/LessonStatusBadge';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { PAGE_WIDTH } from '@/lib/layout';
@@ -20,22 +21,6 @@ import { ProposalEditor } from '@/components/ProposalEditor';
 
 type SyllabusLesson =
   inferRouterOutputs<AppRouter>['course']['getById']['lessons'][number];
-type LessonStatus = SyllabusLesson['status'];
-
-/** How each Lesson Completion status shows in a syllabus row. */
-const STATUSES: Record<
-  LessonStatus,
-  { label: string; Icon: typeof Circle; className: string }
-> = {
-  NOT_STARTED: {
-    label: 'Not started',
-    Icon: Circle,
-    className: 'text-white/60',
-  },
-  OPENED: { label: 'Opened', Icon: CircleDot, className: 'text-white/60' },
-  COMPLETE: { label: 'Complete', Icon: CircleCheck, className: 'text-white' },
-};
-
 /**
  * The accepted Syllabus as a compact list, like a table of contents: a row
  * per lesson, its objectives collapsed until the learner opens them, one
@@ -64,7 +49,6 @@ function Syllabus({
       {lessons.map((lesson, index) => {
         const isOpen = openId === lesson.id;
         const objectivesId = `objectives-${lesson.id}`;
-        const status = STATUSES[lesson.status];
         return (
           <li
             key={lesson.id}
@@ -104,13 +88,7 @@ function Syllabus({
                   Up next
                 </span>
               )}
-              <span
-                className={`flex shrink-0 items-center gap-1.5 text-xs ${status.className}`}
-              >
-                <status.Icon className="size-4" aria-hidden />
-                {/* The icon alone on narrow screens, for room */}
-                <span className="sr-only sm:not-sr-only">{status.label}</span>
-              </span>
+              <LessonStatusBadge status={lesson.status} />
             </div>
             {/* Slides open and shut: the row's height animates from none
                 to the list's, unless the learner prefers less motion.

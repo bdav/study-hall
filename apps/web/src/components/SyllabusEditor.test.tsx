@@ -31,9 +31,20 @@ const lessons = [
     id: 'lesson-1',
     title: 'Greetings',
     objectives: ['Greet someone formally and informally', 'Say your name'],
+    status: 'COMPLETE' as const,
   },
-  { id: 'lesson-2', title: 'At the café', objectives: ['Order food'] },
-  { id: 'lesson-3', title: 'Numbers', objectives: ['Count to one hundred'] },
+  {
+    id: 'lesson-2',
+    title: 'At the café',
+    objectives: ['Order food'],
+    status: 'OPENED' as const,
+  },
+  {
+    id: 'lesson-3',
+    title: 'Numbers',
+    objectives: ['Count to one hundred'],
+    status: 'NOT_STARTED' as const,
+  },
 ];
 
 const mutate = {
@@ -190,6 +201,14 @@ describe('asking for changes', () => {
 });
 
 describe('SyllabusEditor', () => {
+  it("shows each lesson's status, as the Syllabus does", () => {
+    renderEditor();
+
+    expect(lesson(1).getByText('Complete')).toBeInTheDocument();
+    expect(lesson(2).getByText('Opened')).toBeInTheDocument();
+    expect(lesson(3).getByText('Not started')).toBeInTheDocument();
+  });
+
   it('shows each lesson ready to edit', () => {
     renderEditor();
 

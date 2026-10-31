@@ -1,4 +1,9 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { GripVertical, Plus, type LucideIcon } from 'lucide-react';
 import {
   closestCenter,
@@ -158,6 +163,7 @@ function SortableLesson({
   id,
   number,
   lesson,
+  aside,
   removal,
   canRemove,
   disabled,
@@ -167,6 +173,7 @@ function SortableLesson({
   id: string;
   number: number;
   lesson: LessonFields;
+  aside?: ReactNode;
   removal: Removal;
   canRemove: boolean;
   disabled: boolean;
@@ -218,6 +225,7 @@ function SortableLesson({
           disabled={disabled}
           className="flex-1"
         />
+        {aside}
         <button
           type="button"
           aria-label={`${removal.verb} ${lesson.title}`}
@@ -275,6 +283,7 @@ function SortableLesson({
 export function EditableLessonList({
   label,
   lessons,
+  aside,
   removal,
   canRemove,
   disabled,
@@ -287,6 +296,8 @@ export function EditableLessonList({
   removal: Removal;
   canRemove: boolean;
   disabled: boolean;
+  /** Shown beside a lesson's title, by its id, such as its status. */
+  aside?: (id: string) => ReactNode;
   onMove: (from: number, to: number) => void;
   onChange: (id: string, lesson: LessonFields) => void;
   onRemove: (id: string) => void;
@@ -354,6 +365,7 @@ export function EditableLessonList({
               id={item.id}
               number={index + 1}
               lesson={item.lesson}
+              aside={aside?.(item.id)}
               removal={removal}
               canRemove={canRemove}
               disabled={disabled}
