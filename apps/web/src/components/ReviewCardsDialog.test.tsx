@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { ReviewCardsDialog } from './ReviewCardsDialog';
@@ -130,5 +130,121 @@ describe('ReviewCardsDialog', () => {
     renderDialog({ isPending: true });
 
     expect(screen.getByRole('button', { name: /adding/i })).toBeDisabled();
+  });
+
+  describe('as the preview of generated cards', () => {
+    const mockRefine = vi.fn();
+
+    function renderGenerated({
+      instructions = ['Common Italian greetings'],
+      note = null,
+      cards = proposals,
+      isRefining = false,
+      refineError = null,
+    }: {
+      instructions?: string[];
+      note?: string | null;
+      cards?: typeof proposals;
+      isRefining?: boolean;
+      refineError?: string | null;
+    } = {}) {
+      return render(
+        <ReviewCardsDialog
+          open
+          onClose={vi.fn()}
+          onConfirm={mockConfirm}
+          isPending={false}
+          proposals={cards}
+          existingCards={[
+            {
+              id: 'card-1',
+              front: 'Translate: good evening',
+              canonicalAnswer: 'Buonasera',
+            },
+          ]}
+          title="Generate cards"
+          deckNoun="deck"
+          instructions={instructions}
+          note={note}
+          refine={{ onRefine: mockRefine, isRefining, error: refineError }}
+        />,
+      );
+    }
+
+    it("shows the learner's description and the model's note, and flags cards the deck has", () => {
+      renderGenerated({ note: 'Only two greetings fit.' });
+
+      const dialog = screen.getByRole('dialog');
+      expect(
+        within(dialog).getByRole('heading', { name: 'Generate cards' }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole('list', { name: 'Your description' }),
+      ).toHaveTextContent('Common Italian greetings');
+      expect(within(dialog).getByText('Only two greetings fit.')).toBeVisible();
+      expect(within(dialog).getByText(/already in the deck/i)).toBeVisible();
+      expect(within(dialog).getByLabelText('Include card 2')).not.toBeChecked();
+    });
+
+    it('lists the description and every instruction since, in order', () => {
+      renderGenerated({
+        instructions: ['Common Italian greetings', 'Add formal ones'],
+      });
+
+      expect(
+        within(
+          screen.getByRole('list', {
+            name: 'Your description and instructions',
+          }),
+        )
+          .getAllByRole('listitem')
+          .map((item) => item.textContent),
+      ).toEqual(['Common Italian greetings', 'Add formal ones']);
+    });
+
+    it('says when no cards were proposed and there is no note', () => {
+      renderGenerated({ cards: [] });
+
+      expect(screen.getByText('No cards were proposed.')).toBeVisible();
+    });
+
+    it('refines from a follow-up instruction and the cards as the learner left them', async () => {
+      const user = userEvent.setup();
+      renderGenerated();
+
+      const answer = screen.getByLabelText('Card 1 answer');
+      await user.clear(answer);
+      await user.type(answer, 'Buon giorno');
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+      await user.type(
+        screen.getByLabelText('Refinement'),
+        'Use full sentences',
+      );
+      await user.click(screen.getByRole('button', { name: 'Propose again' }));
+
+      expect(mockRefine).toHaveBeenCalledWith('Use full sentences', [
+        {
+          front: 'Translate: Good morning',
+          canonicalAnswer: 'Buon giorno',
+          included: true,
+        },
+        {
+          front: 'Translate: Good evening',
+          canonicalAnswer: 'Buonasera',
+          included: false,
+        },
+      ]);
+    });
+
+    it('holds off adding while proposing again, and says why a round failed', async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderGenerated({ isRefining: true });
+      expect(screen.getByRole('button', { name: 'Add 1 card' })).toBeDisabled();
+      unmount();
+
+      renderGenerated({ refineError: 'The AI service failed' });
+      await user.click(screen.getByRole('button', { name: 'Refine' }));
+      expect(screen.getByText('The AI service failed')).toBeVisible();
+    });
   });
 });

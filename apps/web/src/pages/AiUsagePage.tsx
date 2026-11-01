@@ -31,6 +31,7 @@ const PURPOSE_LABELS: Record<AiPurpose, string> = {
   TUTOR: 'Tutor',
   COURSE_INTERVIEW: 'Setup Interview',
   SYLLABUS_REVISION: 'Syllabus revisions',
+  CARD_GENERATION: 'Card generation',
 };
 
 const monthFormat = new Intl.DateTimeFormat('en-US', {

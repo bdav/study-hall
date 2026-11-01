@@ -160,9 +160,10 @@ function answerData(text: string, position: number) {
   };
 }
 
-/** Where cards made from a lesson came from: its Source Lesson and proposal. */
+/** Where AI-proposed cards came from: their Source Lesson, if any, and proposal. */
 export interface CardSource {
-  lessonId: string;
+  /** The Source Lesson; none for cards generated for a deck (#75). */
+  lessonId?: string;
   model: string;
   promptVersion: string;
 }

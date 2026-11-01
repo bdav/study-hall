@@ -43,6 +43,8 @@ vi.mock('@/lib/trpc', () => ({
       restore: { useMutation: vi.fn() },
       proposeRevision: { useMutation: vi.fn() },
       applyRevision: { useMutation: vi.fn() },
+      proposeCards: { useMutation: vi.fn() },
+      addGeneratedCards: { useMutation: vi.fn() },
     },
     card: {
       listByDeck: { useQuery: vi.fn() },
@@ -149,6 +151,14 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.deck.applyRevision.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.deck.applyRevision.useMutation>);
+
+  vi.mocked(trpc.deck.proposeCards.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.deck.proposeCards.useMutation>);
+
+  vi.mocked(trpc.deck.addGeneratedCards.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.deck.addGeneratedCards.useMutation>);
 
   vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
     data: overrides?.deckError
@@ -1579,6 +1589,45 @@ describe('DeckCardsPage', () => {
       );
       expect(
         within(refined).queryByLabelText('Refinement'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('generating cards', () => {
+    it('is offered beside the deck’s actions to a learner who can use AI', () => {
+      setupMocks({ canUseAI: true });
+      renderDeckCardsPage();
+
+      expect(
+        screen.getByRole('button', { name: 'Generate cards' }),
+      ).toBeInTheDocument();
+    });
+
+    it('is offered as a tile beside New Card and Import CSV on an empty deck', () => {
+      setupMocks({ canUseAI: true, cards: [] });
+      renderDeckCardsPage();
+
+      const tiles = screen
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+        .filter((text) =>
+          ['New Card', 'Import CSV', 'Generate cards'].includes(text ?? ''),
+        );
+      expect(tiles).toEqual(['New Card', 'Import CSV', 'Generate cards']);
+    });
+
+    it("isn't offered to a learner who can't use AI", () => {
+      setupMocks({ canUseAI: false });
+      const { unmount } = renderDeckCardsPage();
+      expect(
+        screen.queryByRole('button', { name: /generate cards/i }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      setupMocks({ canUseAI: false, cards: [] });
+      renderDeckCardsPage();
+      expect(
+        screen.queryByRole('button', { name: /generate cards/i }),
       ).not.toBeInTheDocument();
     });
   });

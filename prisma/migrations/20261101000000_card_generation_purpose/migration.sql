@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AiPurpose" ADD VALUE 'CARD_GENERATION';

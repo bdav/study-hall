@@ -13,6 +13,17 @@ import {
   toProposedChanges,
 } from '../ai/cardRevision.js';
 import {
+  buildCardGenerationPrompt,
+  CARD_GENERATION_MODEL,
+  CARD_GENERATION_PROMPT_VERSION,
+  CARD_GENERATION_SYSTEM_PROMPT,
+  cardGenerationOutputSchema,
+  MAX_GENERATED_CARDS,
+  MAX_GENERATION_INSTRUCTION_LENGTH,
+} from '../ai/cardGeneration.js';
+import { cardProposalSchema } from '../ai/cardProposal.js';
+import {
+  createCards,
   deckOrder,
   editCard,
   primaryAnswerText,
@@ -33,6 +44,12 @@ const instruction = z
   .trim()
   .min(1)
   .max(MAX_REVISION_INSTRUCTION_LENGTH);
+
+const generationInstruction = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_GENERATION_INSTRUCTION_LENGTH);
 
 function changesEachCardOnce(cardIds: string[]) {
   return new Set(cardIds).size === cardIds.length;
@@ -512,5 +529,125 @@ export const deckRouter = router({
         editedCount: input.edits.length,
         deletedCount: input.deletions.length,
       };
+    }),
+  /**
+   * Proposes new cards for the deck from the learner's description of the
+   * cards they want (ADR-0010), never more than the number asked for. When
+   * refining, the follow-up instructions and the proposal as the learner
+   * left it come too, and the whole set is proposed again, up to
+   * MAX_GENERATED_CARDS. Nothing is added: the learner confirms the cards
+   * they want with `addGeneratedCards`.
+   */
+  proposeCards: aiProcedure
+    .input(
+      z.object({
+        deckId: z.string(),
+        description: generationInstruction,
+        count: z.number().int().min(1).max(MAX_GENERATED_CARDS),
+        refining: z
+          .object({
+            /** Follow-up instructions, oldest first, the newest last. */
+            instructions: z.array(generationInstruction).min(1),
+            cards: z
+              .array(
+                z.object({
+                  front: text,
+                  canonicalAnswer: text,
+                  included: z.boolean(),
+                }),
+              )
+              .max(MAX_GENERATED_CARDS),
+          })
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const deck = await ctx.prisma.deck.findUnique({
+        where: { id: input.deckId, userId: ctx.userId },
+        include: {
+          cards: { orderBy: deckOrder, include: withCanonicalAnswers },
+        },
+      });
+
+      if (!deck) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Deck not found' });
+      }
+      assertDeckActive(deck);
+
+      const existingCards = deck.cards.map((card) => ({
+        id: card.id,
+        front: card.front,
+        canonicalAnswer: primaryAnswerText(card),
+      }));
+
+      const { output, model, promptVersion } = await generateStructured(ctx, {
+        userId: ctx.userId,
+        purpose: 'CARD_GENERATION',
+        model: CARD_GENERATION_MODEL,
+        promptVersion: CARD_GENERATION_PROMPT_VERSION,
+        system: CARD_GENERATION_SYSTEM_PROMPT,
+        prompt: buildCardGenerationPrompt({
+          instructions: [
+            input.description,
+            ...(input.refining?.instructions ?? []),
+          ],
+          count: input.count,
+          deck: { name: deck.name, description: deck.description },
+          existingCards,
+          refining: input.refining?.cards,
+        }),
+        outputSchema: cardGenerationOutputSchema,
+      });
+
+      // A refinement may ask for more or fewer cards than the first round
+      const limit = input.refining ? MAX_GENERATED_CARDS : input.count;
+      return {
+        model,
+        promptVersion,
+        cards: output.cards.slice(0, limit),
+        note: output.note || null,
+        existingCards,
+      };
+    }),
+
+  /**
+   * Adds the cards the learner confirmed from a generated proposal, as
+   * edited, at the end of the deck in one transaction: NEW cards with no
+   * Source Lesson, each recording the model and prompt version that
+   * proposed it.
+   */
+  addGeneratedCards: protectedProcedure
+    .input(
+      z.object({
+        deckId: z.string(),
+        model: proposalSource,
+        promptVersion: proposalSource,
+        cards: z.array(cardProposalSchema).min(1).max(MAX_GENERATED_CARDS),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const deck = await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
+      });
+
+      // Typed Recall is the only card type, and the cards the app makes
+      const cards = input.cards.map(({ front, canonicalAnswer }) => ({
+        front,
+        canonicalAnswers: [canonicalAnswer],
+      }));
+      await ctx.prisma.$transaction(
+        (tx) =>
+          createCards(tx, {
+            deckId: deck.id,
+            userId: ctx.userId,
+            cards,
+            source: { model: input.model, promptVersion: input.promptVersion },
+          }),
+        // Up to MAX_GENERATED_CARDS cards, each several inserts
+        { timeout: 60_000 },
+      );
+
+      return { createdCount: cards.length };
     }),
 });

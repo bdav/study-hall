@@ -14,4 +14,4 @@ ADR-0001 kept generative AI out of standalone decks. But broad rewording of a de
 ## Consequences
 
 - Revising a deck goes through `canUseAI` and the spending cap like other AI features. Standalone decks still work fully without AI.
-- AI still never creates cards for a standalone deck from nothing; it only revises cards the learner already has.
+- AI still never creates cards for a standalone deck from nothing; it only revises cards the learner already has. Superseded by ADR-0010: AI may now propose new cards for any deck, added only when the learner approves them.

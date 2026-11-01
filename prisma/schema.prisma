@@ -63,6 +63,7 @@ enum AiPurpose {
   TUTOR
   COURSE_INTERVIEW
   SYLLABUS_REVISION
+  CARD_GENERATION
 }
 
 // Who wrote a Tutor Thread message

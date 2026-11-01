@@ -33,6 +33,7 @@ import { FlashCardTile } from '@/components/FlashCardTile';
 import { CardAnswers } from '@/components/CardAnswers';
 import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 import { ReviseCards } from '@/components/ReviseCards';
+import { GenerateCards } from '@/components/GenerateCards';
 import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 import {
   CardSelectionBar,
@@ -410,7 +411,12 @@ export default function DeckCardsPage() {
                 Select
               </button>
             )}
-            {canUseAI && cards.length > 0 && <ReviseCards deckId={deckId} />}
+            {canUseAI && cards.length > 0 && (
+              <>
+                <GenerateCards deckId={deckId} variant="action" />
+                <ReviseCards deckId={deckId} />
+              </>
+            )}
             {canArchiveDeck(deck) && (
               <ConfirmDialog
                 title="Archive deck"
@@ -687,6 +693,11 @@ export default function DeckCardsPage() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* An empty deck offers generating its cards beside the others */}
+            {canUseAI && cards.length === 0 && (
+              <GenerateCards deckId={deckId} variant="tile" />
+            )}
 
             {/* Existing cards */}
             {cards.map((card) => (
