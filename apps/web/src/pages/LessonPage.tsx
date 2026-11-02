@@ -25,6 +25,8 @@ import {
   type PracticeToggles,
 } from '@/hooks/useStoredLessonSettings';
 import { BackLink } from '@/components/BackLink';
+import { SegmentedControl } from '@/components/SegmentedControl';
+import { Switch } from '@/components/Switch';
 import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CourseSkeleton } from '@/components/PageSkeleton';
@@ -249,68 +251,6 @@ function viewChoice<T extends string>(
     onChange: (v) => onChange(v as T),
     menuOnly,
   };
-}
-
-/** A pressed-or-not button, for a setting that's on or off. */
-function ToggleButton({
-  pressed,
-  onChange,
-  children,
-}: {
-  pressed: boolean;
-  onChange: (pressed: boolean) => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={() => onChange(!pressed)}
-      className={`rounded-md px-3 py-1 ${
-        pressed ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-/**
- * An on-or-off setting as a switch, for settings that don't depend on each
- * other, unlike the options of a view.
- */
-function Switch({
-  checked,
-  onChange,
-  children,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-white/80 hover:text-white"
-    >
-      <span
-        aria-hidden
-        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-white/80' : 'bg-white/20'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 size-3 rounded-full transition-transform ${
-            checked ? 'translate-x-3 bg-[oklch(0.3_0.1_228)]' : 'bg-white/80'
-          }`}
-        />
-      </span>
-      {children}
-    </button>
-  );
 }
 
 /**
@@ -597,10 +537,6 @@ function ExamplesContent({
   );
 }
 
-/** The look of the header's segmented controls. */
-const SEGMENTED =
-  'shrink-0 rounded-lg border border-white/20 bg-white/5 p-0.5 text-sm';
-
 /** A view choice as a segmented control, one button per option. */
 function ViewControl({
   choice,
@@ -610,21 +546,13 @@ function ViewControl({
   className?: string;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={choice.label}
-      className={`${SEGMENTED} ${className}`}
-    >
-      {choice.options.map((option) => (
-        <ToggleButton
-          key={option.value}
-          pressed={choice.value === option.value}
-          onChange={() => choice.onChange(option.value)}
-        >
-          {option.label}
-        </ToggleButton>
-      ))}
-    </div>
+    <SegmentedControl
+      label={choice.label}
+      options={choice.options}
+      value={choice.value}
+      onChange={choice.onChange}
+      className={className}
+    />
   );
 }
 

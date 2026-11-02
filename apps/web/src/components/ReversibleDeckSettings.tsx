@@ -8,6 +8,7 @@ import {
   type DirectedDeck,
 } from '@/lib/directions';
 import { InPlaceField } from '@/components/InPlaceField';
+import { Switch } from '@/components/Switch';
 
 type DeckDetails = DirectedDeck & { id: string; description: string | null };
 
@@ -54,29 +55,14 @@ export function StudyBothWays({ deck }: { deck: DeckDetails }) {
   const update = useDeckUpdate(deck.id);
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={deck.reversible}
-        onClick={() =>
-          update.mutate({ id: deck.id, reversible: !deck.reversible })
-        }
-        className="inline-flex cursor-pointer items-center gap-2 text-white/70 hover:text-white"
+      <Switch
+        checked={deck.reversible}
+        onChange={(reversible) => update.mutate({ id: deck.id, reversible })}
+        // Lined up with the description above
+        className="-ml-2"
       >
-        <span
-          aria-hidden
-          className={`relative inline-block h-5 w-9 rounded-full transition-colors ${
-            deck.reversible ? 'bg-white/60' : 'bg-white/20'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${
-              deck.reversible ? 'translate-x-4.5' : 'translate-x-0.5'
-            }`}
-          />
-        </span>
         Study both ways
-      </button>
+      </Switch>
       {deck.reversible && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-white/80">
           <InPlaceField

@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
+import { SegmentedControl } from '@/components/SegmentedControl';
 import {
   SESSION_TYPES,
   STUDY_MODES,
@@ -7,17 +8,18 @@ import {
   type StudyMode,
 } from '@/lib/sessionChoices';
 
-/** What each Study Direction asks for, below its Direction Label. */
+/** What the Study Direction chosen asks for, below the choice. */
 const DIRECTION_DETAILS: Record<StudyDirection, string> = {
-  FORWARD: 'Type the answer',
-  REVERSE: 'Type the front',
+  FORWARD: 'Each card shows its front; type the answer',
+  REVERSE: 'Each card shows its answer; type the front',
 };
 
 /**
  * How to study, before a Study Session starts: its length, Quick, Standard
  * or Deep, and beside it its mode, Study, Drill weakest or Cram (#8, #9),
  * and, on a Reversible Deck, its Study Direction by the deck's Direction
- * Labels (ADR-0011).
+ * Labels (ADR-0011), as a segmented control: a way round, not a mix or a
+ * size like the others.
  */
 export function SessionPicker({
   sessionType,
@@ -51,18 +53,44 @@ export function SessionPicker({
         value={studyMode}
         onChange={onStudyMode}
       />
-      {direction && (
-        <ChoiceRow
-          label="Direction"
-          options={STUDY_DIRECTIONS.map((value) => ({
-            value,
-            label: direction.labels[value],
-            detail: DIRECTION_DETAILS[value],
-          }))}
-          value={direction.value}
-          onChange={direction.onChange}
-        />
-      )}
+      {direction && <DirectionRow {...direction} />}
+    </div>
+  );
+}
+
+/**
+ * The Study Direction under its label, as a segmented control the width of
+ * the rows above, with a line saying what the one chosen asks for.
+ */
+function DirectionRow({
+  value,
+  labels,
+  onChange,
+}: {
+  value: StudyDirection;
+  labels: Record<StudyDirection, string>;
+  onChange: (value: StudyDirection) => void;
+}) {
+  const labelId = useId();
+  return (
+    <div>
+      <p
+        id={labelId}
+        className="mb-1 text-xs uppercase tracking-wide text-white/50"
+      >
+        Direction
+      </p>
+      <SegmentedControl
+        labelledBy={labelId}
+        options={STUDY_DIRECTIONS.map((direction) => ({
+          value: direction,
+          label: labels[direction],
+        }))}
+        value={value}
+        onChange={onChange}
+        className="flex w-full"
+      />
+      <p className="mt-1 text-xs text-white/50">{DIRECTION_DETAILS[value]}</p>
     </div>
   );
 }
