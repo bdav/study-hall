@@ -52,6 +52,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
   - #42 Rich lesson content blocks
   - #61 Touch-sized controls on phones
   - #76 Generate cards from uploaded files
+  - #103 Stop the web from predicting the API's rules
 - Exploration
   - #32 Switchable visual themes, from palettes to immersive worlds
 
