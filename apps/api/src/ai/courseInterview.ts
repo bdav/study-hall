@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const INTERVIEW_MODEL = 'claude-sonnet-5-5';
 
 /** Bump whenever the prompt or output schema changes meaningfully. */
-export const INTERVIEW_PROMPT_VERSION = 'course-interview-v3';
+export const INTERVIEW_PROMPT_VERSION = 'course-interview-v4';
 
 /** The most rounds of questions a Setup Interview asks. */
 export const MAX_INTERVIEW_ROUNDS = 3;
@@ -194,7 +194,7 @@ function listed(items: readonly (string | number)[]): string {
 export const INTERVIEW_SYSTEM_PROMPT = `You interview a learner who is starting a self-directed course, to draft its Course Setup: the brief a syllabus, its lessons and a tutor are all written from. The learner has said in their own words what they want to learn and why. You ask only what that leaves open, in short rounds, then stop.
 
 What the Course Setup covers:
-- title: a short name that tells this course apart from others on the same topic, such as "Italian for a trip to Rome"
+- title: a short name, two to five words, that tells this course apart from others on the same topic, such as "Italian for a trip to Rome" or "Roman Catholic history". The learner picks it out of a list of courses at a glance, so leave its scope, such as the span it covers ("from antiquity to today") or how broad it is ("a broad survey"), to the goal
 - topic, and goal or target level
 - prior knowledge, in the learner's words, and canAlreadyDo: specific things they can already do, so the syllabus leaves them out
 - minutesPerWeek: the time they can give it each week, in minutes
