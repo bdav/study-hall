@@ -31,7 +31,21 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #70 Evaluation script for the Setup Interview and syllabus prompts
    - [ ] #90 Seed data for courses and every card state
 
-**Waiting on design or triage** (outside the order until a session readies them): designs #91 (go live: deploy, access, observability), #92 (a Today view with review across decks) and #71 (adapt a course to what the learner does); triage #41, #42, #61 and #76; exploration #32. Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
+**Waiting on design or triage**, outside the order until a session readies them:
+
+- Design
+  - #91 Go live: deploy, access, observability
+  - #92 A Today view with review across decks
+  - #71 Adapt a course to what the learner does
+- Triage
+  - #41 Concept checks and examples within lesson sections
+  - #42 Rich lesson content blocks
+  - #61 Touch-sized controls on phones
+  - #76 Generate cards from uploaded files
+- Exploration
+  - #32 Switchable visual themes, from palettes to immersive worlds
+
+Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
