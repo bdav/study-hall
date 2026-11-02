@@ -1389,6 +1389,20 @@ describe('editing the Syllabus', () => {
       expect(course.lessonCount).toBe(2);
     });
 
+    it('counts completed lessons still in the Syllabus on the Courses list', async () => {
+      const caller = createCaller();
+      const { lessons } = await acceptedCourse(caller);
+      for (const lesson of lessons) {
+        await caller.lesson.setCompleted({ id: lesson.id, completed: true });
+      }
+      await caller.lesson.setCompleted({ id: lessons[1].id, completed: false });
+
+      await caller.course.archiveLesson({ lessonId: lessons[0].id });
+
+      const [course] = await caller.course.list();
+      expect(course).toMatchObject({ lessonCount: 2, completedLessonCount: 1 });
+    });
+
     it('keeps a lesson when the last two are archived at once', async () => {
       const caller = createCaller();
       const { id, lessons } = await acceptedCourse(caller);

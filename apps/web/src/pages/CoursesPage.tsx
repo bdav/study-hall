@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Plus } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { Button } from '@/components/ui/button';
 import { AiSpendSummary } from '@/components/AiSpendSummary';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseListSkeleton } from '@/components/PageSkeleton';
+import { Tile } from '@/components/Tile';
 import { formatDate } from '@/lib/format';
+import { TILE_GRID } from '@/lib/layout';
 
 /**
  * Archived courses, out of the way below the active ones: collapsed to
@@ -81,45 +82,59 @@ export default function CoursesPage() {
 
   return (
     <CenteredPage>
-      <div className="w-full max-w-2xl text-white">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Your Courses</h1>
-          <Button asChild variant="secondary">
-            <Link to="/courses/new">
-              <Plus className="size-4" />
-              New course
-            </Link>
-          </Button>
-        </div>
+      <div className="w-full max-w-4xl text-white">
+        <h1 className="text-2xl font-bold">Your Courses</h1>
 
         <AiSpendSummary />
 
-        {courses.length === 0 ? (
+        {courses.length === 0 && (
           <p className="mt-6 text-white/60">
             {archived.length > 0
               ? 'No active courses. Start a new one, or restore one below.'
               : "No courses yet. Tell us what you want to learn and we'll propose a syllabus."}
           </p>
-        ) : (
-          <ul className="mt-6 space-y-3">
-            {courses.map((course) => (
-              <li key={course.id}>
-                <Link
-                  to={`/courses/${course.id}`}
-                  className="block rounded-xl border border-white/30 bg-white/10 p-4 backdrop-blur-sm transition-shadow hover:shadow-lg"
-                >
-                  <p className="text-lg font-bold">{course.title}</p>
-                  <p className="text-sm text-white/70">{course.goal}</p>
-                  <p className="mt-1 text-xs text-white/50">
+        )}
+
+        <ul aria-label="Active courses" className={`mt-6 ${TILE_GRID}`}>
+          <li>
+            <Link
+              to="/courses/new"
+              className="flex h-full transition-shadow hover:shadow-lg"
+            >
+              <Tile wideOnPhones>
+                <Plus className="h-10 w-10 text-white/60" aria-hidden />
+                <p className="mt-2 text-sm font-medium text-white/60">
+                  New course
+                </p>
+              </Tile>
+            </Link>
+          </li>
+          {courses.map((course) => (
+            <li key={course.id}>
+              {/* As tall as its row, which a long title or goal can make
+                  taller than a tile's shape */}
+              <Link
+                to={`/courses/${course.id}`}
+                className="flex h-full transition-shadow hover:shadow-lg"
+              >
+                <Tile wideOnPhones>
+                  <p className="line-clamp-2 text-center text-lg font-bold break-words">
+                    {course.title}
+                  </p>
+                  {/* The full goal is on the course page */}
+                  <p className="mt-1 line-clamp-2 text-center text-sm break-words text-white/70">
+                    {course.goal}
+                  </p>
+                  <p className="mt-2 text-xs text-white/50">
                     {course.syllabusAccepted
-                      ? `${course.lessonCount} lessons`
+                      ? `${course.completedLessonCount} of ${course.lessonCount} lessons complete`
                       : 'Syllabus proposal ready'}
                   </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+                </Tile>
+              </Link>
+            </li>
+          ))}
+        </ul>
 
         <ArchivedCourses archived={archived} />
       </div>

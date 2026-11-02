@@ -176,7 +176,10 @@ export const courseRouter = router({
       orderBy: { createdAt: 'desc' },
       include: {
         proposal: { select: { acceptedAt: true } },
-        _count: { select: { lessons: { where: { archivedAt: null } } } },
+        lessons: {
+          where: { archivedAt: null },
+          select: { completedAt: true },
+        },
       },
     });
 
@@ -185,7 +188,10 @@ export const courseRouter = router({
       title: course.title,
       goal: course.goal,
       createdAt: course.createdAt,
-      lessonCount: course._count.lessons,
+      lessonCount: course.lessons.length,
+      completedLessonCount: course.lessons.filter(
+        (lesson) => lesson.completedAt,
+      ).length,
       syllabusAccepted: Boolean(course.proposal?.acceptedAt),
     }));
   }),

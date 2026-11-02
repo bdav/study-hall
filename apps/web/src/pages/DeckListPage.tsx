@@ -18,6 +18,7 @@ import { DeckListSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { formatDate, formatPercent } from '@/lib/format';
 import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
+import { TILE_GRID } from '@/lib/layout';
 
 const MotionLink = motion.create(Link);
 
@@ -193,8 +194,7 @@ export default function DeckListPage() {
         ) : null}
 
         <LayoutGroup>
-          {/* One deck per row on phones */}
-          <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div className={`mt-6 ${TILE_GRID}`}>
             {/* Create new deck card */}
             <AnimatePresence mode="popLayout" initial={false}>
               {isCreating ? (

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -26,6 +26,7 @@ const courses = [
     goal: 'Order dinner in Madrid',
     createdAt: '2026-10-20T00:00:00.000Z',
     lessonCount: 0,
+    completedLessonCount: 0,
     syllabusAccepted: false,
   },
   {
@@ -34,6 +35,7 @@ const courses = [
     goal: 'A2 by summer',
     createdAt: '2026-10-01T00:00:00.000Z',
     lessonCount: 12,
+    completedLessonCount: 3,
     syllabusAccepted: true,
   },
 ];
@@ -86,18 +88,44 @@ beforeEach(() => {
 });
 
 describe('CoursesPage', () => {
-  it("lists the learner's courses, linking to each", () => {
+  it('shows each course as a tile linking to it, with its title, goal and lessons complete', () => {
     renderPage({ data: courses } as Partial<ListQuery>);
 
-    expect(screen.getByRole('link', { name: /italian/i })).toHaveAttribute(
-      'href',
-      '/courses/course-1',
-    );
-    expect(screen.getByRole('link', { name: /spanish/i })).toHaveAttribute(
-      'href',
+    const tile = screen.getByRole('link', { name: /italian/i });
+    expect(tile).toHaveAttribute('href', '/courses/course-1');
+    expect(within(tile).getByText('Italian')).toBeInTheDocument();
+    expect(within(tile).getByText('A2 by summer')).toBeInTheDocument();
+    expect(
+      within(tile).getByText('3 of 12 lessons complete'),
+    ).toBeInTheDocument();
+  });
+
+  it("says on a course's tile when its Syllabus is still a proposal", () => {
+    renderPage({ data: courses } as Partial<ListQuery>);
+
+    const tile = screen.getByRole('link', { name: /spanish/i });
+    expect(tile).toHaveAttribute('href', '/courses/course-2');
+    expect(
+      within(tile).getByText('Order dinner in Madrid'),
+    ).toBeInTheDocument();
+    expect(
+      within(tile).getByText('Syllabus proposal ready'),
+    ).toBeInTheDocument();
+    expect(within(tile).queryByText(/lessons complete/i)).toBeNull();
+  });
+
+  it('leads to a new course from the first tile, before the courses', () => {
+    renderPage({ data: courses } as Partial<ListQuery>);
+
+    const tiles = within(
+      screen.getByRole('list', { name: /active courses/i }),
+    ).getAllByRole('link');
+    expect(tiles.map((tile) => tile.getAttribute('href'))).toEqual([
+      '/courses/new',
       '/courses/course-2',
-    );
-    expect(screen.getByText('A2 by summer')).toBeInTheDocument();
+      '/courses/course-1',
+    ]);
+    expect(tiles[0]).toHaveAccessibleName(/new course/i);
   });
 
   describe('archived courses', () => {
@@ -152,20 +180,14 @@ describe('CoursesPage', () => {
     });
   });
 
-  it('shows the lesson count, or that a proposal awaits review', () => {
-    renderPage({ data: courses } as Partial<ListQuery>);
-
-    expect(screen.getByText('12 lessons')).toBeInTheDocument();
-    expect(screen.getByText('Syllabus proposal ready')).toBeInTheDocument();
-  });
-
   it('shows an empty state that leads to creating a course', () => {
     renderPage({ data: [] } as Partial<ListQuery>);
 
     expect(screen.getByText(/no courses yet/i)).toBeInTheDocument();
-    expect(
-      screen.getAllByRole('link', { name: /new course/i })[0],
-    ).toHaveAttribute('href', '/courses/new');
+    expect(screen.getByRole('link', { name: /new course/i })).toHaveAttribute(
+      'href',
+      '/courses/new',
+    );
   });
 
   it('shows a loading state', () => {

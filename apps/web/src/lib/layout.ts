@@ -33,3 +33,18 @@ export const DOCKED_PANEL_WIDTH = 'w-80 xl:w-96';
  */
 export const DOCKED_PANEL_SLIDE =
   'transition-[width] duration-300 ease-out motion-reduce:transition-none';
+
+/**
+ * A grid of tiles, as Flashcards' decks and Courses' courses: one per row
+ * on phones, three across from sm. Shared, so the two pages stay alike.
+ */
+export const TILE_GRID = 'grid grid-cols-1 gap-6 sm:grid-cols-3';
+
+/** A tile's shape: wider than tall. */
+export const TILE_SHAPE = 'aspect-3/2';
+
+/**
+ * TILE_SHAPE for a tile in TILE_GRID, wider still below sm, where each is a
+ * row in a one-column list.
+ */
+export const TILE_SHAPE_WIDE_ON_PHONES = 'aspect-2/1 sm:aspect-3/2';

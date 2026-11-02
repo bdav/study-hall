@@ -1,22 +1,28 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { CenteredPage } from '@/components/CenteredPage';
+import { TILE_GRID, TILE_SHAPE_WIDE_ON_PHONES } from '@/lib/layout';
 
-export function DeckListSkeleton() {
+/** A page of tiles, as Flashcards' decks and Courses' courses. */
+function TileGridSkeleton() {
   return (
     <CenteredPage>
       <div className="w-full max-w-4xl" role="status" aria-label="Loading">
         <Skeleton className="h-8 w-40" />
-        <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <div className={`mt-6 ${TILE_GRID}`}>
           {[1, 2, 3, 4].map((i) => (
             <Skeleton
               key={i}
-              className="aspect-2/1 w-full rounded-xl sm:aspect-3/2"
+              className={`${TILE_SHAPE_WIDE_ON_PHONES} w-full rounded-xl`}
             />
           ))}
         </div>
       </div>
     </CenteredPage>
   );
+}
+
+export function DeckListSkeleton() {
+  return <TileGridSkeleton />;
 }
 
 export function StatsSkeleton() {
@@ -80,18 +86,7 @@ export function StudySkeleton() {
 }
 
 export function CourseListSkeleton() {
-  return (
-    <CenteredPage>
-      <div className="w-full max-w-2xl" role="status" aria-label="Loading">
-        <Skeleton className="h-8 w-40" />
-        <div className="mt-6 space-y-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
-          ))}
-        </div>
-      </div>
-    </CenteredPage>
-  );
+  return <TileGridSkeleton />;
 }
 
 export function CourseSkeleton() {
