@@ -64,7 +64,7 @@ export function EditableDeckDescription({ deck }: { deck: DeckDetails }) {
 /**
  * Study both ways (ADR-0011): a switch making the deck a Reversible Deck or
  * not, and while it's one, its two Direction Labels edited in place beside
- * it, each named by its direction, Forward and Reverse standing in for
+ * it, each captioned above with its direction, Forward and Reverse standing in for
  * blank ones wherever the deck is studied. Turning it off hides
  * Reverse and keeps its history. None of it needs AI; for a learner who can
  * use AI, turning it on asks the AI to suggest the labels, and Suggest
@@ -102,7 +102,9 @@ export function StudyBothWays({
   }
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+    // Lined up along the bottom, where the labels' text sits below their
+    // captions
+    <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-2 text-sm">
       <Switch
         checked={deck.reversible}
         onChange={setReversible}
@@ -112,20 +114,20 @@ export function StudyBothWays({
         Study both ways
       </Switch>
       {deck.reversible && (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-white/80">
+        <div className="flex min-w-0 flex-wrap items-end gap-x-6 gap-y-2 text-white/80">
           {STUDY_DIRECTIONS.map((direction) => {
             const name = DEFAULT_DIRECTION_LABELS[direction];
             const field = LABEL_FIELDS[direction];
             return (
-              // Each label beside the direction it names, kept together as
-              // the row wraps
+              // Each label below the direction it names, as the study page's
+              // choices are named, kept together as the row wraps
               <span
                 key={direction}
-                className="inline-flex min-w-0 items-center gap-1.5"
+                className="inline-flex min-w-0 flex-col items-start"
               >
                 <span
                   aria-hidden
-                  className="text-xs uppercase tracking-wide text-white/50"
+                  className="text-[0.65rem] uppercase tracking-wide text-white/50"
                 >
                   {name}
                 </span>
@@ -147,7 +149,7 @@ export function StudyBothWays({
               type="button"
               onClick={suggestLabels}
               disabled={suggest.isPending}
-              className="inline-flex items-center text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
+              className="inline-flex items-center py-1 text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
             >
               <Sparkles aria-hidden className="mr-1 h-3.5 w-3.5" />
               {suggest.isPending ? 'Suggesting…' : 'Suggest labels'}
