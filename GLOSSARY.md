@@ -161,7 +161,7 @@ A unit of instructional content within a syllabus — explanation, examples and 
 _Avoid_: Module, chapter, day
 
 **Lesson Version**:
-One generated rendition of a lesson: its instructional content, exercises and lesson summary. It never changes once created; regenerating a lesson produces a new version. Exercise attempts and tutor threads are learner state about a version, not part of it.
+One generated rendition of a lesson: its instructional content, exercises and lesson summary. It never changes once created; regenerating a lesson produces a new version. Versions are numbered from 1 in the order they were written. The newest is the lesson's current version, the only one the learner answers or asks the tutor about; earlier versions are kept to read back. Exercise attempts and tutor threads are learner state about a version, not part of it.
 _Avoid_: Revision, draft
 
 **Lesson Summary**:
