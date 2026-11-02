@@ -2097,9 +2097,21 @@ describe('a reversible deck on the Cards tab (#82)', () => {
     expect(note).toHaveTextContent(
       'The following cards share an answer, so Reverse shows each the same prompt. Either front is accepted for each, but not the same front twice in one session.',
     );
-    expect(note).toHaveTextContent(
-      'Paris: “Capital of France”, “Capital of the French Republic”',
-    );
+    // A table of each answer and its fronts, a front to a line
+    const table = within(note).getByRole('table');
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Answer', 'Fronts']);
+    const [, paris, ...others] = within(table).getAllByRole('row');
+    expect(others).toEqual([]);
+    const [answer, fronts] = within(paris).getAllByRole('cell');
+    expect(answer).toHaveTextContent(/^Paris$/);
+    expect([...fronts.children].map((front) => front.textContent)).toEqual([
+      'Capital of France',
+      'Capital of the French Republic',
+    ]);
     expect(note).not.toHaveTextContent('Capital of Germany');
   });
 

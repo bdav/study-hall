@@ -181,14 +181,34 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
         prompt. Either front is accepted for each, but not the same front twice
         in one session.
       </p>
-      <ul className="mt-1 list-disc pl-5">
-        {groups.map((group) => (
-          <li key={group[0].id} className="break-words">
-            {group[0].canonicalAnswer}:{' '}
-            {group.map((card) => `“${card.front}”`).join(', ')}
-          </li>
-        ))}
-      </ul>
+      {/* Each answer beside its fronts, a front to a line, since a front
+          may have commas of its own */}
+      <table className="mt-2 border-collapse text-left">
+        <thead>
+          <tr className="text-[0.65rem] uppercase tracking-wide text-white/50">
+            <th scope="col" className="pr-4 pb-1 font-normal">
+              Answer
+            </th>
+            <th scope="col" className="pb-1 font-normal">
+              Fronts
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => (
+            <tr key={group[0].id} className="border-t border-white/15">
+              <td className="py-1.5 pr-4 align-top font-medium break-words text-white">
+                {group[0].canonicalAnswer}
+              </td>
+              <td className="py-1.5 align-top break-words">
+                {group.map((card) => (
+                  <div key={card.id}>{card.front}</div>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
