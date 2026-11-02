@@ -407,6 +407,18 @@ describe('DeckListPage', () => {
 });
 
 describe('the glow on what Enter will press (#94)', () => {
+  it('focuses the New Deck tile on arrival, where Enter opens the form', async () => {
+    setupMocks();
+    const user = userEvent.setup();
+    renderDeckListPage();
+
+    const tile = screen.getByRole('button', { name: /new deck/i });
+    expect(tile).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(screen.getByRole('textbox')).toHaveFocus();
+  });
+
   it("glows the new deck's create arrow only while its name has focus", async () => {
     setupMocks();
     const user = userEvent.setup();

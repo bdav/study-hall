@@ -13,7 +13,14 @@ import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
  * what a variant is, are explained where each is added: below "Add
  * answer", and below the first answer's box for adding a variant.
  */
-export function AnswersEditor({ form }: { form: AnswersForm }) {
+export function AnswersEditor({
+  form,
+  autoFocusFirst = false,
+}: {
+  form: AnswersForm;
+  /** The first answer takes focus, as where the form opens. */
+  autoFocusFirst?: boolean;
+}) {
   const headingId = useId();
   const primaryName = useId();
   const answersHelpId = useId();
@@ -41,7 +48,7 @@ export function AnswersEditor({ form }: { form: AnswersForm }) {
                 <Input
                   aria-label={label}
                   value={answer.text}
-                  autoFocus={answer.isNew}
+                  autoFocus={answer.isNew || (autoFocusFirst && i === 0)}
                   onChange={(e) => form.typeAnswer(i, e.target.value)}
                   className={glassInputClassName}
                 />

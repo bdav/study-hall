@@ -17,6 +17,13 @@ export const ENTER_GLOW = 'animate-pulse-halo';
 export const KEYBOARD_ENTER_GLOW =
   'animate-pulse-halo pointer-coarse:animate-none';
 
+/**
+ * The glow on a create tile's contents while the tile, marked `group/new`,
+ * has focus: Enter opens its form. None on touch screens.
+ */
+export const TILE_ENTER_GLOW =
+  'pointer-fine:group-focus/new:animate-pulse-halo';
+
 /** The glow on a card's border, as a button's: none on touch screens. */
 export const KEYBOARD_ENTER_GLOW_BORDER =
   'animate-pulse-halo-border pointer-coarse:animate-none';

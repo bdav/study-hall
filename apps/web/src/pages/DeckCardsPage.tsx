@@ -42,7 +42,7 @@ import {
   StudyBothWays,
 } from '@/components/ReversibleDeckSettings';
 import { MarkKnownDialog } from '@/components/MarkKnownDialog';
-import { ENTER_GLOW } from '@/lib/enterGlow';
+import { ENTER_GLOW, TILE_ENTER_GLOW } from '@/lib/enterGlow';
 import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
 import {
   CardSelectionBar,
@@ -625,8 +625,12 @@ export default function DeckCardsPage() {
                     className="group/new cursor-pointer transition-shadow hover:shadow-lg focus:outline-none"
                     onClick={() => setIsCreating(true)}
                   >
-                    <Plus className="h-10 w-10 text-white/60 pointer-fine:group-focus/new:animate-pulse-halo" />
-                    <p className="mt-2 text-sm font-medium text-white/60 pointer-fine:group-focus/new:animate-pulse-halo">
+                    <Plus
+                      className={`h-10 w-10 text-white/60 ${TILE_ENTER_GLOW}`}
+                    />
+                    <p
+                      className={`mt-2 text-sm font-medium text-white/60 ${TILE_ENTER_GLOW}`}
+                    >
                       New Card
                     </p>
                   </DeckCard>

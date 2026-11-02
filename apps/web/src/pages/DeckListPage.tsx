@@ -19,7 +19,7 @@ import { DeckCard } from '@/components/DeckCard';
 import { formatDate, formatPercent } from '@/lib/format';
 import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 import { TILE_GRID } from '@/lib/layout';
-import { ENTER_GLOW } from '@/lib/enterGlow';
+import { ENTER_GLOW, TILE_ENTER_GLOW } from '@/lib/enterGlow';
 import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
 
 const MotionLink = motion.create(Link);
@@ -269,11 +269,17 @@ export default function DeckListPage() {
                   <DeckCard
                     stackCount={0}
                     wideOnPhones
-                    className="cursor-pointer transition-shadow hover:shadow-lg"
+                    // Enter opens the form, as the Cards tab's New Card does
+                    autoFocus
+                    className="group/new cursor-pointer transition-shadow hover:shadow-lg focus:outline-none"
                     onClick={() => setIsCreating(true)}
                   >
-                    <Plus className="h-10 w-10 text-white/60" />
-                    <p className="mt-2 text-sm font-medium text-white/60">
+                    <Plus
+                      className={`h-10 w-10 text-white/60 ${TILE_ENTER_GLOW}`}
+                    />
+                    <p
+                      className={`mt-2 text-sm font-medium text-white/60 ${TILE_ENTER_GLOW}`}
+                    >
                       New Deck
                     </p>
                   </DeckCard>

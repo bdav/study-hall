@@ -217,7 +217,8 @@ export function StudyCardEditor({
                 {front.trim() || card.front}
               </p>
               <div className="mt-3">
-                <AnswersEditor form={form} />
+                {/* Opened on the answers, the first takes focus (#94) */}
+                <AnswersEditor form={form} autoFocusFirst={isFlipped} />
               </div>
               {isFlipped && actions}
               {flipButton('Flip to front')}

@@ -3837,6 +3837,18 @@ describe('the glow on what Enter will press (#94)', () => {
     expect(isGlowing(nextButton())).toBe(true);
   });
 
+  it("puts focus on the first answer when edit mode opens on a graded card's answers", async () => {
+    const user = await gradeFirstCard();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Edit card' }));
+
+    expect(screen.getByRole('textbox', { name: 'Answer 1' })).toHaveFocus();
+    expect(isGlowing(nextButton())).toBe(false);
+  });
+
   it('keeps Next glowing once the card is flipped, its flip button gone', async () => {
     const user = await gradeFirstCard();
     await user.click(screen.getByRole('button', { name: 'Flip to front' }));
