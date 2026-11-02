@@ -2005,7 +2005,7 @@ describe('a reversible deck on the Cards tab (#82)', () => {
     expect(update).toHaveBeenCalledWith({ id: 'deck-1', reversible: false });
   });
 
-  it('edits the Direction Labels in place beside it, Reverse standing in for a blank one', async () => {
+  it('edits the Direction Labels in place beside it', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     setupMocks({ deck: reversible });
     const update = mockDeckUpdate();
@@ -2017,7 +2017,7 @@ describe('a reversible deck on the Cards tab (#82)', () => {
       screen.getByRole('button', { name: 'Edit the Reverse label' }),
     );
     const label = screen.getByRole('textbox', { name: 'Reverse label' });
-    expect(label).toHaveAttribute('placeholder', 'Reverse');
+    expect(label).toHaveAttribute('placeholder', 'Add a label');
     expect(label).toHaveAttribute('maxLength', '40');
     await user.type(label, 'Countries from capitals');
     vi.advanceTimersByTime(900);
@@ -2223,6 +2223,24 @@ describe('AI-suggested Direction Labels (#83)', () => {
     return mutate;
   }
 
+  it('names each label field by its direction', () => {
+    setupMocks({
+      deck: {
+        reversible: true,
+        forwardLabel: 'Capitals from countries',
+        reverseLabel: null,
+      },
+    });
+    renderDeckCardsPage();
+
+    const row = screen.getByRole('switch', {
+      name: 'Study both ways',
+    }).parentElement!;
+    expect(row).toHaveTextContent(
+      /Forward\s*Capitals from countries\s*Reverse\s*Add a label/,
+    );
+  });
+
   it('asks for labels once Study both ways is turned on, for a learner who can use AI', async () => {
     setupMocks({ canUseAI: true });
     const update = mockDeckUpdates();
@@ -2407,6 +2425,6 @@ describe('AI-suggested Direction Labels (#83)', () => {
     );
     expect(
       screen.getByRole('button', { name: 'Edit the Forward label' }),
-    ).toHaveTextContent('Forward');
+    ).toHaveTextContent('Add a label');
   });
 });

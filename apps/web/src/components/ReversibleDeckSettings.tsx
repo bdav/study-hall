@@ -6,6 +6,8 @@ import {
   cardsSharingAnswers,
   DEFAULT_DIRECTION_LABELS,
   hasLabelToSuggest,
+  STUDY_DIRECTIONS,
+  type StudyDirection,
   MAX_DIRECTION_LABEL_LENGTH,
   type DirectedDeck,
 } from '@/lib/directions';
@@ -19,6 +21,12 @@ type DeckDetails = DirectedDeck & {
   forwardLabelSuggested?: boolean;
   reverseLabelSuggested?: boolean;
 };
+
+/** The deck's field holding each Study Direction's label. */
+const LABEL_FIELDS = {
+  FORWARD: 'forwardLabel',
+  REVERSE: 'reverseLabel',
+} as const satisfies Record<StudyDirection, keyof DirectedDeck>;
 
 /** Saves changes to a deck's details, refreshing where they show. */
 function useDeckUpdate(deckId: string) {
@@ -56,7 +64,8 @@ export function EditableDeckDescription({ deck }: { deck: DeckDetails }) {
 /**
  * Study both ways (ADR-0011): a switch making the deck a Reversible Deck or
  * not, and while it's one, its two Direction Labels edited in place beside
- * it, Forward and Reverse standing in for blank ones. Turning it off hides
+ * it, each named by its direction, Forward and Reverse standing in for
+ * blank ones wherever the deck is studied. Turning it off hides
  * Reverse and keeps its history. None of it needs AI; for a learner who can
  * use AI, turning it on asks the AI to suggest the labels, and Suggest
  * labels beside them asks again (#83). Suggestions are saved where the
@@ -103,36 +112,42 @@ export function StudyBothWays({
         Study both ways
       </Switch>
       {deck.reversible && (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-white/80">
-          <InPlaceField
-            label="Forward label"
-            editLabel="Edit the Forward label"
-            value={deck.forwardLabel ?? ''}
-            placeholder={DEFAULT_DIRECTION_LABELS.FORWARD}
-            maxLength={MAX_DIRECTION_LABEL_LENGTH}
-            onSave={(label) =>
-              update.mutate({ id: deck.id, forwardLabel: label || null })
-            }
-          />
-          <span aria-hidden className="text-white/40">
-            ·
-          </span>
-          <InPlaceField
-            label="Reverse label"
-            editLabel="Edit the Reverse label"
-            value={deck.reverseLabel ?? ''}
-            placeholder={DEFAULT_DIRECTION_LABELS.REVERSE}
-            maxLength={MAX_DIRECTION_LABEL_LENGTH}
-            onSave={(label) =>
-              update.mutate({ id: deck.id, reverseLabel: label || null })
-            }
-          />
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-white/80">
+          {STUDY_DIRECTIONS.map((direction) => {
+            const name = DEFAULT_DIRECTION_LABELS[direction];
+            const field = LABEL_FIELDS[direction];
+            return (
+              // Each label beside the direction it names, kept together as
+              // the row wraps
+              <span
+                key={direction}
+                className="inline-flex min-w-0 items-center gap-1.5"
+              >
+                <span
+                  aria-hidden
+                  className="text-xs uppercase tracking-wide text-white/50"
+                >
+                  {name}
+                </span>
+                <InPlaceField
+                  label={`${name} label`}
+                  editLabel={`Edit the ${name} label`}
+                  value={deck[field] ?? ''}
+                  placeholder="Add a label"
+                  maxLength={MAX_DIRECTION_LABEL_LENGTH}
+                  onSave={(label) =>
+                    update.mutate({ id: deck.id, [field]: label || null })
+                  }
+                />
+              </span>
+            );
+          })}
           {canUseAI && (
             <button
               type="button"
               onClick={suggestLabels}
               disabled={suggest.isPending}
-              className="ml-2 inline-flex items-center text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
+              className="inline-flex items-center text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
             >
               <Sparkles aria-hidden className="mr-1 h-3.5 w-3.5" />
               {suggest.isPending ? 'Suggesting…' : 'Suggest labels'}
