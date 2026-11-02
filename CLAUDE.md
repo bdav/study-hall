@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 8/20 planned issues**
+**Completed: 8/21 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -30,6 +30,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #98 Card Standing: read every card's standing from one place
    - [ ] #99 Card Standing: change card progress only through it
    - [ ] #85 Stats on the scheduler's terms
+   - [ ] #102 Design: the Study Session as a state machine (a grilling with the maintainer; stop and ask)
    - [ ] #86 Suggest retiring mastered cards, and unretire them
    - [ ] #87 Cram toward a target date
 5. Courses
