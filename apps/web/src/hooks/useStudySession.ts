@@ -425,6 +425,25 @@ export function useStudySession(
     [dropCard],
   );
 
+  /**
+   * Back to the title card once a session is over, starting nothing, so
+   * another can be chosen and started there (#93): the session's queue and
+   * answers are put away, the finished session isn't offered to resume, and
+   * what a new one would hold is looked at again.
+   */
+  const returnToTitle = useCallback(() => {
+    setStudySession(null);
+    setPosition(0);
+    setFinished(false);
+    setAnswerInput('');
+    setError(null);
+    setHistory([]);
+    setEditedAfterAnswer(new Set());
+    setStudyState({ phase: 'idle' });
+    utils.study.activeSession.setData({ deckId: deckId ?? '' }, null);
+    utils.study.queuePreview.invalidate({ deckId });
+  }, [utils, deckId]);
+
   const advanceOrFinish = useCallback(async () => {
     if (position + 1 >= items.length) {
       await finish();
@@ -561,6 +580,7 @@ export function useStudySession(
     handleAcceptAnswer,
     isAcceptingAnswer: acceptAnswer.isPending,
     handleFinish: finish,
+    returnToTitle,
     replaceCard,
     // A change to a card's variants or primary answer resets nothing, so
     // the card wasn't edited after its answer

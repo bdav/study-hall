@@ -426,6 +426,7 @@ export default function StudyPage() {
     handleAcceptAnswer,
     isAcceptingAnswer,
     handleFinish,
+    returnToTitle,
     replaceCard,
     showUnresetChange,
     removeCard,
@@ -535,6 +536,7 @@ export default function StudyPage() {
     lastNavDirection,
     exitingCard,
     handleSlideEnd,
+    slideTo,
     slideToNext,
     slideToPrev,
   } = useSlideAnimation(
@@ -629,6 +631,16 @@ export default function StudyPage() {
     if (direction === 'left' && canGoForward) slideToNext();
     if (direction === 'right' && canGoPrevious) slideToPrev();
   });
+
+  // Once a session is over, back to the title card and its options, where
+  // the next one is chosen and started (#93); what was marked known or
+  // being accepted in the last session is put away with it
+  function startAnother() {
+    setKnownCards(new Map());
+    setChoosingAnswerFor(null);
+    setEditing(null);
+    slideTo('right', returnToTitle);
+  }
 
   if (deckQuery.isLoading) {
     return <StudySkeleton />;
@@ -758,7 +770,7 @@ export default function StudyPage() {
           <div className="mt-6">
             <button
               autoFocus
-              onClick={handleStart}
+              onClick={startAnother}
               className="animate-pulse-halo cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none"
             >
               Start another session

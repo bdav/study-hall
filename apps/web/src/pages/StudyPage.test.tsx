@@ -18,6 +18,7 @@ const mockInvalidateCards = vi.fn();
 const mockInvalidateHistory = vi.fn();
 const mockInvalidateActiveSession = vi.fn();
 const mockInvalidateQueuePreview = vi.fn();
+const mockSetActiveSession = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -28,7 +29,10 @@ vi.mock('@/lib/trpc', () => ({
         history: { invalidate: mockInvalidateHistory },
       },
       study: {
-        activeSession: { invalidate: mockInvalidateActiveSession },
+        activeSession: {
+          invalidate: mockInvalidateActiveSession,
+          setData: mockSetActiveSession,
+        },
         queuePreview: { invalidate: mockInvalidateQueuePreview },
       },
     })),
@@ -1149,7 +1153,7 @@ describe('StudyPage', () => {
     expect(screen.queryByTestId('variant-note')).not.toBeInTheDocument();
   });
 
-  it('summarises the session by grade and offers another session', async () => {
+  it('summarises the session by grade and offers another session from the title card', async () => {
     setupMocksWithStartSession();
     const grades = ['NAILED', 'MISSED'];
     vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
@@ -1185,6 +1189,8 @@ describe('StudyPage', () => {
     await user.click(
       screen.getByRole('button', { name: /start another session/i }),
     );
+    // Back at the title card, which starts it (#93)
+    await user.click(await screen.findByRole('button', { name: /test deck/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Card 1 of 2')).toBeInTheDocument();
@@ -3601,5 +3607,128 @@ describe('a reversible deck (#82)', () => {
 
     expect(screen.getByText('Resume session?')).toBeInTheDocument();
     expect(screen.getByText(/Questions from answers/)).toBeInTheDocument();
+  });
+});
+
+describe('starting another session (#93)', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  /** Starts sessions as the API would, counting the starts. */
+  function setupStarts() {
+    setupMocksWithStartSession();
+    const start = vi.fn();
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+      onSuccess?: (data: unknown) => void;
+    }) => ({
+      mutate: start.mockImplementation(() => opts?.onSuccess?.(mockSession)),
+    })) as unknown as typeof trpc.study.startSession.useMutation);
+    return start;
+  }
+
+  /** Answers both cards of a session and moves on to its end. */
+  async function studyToTheEnd(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    for (const answer of ['4', 'Paris']) {
+      await user.type(await screen.findByRole('textbox'), `${answer}{Enter}`);
+      await screen.findByTestId('result');
+      await user.click(await screen.findByRole('button', { name: /next/i }));
+    }
+    await screen.findByRole('heading', { name: /session complete/i });
+  }
+
+  const choice = (group: string, name: RegExp) =>
+    within(screen.getByRole('group', { name: group })).getByRole('button', {
+      name,
+    });
+
+  it('goes back to the title card and its options, starting nothing', async () => {
+    const start = setupStarts();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+
+    await user.click(
+      screen.getByRole('button', { name: 'Start another session' }),
+    );
+
+    expect(
+      await screen.findByRole('button', { name: /test deck/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /session complete/i }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('group', { name: 'Session length' }),
+    ).toBeInTheDocument();
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks again at what a session would hold, the one finished not offered to resume', async () => {
+    setupStarts();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+    vi.mocked(mockInvalidateQueuePreview).mockClear();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Start another session' }),
+    );
+
+    expect(mockInvalidateQueuePreview).toHaveBeenCalledWith({
+      deckId: 'deck-1',
+    });
+    expect(mockSetActiveSession).toHaveBeenCalledWith(
+      { deckId: 'deck-1' },
+      null,
+    );
+    expect(screen.queryByText('Resume session?')).toBeNull();
+  });
+
+  it('starts the next session with Enter from the title card', async () => {
+    const start = setupStarts();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+    await user.click(
+      screen.getByRole('button', { name: 'Start another session' }),
+    );
+    await screen.findByRole('button', { name: /test deck/i });
+
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByText('Card 1 of 2')).toBeInTheDocument();
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the options chosen, and starts with any changed', async () => {
+    const start = setupStarts();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(choice('Session length', /quick/i));
+    await user.click(choice('Study mode', /cram/i));
+    await studyToTheEnd(user);
+
+    await user.click(
+      screen.getByRole('button', { name: 'Start another session' }),
+    );
+    expect(choice('Session length', /quick/i)).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(choice('Study mode', /cram/i)).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await user.click(choice('Session length', /deep/i));
+    await user.click(await screen.findByRole('button', { name: /test deck/i }));
+
+    expect(start).toHaveBeenLastCalledWith({
+      deckId: 'deck-1',
+      sessionType: 'DEEP',
+      studyMode: 'CRAM',
+      direction: 'FORWARD',
+    });
+    expect(await screen.findByText('Card 1 of 2')).toBeInTheDocument();
   });
 });

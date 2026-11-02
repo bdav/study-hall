@@ -63,21 +63,30 @@ export function useSlideAnimation(
     return () => clearTimeout(timer);
   }, [exitingCard, handleSlideEnd]);
 
-  const slideToNext = useCallback(() => {
-    setExitingCard(displayRef.current);
-    setSlideDirection('left');
-    setSlideKey((k) => k + 1);
-    setLastNavDirection('forward');
-    onNext();
-  }, [onNext]);
+  /**
+   * Slides what's on screen out, left going forward or right going back,
+   * as `action` brings on what comes next.
+   */
+  const slideTo = useCallback(
+    (direction: 'left' | 'right', action: () => void) => {
+      setExitingCard(displayRef.current);
+      setSlideDirection(direction);
+      setSlideKey((k) => k + 1);
+      setLastNavDirection(direction === 'left' ? 'forward' : 'back');
+      action();
+    },
+    [],
+  );
 
-  const slideToPrev = useCallback(() => {
-    setExitingCard(displayRef.current);
-    setSlideDirection('right');
-    setSlideKey((k) => k + 1);
-    setLastNavDirection('back');
-    onBack();
-  }, [onBack]);
+  const slideToNext = useCallback(
+    () => slideTo('left', onNext),
+    [slideTo, onNext],
+  );
+
+  const slideToPrev = useCallback(
+    () => slideTo('right', onBack),
+    [slideTo, onBack],
+  );
 
   return {
     slideKey,
@@ -86,6 +95,7 @@ export function useSlideAnimation(
     setLastNavDirection,
     exitingCard,
     handleSlideEnd,
+    slideTo,
     slideToNext,
     slideToPrev,
   };
