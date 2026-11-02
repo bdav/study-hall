@@ -182,14 +182,18 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
         in one session.
       </p>
       {/* Each answer beside its fronts, a front to a line, since a front
-          may have commas of its own; inset from the note's edges */}
-      <div className="mt-4 px-3">
+          may have commas of its own; inset from the note's edges, more
+          so where there's room for it */}
+      <div className="mt-6 px-3 sm:px-6">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="text-[0.65rem] uppercase tracking-wide text-white/50">
               {/* As wide as its longest answer, from sm up; on a phone
                 the two columns share the width */}
-              <th scope="col" className="pr-8 pb-1 font-normal sm:w-px">
+              <th
+                scope="col"
+                className="pr-8 pb-1 font-normal sm:w-px sm:pr-12"
+              >
                 Answer
               </th>
               <th scope="col" className="pb-1 font-normal">
@@ -200,7 +204,7 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
           <tbody>
             {groups.map((group) => (
               <tr key={group[0].id} className="border-t border-white/15">
-                <td className="py-1.5 pr-8 align-top font-medium break-words text-white sm:whitespace-nowrap">
+                <td className="py-1.5 pr-8 align-top sm:pr-12 font-medium break-words text-white sm:whitespace-nowrap">
                   {group[0].canonicalAnswer}
                 </td>
                 <td className="py-1.5 align-top break-words">
