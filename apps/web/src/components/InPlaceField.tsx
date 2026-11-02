@@ -75,7 +75,9 @@ export function InPlaceField({
           setIsEditing(true);
           setIsTyped(false);
         }}
-        className={`-mx-1 inline-flex max-w-full cursor-text items-center gap-1.5 px-1 text-left ${EDIT_FIELD} ${className}`}
+        // Its tint reaches past the text by its padding, which the negative
+        // margins take back, so it may be that much wider than its parent
+        className={`-mx-1 inline-flex max-w-[calc(100%+0.5rem)] cursor-text items-center gap-1.5 px-1 text-left ${EDIT_FIELD} ${className}`}
       >
         <span
           className={`break-words ${localValue ? '' : 'text-white/40 italic'}`}
