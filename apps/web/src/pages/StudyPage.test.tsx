@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -3730,5 +3731,155 @@ describe('starting another session (#93)', () => {
       direction: 'FORWARD',
     });
     expect(await screen.findByText('Card 1 of 2')).toBeInTheDocument();
+  });
+});
+
+describe('the glow on what Enter will press (#94)', () => {
+  /** Whether a control shows the glow that says Enter will press it. */
+  const isGlowing = (element: HTMLElement) =>
+    element.classList.contains('animate-pulse-halo');
+
+  const nextButton = () => screen.getByRole('button', { name: /^next$/i });
+
+  /** Whether the title card's border shows the glow. */
+  const titleCardGlows = (titleCard: HTMLElement) =>
+    titleCard.querySelector('.animate-pulse-halo-border') !== null;
+
+  /** Starts a session and answers its first card, which then shows graded. */
+  async function gradeFirstCard() {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(await screen.findByRole('textbox'), '4{Enter}');
+    await screen.findByTestId('result');
+    return user;
+  }
+
+  it('glows Next or the title card, whichever has focus, as Enter presses it', async () => {
+    setupMocksWithStartSession();
+    renderStudyPage();
+
+    await waitFor(() => expect(nextButton()).toHaveFocus());
+    expect(isGlowing(nextButton())).toBe(true);
+    const titleCard = screen.getByRole('button', { name: /test deck/i });
+    expect(titleCardGlows(titleCard)).toBe(false);
+
+    // Enter on the title card, once it has focus, starts it instead
+    act(() => titleCard.focus());
+    expect(titleCardGlows(titleCard)).toBe(true);
+    expect(isGlowing(nextButton())).toBe(false);
+  });
+
+  it('moves focus to Next on a graded card, glowing it', async () => {
+    await gradeFirstCard();
+
+    await waitFor(() => expect(nextButton()).toHaveFocus());
+    expect(isGlowing(nextButton())).toBe(true);
+  });
+
+  it('moves the glow off Next when focus moves to another button, which Enter then presses', async () => {
+    const user = await gradeFirstCard();
+    const markKnown = screen.getByRole('button', { name: 'Mark known' });
+
+    act(() => markKnown.focus());
+    expect(isGlowing(nextButton())).toBe(false);
+    await user.keyboard('{Enter}');
+
+    expect(mockMarkKnown).toHaveBeenCalled();
+    expect(screen.getByTestId('result')).toBeInTheDocument();
+  });
+
+  it('glows Next when nothing has focus, as Enter then moves on', async () => {
+    const user = await gradeFirstCard();
+    await waitFor(() => expect(nextButton()).toHaveFocus());
+
+    act(() => nextButton().blur());
+    expect(isGlowing(nextButton())).toBe(true);
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
+  });
+
+  it('puts focus back on Next once Mark known is pressed', async () => {
+    const user = await gradeFirstCard();
+
+    await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+    expect(nextButton()).toHaveFocus();
+    expect(isGlowing(nextButton())).toBe(true);
+  });
+
+  it('puts focus on Next once "My answer was correct" is pressed', async () => {
+    setupMocksWithStartSession('incorrect');
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(await screen.findByRole('textbox'), 'four{Enter}');
+
+    await user.click(
+      await screen.findByRole('button', { name: 'My answer was correct' }),
+    );
+
+    expect(nextButton()).toHaveFocus();
+  });
+
+  it('puts focus on Next when edit mode ends on a graded card', async () => {
+    const user = await gradeFirstCard();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit card' }));
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(nextButton()).toHaveFocus());
+    expect(isGlowing(nextButton())).toBe(true);
+  });
+
+  it('keeps Next glowing once the card is flipped, its flip button gone', async () => {
+    const user = await gradeFirstCard();
+    await user.click(screen.getByRole('button', { name: 'Flip to front' }));
+    const flip = screen.getByRole('button', { name: 'Flip to back' });
+    act(() => flip.focus());
+    expect(isGlowing(nextButton())).toBe(false);
+
+    await user.click(flip);
+
+    expect(nextButton()).toHaveFocus();
+    expect(isGlowing(nextButton())).toBe(true);
+  });
+
+  it("glows the answer's submit arrow only while the answer has focus", async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    const answer = await screen.findByRole('textbox');
+    await user.type(answer, '4');
+    const submit = screen.getByRole('button', { name: /submit/i });
+    expect(isGlowing(submit)).toBe(true);
+
+    act(() => answer.blur());
+
+    expect(isGlowing(submit)).toBe(false);
+    expect(isGlowing(nextButton())).toBe(false);
+  });
+
+  it('glows Previous while it has focus after going back, and nothing once it loses it', async () => {
+    const user = await gradeFirstCard();
+    await user.click(nextButton());
+    await screen.findByText('Capital of France?');
+
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    const previous = await screen.findByRole('button', { name: /previous/i });
+    await waitFor(() => expect(previous).toHaveFocus());
+    expect(isGlowing(previous)).toBe(true);
+    expect(isGlowing(nextButton())).toBe(false);
+
+    // Reviewing an answer, Enter with nothing focused does nothing
+    act(() => previous.blur());
+    expect(isGlowing(previous)).toBe(false);
+    expect(isGlowing(nextButton())).toBe(false);
   });
 });

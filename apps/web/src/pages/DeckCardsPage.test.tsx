@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -2135,5 +2135,34 @@ describe('a reversible deck on the Cards tab (#82)', () => {
         reverseVariants: ['France!', 'French Republic'],
       }),
     );
+  });
+});
+
+describe('the glow on what Enter will press (#94)', () => {
+  it("glows the new card's arrows only while their side's box has focus", async () => {
+    setupMocks({ cards: [] });
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+    await user.click(screen.getByText('New Card'));
+    const front = screen.getByRole('textbox', { name: 'Front' });
+    // The front's arrow, beside its box, flips to the back
+    const [flip] = screen
+      .getAllByRole('button', { name: /flip to back/i })
+      .filter((button) => button.querySelector('.lucide-corner-down-left'));
+
+    await user.type(front, 'Capital of Spain');
+    expect(flip).toHaveClass('animate-pulse-halo');
+    act(() => front.blur());
+    expect(flip).not.toHaveClass('animate-pulse-halo');
+
+    act(() => front.focus());
+    await user.keyboard('{Enter}');
+    const back = screen.getByRole('textbox', { name: 'Back' });
+    act(() => back.focus());
+    await user.type(back, 'Madrid');
+    const create = screen.getByRole('button', { name: 'Create card' });
+    expect(create).toHaveClass('animate-pulse-halo');
+    act(() => back.blur());
+    expect(create).not.toHaveClass('animate-pulse-halo');
   });
 });

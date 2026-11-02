@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -403,5 +403,23 @@ describe('DeckListPage', () => {
     );
 
     expect(mockDelete).toHaveBeenCalledWith({ id: 'deck-9' });
+  });
+});
+
+describe('the glow on what Enter will press (#94)', () => {
+  it("glows the new deck's create arrow only while its name has focus", async () => {
+    setupMocks();
+    const user = userEvent.setup();
+    renderDeckListPage();
+    await user.click(screen.getByText(/new deck/i));
+    const name = screen.getByRole('textbox');
+    const create = screen.getByRole('button', { name: 'Create deck' });
+
+    expect(create).not.toHaveClass('animate-pulse-halo');
+    await user.type(name, 'New Deck');
+    expect(create).toHaveClass('animate-pulse-halo');
+
+    act(() => name.blur());
+    expect(create).not.toHaveClass('animate-pulse-halo');
   });
 });

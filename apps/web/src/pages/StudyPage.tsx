@@ -24,6 +24,16 @@ import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
 import { useStudySession } from '@/hooks/useStudySession';
 import { useStoredChoice } from '@/hooks/useStoredChoice';
+import {
+  isFocusWithin,
+  isNothingFocused,
+  useActiveElement,
+} from '@/hooks/useActiveElement';
+import {
+  ENTER_GLOW,
+  KEYBOARD_ENTER_GLOW,
+  KEYBOARD_ENTER_GLOW_BORDER,
+} from '@/lib/enterGlow';
 import { SessionPicker } from '@/components/SessionPicker';
 import {
   STUDY_MODES,
@@ -505,10 +515,15 @@ export default function StudyPage() {
   // another way of saying
   const acceptDisplayedAnswer =
     displayResult && displayCard
-      ? () =>
-          displayCard.answers.length > 1
-            ? setChoosingAnswerFor(displayResult.attemptId)
-            : acceptAnswer(displayResult.attemptId, displayCard.id)
+      ? () => {
+          if (displayCard.answers.length > 1) {
+            setChoosingAnswerFor(displayResult.attemptId);
+          } else {
+            acceptAnswer(displayResult.attemptId, displayCard.id);
+            // Its button goes once accepted
+            focusNavigation();
+          }
+        }
       : undefined;
   const isChoosingAnswer =
     !!displayResult && choosingAnswerFor === displayResult.attemptId;
@@ -578,47 +593,20 @@ export default function StudyPage() {
 
   const forwardButtonRef = useRef<HTMLButtonElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
+  const nextId = useId();
+  const previousId = useId();
+  const startAnotherId = useId();
+  const answerId = useId();
 
-  // Focus the forward button when arriving at the title card mid-session
-  useEffect(() => {
-    if (isAtTitle && !exitingCard) {
-      forwardButtonRef.current?.focus();
-    }
-  }, [isAtTitle, exitingCard]);
-
-  // Focus the appropriate nav button after slide animation completes
-  useEffect(() => {
-    if (
-      exitingCard ||
-      isAtTitle ||
-      studyState.phase === 'answering' ||
-      studyState.phase === 'complete'
-    )
-      return;
-    if (lastNavDirection === 'back') {
-      backButtonRef.current?.focus();
-    }
-  }, [exitingCard, lastNavDirection, isAtTitle, studyState.phase]);
-
-  // Enter key starts session during idle phase (with slide)
-  useEffect(() => {
-    if (!canStart) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (isPageEnter(e)) slideToNext();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [canStart, slideToNext]);
-
-  // Enter key advances during result phase (with slide), unless editing
-  useEffect(() => {
-    if (studyState.phase !== 'result' || isEditing) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (isPageEnter(e)) slideToNext();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [studyState.phase, isEditing, slideToNext]);
+  /**
+   * Moves focus to where Enter should go next, for when the control that
+   * had it goes: Previous on a card reviewed after going back, otherwise
+   * Next. By id, as it's passed to the card while rendering it.
+   */
+  function focusNavigation() {
+    const goingBack = lastNavDirection === 'back' && !isAtTitle;
+    document.getElementById(goingBack ? previousId : nextId)?.focus();
+  }
 
   // Next and Previous, as buttons and as swipes across the card. A session
   // that's complete has only Previous
@@ -626,6 +614,60 @@ export default function StudyPage() {
     ? canStart
     : studyState.phase !== 'answering' && studyState.phase !== 'complete';
   const canGoPrevious = !isAtTitle && canGoBack;
+
+  // Focus goes to the control Enter should press next (#94) once the deck
+  // has loaded, a slide ends, an answer is graded or edit mode ends:
+  // Previous after going back, otherwise Next. Answering, the answer has it,
+  // and once the session is over, Start another session
+  const isDeckLoaded = !!deck;
+  useEffect(() => {
+    if (
+      !isDeckLoaded ||
+      exitingCard ||
+      isEditing ||
+      studyState.phase === 'answering' ||
+      studyState.phase === 'complete'
+    )
+      return;
+    if (lastNavDirection === 'back' && !isAtTitle) {
+      backButtonRef.current?.focus();
+    } else {
+      forwardButtonRef.current?.focus();
+    }
+  }, [
+    isDeckLoaded,
+    exitingCard,
+    isEditing,
+    lastNavDirection,
+    isAtTitle,
+    studyState.phase,
+  ]);
+
+  // Enter with nothing that takes it focused presses Next: on the title
+  // card before a session, which starts it, and on a graded card, unless
+  // editing (#81)
+  const pageEnterPressesNext =
+    canStart || (studyState.phase === 'result' && !isEditing);
+  useEffect(() => {
+    if (!pageEnterPressesNext) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (isPageEnter(e)) slideToNext();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pageEnterPressesNext, slideToNext]);
+
+  // The glow says what Enter would press now (#94): the control that has
+  // focus, or Next when nothing has and the page's Enter presses it
+  const active = useActiveElement();
+  const nextGlows =
+    canGoForward &&
+    (active?.id === nextId ||
+      (isNothingFocused(active) && pageEnterPressesNext));
+  const previousGlows = canGoPrevious && active?.id === previousId;
+  const titleCardGlows = canStart && isFocusWithin(active, '[data-title-card]');
+  const submitGlows =
+    !!answerInput.trim() && isFocusWithin(active, '[data-answer-form]');
   const swipe = useSwipe((direction) => {
     if (isEditing) return;
     if (direction === 'left' && canGoForward) slideToNext();
@@ -757,11 +799,12 @@ export default function StudyPage() {
             </div>
             <div className={navRowClasses}>
               <Button
+                id={previousId}
                 onClick={slideToPrev}
                 variant="ghost"
                 size="icon"
                 aria-label="Previous"
-                className={`md:-left-20 ${navButtonClasses}`}
+                className={`md:-left-20 ${navButtonClasses} ${active?.id === previousId ? KEYBOARD_ENTER_GLOW : ''}`}
               >
                 <ChevronLeft className="size-10 md:size-14" />
               </Button>
@@ -769,9 +812,10 @@ export default function StudyPage() {
           </div>
           <div className="mt-6">
             <button
+              id={startAnotherId}
               autoFocus
               onClick={startAnother}
-              className="animate-pulse-halo cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none"
+              className={`cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none ${active?.id === startAnotherId ? KEYBOARD_ENTER_GLOW : ''}`}
             >
               Start another session
             </button>
@@ -841,7 +885,14 @@ export default function StudyPage() {
         // The card in play is done with, as is its Retry; an answered one
         // stays answered
         onMarkedKnown={() => dropUnanswered(card.id)}
-        onDone={() => setEditing(null)}
+        onDone={() => {
+          setEditing(null);
+          // An unanswered card goes back to its answer; an answered one's
+          // Next is focused once edit mode ends
+          if (studyState.phase === 'answering') {
+            document.getElementById(answerId)?.focus();
+          }
+        }}
       />
     ) : (
       renderStudyCard(
@@ -850,7 +901,11 @@ export default function StudyPage() {
         isFlipped,
         remainingCount,
         progress,
-        toggleFlip,
+        () => {
+          toggleFlip();
+          // The front's flip button goes once flipped
+          focusNavigation();
+        },
         !!displayResult && editedAfterAnswer.has(displayResult.attemptId),
         acceptDisplayedAnswer,
         canMarkDisplayKnown
@@ -862,6 +917,8 @@ export default function StudyPage() {
               // Its Retry, if missed, is skipped with it, as the session
               // does; dropped at once, before the learner can move on
               dropUnanswered(card.id);
+              // Its button goes once it's marked
+              focusNavigation();
             }
           : undefined,
         knownCards.get(card.id),
@@ -931,11 +988,13 @@ export default function StudyPage() {
           ) : displayCard ? (
             <div key={slideKey}>{renderDisplayCard(displayCard)}</div>
           ) : isAtTitle ? (
-            <div key={slideKey}>
+            <div key={slideKey} data-title-card>
               <CardStack
                 queueLength={titleQueueLength}
                 className={
-                  canStart ? 'animate-pulse-halo-border cursor-pointer' : ''
+                  canStart
+                    ? `cursor-pointer ${titleCardGlows ? KEYBOARD_ENTER_GLOW_BORDER : ''}`
+                    : ''
                 }
                 onClick={canStart ? slideToNext : undefined}
               >
@@ -966,12 +1025,13 @@ export default function StudyPage() {
             {!isAtTitle && (
               <Button
                 ref={backButtonRef}
+                id={previousId}
                 onClick={slideToPrev}
                 disabled={!canGoPrevious}
                 variant="ghost"
                 size="icon"
                 aria-label="Previous"
-                className={`md:-left-20 ${navButtonClasses} ${studyState.phase !== 'answering' && lastNavDirection === 'back' && canGoBack ? 'animate-pulse-halo' : ''}`}
+                className={`md:-left-20 ${navButtonClasses} ${previousGlows ? KEYBOARD_ENTER_GLOW : ''}`}
               >
                 <ChevronLeft className="size-10 md:size-14" />
               </Button>
@@ -979,12 +1039,13 @@ export default function StudyPage() {
 
             <Button
               ref={forwardButtonRef}
+              id={nextId}
               onClick={slideToNext}
               disabled={!canGoForward}
               variant="ghost"
               size="icon"
               aria-label="Next"
-              className={`ml-auto md:-right-20 ${navButtonClasses} ${studyState.phase !== 'answering' && (lastNavDirection === 'forward' || isAtTitle) ? 'animate-pulse-halo' : ''}`}
+              className={`ml-auto md:-right-20 ${navButtonClasses} ${nextGlows ? KEYBOARD_ENTER_GLOW : ''}`}
             >
               <ChevronRight className="size-10 md:size-14" />
             </Button>
@@ -995,12 +1056,14 @@ export default function StudyPage() {
           {studyState.phase === 'answering' && (
             <form
               className="relative w-full"
+              data-answer-form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSubmitAnswer();
               }}
             >
               <Input
+                id={answerId}
                 type="text"
                 value={answerInput}
                 onChange={(e) => setAnswerInput(e.target.value)}
@@ -1013,7 +1076,7 @@ export default function StudyPage() {
                 size="icon"
                 aria-label="Submit"
                 disabled={!answerInput.trim()}
-                className={`absolute right-0 top-1/2 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 ${answerInput.trim() ? 'animate-pulse-halo' : ''}`}
+                className={`absolute right-0 top-1/2 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 ${submitGlows ? ENTER_GLOW : ''}`}
               >
                 <CornerDownLeft className="size-7" />
               </Button>
@@ -1070,14 +1133,18 @@ export default function StudyPage() {
                       Which answer is yours another way of saying?
                     </p>
                     <div className="mt-2 flex flex-wrap justify-center gap-2">
-                      {displayCard.answers.map((answer) => (
+                      {displayCard.answers.map((answer, i) => (
                         <Button
                           key={answer.id}
+                          // Enter now chooses an answer
+                          autoFocus={i === 0}
                           type="button"
                           size="sm"
                           disabled={isAcceptingAnswer}
                           onClick={() => {
                             setChoosingAnswerFor(null);
+                            // The choice goes once made
+                            focusNavigation();
                             acceptAnswer(
                               displayResult.attemptId,
                               displayCard.id,
@@ -1093,7 +1160,10 @@ export default function StudyPage() {
                         type="button"
                         size="sm"
                         variant="ghost"
-                        onClick={() => setChoosingAnswerFor(null)}
+                        onClick={() => {
+                          setChoosingAnswerFor(null);
+                          focusNavigation();
+                        }}
                         className="text-white/70 hover:bg-white/10 hover:text-white"
                       >
                         Cancel

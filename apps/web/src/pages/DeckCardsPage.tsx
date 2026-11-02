@@ -42,6 +42,8 @@ import {
   StudyBothWays,
 } from '@/components/ReversibleDeckSettings';
 import { MarkKnownDialog } from '@/components/MarkKnownDialog';
+import { ENTER_GLOW } from '@/lib/enterGlow';
+import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
 import {
   CardSelectionBar,
   SelectCardToggle,
@@ -154,6 +156,8 @@ export default function DeckCardsPage() {
   const { deckId } = useParams<{ deckId: string }>();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
+  // For the glow on what Enter would press (#94)
+  const active = useActiveElement();
 
   const [isCreating, setIsCreating] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -503,7 +507,7 @@ export default function DeckCardsPage() {
                           </button>
                         )}
                         <span className="text-xs text-white/50">Front</span>
-                        <div className="relative w-full">
+                        <div className="relative w-full" data-new-card-front>
                           <input
                             ref={frontInputRef}
                             type="text"
@@ -529,7 +533,7 @@ export default function DeckCardsPage() {
                             onClick={() => {
                               if (newFront.trim()) flipToBack();
                             }}
-                            className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newFront.trim() ? 'animate-pulse-halo' : ''}`}
+                            className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newFront.trim() && isFocusWithin(active, '[data-new-card-front]') ? ENTER_GLOW : ''}`}
                           >
                             <CornerDownLeft className="size-5" />
                           </Button>
@@ -563,6 +567,7 @@ export default function DeckCardsPage() {
                         <span className="text-xs text-white/50">Back</span>
                         <form
                           className="relative w-full"
+                          data-new-card-back
                           onSubmit={(e) => {
                             e.preventDefault();
                             if (!newFront.trim() || !newBack.trim()) return;
@@ -596,7 +601,7 @@ export default function DeckCardsPage() {
                               !newFront.trim() ||
                               !newBack.trim()
                             }
-                            className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newBack.trim() ? 'animate-pulse-halo' : ''}`}
+                            className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newBack.trim() && isFocusWithin(active, '[data-new-card-back]') ? ENTER_GLOW : ''}`}
                           >
                             <CornerDownLeft className="size-5" />
                           </Button>
@@ -620,8 +625,8 @@ export default function DeckCardsPage() {
                     className="group/new cursor-pointer transition-shadow hover:shadow-lg focus:outline-none"
                     onClick={() => setIsCreating(true)}
                   >
-                    <Plus className="h-10 w-10 text-white/60 group-focus/new:animate-pulse-halo" />
-                    <p className="mt-2 text-sm font-medium text-white/60 group-focus/new:animate-pulse-halo">
+                    <Plus className="h-10 w-10 text-white/60 pointer-fine:group-focus/new:animate-pulse-halo" />
+                    <p className="mt-2 text-sm font-medium text-white/60 pointer-fine:group-focus/new:animate-pulse-halo">
                       New Card
                     </p>
                   </DeckCard>

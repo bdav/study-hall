@@ -19,6 +19,8 @@ import { DeckCard } from '@/components/DeckCard';
 import { formatDate, formatPercent } from '@/lib/format';
 import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 import { TILE_GRID } from '@/lib/layout';
+import { ENTER_GLOW } from '@/lib/enterGlow';
+import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
 
 const MotionLink = motion.create(Link);
 
@@ -140,6 +142,8 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
 export default function DeckListPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
+  // For the glow on what Enter would press (#94)
+  const active = useActiveElement();
   const utils = trpc.useUtils();
   const decksQuery = trpc.deck.list.useQuery();
   const archived = trpc.deck.listArchived.useQuery().data ?? [];
@@ -226,7 +230,7 @@ export default function DeckListPage() {
                       }}
                     >
                       <span className="text-xs text-white/50">Deck name</span>
-                      <div className="relative w-full">
+                      <div className="relative w-full" data-new-deck-name>
                         <input
                           type="text"
                           value={newDeckName}
@@ -246,7 +250,7 @@ export default function DeckListPage() {
                           variant="ghost"
                           aria-label="Create deck"
                           disabled={createDeck.isPending || !newDeckName.trim()}
-                          className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newDeckName.trim() ? 'animate-pulse-halo' : ''}`}
+                          className={`absolute right-0 top-1/2 -translate-y-1/2 text-white/50 disabled:opacity-40 ${newDeckName.trim() && isFocusWithin(active, '[data-new-deck-name]') ? ENTER_GLOW : ''}`}
                         >
                           <CornerDownLeft className="size-5" />
                         </Button>
