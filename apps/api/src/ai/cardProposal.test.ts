@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CARD_PROPOSAL_SYSTEM_PROMPT,
   CARD_WRITING_RULES,
+  REVERSIBLE_DECK_RULE,
+  buildCardProposalSystemPrompt,
   cardProposalOutputSchema,
 } from './cardProposal.js';
 
@@ -72,7 +73,9 @@ describe('cardProposalOutputSchema', () => {
 
 describe('card-writing rules', () => {
   it('are what the card proposal prompt follows', () => {
-    expect(CARD_PROPOSAL_SYSTEM_PROMPT).toContain(CARD_WRITING_RULES);
+    expect(buildCardProposalSystemPrompt({ reversible: false })).toContain(
+      CARD_WRITING_RULES,
+    );
   });
 
   it.each([
@@ -94,5 +97,37 @@ describe('card-writing rules', () => {
     ['quantities in digits', /quantity .* in digits/i],
   ])('say %s', (_, rule) => {
     expect(CARD_WRITING_RULES).toMatch(rule);
+  });
+});
+
+describe('reversible-deck rule (#84)', () => {
+  it.each([
+    [
+      'a front is typed from its primary answer',
+      /front .*type.* from its primary/i,
+    ],
+    ['a front is a bare term or name', /bare term or name/i],
+    [
+      'context is left out or moved to the answer side',
+      /leave out the context.*answer side/is,
+    ],
+    ["the deck's subject supplies the context", /deck's subject/i],
+    ['no two cards share a primary answer', /no two cards share/i],
+  ])('says %s', (_, rule) => {
+    expect(REVERSIBLE_DECK_RULE).toMatch(rule);
+  });
+
+  it('is given to the card proposal prompt for a reversible Course Deck, after the card-writing rules', () => {
+    const system = buildCardProposalSystemPrompt({ reversible: true });
+
+    expect(system).toContain(
+      `${CARD_WRITING_RULES}\n\n${REVERSIBLE_DECK_RULE}`,
+    );
+  });
+
+  it('is left out for a deck studied one way', () => {
+    expect(buildCardProposalSystemPrompt({ reversible: false })).not.toContain(
+      REVERSIBLE_DECK_RULE,
+    );
   });
 });

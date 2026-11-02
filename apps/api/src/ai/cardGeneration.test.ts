@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { CARD_WRITING_RULES } from './cardProposal.js';
+import { CARD_WRITING_RULES, REVERSIBLE_DECK_RULE } from './cardProposal.js';
 import {
-  CARD_GENERATION_SYSTEM_PROMPT,
+  buildCardGenerationSystemPrompt,
   buildCardGenerationPrompt,
   cardGenerationOutputSchema,
 } from './cardGeneration.js';
@@ -81,7 +81,18 @@ describe('cardGenerationOutputSchema', () => {
 
 describe('card generation prompt', () => {
   it('follows the card-writing rules', () => {
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain(CARD_WRITING_RULES);
+    expect(buildCardGenerationSystemPrompt({ reversible: false })).toContain(
+      CARD_WRITING_RULES,
+    );
+  });
+
+  it('follows the reversible-deck rule on a reversible deck, and not otherwise (#84)', () => {
+    expect(buildCardGenerationSystemPrompt({ reversible: true })).toContain(
+      `${CARD_WRITING_RULES}\n\n${REVERSIBLE_DECK_RULE}`,
+    );
+    expect(
+      buildCardGenerationSystemPrompt({ reversible: false }),
+    ).not.toContain(REVERSIBLE_DECK_RULE);
   });
 
   it("gives the description, how many cards, the deck and the deck's cards", () => {

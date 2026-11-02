@@ -15,6 +15,7 @@ import {
   CARD_REVISION_MODEL,
   CARD_REVISION_PROMPT_VERSION,
 } from './ai/cardRevision.js';
+import { REVERSIBLE_DECK_RULE } from './ai/cardProposal.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -81,6 +82,54 @@ function italianDeck() {
 }
 
 describe('deck.proposeRevision', () => {
+  it('gives the model the reversible-deck rule for a reversible deck, and not otherwise (#84)', async () => {
+    const deck = await italianDeck();
+    const caller = createCaller();
+    ai.respondWith({ changes: [] });
+    await caller.deck.proposeRevision({
+      deckId: deck.id,
+      instruction: 'Remove the hints from the fronts',
+    });
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+    ai.respondWith({ changes: [] });
+    await caller.deck.proposeRevision({
+      deckId: deck.id,
+      instruction: 'Remove the hints from the fronts',
+    });
+
+    expect(ai.requests[0].system).not.toContain(REVERSIBLE_DECK_RULE);
+    expect(ai.requests[1].system).toContain(REVERSIBLE_DECK_RULE);
+  });
+
+  it('makes the cards of a reversible deck work both ways when asked, as any instruction', async () => {
+    const deck = await italianDeck();
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+    ai.respondWith({
+      changes: [{ action: 'EDIT', card: 1, front: 'seven' }],
+    });
+
+    const proposal = await createCaller().deck.proposeRevision({
+      deckId: deck.id,
+      instruction: 'Make these work both ways',
+    });
+
+    expect(ai.requests[0].prompt).toContain('Make these work both ways');
+    expect(ai.requests[0].system).toContain(REVERSIBLE_DECK_RULE);
+    expect(proposal.changes).toEqual([
+      expect.objectContaining({
+        action: 'EDIT',
+        cardId: deck.cards[0].id,
+        after: { front: 'seven', canonicalAnswer: 'sette' },
+      }),
+    ]);
+  });
+
   it("sends the instruction and the deck's numbered cards, and returns the changes by card", async () => {
     const deck = await italianDeck();
     ai.respondWith({

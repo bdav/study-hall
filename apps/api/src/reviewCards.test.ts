@@ -11,6 +11,7 @@ import { type PrismaClient } from '@prisma/client';
 import { createTestPrisma } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
+import { REVERSIBLE_DECK_RULE } from './ai/cardProposal.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -200,7 +201,7 @@ describe('lesson.proposeReviewCards', () => {
 
     expect(proposed).toMatchObject({
       model: 'claude-sonnet-5-5',
-      promptVersion: 'card-proposal-v2',
+      promptVersion: 'card-proposal-v3',
       existingCards: [
         {
           id: existing!.id,
@@ -209,6 +210,22 @@ describe('lesson.proposeReviewCards', () => {
         },
       ],
     });
+  });
+
+  it('gives the model the reversible-deck rule for a reversible Course Deck, and not otherwise (#84)', async () => {
+    const { lessonId, deckId } = await openLesson();
+    const caller = createCaller();
+    ai.respondWith(proposal);
+    await caller.lesson.proposeReviewCards({ id: lessonId });
+    await prisma.deck.update({
+      where: { id: deckId },
+      data: { reversible: true },
+    });
+    ai.respondWith(proposal);
+    await caller.lesson.proposeReviewCards({ id: lessonId });
+
+    expect(ai.requests[0].system).not.toContain(REVERSIBLE_DECK_RULE);
+    expect(ai.requests[1].system).toContain(REVERSIBLE_DECK_RULE);
   });
 
   it('writes a usage record and stores nothing', async () => {
@@ -316,7 +333,7 @@ describe('lesson.createReviewCards', () => {
     return caller.lesson.createReviewCards({
       id: lessonId,
       model: 'claude-sonnet-5-5',
-      promptVersion: 'card-proposal-v2',
+      promptVersion: 'card-proposal-v3',
       cards: cards.map((card) => ({ type: 'TYPED_RECALL' as const, ...card })),
     });
   }
@@ -344,7 +361,7 @@ describe('lesson.createReviewCards', () => {
         canonicalAnswers: [{ text: 'Buongiorno', isPrimary: true }],
         sourceLessonId: lessonId,
         sourceModel: 'claude-sonnet-5-5',
-        sourcePromptVersion: 'card-proposal-v2',
+        sourcePromptVersion: 'card-proposal-v3',
       },
       {
         front: 'Translate: Good evening',
@@ -396,11 +413,11 @@ describe('lesson.createReviewCards', () => {
     ).toEqual([
       {
         sourceModel: 'claude-sonnet-5-5',
-        sourcePromptVersion: 'card-proposal-v2',
+        sourcePromptVersion: 'card-proposal-v3',
       },
       {
         sourceModel: 'claude-sonnet-5-5',
-        sourcePromptVersion: 'card-proposal-v2',
+        sourcePromptVersion: 'card-proposal-v3',
       },
     ]);
   });

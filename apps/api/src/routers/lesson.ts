@@ -22,7 +22,7 @@ import {
   buildCardProposalPrompt,
   CARD_PROPOSAL_MODEL,
   CARD_PROPOSAL_PROMPT_VERSION,
-  CARD_PROPOSAL_SYSTEM_PROMPT,
+  buildCardProposalSystemPrompt,
   cardProposalOutputSchema,
   cardProposalSchema,
 } from '../ai/cardProposal.js';
@@ -497,7 +497,7 @@ export const lessonRouter = router({
         purpose: 'CARD_PROPOSAL',
         model: CARD_PROPOSAL_MODEL,
         promptVersion: CARD_PROPOSAL_PROMPT_VERSION,
-        system: CARD_PROPOSAL_SYSTEM_PROMPT,
+        system: buildCardProposalSystemPrompt(deck),
         prompt: buildCardProposalPrompt({
           lesson: { title: lesson.title, objectives: lesson.objectives },
           content: parseLessonContent(version.content),

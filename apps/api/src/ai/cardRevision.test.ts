@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { CARD_WRITING_RULES } from './cardProposal.js';
+import { CARD_WRITING_RULES, REVERSIBLE_DECK_RULE } from './cardProposal.js';
 import {
-  CARD_REVISION_SYSTEM_PROMPT,
+  buildCardRevisionSystemPrompt,
   buildCardRevisionPrompt,
   cardRevisionOutputSchema,
 } from './cardRevision.js';
@@ -90,7 +90,18 @@ describe('cardRevisionOutputSchema', () => {
 
 describe('card revision prompt', () => {
   it('follows the card-writing rules', () => {
-    expect(CARD_REVISION_SYSTEM_PROMPT).toContain(CARD_WRITING_RULES);
+    expect(buildCardRevisionSystemPrompt({ reversible: false })).toContain(
+      CARD_WRITING_RULES,
+    );
+  });
+
+  it('follows the reversible-deck rule on a reversible deck, and not otherwise (#84)', () => {
+    expect(buildCardRevisionSystemPrompt({ reversible: true })).toContain(
+      `${CARD_WRITING_RULES}\n\n${REVERSIBLE_DECK_RULE}`,
+    );
+    expect(buildCardRevisionSystemPrompt({ reversible: false })).not.toContain(
+      REVERSIBLE_DECK_RULE,
+    );
   });
 
   it("numbers the deck's cards and gives the learner's instruction", () => {

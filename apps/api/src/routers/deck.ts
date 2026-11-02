@@ -6,7 +6,7 @@ import {
   buildCardRevisionPrompt,
   CARD_REVISION_MODEL,
   CARD_REVISION_PROMPT_VERSION,
-  CARD_REVISION_SYSTEM_PROMPT,
+  buildCardRevisionSystemPrompt,
   cardRevisionOutputSchema,
   MAX_REVISABLE_CARDS,
   MAX_REVISION_INSTRUCTION_LENGTH,
@@ -16,7 +16,7 @@ import {
   buildCardGenerationPrompt,
   CARD_GENERATION_MODEL,
   CARD_GENERATION_PROMPT_VERSION,
-  CARD_GENERATION_SYSTEM_PROMPT,
+  buildCardGenerationSystemPrompt,
   cardGenerationOutputSchema,
   MAX_GENERATED_CARDS,
   MAX_GENERATION_INSTRUCTION_LENGTH,
@@ -483,7 +483,7 @@ export const deckRouter = router({
         purpose: 'CARD_REVISION',
         model: CARD_REVISION_MODEL,
         promptVersion: CARD_REVISION_PROMPT_VERSION,
-        system: CARD_REVISION_SYSTEM_PROMPT,
+        system: buildCardRevisionSystemPrompt(deck),
         prompt: buildCardRevisionPrompt({
           instructions: [
             ...(input.refining?.instructions ?? []),
@@ -687,7 +687,7 @@ export const deckRouter = router({
         purpose: 'CARD_GENERATION',
         model: CARD_GENERATION_MODEL,
         promptVersion: CARD_GENERATION_PROMPT_VERSION,
-        system: CARD_GENERATION_SYSTEM_PROMPT,
+        system: buildCardGenerationSystemPrompt(deck),
         prompt: buildCardGenerationPrompt({
           instructions: [
             input.description,

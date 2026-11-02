@@ -15,6 +15,7 @@ import {
   CARD_GENERATION_MODEL,
   CARD_GENERATION_PROMPT_VERSION,
 } from './ai/cardGeneration.js';
+import { REVERSIBLE_DECK_RULE } from './ai/cardProposal.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -101,6 +102,30 @@ const DESCRIPTION =
   'The most common Spanish irregular preterites, first person';
 
 describe('deck.proposeCards', () => {
+  it('gives the model the reversible-deck rule for a reversible deck, and not otherwise (#84)', async () => {
+    const deck = await spanishDeck();
+    const caller = createCaller();
+    ai.respondWith({ cards: [] });
+    await caller.deck.proposeCards({
+      deckId: deck.id,
+      description: DESCRIPTION,
+      count: 10,
+    });
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+    ai.respondWith({ cards: [] });
+    await caller.deck.proposeCards({
+      deckId: deck.id,
+      description: DESCRIPTION,
+      count: 10,
+    });
+
+    expect(ai.requests[0].system).not.toContain(REVERSIBLE_DECK_RULE);
+    expect(ai.requests[1].system).toContain(REVERSIBLE_DECK_RULE);
+  });
+
   it('sends the description, the number asked for, the deck and its cards, and returns the proposed cards', async () => {
     const deck = await spanishDeck();
     ai.respondWith({
