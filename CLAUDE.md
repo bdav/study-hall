@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Hall, a learning app (flashcards with spaced repetition today; AI-assisted courses planned) — pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#51, and courses (spec #1) as #14–#27, #37–#43, #55–#57, #72, #73, #74 and #78, with its Setup Interview (spec #63) as #64–#70 and #79. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
+**Status:** MVP complete and running on the v2 schema (#2). The rest of v2 is tracked as GitHub issues #3–#13 and #44–#51, and courses (spec #1) as #14–#27, #37–#43, #55–#57, #72, #73, #74 and #78, with its Setup Interview (spec #63) as #64–#70 and #79. Reversible decks are #82–#84, and the work a planning audit (2026-11-01) found left behind is #85–#90, with designs #91 and #92. See **Implementation Order** below for what's next, and `docs/architecture/updated-plan.md` for the canonical consolidated plan.
 
 ## Implementation Order
 
-**Completed: 69/70 planned issues**
+**Completed: 69/80 planned issues**
 
-When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, Study Sessions, then generating cards.
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The order gets one course usable end to end early, then groups the remaining work by area: cards, lesson layout, tutor, curriculum editing, the Setup Interview, Study Sessions, generating cards, reversible decks, going live, review and scheduling, then courses.
 
 1. Core study loop
    - [x] #13 Spacing differences don't make an answer wrong
@@ -95,6 +95,22 @@ When picking the next ticket, work the first unchecked ticket in this list whose
     - [x] #75 Generate cards for a deck from a description
 11. Polish
     - [ ] #80 Show courses as tiles, as Flashcards shows decks
+12. Reversible decks
+    - [ ] #82 Reversible decks: study a deck in either direction
+    - [ ] #83 AI-suggested Direction Labels for a reversible deck
+    - [ ] #84 Card-writing rule for reversible decks
+13. Go live: tickets join here once the design (#91) has a spec
+14. Review and scheduling
+    - [ ] #85 Stats on the scheduler's terms
+    - [ ] #86 Suggest retiring mastered cards, and unretire them
+    - [ ] #87 Cram toward a target date
+15. Courses
+    - [ ] #88 View a lesson's earlier versions, read only
+    - [ ] #89 Permanently delete archived courses and lessons
+    - [ ] #70 Evaluation script for the Setup Interview and syllabus prompts
+    - [ ] #90 Seed data for courses and every card state
+
+**Waiting on design or triage** (outside the order until a session readies them): designs #91 (go live: deploy, access, observability), #92 (a Today view with review across decks) and #71 (adapt a course to what the learner does); triage #41, #42, #61 and #76; exploration #32. Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
 New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
