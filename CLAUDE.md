@@ -10,9 +10,11 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 8/27 planned issues**
+**Completed: 8/33 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
+
+A line marked "stop and ask" is a design, triage or setup session with the maintainer, not implementation: stop there and ask them to run it. Its box is checked when the session is done, and the tickets it produces join the order right after it, or where the line says. The sections after the current one are tentative: each design or triage session's commit updates the order to match what it decided.
 
 1. Polish
    - [x] #80 Show courses as tiles, as Flashcards shows decks
@@ -31,40 +33,38 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #98 Card Standing: read every card's standing from one place
    - [ ] #99 Card Standing: change card progress only through it
    - [ ] #85 Stats on the scheduler's terms
+   - [ ] #92 Design: a Today view (a grilling with the maintainer; stop and ask)
    - [ ] #102 Design: the Study Session as a state machine (a grilling with the maintainer; stop and ask)
    - [ ] #86 Suggest retiring mastered cards, and unretire them
    - [ ] #87 Cram toward a target date
 5. Go live (spec #91)
+   - [ ] Triage #61 touch-sized controls (with #32's named tokens) and #103 (with the maintainer; stop and ask)
    - [ ] #105 Make the API ready to run in production
    - [ ] #106 Invite-only signup, and expired sessions cleared at login
    - [ ] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
+   - #61's and #103's tickets join here
    - [ ] #109 Set up production (the maintainer's dashboard steps; stop and ask)
-6. Courses
+6. Today: tickets join here once #92's design has them
+7. Courses
    - [ ] #100 Refuse answers to an earlier Lesson Version's exercises
    - [ ] #101 Lesson Version view: render a version apart from the lesson around it
    - [ ] #88 View a lesson's earlier versions, read only
+   - [ ] Triage #41 and #42 (with the maintainer; stop and ask)
    - [ ] #89 Permanently delete archived courses and lessons
    - [ ] #70 Evaluation script for the Setup Interview and syllabus prompts
    - [ ] #90 Seed data for courses and every card state
+   - #41's and #42's tickets join here
+8. Later
+   - [ ] #71 Design: adapt a course to what the learner does (a grilling with the maintainer; stop and ask)
+   - [ ] Triage #76 cards from uploaded files, once live AI costs are known (with the maintainer; stop and ask)
+   - [ ] #32 Explore: switchable visual themes (with the maintainer; stop and ask)
 
-**Waiting on design or triage**, outside the order until a session readies them:
-
-- Design
-  - #92 A Today view with review across decks
-  - #71 Adapt a course to what the learner does
-- Triage
-  - #41 Concept checks and examples within lesson sections
-  - #42 Rich lesson content blocks
-  - #61 Touch-sized controls on phones
-  - #76 Generate cards from uploaded files
-  - #103 Stop the web from predicting the API's rules
-- Exploration
-  - #32 Switchable visual themes, from palettes to immersive worlds
+**Waiting on design or triage**, outside the order until a session gives them a slot: none at the moment.
 
 Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
-New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
+New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`, which wait under Waiting on design or triage until a session gives them a slot.
 
 Commit subjects stay plain sentences, with no issue-number prefix. Link a commit to its ticket with a trailer in the body: `Closes #N` on the commit that finishes it, and `Refs #N` on every other commit for it, including fixes after it's closed and planning commits (one `Refs` per issue).
 
