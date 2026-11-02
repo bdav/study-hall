@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 8/21 planned issues**
+**Completed: 8/27 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -24,7 +24,8 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #83 AI-suggested Direction Labels for a reversible deck
    - [x] #84 Card-writing rule for reversible decks
    - [x] #96 Accept either front in Reverse when cards share an answer
-3. Go live: tickets join here once the design (#91) has a spec
+3. CI
+   - [ ] #104 Run typecheck, lint and both test suites on every push
 4. Review and scheduling
    - [ ] #97 Rename the Stable lifecycle state to Reinforcing
    - [ ] #98 Card Standing: read every card's standing from one place
@@ -33,7 +34,13 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [ ] #102 Design: the Study Session as a state machine (a grilling with the maintainer; stop and ask)
    - [ ] #86 Suggest retiring mastered cards, and unretire them
    - [ ] #87 Cram toward a target date
-5. Courses
+5. Go live (spec #91)
+   - [ ] #105 Make the API ready to run in production
+   - [ ] #106 Invite-only signup, and expired sessions cleared at login
+   - [ ] #107 Rate limits on login, signup and every request
+   - [ ] #108 Request logs and error reports
+   - [ ] #109 Set up production (the maintainer's dashboard steps; stop and ask)
+6. Courses
    - [ ] #100 Refuse answers to an earlier Lesson Version's exercises
    - [ ] #101 Lesson Version view: render a version apart from the lesson around it
    - [ ] #88 View a lesson's earlier versions, read only
@@ -44,7 +51,6 @@ When picking the next ticket, work the first unchecked ticket in this list whose
 **Waiting on design or triage**, outside the order until a session readies them:
 
 - Design
-  - #91 Go live: deploy, access, observability
   - #92 A Today view with review across decks
   - #71 Adapt a course to what the learner does
 - Triage
