@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 7/15 planned issues**
+**Completed: 8/15 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -23,7 +23,7 @@ When picking the next ticket, work the first unchecked ticket in this list whose
    - [x] #82 Reversible decks: study a deck in either direction
    - [x] #83 AI-suggested Direction Labels for a reversible deck
    - [x] #84 Card-writing rule for reversible decks
-   - [ ] #96 Accept either front in Reverse when cards share an answer
+   - [x] #96 Accept either front in Reverse when cards share an answer
 3. Go live: tickets join here once the design (#91) has a spec
 4. Review and scheduling
    - [ ] #85 Stats on the scheduler's terms

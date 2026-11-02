@@ -90,6 +90,10 @@ _Avoid_: Normal/reversed, recognition/production, front-first
 What a reversible deck calls one of its Study Directions, such as "Capitals from states" and "States from capitals". Forward and Reverse stand in when a deck has none.
 _Avoid_: Mode name (Study Mode is something else)
 
+**Shared Answer**:
+A primary answer that two or more cards of a Reversible Deck have, as grading compares answers, so Reverse shows them the same prompt. In Reverse each accepts any of their fronts, but not one already given correctly for another of them in the Study Session (ADR-0012).
+_Avoid_: Duplicate answer, ambiguous card
+
 ## Courses
 
 **Course**:

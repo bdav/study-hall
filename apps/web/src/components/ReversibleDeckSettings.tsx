@@ -162,22 +162,24 @@ export function StudyBothWays({
 }
 
 /**
- * On a Reversible Deck, the cards Reverse can't tell apart, those sharing a
- * primary answer, by name; nothing when there are none. Each is still
- * graded against its own front.
+ * On a Reversible Deck, the cards sharing a primary answer, by name, and
+ * that Reverse, which shows them the same prompt, accepts any of their
+ * fronts, though not one twice in a session (#96, ADR-0012); nothing when
+ * there are none.
  */
-export function SharedAnswersWarning({ cards }: { cards: Flashcard[] }) {
+export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
   const groups = cardsSharingAnswers(cards);
   if (groups.length === 0) return null;
   return (
     <div
       role="status"
-      aria-label="Cards Reverse can't tell apart"
-      className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100"
+      aria-label="Cards that share an answer"
+      className="mt-3 mb-4 rounded-lg border border-white/20 bg-white/10 p-3 text-sm text-white/80"
     >
       <p>
-        In Reverse, these cards show the same answer, so there&apos;s no telling
-        which front is wanted. Each is graded against its own front.
+        These cards share an answer, so Reverse shows each the same prompt.
+        Either front is accepted for each, but not the same front twice in one
+        session.
       </p>
       <ul className="mt-1 list-disc pl-5">
         {groups.map((group) => (

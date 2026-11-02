@@ -9,11 +9,13 @@ import {
 import { TRPCError } from '@trpc/server';
 import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
+  acceptedFront,
   addAcceptedVariant,
   alreadyAccepts,
   addReverseVariant,
   alreadyAcceptsFront,
   currentVersionId,
+  findCardsSharingAnswer,
   gradeDirectedAnswer,
   withCanonicalAnswers,
 } from './cards.js';
@@ -326,15 +328,77 @@ async function queueRetry(
   });
 }
 
+type CardToGrade = Parameters<typeof gradeDirectedAnswer>[1] &
+  Parameters<typeof findCardsSharingAnswer>[1];
+
+/**
+ * Grades a typed answer to a card in a Study Session. In Reverse, a card
+ * sharing its primary answer with others accepts their fronts too, naming
+ * the one accepted (`otherFront`), but not a front already given correctly
+ * for one of them in this session: that is refused ungraded, with
+ * PRECONDITION_FAILED, which answering a card throws for nothing else, so
+ * the study screen can tell it apart (#96, ADR-0012).
+ */
+async function gradeInSession(
+  prisma: PrismaClient,
+  {
+    studySessionId,
+    card,
+    direction,
+  }: { studySessionId: string; card: CardToGrade; direction: StudyDirection },
+  userAnswer: string,
+): Promise<{ grading: Grading; otherFront: string | null }> {
+  const ungrouped = () => ({
+    grading: gradeDirectedAnswer(userAnswer, card, direction),
+    otherFront: null,
+  });
+  if (direction === 'FORWARD') return ungrouped();
+  const sharing = await findCardsSharingAnswer(prisma, card);
+  const group = [card, ...sharing];
+  const accepted = acceptedFront(userAnswer, group);
+  if (sharing.length === 0 || !accepted) return ungrouped();
+
+  const correctAnswers = await prisma.cardAttempt.findMany({
+    where: {
+      studySessionId,
+      cardId: { in: sharing.map((other) => other.id) },
+      recallGrade: { not: 'MISSED' },
+    },
+    select: { cardId: true, userAnswer: true },
+  });
+  // The front an earlier answer gave: the one it's accepted as, its own
+  // card's tried first, as when it was graded
+  function frontGiven(answer: { cardId: string; userAnswer: string | null }) {
+    const answeredCard = group.find((member) => member.id === answer.cardId)!;
+    const rest = group.filter((member) => member !== answeredCard);
+    return answer.userAnswer === null
+      ? null
+      : acceptedFront(answer.userAnswer, [answeredCard, ...rest])?.front;
+  }
+  if (correctAnswers.some((answer) => frontGiven(answer) === accepted.front)) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: `${accepted.front} already correctly guessed. Give a different answer.`,
+    });
+  }
+  return {
+    grading: accepted.grading,
+    otherFront: accepted.front === card.front ? null : accepted.front,
+  };
+}
+
 /**
  * Grades the answer to one Study Session item. In one transaction it
  * completes the item, saves the attempt and updates the card's progress
  * (`updated-plan.md` §11.3). A null answer is "I don't know", a MISSED
  * attempt (§5.2). A missed card comes back at the end of the session
  * (`queueRetry`), and the answer to its Retry leaves the card's progress
- * as the first answer left it. Returns the attempt, whether it was an
- * Accent Mismatch, the Accepted Variant it matched, if any, and the item
- * the card comes back as.
+ * as the first answer left it. In Reverse, cards sharing an answer accept
+ * each other's fronts (`gradeInSession`). Returns the attempt, whether it
+ * was an Accent Mismatch, the Accepted Variant it matched, if any, the
+ * other card's front it was accepted as, if any, and the item the card
+ * comes back as. A front already given in the session is refused, and
+ * nothing is recorded.
  */
 export async function answerItem(
   prisma: PrismaClient,
@@ -376,14 +440,16 @@ export async function answerItem(
   assertStudiesIn(item.studySession.deck, direction);
 
   const {
-    recallGrade,
-    accentMismatch,
-    matchedAnswer,
-    matchedVariant,
-  }: Grading =
+    grading: { recallGrade, accentMismatch, matchedAnswer, matchedVariant },
+    otherFront,
+  } =
     userAnswer === null
-      ? NO_MATCH
-      : gradeDirectedAnswer(userAnswer, item.card, direction);
+      ? { grading: NO_MATCH, otherFront: null }
+      : await gradeInSession(
+          prisma,
+          { studySessionId: item.studySessionId, card: item.card, direction },
+          userAnswer,
+        );
   const progressKey = {
     userId_cardId_direction: { userId, cardId: item.cardId, direction },
   };
@@ -450,6 +516,7 @@ export async function answerItem(
       accentMismatch,
       matchedAnswer,
       matchedVariant,
+      otherFront,
       retryItem,
     };
   });

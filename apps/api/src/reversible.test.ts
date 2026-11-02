@@ -253,6 +253,209 @@ describe('studying in Reverse', () => {
   });
 });
 
+describe('cards that share an answer, in Reverse (#96)', () => {
+  /**
+   * Aruba and Sint Eustatius share their capital, as Saint Kitts and Nevis
+   * and Guadeloupe do in answers that grade the same; Cuba shares none.
+   */
+  async function sharedCapitalsDeck() {
+    const deck = await createDeckWithCards(prisma, {
+      userId,
+      name: 'Caribbean capitals',
+      cards: [
+        { front: 'Aruba', canonicalAnswers: ['Oranjestad'] },
+        { front: 'Sint Eustatius', canonicalAnswers: ['Oranjestad'] },
+        { front: 'Saint Kitts and Nevis', canonicalAnswers: ['Basseterre'] },
+        { front: 'Guadeloupe', canonicalAnswers: ['Basse-Terre'] },
+        { front: 'Cuba', canonicalAnswers: ['Havana'] },
+      ],
+    });
+    await createCaller().deck.update({ id: deck.id, reversible: true });
+    const [aruba, sintEustatius, saintKitts, guadeloupe, cuba] = deck.cards;
+    return { deck, aruba, sintEustatius, saintKitts, guadeloupe, cuba };
+  }
+
+  /**
+   * A Study Session in a direction, whose cards are answered by card, at
+   * the item each has waiting, Retries included.
+   */
+  async function sessionOn(deckId: string, direction: StudyDirection) {
+    const caller = createCaller();
+    const session = await caller.study.startSession({ deckId, direction });
+    return {
+      session: session!,
+      async answer(card: { id: string }, userAnswer: string) {
+        const item = await prisma.studySessionItem.findFirstOrThrow({
+          where: {
+            studySessionId: session!.id,
+            cardId: card.id,
+            status: 'PENDING',
+          },
+          orderBy: { position: 'asc' },
+        });
+        return caller.study.submitAnswer({ itemId: item.id, userAnswer });
+      },
+    };
+  }
+
+  it("accepts another card's front, naming it, and grades the card shown", async () => {
+    const { deck, aruba } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    const attempt = await answer(aruba, 'sint eustatius');
+
+    expect(attempt).toMatchObject({
+      cardId: aruba.id,
+      recallGrade: 'NAILED',
+      otherFront: 'Sint Eustatius',
+    });
+    expect((await progressOf(aruba.id, 'REVERSE')).lifecycleState).toBe(
+      'LEARNING',
+    );
+  });
+
+  it('names no other front for the card’s own', async () => {
+    const { deck, aruba } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    expect(await answer(aruba, 'Aruba')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: null,
+    });
+  });
+
+  it('shares answers that grade the same, as Basseterre and Basse-Terre', async () => {
+    const { deck, saintKitts } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    expect(await answer(saintKitts, 'Guadeloupe')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: 'Guadeloupe',
+    });
+  });
+
+  it("doesn't accept the front of a card that shares no answer", async () => {
+    const { deck, cuba } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    expect(await answer(cuba, 'Aruba')).toMatchObject({
+      recallGrade: 'MISSED',
+      otherFront: null,
+    });
+  });
+
+  it('refuses, ungraded, a front already given correctly in the session, then takes another', async () => {
+    const { deck, aruba, sintEustatius } = await sharedCapitalsDeck();
+    const { session, answer } = await sessionOn(deck.id, 'REVERSE');
+    await answer(aruba, 'Aruba');
+
+    await expect(answer(sintEustatius, 'aruba')).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Aruba already correctly guessed. Give a different answer.',
+    });
+    expect(
+      await prisma.cardAttempt.count({
+        where: { studySessionId: session.id, cardId: sintEustatius.id },
+      }),
+    ).toBe(0);
+    expect((await progressOf(sintEustatius.id, 'REVERSE')).lifecycleState).toBe(
+      'NEW',
+    );
+
+    expect(await answer(sintEustatius, 'Sint Eustatius')).toMatchObject({
+      recallGrade: 'NAILED',
+    });
+  });
+
+  it("refuses a card's own front once given for the other card", async () => {
+    const { deck, aruba, sintEustatius } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+    await answer(aruba, 'Sint Eustatius');
+
+    await expect(answer(sintEustatius, 'Sint Eustatius')).rejects.toMatchObject(
+      {
+        code: 'PRECONDITION_FAILED',
+        message:
+          'Sint Eustatius already correctly guessed. Give a different answer.',
+      },
+    );
+    expect(await answer(sintEustatius, 'Aruba')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: 'Aruba',
+    });
+  });
+
+  it("refuses on a Retry a front given since, and doesn't count a missed answer as given", async () => {
+    const { deck, aruba, sintEustatius } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+    expect(await answer(aruba, 'Cuba')).toMatchObject({
+      recallGrade: 'MISSED',
+    });
+
+    expect(await answer(sintEustatius, 'Aruba')).toMatchObject({
+      recallGrade: 'NAILED',
+    });
+    // Aruba's Retry
+    await expect(answer(aruba, 'Aruba')).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(await answer(aruba, 'Sint Eustatius')).toMatchObject({
+      recallGrade: 'NAILED',
+      isRetry: true,
+    });
+  });
+
+  it("prefers another front matched exactly to the card's own matched only but for its accents", async () => {
+    const deck = await createDeckWithCards(prisma, {
+      userId,
+      cards: [
+        { front: 'Perú', canonicalAnswers: ['Lima'] },
+        { front: 'Peru', canonicalAnswers: ['Lima'] },
+      ],
+    });
+    await createCaller().deck.update({ id: deck.id, reversible: true });
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    expect(await answer(deck.cards[0], 'Peru')).toMatchObject({
+      recallGrade: 'NAILED',
+      accentMismatch: false,
+      otherFront: 'Peru',
+    });
+  });
+
+  it('accepts a front again in the next session', async () => {
+    const { deck, aruba, sintEustatius } = await sharedCapitalsDeck();
+    const first = await sessionOn(deck.id, 'REVERSE');
+    await first.answer(aruba, 'Aruba');
+    await createCaller().study.finishSession({ id: first.session.id });
+    await prisma.cardProgress.updateMany({
+      where: { deckId: deck.id },
+      data: { dueAt: new Date(Date.now() - DAY_MS) },
+    });
+
+    const { answer } = await sessionOn(deck.id, 'REVERSE');
+
+    expect(await answer(sintEustatius, 'Aruba')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: 'Aruba',
+    });
+  });
+
+  it('leaves Forward as it was', async () => {
+    const { deck, aruba, sintEustatius } = await sharedCapitalsDeck();
+    const { answer } = await sessionOn(deck.id, 'FORWARD');
+
+    expect(await answer(aruba, 'Oranjestad')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: null,
+    });
+    expect(await answer(sintEustatius, 'Oranjestad')).toMatchObject({
+      recallGrade: 'NAILED',
+      otherFront: null,
+    });
+  });
+});
+
 describe('turning Study both ways off and on', () => {
   it('hides Reverse, keeping its history, and picks up where it left off', async () => {
     const deck = await capitalsDeck();

@@ -2075,7 +2075,7 @@ describe('a reversible deck on the Cards tab (#82)', () => {
     vi.useRealTimers();
   });
 
-  it("warns about cards Reverse can't tell apart, naming them", () => {
+  it('notes the cards that share an answer, naming them, and that Reverse accepts either front (#96)', () => {
     const sharing = {
       ...mockCards[1],
       id: 'card-3',
@@ -2091,13 +2091,19 @@ describe('a reversible deck on the Cards tab (#82)', () => {
     setupMocks({ deck: reversible, cards: [...mockCards, sharing] });
     renderDeckCardsPage();
 
-    const warning = screen.getByRole('status', { name: /can.t tell apart/i });
-    expect(warning).toHaveTextContent('Capital of France');
-    expect(warning).toHaveTextContent('Capital of the French Republic');
-    expect(warning).not.toHaveTextContent('Capital of Germany');
+    const note = screen.getByRole('status', {
+      name: 'Cards that share an answer',
+    });
+    expect(note).toHaveTextContent(
+      'These cards share an answer, so Reverse shows each the same prompt. Either front is accepted for each, but not the same front twice in one session.',
+    );
+    expect(note).toHaveTextContent(
+      'Paris: “Capital of France”, “Capital of the French Republic”',
+    );
+    expect(note).not.toHaveTextContent('Capital of Germany');
   });
 
-  it("doesn't warn on a deck studied one way", () => {
+  it("doesn't note them on a deck studied one way", () => {
     setupMocks({
       cards: [
         mockCards[0],
@@ -2107,7 +2113,7 @@ describe('a reversible deck on the Cards tab (#82)', () => {
     renderDeckCardsPage();
 
     expect(
-      screen.queryByRole('status', { name: /can.t tell apart/i }),
+      screen.queryByRole('status', { name: 'Cards that share an answer' }),
     ).toBeNull();
   });
 

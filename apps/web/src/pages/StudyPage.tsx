@@ -322,16 +322,25 @@ function TitleCardDetails({
 }
 
 /**
- * Below the learner's answer: which of the card's Canonical Answers it
- * matched, when that wasn't the primary shown on the card.
+ * Below the learner's answer: in Reverse, the front of another card
+ * sharing this one's answer that it was accepted as (#96); otherwise which
+ * of the card's Canonical Answers it matched, when that wasn't the primary
+ * shown on the card.
  */
 function AnswerNotes({
   card,
   result,
 }: {
   card: Flashcard;
-  result: { matchedAnswer: string | null };
+  result: { matchedAnswer: string | null; otherFront: string | null };
 }) {
+  if (result.otherFront) {
+    return (
+      <p className="mt-2 text-sm text-white/70" data-testid="answer-notes">
+        Accepted as “{result.otherFront}”, a card with the same answer.
+      </p>
+    );
+  }
   const primary = card.answers[0]?.text;
   if (result.matchedAnswer === null || result.matchedAnswer === primary) {
     return null;
@@ -429,6 +438,7 @@ export default function StudyPage() {
     answerInput,
     setAnswerInput,
     error,
+    refusal,
     history,
     handleStart,
     handleSubmitAnswer,
@@ -499,6 +509,7 @@ export default function StudyPage() {
             attemptId: studyState.attemptId,
             userAnswer: studyState.userAnswer,
             ...gradeOf(studyState),
+            otherFront: studyState.otherFront,
           }
         : null;
   // "My answer was correct" regrades the answer, so the card's history shows
@@ -1081,6 +1092,15 @@ export default function StudyPage() {
                 <CornerDownLeft className="size-7" />
               </Button>
             </form>
+          )}
+
+          {studyState.phase === 'answering' && refusal && (
+            <p
+              role="status"
+              className="mt-2 text-center text-sm text-amber-100"
+            >
+              {refusal}
+            </p>
           )}
 
           {studyState.phase === 'answering' && (

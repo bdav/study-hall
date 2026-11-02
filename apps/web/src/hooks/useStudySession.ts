@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
+import { TRPCClientError } from '@trpc/client';
 import { trpc } from '@/lib/trpc';
 import { type SessionChoice } from '@/lib/sessionChoices';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
@@ -64,6 +65,7 @@ function toQueueAndHistory(session: ServerSession) {
             accentMismatch: false,
             matchedAnswer: null,
             matchedVariant: null,
+            otherFront: null,
           },
         ]
       : [],
@@ -118,6 +120,13 @@ export function useStudySession(
   const [finished, setFinished] = useState(false);
   const [answerInput, setAnswerInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Why the answer just typed to an item wasn't graded, the card staying in
+  // play: a front already given for a card sharing its answer (#96). Shown
+  // only while that item is the one to answer.
+  const [refusal, setRefusal] = useState<{
+    itemId: string;
+    message: string;
+  } | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   // Answers to cards edited since, whose shown grade is for the card as it
   // was, by attempt
@@ -221,6 +230,7 @@ export function useStudySession(
 
     try {
       setError(null);
+      setRefusal(null);
       const { itemId, card, isRetry } = currentItem;
       const attempt =
         userAnswer === null
@@ -230,6 +240,7 @@ export function useStudySession(
         attemptId: attempt.id,
         userAnswer,
         ...gradeOf(attempt),
+        otherFront: attempt.otherFront ?? null,
       };
 
       const { retryItem } = attempt;
@@ -248,7 +259,16 @@ export function useStudySession(
       }
       setHistory((prev) => [...prev, { card, isRetry, ...answered }]);
       setStudyState({ phase: 'result', ...answered, showingBack: true });
-    } catch {
+    } catch (err) {
+      // Answering a card refuses only this with PRECONDITION_FAILED
+      if (
+        err instanceof TRPCClientError &&
+        err.data?.code === 'PRECONDITION_FAILED'
+      ) {
+        setAnswerInput('');
+        setRefusal({ itemId: currentItem.itemId, message: err.message });
+        return;
+      }
       setError('Failed to submit answer. Please try again.');
     }
   }
@@ -573,6 +593,10 @@ export function useStudySession(
     answerInput,
     setAnswerInput,
     error,
+    refusal:
+      refusal && refusal.itemId === currentItem?.itemId
+        ? refusal.message
+        : null,
     history,
     handleStart,
     handleSubmitAnswer,

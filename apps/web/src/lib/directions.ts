@@ -71,8 +71,9 @@ export function askedIn(card: Flashcard, direction: StudyDirection) {
 }
 
 /**
- * The cards Reverse can't tell apart: groups of two or more, in deck order,
- * sharing a primary answer as grading compares answers.
+ * The cards with a Shared Answer, which Reverse shows the same prompt:
+ * groups of two or more, in deck order, sharing a primary answer as
+ * grading compares answers (ADR-0012).
  */
 export function cardsSharingAnswers(cards: Flashcard[]): Flashcard[][] {
   const groups: Flashcard[][] = [];

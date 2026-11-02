@@ -11,6 +11,7 @@ import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import StudyPage from './StudyPage';
+import { TRPCClientError } from '@trpc/client';
 import { trpc } from '@/lib/trpc';
 import { expectPencilOnHoverAndFocus } from '@/test-helpers/editPencil';
 
@@ -3599,6 +3600,99 @@ describe('a reversible deck (#82)', () => {
     expect(mockMarkKnown).toHaveBeenCalledWith({
       cardIds: ['card-1'],
       directions: ['REVERSE'],
+    });
+  });
+
+  describe('cards that share an answer (#96)', () => {
+    /** Answers in Reverse resolve or reject as given, one per answer. */
+    function answersInReverse(...replies: (object | Error)[]) {
+      setupReversible();
+      localStorage.setItem('study-hall:direction:deck-1', 'REVERSE');
+      const submit = vi.fn();
+      for (const reply of replies) {
+        submit.mockImplementationOnce((args: { userAnswer: string }) =>
+          reply instanceof Error
+            ? Promise.reject(reply)
+            : Promise.resolve({
+                id: 'attempt-1',
+                userAnswer: args.userAnswer,
+                ...reply,
+              }),
+        );
+      }
+      vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+        mutateAsync: submit,
+      } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+    }
+
+    /** An error from the API, as the client gets it. */
+    const apiError = (code: string, message: string) =>
+      new TRPCClientError(message, {
+        result: { error: { data: { code } } },
+      } as unknown as ConstructorParameters<typeof TRPCClientError>[1]);
+
+    const alreadyGuessed = apiError(
+      'PRECONDITION_FAILED',
+      'Aruba already correctly guessed. Give a different answer.',
+    );
+
+    it('says a front was already correctly guessed and takes another answer', async () => {
+      answersInReverse(alreadyGuessed, {
+        recallGrade: 'NAILED',
+        otherFront: null,
+      });
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      await user.type(await screen.findByRole('textbox'), 'Aruba{Enter}');
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Aruba already correctly guessed. Give a different answer.',
+      );
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      expect(screen.queryByText(/failed to submit/i)).toBeNull();
+      expect(screen.queryByTestId('correct-answer')).toBeNull();
+
+      await user.type(screen.getByRole('textbox'), 'What is 2+2?{Enter}');
+
+      expect(await screen.findByTestId('correct-answer')).toBeInTheDocument();
+      expect(screen.queryByText(/already correctly guessed/)).toBeNull();
+    });
+
+    it('says another refusal failed, as any failed answer', async () => {
+      answersInReverse(apiError('CONFLICT', 'This deck is archived.'));
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      await user.type(await screen.findByRole('textbox'), 'Aruba{Enter}');
+
+      expect(
+        await screen.findByText('Failed to submit answer. Please try again.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it("names another card's front the answer was accepted as", async () => {
+      answersInReverse({
+        recallGrade: 'NAILED',
+        matchedAnswer: 'Four, spelled out',
+        otherFront: 'Four, spelled out',
+      });
+      const user = userEvent.setup();
+      renderStudyPage();
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      await user.type(
+        await screen.findByRole('textbox'),
+        'Four, spelled out{Enter}',
+      );
+
+      expect(await screen.findByTestId('answer-notes')).toHaveTextContent(
+        'Accepted as “Four, spelled out”, a card with the same answer.',
+      );
+      expect(screen.queryByText(/one of the card’s answers/)).toBeNull();
     });
   });
 

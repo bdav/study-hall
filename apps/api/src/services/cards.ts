@@ -125,10 +125,52 @@ export function gradeDirectedAnswer(
   direction: StudyDirection,
 ): Grading {
   if (direction === 'FORWARD') return gradeCardAnswer(userAnswer, card);
-  return gradeAnswer(
-    userAnswer,
-    card.front,
-    card.reverseVariants.map((variant) => variant.text),
+  return acceptedFront(userAnswer, [card])?.grading ?? NO_MATCH;
+}
+
+/** A card as Reverse asks for it: its front, with the front's Reverse Variants. */
+type ReverseFront = { front: string; reverseVariants: { text: string }[] };
+
+/**
+ * The front an answer in Reverse is accepted as, with its grading: of the
+ * first card, and of the others sharing its primary answer (#96,
+ * ADR-0012), the first matched exactly, or else the first matched but for
+ * its accents. Null when it matches none.
+ */
+export function acceptedFront(
+  userAnswer: string,
+  cards: ReverseFront[],
+): { front: string; grading: Grading } | null {
+  const graded = cards.map((card) => ({
+    front: card.front,
+    grading: gradeAnswer(
+      userAnswer,
+      card.front,
+      card.reverseVariants.map((variant) => variant.text),
+    ),
+  }));
+  return (
+    graded.find(({ grading }) => grading.recallGrade === 'NAILED') ??
+    graded.find(({ grading }) => grading.recallGrade !== 'MISSED') ??
+    null
+  );
+}
+
+/**
+ * The other cards of a card's deck whose primary answer grades the same as
+ * its own, so Reverse shows them all the same prompt (#96, ADR-0012).
+ */
+export async function findCardsSharingAnswer(
+  db: Db,
+  card: { id: string; deckId: string; canonicalAnswers: { text: string }[] },
+) {
+  const others = await db.card.findMany({
+    where: { deckId: card.deckId, id: { not: card.id } },
+    include: withCanonicalAnswers,
+  });
+  const primary = primaryAnswerText(card);
+  return others.filter(
+    (other) => matchAnswer(primaryAnswerText(other), primary) === 'exact',
   );
 }
 

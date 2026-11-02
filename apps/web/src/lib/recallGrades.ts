@@ -18,6 +18,9 @@ export type GradedAnswer = Grade & {
   attemptId: string;
   // null when the learner chose "I don't know"
   userAnswer: string | null;
+  // In Reverse, the front of another card sharing this one's answer that
+  // the answer was accepted as (#96)
+  otherFront: string | null;
 };
 
 /** The grade in a grading result, such as an answer's or a re-grade's. */

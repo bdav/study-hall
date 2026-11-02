@@ -17,5 +17,5 @@ The v2 plan (`updated-plan.md` §19) planned reverse decks as a second deck link
 
 - Progress, attempts and Study Sessions record their Study Direction; a card's Reverse progress starts NEW the first time it's studied in Reverse.
 - Turning reversibility off hides Reverse and keeps its history (ADR-0003); turning it back on picks up where it left off.
-- Cards that share a primary answer can't be told apart in Reverse, so the app warns about them rather than grading against another card's front.
+- Cards that share a primary answer can't be told apart in Reverse, so the app warns about them rather than grading against another card's front. Superseded by ADR-0012: they accept each other's fronts in Reverse, once each per Study Session.
 - Prompts that write cards for a reversible deck ask for fronts that can be typed from their answers.

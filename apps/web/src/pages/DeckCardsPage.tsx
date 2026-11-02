@@ -38,7 +38,7 @@ import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
 import { directionLabels, directionsOf } from '@/lib/directions';
 import {
   EditableDeckDescription,
-  SharedAnswersWarning,
+  SharedAnswersNote,
   StudyBothWays,
 } from '@/components/ReversibleDeckSettings';
 import { MarkKnownDialog } from '@/components/MarkKnownDialog';
@@ -408,7 +408,7 @@ export default function DeckCardsPage() {
             </span>
           )}
         </p>
-        {deck.reversible && <SharedAnswersWarning cards={cards} />}
+        {deck.reversible && <SharedAnswersNote cards={cards} />}
 
         {selection ? (
           // Pinned to the top while selecting, so its actions are in reach
