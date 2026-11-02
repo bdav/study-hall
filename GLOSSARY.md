@@ -75,8 +75,44 @@ How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak
 _Avoid_: Session type (that's its length: Quick, Standard or Deep)
 
 **Retry**:
-A missed card brought back at the end of the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did.
+A missed card brought back at the end of the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did. It isn't a Counted Answer.
 _Avoid_: Relearn, repeat, reappearance
+
+**Lifecycle State**:
+Where one Study Direction of a card is in its life: New, Learning, Reinforcing or Retired. It says what kind of review the card gets, not how well it's known.
+_Avoid_: Status, stage
+
+**New**:
+A card the learner hasn't yet answered in that Study Direction, or hasn't since an edit reset it.
+_Avoid_: Unseen, fresh
+
+**Learning**:
+A card being learned: answered, but not yet right often enough, across separate Study Sessions or days, to graduate. It comes back at short intervals, and misses are expected.
+_Avoid_: Relearning
+
+**Reinforcing**:
+A card that has graduated from Learning and comes back at growing intervals to strengthen it. A Reinforcing card that keeps being missed falls back to Learning.
+_Avoid_: Stable, mastered, known
+
+**Retired**:
+A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept.
+_Avoid_: Suspended, archived, deleted
+
+**Counted Answer**:
+An answer the scheduler takes into account: given since the card's progress in that Study Direction last reset, and not a Retry. Other answers are kept as history but count toward nothing, in scheduling or stats.
+_Avoid_: Valid attempt, scored answer
+
+**Due**:
+A card in review is due when its next review time has come. Cram counts a card due sooner, so it comes round more often before the learner needs it.
+_Avoid_: Scheduled, overdue (that's how late a due card is)
+
+**Weak**:
+A Reinforcing card that's slipping: low mastery, or repeated misses among its recent Counted Answers, though not yet enough to send it back to Learning. Weakness is instability, not urgency: a well-known card can be due without being Weak, and a card Marked Known since it was last answered isn't Weak.
+_Avoid_: Struggling, difficult, hard card
+
+**Card Standing**:
+Where one Study Direction of a card stands for the learner: its Lifecycle State, and whether it's due or Weak, as its schedule and Counted Answers show. Reverse has none while its deck isn't reversible.
+_Avoid_: Card status, card progress
 
 **Reversible Deck**:
 A deck its author has marked as studyable in both Study Directions, because its fronts can be typed from their answers. A deck that isn't reversible is studied Forward only.
