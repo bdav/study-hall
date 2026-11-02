@@ -4,7 +4,7 @@ status: accepted
 
 # Generative AI is allowed in course features; flashcards keep the v2 grading constraints
 
-The v2 plan positioned the app as "not an AI tutor" and ruled out tutoring, generated explanations and hints, AI deck generation, curricula and multiple choice (`updated-plan.md` §3, §17.12, §21, §28; `learning-model-and-scheduler.md` §3; `planning.md` §11). We are evolving the app into a general learning environment with courses, AI-generated syllabi and lessons, lesson exercises and a contextual tutor, so those non-goals are superseded — but only for course features. Standalone decks and cards keep every v2 recall constraint: typed recall only, no multiple choice or reveal-first, no learner self-grading, and AI used for card grading only as a fallback for ambiguous answers. This keeps the scheduler's inputs trustworthy while letting lessons use whatever exercise formats suit the subject.
+The v2 plan positioned the app as "not an AI tutor" and ruled out tutoring, generated explanations and hints, AI deck generation, curricula and multiple choice (`updated-plan.md` §3, §17.12, §21, §28; `learning-model-and-scheduler.md` §3; `docs/architecture/archive/planning.md` §11). We are evolving the app into a general learning environment with courses, AI-generated syllabi and lessons, lesson exercises and a contextual tutor, so those non-goals are superseded — but only for course features. Standalone decks and cards keep every v2 recall constraint: typed recall only, no multiple choice or reveal-first, no learner self-grading, and AI used for card grading only as a fallback for ambiguous answers. This keeps the scheduler's inputs trustworthy while letting lessons use whatever exercise formats suit the subject.
 
 ## Consequences
 

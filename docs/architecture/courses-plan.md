@@ -32,7 +32,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - `docs/adr/0003-curriculum-is-editable-learning-history-is-durable.md`
 - `docs/adr/0005-only-open-exercises-fall-back-to-ai-evaluation.md`
 - `docs/adr/0006-explanations-are-judged-against-what-the-question-asks.md`
-- `updated-plan.md` and `v2-implementation-plan.md`: the v2 flashcard and scheduler plan this builds on. Sections superseded by this plan carry dated notes.
+- `updated-plan.md` and `archive/v2-implementation-plan.md`: the v2 flashcard and scheduler plan this builds on. Sections superseded by this plan carry dated notes.
 
 **Status:** Design agreed 2026-10-21. Slices A–C and the lesson layout are delivered (as of 2026-11-01; see the Implementation Order in `CLAUDE.md`), along with the Setup Interview (spec #63) and curriculum editing. Work and its status are tracked in GitHub issues.
 
@@ -40,7 +40,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 
 ## Sequencing
 
-1. **Finish v2 PRs 2–8** from `v2-implementation-plan.md`, tracked as GitHub issues #2–#12: Postgres test infrastructure, canonical answers, ProgressUpdater, QueueGenerator, session orchestration, the study flow UI and card management. The API does not currently build against the v2 schema (routers still use `Card.back` and `AttemptResult`), so this comes first regardless (#2).
+1. **Finish v2 PRs 2–8** from `archive/v2-implementation-plan.md`, tracked as GitHub issues #2–#12: Postgres test infrastructure, canonical answers, ProgressUpdater, QueueGenerator, session orchestration, the study flow UI and card management. The API does not currently build against the v2 schema (routers still use `Card.back` and `AttemptResult`), so this comes first regardless (#2).
 2. **Course slices A → B → C** (below), each a short sequence of PRs.
 3. **v2 PRs 9–11** (stats, seed, polish) are redesigned once course progress exists, rather than built as originally specified.
 
