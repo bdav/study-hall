@@ -182,35 +182,37 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
         in one session.
       </p>
       {/* Each answer beside its fronts, a front to a line, since a front
-          may have commas of its own */}
-      <table className="mt-4 w-full border-collapse text-left">
-        <thead>
-          <tr className="text-[0.65rem] uppercase tracking-wide text-white/50">
-            {/* As wide as its longest answer, from sm up; on a phone
+          may have commas of its own; inset from the note's edges */}
+      <div className="mt-4 px-3">
+        <table className="w-full border-collapse text-left">
+          <thead>
+            <tr className="text-[0.65rem] uppercase tracking-wide text-white/50">
+              {/* As wide as its longest answer, from sm up; on a phone
                 the two columns share the width */}
-            <th scope="col" className="pr-4 pb-1 font-normal sm:w-px">
-              Answer
-            </th>
-            <th scope="col" className="pb-1 font-normal">
-              Fronts
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {groups.map((group) => (
-            <tr key={group[0].id} className="border-t border-white/15">
-              <td className="py-1.5 pr-4 align-top font-medium break-words text-white sm:whitespace-nowrap">
-                {group[0].canonicalAnswer}
-              </td>
-              <td className="py-1.5 align-top break-words">
-                {group.map((card) => (
-                  <div key={card.id}>{card.front}</div>
-                ))}
-              </td>
+              <th scope="col" className="pr-8 pb-1 font-normal sm:w-px">
+                Answer
+              </th>
+              <th scope="col" className="pb-1 font-normal">
+                Fronts
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {groups.map((group) => (
+              <tr key={group[0].id} className="border-t border-white/15">
+                <td className="py-1.5 pr-8 align-top font-medium break-words text-white sm:whitespace-nowrap">
+                  {group[0].canonicalAnswer}
+                </td>
+                <td className="py-1.5 align-top break-words">
+                  {group.map((card) => (
+                    <div key={card.id}>{card.front}</div>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
