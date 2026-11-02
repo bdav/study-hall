@@ -71,6 +71,7 @@ enum AiPurpose {
   COURSE_INTERVIEW
   SYLLABUS_REVISION
   CARD_GENERATION
+  DIRECTION_LABELS
 }
 
 // Who wrote a Tutor Thread message
@@ -125,26 +126,30 @@ model Session {
 }
 
 model Deck {
-  id            String         @id @default(cuid())
-  userId        String
+  id                    String         @id @default(cuid())
+  userId                String
   // Set on a Course Deck. The deck outlives its course (ADR-0003).
-  courseId      String?        @unique
-  name          String
-  description   String?
+  courseId              String?        @unique
+  name                  String
+  description           String?
   // A Reversible Deck, studyable in both Study Directions (ADR-0011). Turned
   // off, Reverse is hidden and its history kept
-  reversible    Boolean        @default(false)
+  reversible            Boolean        @default(false)
   // Its Direction Labels; Forward and Reverse stand in when none
-  forwardLabel  String?
-  reverseLabel  String?
+  forwardLabel          String?
+  reverseLabel          String?
+  // Whether each label is the AI's suggestion (#83), which a new one may
+  // replace; one the learner typed is theirs, and never replaced
+  forwardLabelSuggested Boolean        @default(false)
+  reverseLabelSuggested Boolean        @default(false)
   // Archived decks leave Flashcards and keep everything (ADR-0003, #77)
-  archivedAt    DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course        Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  cards         Card[]
-  studySessions StudySession[]
+  archivedAt            DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course                Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  cards                 Card[]
+  studySessions         StudySession[]
 
   @@index([userId, archivedAt])
 }

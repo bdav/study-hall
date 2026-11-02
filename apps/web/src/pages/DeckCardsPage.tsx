@@ -396,7 +396,7 @@ export default function DeckCardsPage() {
           title={<EditableDeckTitle deckId={deckId} name={deck.name} />}
         />
         <EditableDeckDescription deck={deck} />
-        <StudyBothWays deck={deck} />
+        <StudyBothWays deck={deck} canUseAI={canUseAI} />
 
         <p className="mt-2 text-sm text-white/50">
           {cards.length} {cards.length === 1 ? 'card' : 'cards'}

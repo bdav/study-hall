@@ -5,7 +5,8 @@ import { Pencil } from 'lucide-react';
  * A line of text edited in place, as the deck title is: shown with a pencil
  * at rest, or its placeholder when empty; choosing it turns it into a box,
  * saved as you type, a moment after you stop (`onSave`, trimmed, only when
- * changed). Enter, Escape or leaving the box ends editing.
+ * changed). Enter, Escape or leaving the box ends editing; a value saved
+ * meanwhile by someone else shows then, unless the text was changed.
  */
 export function InPlaceField({
   label,
@@ -29,6 +30,8 @@ export function InPlaceField({
   const [localValue, setLocalValue] = useState(value);
   const [prevValue, setPrevValue] = useState(value);
   const [isEditing, setIsEditing] = useState(false);
+  // Whether the text was changed in this edit, its own save to come
+  const [isTyped, setIsTyped] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const onSaveRef = useRef(onSave);
   useEffect(() => {
@@ -55,13 +58,21 @@ export function InPlaceField({
     }, 800);
   }
 
+  function stopEditing() {
+    setIsEditing(false);
+    if (!isTyped) setLocalValue(value);
+  }
+
   if (!isEditing) {
     return (
       <button
         type="button"
         aria-label={editLabel}
         title={editLabel}
-        onClick={() => setIsEditing(true)}
+        onClick={() => {
+          setIsEditing(true);
+          setIsTyped(false);
+        }}
         className={`group inline-flex max-w-full cursor-text items-center gap-1.5 text-left ${className}`}
       >
         <span
@@ -83,11 +94,12 @@ export function InPlaceField({
       maxLength={maxLength}
       onChange={(e) => {
         setLocalValue(e.target.value);
+        setIsTyped(true);
         debouncedSave(e.target.value);
       }}
-      onBlur={() => setIsEditing(false)}
+      onBlur={stopEditing}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === 'Escape') setIsEditing(false);
+        if (e.key === 'Enter' || e.key === 'Escape') stopEditing();
       }}
       autoFocus
       className={`min-w-0 border-b-2 border-white/30 bg-transparent text-white outline-none transition-colors placeholder:text-white/30 focus:border-white/60 ${className}`}

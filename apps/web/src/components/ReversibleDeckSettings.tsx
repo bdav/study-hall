@@ -1,16 +1,24 @@
+import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { type Flashcard } from '@/lib/cards';
 import {
   cardsSharingAnswers,
   DEFAULT_DIRECTION_LABELS,
+  hasLabelToSuggest,
   MAX_DIRECTION_LABEL_LENGTH,
   type DirectedDeck,
 } from '@/lib/directions';
 import { InPlaceField } from '@/components/InPlaceField';
 import { Switch } from '@/components/Switch';
 
-type DeckDetails = DirectedDeck & { id: string; description: string | null };
+type DeckDetails = DirectedDeck & {
+  id: string;
+  description: string | null;
+  // Whether each label is the AI's suggestion, which a new one may replace
+  forwardLabelSuggested?: boolean;
+  reverseLabelSuggested?: boolean;
+};
 
 /** Saves changes to a deck's details, refreshing where they show. */
 function useDeckUpdate(deckId: string) {
@@ -49,15 +57,46 @@ export function EditableDeckDescription({ deck }: { deck: DeckDetails }) {
  * Study both ways (ADR-0011): a switch making the deck a Reversible Deck or
  * not, and while it's one, its two Direction Labels edited in place beside
  * it, Forward and Reverse standing in for blank ones. Turning it off hides
- * Reverse and keeps its history. None of it needs AI.
+ * Reverse and keeps its history. None of it needs AI; for a learner who can
+ * use AI, turning it on asks the AI to suggest the labels, and Suggest
+ * labels beside them asks again (#83). Suggestions are saved where the
+ * learner hasn't typed their own, and show once the deck is refetched; a
+ * label being typed meanwhile is kept, its own save coming after. With
+ * both labels the learner's own, turning it on asks nothing, and Suggest
+ * labels says they're kept.
  */
-export function StudyBothWays({ deck }: { deck: DeckDetails }) {
+export function StudyBothWays({
+  deck,
+  canUseAI,
+}: {
+  deck: DeckDetails;
+  canUseAI: boolean;
+}) {
+  const utils = trpc.useUtils();
   const update = useDeckUpdate(deck.id);
+  const suggest = trpc.deck.suggestDirectionLabels.useMutation({
+    onSuccess: ({ suggested }) => {
+      if (suggested) utils.deck.getById.invalidate({ id: deck.id });
+      else toast.success('Both labels are your own, so they’re kept');
+    },
+    onError: (error) =>
+      toast.error(`Couldn't suggest labels: ${error.message}`),
+  });
+  const suggestLabels = () => suggest.mutate({ deckId: deck.id });
+
+  function setReversible(reversible: boolean) {
+    if (reversible && canUseAI && hasLabelToSuggest(deck)) {
+      update.mutate({ id: deck.id, reversible }, { onSuccess: suggestLabels });
+    } else {
+      update.mutate({ id: deck.id, reversible });
+    }
+  }
+
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <Switch
         checked={deck.reversible}
-        onChange={(reversible) => update.mutate({ id: deck.id, reversible })}
+        onChange={setReversible}
         // Lined up with the description above
         className="-ml-2"
       >
@@ -88,6 +127,17 @@ export function StudyBothWays({ deck }: { deck: DeckDetails }) {
               update.mutate({ id: deck.id, reverseLabel: label || null })
             }
           />
+          {canUseAI && (
+            <button
+              type="button"
+              onClick={suggestLabels}
+              disabled={suggest.isPending}
+              className="ml-2 inline-flex items-center text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
+            >
+              <Sparkles aria-hidden className="mr-1 h-3.5 w-3.5" />
+              {suggest.isPending ? 'Suggesting…' : 'Suggest labels'}
+            </button>
+          )}
         </div>
       )}
     </div>

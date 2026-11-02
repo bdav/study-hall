@@ -45,6 +45,7 @@ vi.mock('@/lib/trpc', () => ({
       applyRevision: { useMutation: vi.fn() },
       proposeCards: { useMutation: vi.fn() },
       addGeneratedCards: { useMutation: vi.fn() },
+      suggestDirectionLabels: { useMutation: vi.fn() },
     },
     card: {
       listByDeck: { useQuery: vi.fn() },
@@ -104,15 +105,18 @@ function renderDeckCardsPage(deckId = 'deck-1') {
     defaultOptions: { queries: { retry: false } },
   });
 
-  return render(
+  const page = () => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/decks/${deckId}/cards`]}>
         <Routes>
           <Route path="/decks/:deckId/cards" element={<DeckCardsPage />} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(page());
+  // Renders the page again, as when its queries come back with new data
+  return { ...result, rerenderPage: () => result.rerender(page()) };
 }
 
 const defaultMutationReturn = {
@@ -231,6 +235,12 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.deck.update.useMutation>);
+
+  vi.mocked(trpc.deck.suggestDirectionLabels.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<
+    typeof trpc.deck.suggestDirectionLabels.useMutation
+  >);
 
   vi.mocked(trpc.deck.archive.useMutation).mockReturnValue({
     ...defaultMutationReturn,
@@ -2164,5 +2174,239 @@ describe('the glow on what Enter will press (#94)', () => {
     expect(create).toHaveClass('animate-pulse-halo');
     act(() => back.blur());
     expect(create).not.toHaveClass('animate-pulse-halo');
+  });
+});
+
+describe('AI-suggested Direction Labels (#83)', () => {
+  const reversible = {
+    reversible: true,
+    forwardLabel: null,
+    reverseLabel: null,
+  };
+
+  /** Deck saves that succeed, as the API's would. */
+  function mockDeckUpdates() {
+    const mutate = vi.fn(
+      (_input: unknown, options?: { onSuccess?: () => void }) =>
+        options?.onSuccess?.(),
+    );
+    vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate,
+    } as unknown as ReturnType<typeof trpc.deck.update.useMutation>);
+    return mutate;
+  }
+
+  /** Suggestions that answer with `outcome`, as the API would. */
+  function mockSuggestions(
+    outcome: { labels: object } | { error: string } = {
+      labels: {
+        forwardLabel: 'Capitals from countries',
+        reverseLabel: 'Countries from capitals',
+      },
+    },
+  ) {
+    const mutate = vi.fn();
+    vi.mocked(trpc.deck.suggestDirectionLabels.useMutation).mockImplementation(
+      ((opts?: {
+        onSuccess?: (labels: object) => void;
+        onError?: (error: { message: string }) => void;
+      }) => ({
+        ...defaultMutationReturn,
+        mutate: mutate.mockImplementation(() =>
+          'labels' in outcome
+            ? opts?.onSuccess?.(outcome.labels)
+            : opts?.onError?.({ message: outcome.error }),
+        ),
+      })) as unknown as typeof trpc.deck.suggestDirectionLabels.useMutation,
+    );
+    return mutate;
+  }
+
+  it('asks for labels once Study both ways is turned on, for a learner who can use AI', async () => {
+    setupMocks({ canUseAI: true });
+    const update = mockDeckUpdates();
+    const suggest = mockSuggestions();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('switch', { name: 'Study both ways' }));
+
+    expect(update).toHaveBeenCalledWith(
+      { id: 'deck-1', reversible: true },
+      expect.anything(),
+    );
+    expect(suggest).toHaveBeenCalledWith({ deckId: 'deck-1' });
+  });
+
+  it("doesn't ask when Study both ways is turned off", async () => {
+    setupMocks({ canUseAI: true, deck: reversible });
+    mockDeckUpdates();
+    const suggest = mockSuggestions();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('switch', { name: 'Study both ways' }));
+
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing and offers nothing to a learner who can’t use AI', async () => {
+    setupMocks({ canUseAI: false });
+    mockDeckUpdates();
+    const suggest = mockSuggestions();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('switch', { name: 'Study both ways' }));
+
+    expect(suggest).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Suggest labels' })).toBeNull();
+  });
+
+  it('asks again with Suggest labels beside the fields', async () => {
+    setupMocks({ canUseAI: true, deck: reversible });
+    const suggest = mockSuggestions();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Suggest labels' }));
+
+    expect(suggest).toHaveBeenCalledWith({ deckId: 'deck-1' });
+  });
+
+  it('fills the fields with the suggestions once saved', async () => {
+    setupMocks({ canUseAI: true, deck: reversible });
+    mockSuggestions();
+    const user = userEvent.setup();
+    const { rerenderPage } = renderDeckCardsPage();
+    await user.click(screen.getByRole('button', { name: 'Suggest labels' }));
+
+    // The deck as the API saved it, refetched
+    setupMocks({
+      canUseAI: true,
+      deck: {
+        ...reversible,
+        forwardLabel: 'Capitals from countries',
+        reverseLabel: 'Countries from capitals',
+      },
+    });
+    rerenderPage();
+
+    expect(screen.getByText('Capitals from countries')).toBeInTheDocument();
+    expect(screen.getByText('Countries from capitals')).toBeInTheDocument();
+  });
+
+  it('keeps a label the learner is typing when the suggestions arrive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setupMocks({ canUseAI: true, deck: reversible });
+    const update = mockDeckUpdates();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { rerenderPage } = renderDeckCardsPage();
+    await user.click(
+      screen.getByRole('button', { name: 'Edit the Reverse label' }),
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: 'Reverse label' }),
+      'Countries',
+    );
+
+    setupMocks({
+      canUseAI: true,
+      deck: { ...reversible, reverseLabel: 'Countries from capitals' },
+    });
+    mockDeckUpdates().mockImplementation(update);
+    rerenderPage();
+    vi.advanceTimersByTime(900);
+
+    expect(screen.getByRole('textbox', { name: 'Reverse label' })).toHaveValue(
+      'Countries',
+    );
+    expect(update).toHaveBeenLastCalledWith({
+      id: 'deck-1',
+      reverseLabel: 'Countries',
+    });
+    vi.useRealTimers();
+  });
+
+  it("doesn't ask when turned on with both labels the learner's own", async () => {
+    setupMocks({
+      canUseAI: true,
+      deck: {
+        reversible: false,
+        forwardLabel: 'Capitals',
+        reverseLabel: 'Countries',
+      },
+    });
+    mockDeckUpdates();
+    const suggest = mockSuggestions();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('switch', { name: 'Study both ways' }));
+
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it('says the labels are kept when both are the learner’s own', async () => {
+    setupMocks({
+      canUseAI: true,
+      deck: {
+        ...reversible,
+        forwardLabel: 'Capitals',
+        reverseLabel: 'Countries',
+      },
+    });
+    mockSuggestions({
+      labels: {
+        forwardLabel: 'Capitals',
+        reverseLabel: 'Countries',
+        suggested: false,
+      },
+    });
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Suggest labels' }));
+
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringMatching(/your own/i),
+    );
+  });
+
+  it('shows a suggestion that lands while a label is open but untyped, once it closes', async () => {
+    setupMocks({ canUseAI: true, deck: reversible });
+    const user = userEvent.setup();
+    const { rerenderPage } = renderDeckCardsPage();
+    await user.click(
+      screen.getByRole('button', { name: 'Edit the Forward label' }),
+    );
+
+    setupMocks({
+      canUseAI: true,
+      deck: { ...reversible, forwardLabel: 'Capitals from countries' },
+    });
+    rerenderPage();
+    await user.keyboard('{Enter}');
+
+    expect(
+      screen.getByRole('button', { name: 'Edit the Forward label' }),
+    ).toHaveTextContent('Capitals from countries');
+  });
+
+  it('says why a suggestion failed, leaving the fields as they were', async () => {
+    setupMocks({ canUseAI: true, deck: reversible });
+    mockSuggestions({ error: 'AI is paused for the rest of the month' });
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Suggest labels' }));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining('AI is paused for the rest of the month'),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Edit the Forward label' }),
+    ).toHaveTextContent('Forward');
   });
 });

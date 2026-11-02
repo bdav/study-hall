@@ -31,9 +31,20 @@ import {
 } from '../services/cards.js';
 import { findCountedAttempts, isCorrect } from '../services/countedAttempts.js';
 import { matchAnswer } from '../services/answerGrader.js';
-import { MAX_DIRECTION_LABEL_LENGTH } from './inputs.js';
+import {
+  buildDirectionLabelsPrompt,
+  DIRECTION_LABELS_CARD_SAMPLE,
+  DIRECTION_LABELS_MODEL,
+  DIRECTION_LABELS_PROMPT_VERSION,
+  DIRECTION_LABELS_SYSTEM_PROMPT,
+  directionLabelsOutputSchema,
+} from '../ai/directionLabels.js';
 import {
   assertDeckActive,
+  assertStudiesIn,
+  hasLabelToSuggest,
+  MAX_DIRECTION_LABEL_LENGTH,
+  saveSuggestedLabels,
   findActiveDeck,
   findOwnedDeck,
 } from '../services/decks.js';
@@ -263,8 +274,16 @@ export const deckRouter = router({
             name: input.name,
             description: input.description,
             reversible: input.reversible,
-            forwardLabel: input.forwardLabel,
-            reverseLabel: input.reverseLabel,
+            // A label the learner sets is theirs, which suggestions leave
+            // alone (#83)
+            ...(input.forwardLabel !== undefined && {
+              forwardLabel: input.forwardLabel,
+              forwardLabelSuggested: false,
+            }),
+            ...(input.reverseLabel !== undefined && {
+              reverseLabel: input.reverseLabel,
+              reverseLabelSuggested: false,
+            }),
           },
         });
       });
@@ -350,6 +369,61 @@ export const deckRouter = router({
       }
 
       return { success: true };
+    }),
+
+  /**
+   * Suggests a Reversible Deck's Direction Labels (#83) from its name,
+   * description and first DIRECTION_LABELS_CARD_SAMPLE cards, front and
+   * primary answer, in one Haiku-class call, and saves them where the
+   * learner hasn't typed their own (`saveSuggestedLabels`). When both
+   * labels are the learner's, nothing is asked. Returns the deck's labels
+   * as they then are, and whether a suggestion was taken.
+   */
+  suggestDirectionLabels: aiProcedure
+    .input(z.object({ deckId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const deck = await findActiveDeck(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: input.deckId,
+      });
+      // Only a Reversible Deck has directions to name
+      assertStudiesIn(deck, 'REVERSE');
+      if (!hasLabelToSuggest(deck)) {
+        return {
+          forwardLabel: deck.forwardLabel,
+          reverseLabel: deck.reverseLabel,
+          suggested: false,
+        };
+      }
+      const cards = await ctx.prisma.card.findMany({
+        where: { deckId: deck.id },
+        orderBy: deckOrder,
+        take: DIRECTION_LABELS_CARD_SAMPLE,
+        include: withCanonicalAnswers,
+      });
+
+      const { output } = await generateStructured(ctx, {
+        userId: ctx.userId,
+        purpose: 'DIRECTION_LABELS',
+        model: DIRECTION_LABELS_MODEL,
+        promptVersion: DIRECTION_LABELS_PROMPT_VERSION,
+        system: DIRECTION_LABELS_SYSTEM_PROMPT,
+        prompt: buildDirectionLabelsPrompt({
+          name: deck.name,
+          description: deck.description,
+          cards: cards.map((card) => ({
+            front: card.front,
+            canonicalAnswer: primaryAnswerText(card),
+          })),
+        }),
+        outputSchema: directionLabelsOutputSchema,
+      });
+
+      const labels = await saveSuggestedLabels(ctx.prisma, {
+        deckId: deck.id,
+        labels: output,
+      });
+      return { ...labels, suggested: true };
     }),
 
   /**

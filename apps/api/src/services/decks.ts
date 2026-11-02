@@ -38,6 +38,61 @@ export function assertStudiesIn(
   }
 }
 
+/** The most a Direction Label holds (#82). */
+export const MAX_DIRECTION_LABEL_LENGTH = 40;
+
+/** A Reversible Deck's two Direction Labels. */
+export type DirectionLabels = { forwardLabel: string; reverseLabel: string };
+
+/**
+ * Whether a deck has a Direction Label the AI may fill (#83): one that's
+ * blank or its own earlier suggestion, not one the learner typed.
+ */
+export function hasLabelToSuggest(deck: {
+  forwardLabel: string | null;
+  forwardLabelSuggested: boolean;
+  reverseLabel: string | null;
+  reverseLabelSuggested: boolean;
+}) {
+  return (
+    !deck.forwardLabel ||
+    deck.forwardLabelSuggested ||
+    !deck.reverseLabel ||
+    deck.reverseLabelSuggested
+  );
+}
+
+/**
+ * Saves the AI's suggested Direction Labels (#83): each fills its label
+ * when it's blank or the AI's own earlier suggestion, and is marked
+ * suggested, so a later one may replace it. Each is one conditional
+ * update, so a label the learner types meanwhile is theirs and stays.
+ * Returns the deck's labels as they now are.
+ */
+export async function saveSuggestedLabels(
+  prisma: PrismaClient,
+  { deckId, labels }: { deckId: string; labels: DirectionLabels },
+) {
+  await prisma.deck.updateMany({
+    where: {
+      id: deckId,
+      OR: [{ forwardLabel: null }, { forwardLabelSuggested: true }],
+    },
+    data: { forwardLabel: labels.forwardLabel, forwardLabelSuggested: true },
+  });
+  await prisma.deck.updateMany({
+    where: {
+      id: deckId,
+      OR: [{ reverseLabel: null }, { reverseLabelSuggested: true }],
+    },
+    data: { reverseLabel: labels.reverseLabel, reverseLabelSuggested: true },
+  });
+  return prisma.deck.findUniqueOrThrow({
+    where: { id: deckId },
+    select: { forwardLabel: true, reverseLabel: true },
+  });
+}
+
 /** The user's deck, archived or not; NOT_FOUND for anyone else's. */
 export async function findOwnedDeck(
   prisma: PrismaClient,

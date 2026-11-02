@@ -37,6 +37,24 @@ export function directionLabels(
   };
 }
 
+/**
+ * Whether a deck has a Direction Label the AI may suggest (#83): one that's
+ * blank or its own earlier suggestion, not one the learner typed.
+ */
+export function hasLabelToSuggest(
+  deck: DirectedDeck & {
+    forwardLabelSuggested?: boolean;
+    reverseLabelSuggested?: boolean;
+  },
+) {
+  return (
+    !deck.forwardLabel ||
+    !!deck.forwardLabelSuggested ||
+    !deck.reverseLabel ||
+    !!deck.reverseLabelSuggested
+  );
+}
+
 /** The Study Directions a deck is studied in: Reverse only when reversible. */
 export function directionsOf(deck: DirectedDeck): StudyDirection[] {
   return deck.reversible ? [...STUDY_DIRECTIONS] : ['FORWARD'];
