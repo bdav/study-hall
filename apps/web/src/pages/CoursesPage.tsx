@@ -118,7 +118,7 @@ export default function CoursesPage() {
                 className="flex h-full transition-shadow hover:shadow-lg"
               >
                 <Tile wideOnPhones>
-                  <p className="line-clamp-2 text-center text-lg font-bold break-words">
+                  <p className="line-clamp-4 text-center text-lg font-bold break-words">
                     {course.title}
                   </p>
                   {/* The full goal is on the course page */}
