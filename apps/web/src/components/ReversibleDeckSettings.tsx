@@ -183,7 +183,7 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
       </p>
       {/* Each answer beside its fronts, a front to a line, since a front
           may have commas of its own */}
-      <table className="mt-2 w-full border-collapse text-left">
+      <table className="mt-4 w-full border-collapse text-left">
         <thead>
           <tr className="text-[0.65rem] uppercase tracking-wide text-white/50">
             {/* As wide as its longest answer, from sm up; on a phone
