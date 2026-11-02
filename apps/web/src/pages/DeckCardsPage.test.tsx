@@ -2095,7 +2095,7 @@ describe('a reversible deck on the Cards tab (#82)', () => {
       name: 'Cards that share an answer',
     });
     expect(note).toHaveTextContent(
-      'These cards share an answer, so Reverse shows each the same prompt. Either front is accepted for each, but not the same front twice in one session.',
+      'The following cards share an answer, so Reverse shows each the same prompt. Either front is accepted for each, but not the same front twice in one session.',
     );
     expect(note).toHaveTextContent(
       'Paris: “Capital of France”, “Capital of the French Republic”',

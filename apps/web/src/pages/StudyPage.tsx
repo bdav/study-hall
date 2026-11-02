@@ -322,10 +322,10 @@ function TitleCardDetails({
 }
 
 /**
- * Below the learner's answer: in Reverse, the front of another card
- * sharing this one's answer that it was accepted as (#96); otherwise which
- * of the card's Canonical Answers it matched, when that wasn't the primary
- * shown on the card.
+ * Below the learner's answer: which of the card's Canonical Answers it
+ * matched, when that wasn't the primary shown on the card. An answer
+ * accepted as the front of another card sharing this one's answer, in
+ * Reverse, shows as any accepted answer does (#96).
  */
 function AnswerNotes({
   card,
@@ -334,15 +334,12 @@ function AnswerNotes({
   card: Flashcard;
   result: { matchedAnswer: string | null; otherFront: string | null };
 }) {
-  if (result.otherFront) {
-    return (
-      <p className="mt-2 text-sm text-white/70" data-testid="answer-notes">
-        Accepted as “{result.otherFront}”, a card with the same answer.
-      </p>
-    );
-  }
   const primary = card.answers[0]?.text;
-  if (result.matchedAnswer === null || result.matchedAnswer === primary) {
+  if (
+    result.otherFront ||
+    result.matchedAnswer === null ||
+    result.matchedAnswer === primary
+  ) {
     return null;
   }
   return (
@@ -753,7 +750,7 @@ export default function StudyPage() {
           activeTab="study"
           course={deck.course}
         />
-        <div className="flex w-full flex-1 flex-col items-center justify-center">
+        <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
           <div className="w-full max-w-md pt-3">
             <div className="flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 text-center backdrop-blur-sm">
               <p className="text-white/60">
@@ -784,7 +781,7 @@ export default function StudyPage() {
           activeTab="study"
           course={deck.course}
         />
-        <div className="flex w-full flex-1 flex-col items-center justify-center">
+        <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
           <div
             className="relative w-full max-w-md pt-3"
             onTouchStart={swipe.onTouchStart}
@@ -947,7 +944,7 @@ export default function StudyPage() {
 
       {error && <p className="mb-4 text-destructive">{error}</p>}
 
-      <div className="flex w-full flex-1 flex-col items-center justify-center">
+      <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
         <div
           className="relative w-full max-w-md"
           onTouchStart={swipe.onTouchStart}

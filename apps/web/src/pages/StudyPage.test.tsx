@@ -3674,7 +3674,7 @@ describe('a reversible deck (#82)', () => {
       expect(screen.queryByRole('status')).toBeNull();
     });
 
-    it("names another card's front the answer was accepted as", async () => {
+    it("shows an answer accepted as another card's front as any accepted answer", async () => {
       answersInReverse({
         recallGrade: 'NAILED',
         matchedAnswer: 'Four, spelled out',
@@ -3689,10 +3689,8 @@ describe('a reversible deck (#82)', () => {
         'Four, spelled out{Enter}',
       );
 
-      expect(await screen.findByTestId('answer-notes')).toHaveTextContent(
-        'Accepted as “Four, spelled out”, a card with the same answer.',
-      );
-      expect(screen.queryByText(/one of the card’s answers/)).toBeNull();
+      expect(await screen.findByTestId('correct-answer')).toBeInTheDocument();
+      expect(screen.queryByTestId('answer-notes')).toBeNull();
     });
   });
 

@@ -177,9 +177,9 @@ export function SharedAnswersNote({ cards }: { cards: Flashcard[] }) {
       className="mt-3 mb-4 rounded-lg border border-white/20 bg-white/10 p-3 text-sm text-white/80"
     >
       <p>
-        These cards share an answer, so Reverse shows each the same prompt.
-        Either front is accepted for each, but not the same front twice in one
-        session.
+        The following cards share an answer, so Reverse shows each the same
+        prompt. Either front is accepted for each, but not the same front twice
+        in one session.
       </p>
       <ul className="mt-1 list-disc pl-5">
         {groups.map((group) => (
