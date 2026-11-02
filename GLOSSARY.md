@@ -74,6 +74,18 @@ _Avoid_: Session type (that's its length: Quick, Standard or Deep)
 A missed card brought back at the end of the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did.
 _Avoid_: Relearn, repeat, reappearance
 
+**Reversible Deck**:
+A deck its author has marked as studyable in both Study Directions, because its fronts can be typed from their answers. A deck that isn't reversible is studied Forward only.
+_Avoid_: Two-way deck, reverse deck (there is no second deck)
+
+**Study Direction**:
+Which way a card is asked: Forward, the front prompting its canonical answer, or Reverse, the canonical answer prompting its front. Each direction of a card is learned, scheduled and graded on its own.
+_Avoid_: Normal/reversed, recognition/production, front-first
+
+**Direction Label**:
+What a reversible deck calls one of its Study Directions, such as "Capitals from states" and "States from capitals". Forward and Reverse stand in when a deck has none.
+_Avoid_: Mode name (Study Mode is something else)
+
 ## Courses
 
 **Course**:
