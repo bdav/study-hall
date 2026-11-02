@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DeckCardsPage from './DeckCardsPage';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
+import { expectPencilOnHoverAndFocus } from '@/test-helpers/editPencil';
 
 const mockInvalidateCards = vi.fn();
 
@@ -592,6 +593,27 @@ describe('DeckCardsPage', () => {
     const titleInput = screen.getByDisplayValue('World Capitals');
     expect(titleInput).toBeInTheDocument();
     expect(titleInput.tagName).toBe('INPUT');
+  });
+
+  it("shows the deck title's pencil on hover and focus, not at rest, and edits it from the keyboard (#95)", async () => {
+    setupMocks();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    const title = screen.getByRole('button', { name: 'World Capitals' });
+    expect(
+      screen.getByRole('heading', { name: 'World Capitals' }),
+    ).toContainElement(title);
+    expectPencilOnHoverAndFocus(title);
+
+    // From the top of the page, past the back link
+    act(() => (document.activeElement as HTMLElement).blur());
+    await user.tab();
+    await user.tab();
+    expect(title).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(screen.getByDisplayValue('World Capitals').tagName).toBe('INPUT');
   });
 
   it('debounce-saves deck name when edited', async () => {
@@ -1791,7 +1813,7 @@ describe('DeckCardsPage', () => {
   });
 
   describe('cards shown in full, with edit pencils', () => {
-    it("shows a pencil by each face's text at rest", () => {
+    it("shows a face's pencil while the pointer is over its text, not at rest (#95)", () => {
       setupMocks();
       renderDeckCardsPage();
 
@@ -1801,6 +1823,12 @@ describe('DeckCardsPage', () => {
       expect(
         screen.getAllByRole('button', { name: 'Edit card answer' }),
       ).toHaveLength(mockCards.length);
+      for (const face of [
+        ...screen.getAllByLabelText('Card front'),
+        ...screen.getAllByLabelText('Card answer'),
+      ]) {
+        expectPencilOnHoverAndFocus(face.closest('[data-tile-field]')!);
+      }
     });
 
     it("hides a face's pencil and underlines its text while it has focus", async () => {
@@ -1864,15 +1892,13 @@ describe('DeckCardsPage', () => {
       ).toHaveLength(0);
     });
 
-    it('shows a pencil on the answers below each card', () => {
+    it('shows a pencil on the answers below each card on hover and focus, not at rest (#95)', () => {
       setupMocks();
       renderDeckCardsPage();
 
-      expect(
-        screen
-          .getByRole('button', { name: 'Answers of Capital of France' })
-          .querySelector('svg'),
-      ).not.toBeNull();
+      expectPencilOnHoverAndFocus(
+        screen.getByRole('button', { name: 'Answers of Capital of France' }),
+      );
     });
 
     it('shows a long front, answer and answers list in full', () => {
@@ -1977,6 +2003,26 @@ describe('a reversible deck on the Cards tab (#82)', () => {
       description: 'Every capital in Europe',
     });
     vi.useRealTimers();
+  });
+
+  it("shows the description's and Direction Labels' pencils on hover and focus, not at rest (#95)", () => {
+    setupMocks({ deck: reversible });
+    renderDeckCardsPage();
+
+    const description = screen.getByRole('button', {
+      name: 'Add a description',
+    });
+    expectPencilOnHoverAndFocus(description);
+    // Blank, its placeholder says it can be edited
+    expect(within(description).getByText('Add a description')).toHaveClass(
+      'italic',
+    );
+    expectPencilOnHoverAndFocus(
+      screen.getByRole('button', { name: 'Edit the Forward label' }),
+    );
+    expectPencilOnHoverAndFocus(
+      screen.getByRole('button', { name: 'Edit the Reverse label' }),
+    );
   });
 
   it('turns Study both ways on', async () => {

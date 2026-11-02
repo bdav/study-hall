@@ -10,6 +10,7 @@ import {
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KeepVariantsDialog } from '@/components/KeepVariantsDialog';
 import { type AcceptedVariant } from '@/lib/cards';
+import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
 
 /**
  * A tile's History, Mark known and Delete actions: shown on hovering the
@@ -41,8 +42,8 @@ interface FlashCardTileProps {
 
 /**
  * A face's text, edited in place: shown in full, wrapping and growing with
- * it, with a pencil beside it at rest, as the deck title has. While it has
- * focus, the pencil goes and the text is underlined.
+ * it, with a pencil beside it on hover, as the deck title has (#95). While
+ * it has focus, the pencil and the tint go and the text is underlined.
  */
 function TileField({
   label,
@@ -66,7 +67,9 @@ function TileField({
     <div
       data-tile-field
       onClick={() => ref.current?.focus()}
-      className="flex min-w-0 flex-1 cursor-text items-center justify-center gap-1.5 px-4 pb-3"
+      className={`flex min-w-0 flex-1 cursor-text items-center justify-center gap-1.5 px-4 pb-3 ${
+        showPencil && !isFocused ? EDIT_FIELD : ''
+      }`}
     >
       <textarea
         ref={ref}
@@ -93,7 +96,8 @@ function TileField({
           tabIndex={-1}
           aria-label={`Edit ${label.toLowerCase()}`}
           title={`Edit ${label.toLowerCase()}`}
-          className="relative touch-target shrink-0 rounded p-0.5 text-white/40 transition-colors hover:text-white/70"
+          data-edit-pencil
+          className={`relative touch-target rounded p-0.5 ${EDIT_PENCIL}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>

@@ -43,6 +43,7 @@ import {
 } from '@/components/ReversibleDeckSettings';
 import { MarkKnownDialog } from '@/components/MarkKnownDialog';
 import { ENTER_GLOW, TILE_ENTER_GLOW } from '@/lib/enterGlow';
+import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
 import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
 import {
   CardSelectionBar,
@@ -119,16 +120,17 @@ function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
 
   if (!isEditing) {
     return (
-      <div
-        className="group flex cursor-text items-center gap-3"
-        onClick={() => setIsEditing(true)}
-        title="Click to edit"
-      >
-        <h1 className="text-3xl font-bold text-white group-hover:text-white/80">
+      <h1 className="text-3xl font-bold text-white">
+        <button
+          type="button"
+          onClick={() => setIsEditing(true)}
+          title="Edit the deck name"
+          className={`-mx-1 flex cursor-text items-center gap-3 px-1 text-left ${EDIT_FIELD}`}
+        >
           {localName}
-        </h1>
-        <Pencil className="h-5 w-5 text-white/40 group-hover:text-white/60" />
-      </div>
+          <Pencil data-edit-pencil className={`h-5 w-5 ${EDIT_PENCIL}`} />
+        </button>
+      </h1>
     );
   }
 

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
+import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
 
 /**
  * A line of text edited in place, as the deck title is: shown with a pencil
- * at rest, or its placeholder when empty; choosing it turns it into a box,
- * saved as you type, a moment after you stop (`onSave`, trimmed, only when
- * changed). Enter, Escape or leaving the box ends editing; a value saved
- * meanwhile by someone else shows then, unless the text was changed.
+ * on hover and focus (#95), or its placeholder when empty; choosing it
+ * turns it into a box, saved as you type, a moment after you stop
+ * (`onSave`, trimmed, only when changed). Enter, Escape or leaving the box
+ * ends editing; a value saved meanwhile by someone else shows then, unless
+ * the text was changed.
  */
 export function InPlaceField({
   label,
@@ -73,14 +75,14 @@ export function InPlaceField({
           setIsEditing(true);
           setIsTyped(false);
         }}
-        className={`group inline-flex max-w-full cursor-text items-center gap-1.5 text-left ${className}`}
+        className={`-mx-1 inline-flex max-w-full cursor-text items-center gap-1.5 px-1 text-left ${EDIT_FIELD} ${className}`}
       >
         <span
           className={`break-words ${localValue ? '' : 'text-white/40 italic'}`}
         >
           {localValue || placeholder}
         </span>
-        <Pencil className="h-3.5 w-3.5 shrink-0 text-white/40 group-hover:text-white/60" />
+        <Pencil data-edit-pencil className={`h-3.5 w-3.5 ${EDIT_PENCIL}`} />
       </button>
     );
   }

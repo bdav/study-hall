@@ -12,6 +12,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import StudyPage from './StudyPage';
 import { trpc } from '@/lib/trpc';
+import { expectPencilOnHoverAndFocus } from '@/test-helpers/editPencil';
 
 // Mock tRPC hooks
 const mockInvalidateDeck = vi.fn();
@@ -1402,10 +1403,10 @@ describe('StudyPage', () => {
       );
     });
 
-    it('shows its edit pencil only while edit mode is off', async () => {
+    it('shows its edit pencil on hover and focus, and only while edit mode is off', async () => {
       const user = await answerWithVariants('4');
       const summary = screen.getByRole('button', answersOfCard);
-      expect(summary.querySelector('svg')).not.toBeNull();
+      expectPencilOnHoverAndFocus(summary);
 
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
 

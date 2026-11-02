@@ -2,6 +2,7 @@ import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { isSameAnswer, toFlashcard, type Flashcard } from '@/lib/cards';
+import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
 import { useAnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
 import { AnswersEditor } from '@/components/AnswersEditor';
@@ -72,9 +73,10 @@ export function CardAnswers({
  * The summary of a card's Canonical Answers and Accepted Variants, read
  * only; choosing it opens where they're edited. `caption`, when given,
  * heads it, saying what it is. A pencil, on the caption or else after the
- * answers, shows it can be chosen, unless `disabled`, as when they're open
- * for editing already. Every answer and variant shows in full, wrapping.
- * On a Reversible Deck, the front's Reverse Variants follow (ADR-0011).
+ * answers, shows on hover and focus that it can be chosen (#95), unless
+ * `disabled`, as when they're open for editing already. Every answer and
+ * variant shows in full, wrapping. On a Reversible Deck, the front's
+ * Reverse Variants follow (ADR-0011).
  */
 export function CardAnswersSummary({
   card,
@@ -96,7 +98,11 @@ export function CardAnswersSummary({
   );
   // On the caption, or else after the answers
   const pencil = !disabled && (
-    <Pencil aria-hidden className="ml-1 inline h-3 w-3 text-white/50" />
+    <Pencil
+      aria-hidden
+      data-edit-pencil
+      className={`ml-1 inline h-3 w-3 ${EDIT_PENCIL}`}
+    />
   );
   return (
     <button
@@ -105,7 +111,9 @@ export function CardAnswersSummary({
       data-card-answers
       onClick={onOpen}
       disabled={disabled}
-      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-default ${className}`}
+      className={`mt-2 block w-full rounded px-1 text-sm text-white/70 transition-colors enabled:hover:text-white disabled:cursor-default ${
+        disabled ? '' : EDIT_FIELD
+      } ${className}`}
     >
       {caption && (
         <p className="text-xs uppercase tracking-wide text-white/50">
