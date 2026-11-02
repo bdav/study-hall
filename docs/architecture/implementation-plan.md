@@ -1549,6 +1549,8 @@ When in doubt, choose the simpler implementation that preserves clean boundaries
 
 ## Future Enhancement: AI-Assisted Answer Evaluation
 
+> **Parked (2026-11-01):** Tiers 2 and 3 for card answers aren't being built; see **29c. Parked** in `updated-plan.md`. This section's local MiniLM and Ollama plan also conflicts with `updated-plan.md` §17.2 (a hosted LLM) and spec #1 (Anthropic Haiku). Card grading is deterministic, with Accepted Variants (#4) and "My answer was correct" (#12) for false misses.
+
 ### Problem
 
 The MVP flashcard system evaluates answers using deterministic normalized string matching

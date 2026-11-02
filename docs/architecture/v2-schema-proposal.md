@@ -1,5 +1,7 @@
 # v2 Prisma Schema Proposal
 
+> **Historical (2026-11-01):** This is the finalized Phase 1 proposal, kept for history. `prisma/schema.prisma` is the current schema; fields and models added since include `CardProgress.lifecycleChangedAt` and `markedKnownAt`, `CanonicalAnswer.position`, `Deck.archivedAt`, `CardVersion`, `StudySessionItem.isRetry`, and the course models.
+
 ## Summary
 
 This proposes the Phase 1 v2 schema. It covers the scheduler overhaul, session model,
@@ -319,6 +321,7 @@ model StudySessionItem {
 - `@@unique([studySessionId, position])` prevents duplicate positions within a session
 - `PENDING` → not yet answered; `COMPLETED` → answered; `SKIPPED` → session ended before reaching (card was in the planned queue but not reached, NOT "user chose to skip")
 - Same-session retry insertions create new `StudySessionItem` rows with later positions. Retry interaction state (e.g., how many retries remain, when to re-insert) is ephemeral/in-memory, but the scheduled retry appearances are persisted as additional StudySessionItem rows.
+  - **As built (2026-11-01):** no retry state is in memory (#11). A Retry is a `StudySessionItem` with `isRetry`, appended after every card and earlier Retry, at most twice per card (counted from those rows), and its answer is a retry `CardAttempt` that never changes progress.
 - Direct Card relation with cascade delete (consistent with CardAttempt cascade behavior)
 - `attempts` back-relation to CardAttempt for the attempts made on this queue item
 
@@ -392,7 +395,7 @@ User
 3. CardProgress is the authority for queue generation
 4. CardAttempt is the append-only historical truth
 5. CardAttempt + CardProgress update atomically in one transaction
-6. StudySessionItem represents the persisted queue. Retry interaction state (how many retries remain, when to re-insert) is ephemeral/in-memory, but scheduled retry appearances are persisted as additional StudySessionItem rows.
+6. StudySessionItem represents the persisted queue. Retry interaction state (how many retries remain, when to re-insert) is ephemeral/in-memory, but scheduled retry appearances are persisted as additional StudySessionItem rows. **As built (2026-11-01):** nothing about retries is in memory: a card's retries are its `isRetry` items in the session, at most two, each placed at the end (#11).
 7. Cascade deletes propagate through all parent relationships
 8. `CardProgress.deckId` must always equal `Card.deckId` — maintained in app code (denormalized for query performance)
 9. `attemptNumber` on CardAttempt is the nth attempt for a given card within a given study session — enforced in service logic
@@ -422,3 +425,5 @@ User
 | AIUsageLog        | AI grading           |
 
 These can be added as separate migrations when their respective phases begin.
+
+> **Note (2026-11-01):** `ReverseDeckLink` is replaced by a Reversible Deck studied in two Study Directions (`docs/adr/0011-reversible-decks-are-one-deck-studied-two-ways.md`). The marketplace and AI grading cache models are parked (`updated-plan.md` **29c. Parked**); AI usage is recorded in `AiUsage`, added with courses.

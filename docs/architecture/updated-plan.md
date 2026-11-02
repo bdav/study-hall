@@ -19,6 +19,8 @@ It merges:
 
 # 1. Project Status
 
+> **Historical (2026-11-01):** This section describes the MVP that v2 started from (SQLite, retry-until-success). v2 has since been built (#2–#13), with courses on top; `CLAUDE.md` describes the app as it is, and GitHub issues track what's next.
+
 This is **not a greenfield rewrite**.
 A working full-stack flashcard app already exists.
 Current features:
@@ -81,6 +83,8 @@ Existing useful modules/assets:
 3. Core Product Philosophy
 
 > **Superseded in part (2026-10-21):** The app is evolving into a general learning app with courses, AI-generated lessons and a contextual tutor, so "not an AI tutor" no longer holds. The flashcard and review principles below still apply to cards. See `courses-plan.md` and `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`.
+
+> **Superseded further (2026-11-01):** AI now also proposes revisions to any deck's cards and new cards for any deck, each applied only once the learner approves (`docs/adr/0007-ai-may-propose-revisions-to-any-deck.md`, `docs/adr/0010-ai-may-propose-new-cards-for-any-deck.md`). The card recall rules are unchanged.
 
 The app is:
 
@@ -214,6 +218,8 @@ Use:
 Postgres only
 single Railway API process
 in-memory ephemeral retry state
+
+> **As built (2026-11-01):** Retries are stored rows, not in-memory state: a missed card's Retry is a `StudySessionItem` with `isRetry` (#11). There is still no Redis.
 
 Rationale:
 
@@ -627,6 +633,8 @@ Rules:
 * MISSED may reappear in-session
 * PARTIALLY_CORRECT does not trigger aggressive retry
 
+> **As built (2026-11-01):** A first-ever NAILED is recorded as NAILED and scheduled with GOOD's 1-day interval (#7): only its interval is held back, not its grade.
+
 ⸻
 
 8.4 STABLE Interval Table
@@ -884,6 +892,8 @@ Users may:
 * complete a bounded session
 * optionally continue with another session
 
+> **As built (2026-11-01):** Sessions are sized by card count, not time: the session type sets the bounds (Quick 5–12, Standard 10–25, Deep 20–50 cards) and the queue aims for its maximum (#8). Nothing measures time; `CardAttempt.latencyMs` exists but is never written, and the target durations below are only a guide.
+
 ⸻
 
 12.1 Session Types
@@ -934,6 +944,8 @@ This supports:
 * less confusing UX
 
 But same-session retry metadata remains ephemeral/runtime-only in v2.
+
+> **As built (2026-11-01):** Retries are persisted too (#11): a missed card's Retry is a `StudySessionItem` with `isRetry`, appended after every card and earlier Retry, at most twice per card, so it survives a reload. Its answer is a retry `CardAttempt` that never changes progress.
 
 ⸻
 
@@ -1160,6 +1172,8 @@ After cap:
 
 Repeated failures never block session completion.
 
+> **As built (2026-11-01):** A Retry goes to the end of the session, after every card and earlier Retry, rather than about 5 cards later, and is stored as a `StudySessionItem` with `isRetry` (#11). The cap of two per card stands, and a retry's `CardAttempt` never changes progress.
+
 ⸻
 
 15.1 Retry State
@@ -1189,6 +1203,8 @@ Retry state does not directly affect:
 Those are already updated by the finalized attempt.
 
 Do not persist a durable retry queue.
+
+> **As built (2026-11-01):** Superseded by #11: retry state is the session's stored `isRetry` items, so a card's reappearance count is its retry items in the session, not an in-memory map. Retries still never change dueAt, mastery or lifecycle state.
 
 ⸻
 
@@ -1274,6 +1290,8 @@ Attempts still update ordinary scheduler state.
 
 As built (#9, `queueGenerator.ts`): with date-driven pacing deferred, Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40% and weak STABLE a tenth, due LEARNING up to half and due STABLE up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak STABLE cards up to 80% whether due or not, then due LEARNING, then due STABLE as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
 
+> **Deferred (2026-11-01):** "Target-date-driven" above describes date-driven pacing, which isn't built: a cram target date is #87. Until then Cram counts a card in review as due once half its interval has passed (#9).
+
 Example shift:
 
 Bucket	Study	Cram All
@@ -1312,6 +1330,8 @@ Not:
 ⸻
 
 17.2 Pipeline
+
+> **Parked (2026-11-01):** Tiers 2 and 3 below aren't being built; see **29c. Parked**. Card grading is deterministic, with Accepted Variants (#4) and "My answer was correct" (#12) for false misses. The plans also disagreed on tier 3: this section says a hosted LLM, `implementation-plan.md` a local Ollama model, and spec #1 Anthropic Haiku.
 
 Primary grading pipeline:
 
@@ -1478,6 +1498,8 @@ Need decide exact schema later.
 
 > **Scope narrowed (2026-10-21):** This boundary now applies to card grading only. Tutoring, hints, explanation generation and AI-generated content are allowed in course features per `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`.
 
+> **Superseded in part (2026-11-01):** "AI deck generation" no longer holds: AI proposes new cards for any deck (#75, ADR-0010) and revisions to any deck's cards (ADR-0007), each applied only once the learner approves. Card grading itself makes no model call (see **29c. Parked**).
+
 v1 AI grading must explicitly avoid:
 
 * tutoring
@@ -1532,6 +1554,8 @@ Accepted variants preserve:
 
 They should not automatically transfer to reverse cards.
 
+> **Note (2026-11-01):** Reverse decks are being redesigned as one Reversible Deck studied in two Study Directions (`docs/adr/0011-reversible-decks-are-one-deck-studied-two-ways.md`). Variants stay direction-local: each direction has its own Accepted Variants. Marketplace variant suggestions are parked (see **29c. Parked**).
+
 ⸻
 
 18.3 Variant Approval
@@ -1551,6 +1575,8 @@ No collaborative editing or structural merging.
 ⸻
 
 19. Reverse Deck Model
+
+> **Redesigned (2026-11-01):** A reverse deck becomes one deck studied in two Study Directions, a Reversible Deck, each direction with its own progress, stats and Accepted Variants, in place of two linked decks and `ReverseDeckLink`. See `docs/adr/0011-reversible-decks-are-one-deck-studied-two-ways.md`.
 
 Reverse decks are:
 
@@ -1578,6 +1604,8 @@ Accepted variants do not automatically transfer.
 ⸻
 
 20. Marketplace Model
+
+> **Parked (2026-11-01):** The marketplace isn't being built; see **29c. Parked**.
 
 Marketplace is a supporting utility, not the primary growth engine.
 
@@ -1616,7 +1644,9 @@ accepted variant suggestion
 
 21. AI Deck Generation
 
-> **Superseded in part (2026-10-21):** Course lessons now propose cards via AI, which the learner confirms into the course deck (`courses-plan.md`, `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`). Generating standalone decks from scratch is still not built in.
+> **Superseded in part (2026-10-21):** Course lessons now propose cards via AI, which the learner confirms into the course deck (`courses-plan.md`, `docs/adr/0001-generative-ai-for-courses-not-flashcards.md`). Generating standalone decks from scratch was not built then; see the next note.
+>
+> **Superseded (2026-11-01):** #75 built AI card generation for any deck, standalone or Course Deck, from the learner's description of the cards they want, added only once they approve them (`docs/adr/0010-ai-may-propose-new-cards-for-any-deck.md`). So there are no prompts or templates for external LLMs.
 
 No built-in AI deck generation in v1.
 
@@ -1633,6 +1663,8 @@ Size	Use
 ⸻
 
 22. Likely Schema Areas
+
+> **Note (2026-11-01):** `prisma/schema.prisma` is the schema now. `ReverseDeckLink` is replaced by ADR-0011's Reversible Deck, and the marketplace models are parked (see **29c. Parked**).
 
 Need concrete Prisma model design for:
 
@@ -1722,6 +1754,8 @@ Deck/Card APIs
 * reverse deck linking
 
 Cram APIs
+
+> **As built (2026-11-01):** Cram is a Study Mode chosen when a session starts (#9), so it needs no APIs of its own. Configuring a cram target date is #87.
 
 * configure cram target date
 * start cram session
@@ -1861,7 +1895,7 @@ Do not reopen unless a concrete implementation contradiction appears.
 * Retry-until-success is removed
 * Only MISSED receives same-session retry
 * Same-session retry capped at 2 reappearances
-* Same-session retry state is ephemeral
+* Same-session retry state is ephemeral (as built, #11: Retries are stored `StudySessionItem` rows with `isRetry`; see §15)
 * New cards are sequential by import order
 * New cards never automatically fall to 0 during backlog
 * Study sessions are one deck at a time
@@ -1876,7 +1910,7 @@ Do not reopen unless a concrete implementation contradiction appears.
 * masteryScore is 0–10 integer
 * Intervals are table-driven with bounded modifiers
 * Active intervals capped around 90 days
-* Reverse decks are independently graded
+* Reverse decks are independently graded (still true per Study Direction of a Reversible Deck; see ADR-0011)
 * Marketplace forks are permanently independent
 * Marketplace contribution scope is accepted variant suggestions only
 * AI grading is bounded and fallback-only
@@ -1942,6 +1976,8 @@ the card will return via normal scheduling. No learning truth is lost.
 
 This is consistent with "queue behavior does not contaminate scheduler truth."
 
+> **As built (2026-11-01):** Superseded by #11: Retries are stored as `StudySessionItem` rows with `isRetry`, so a reload keeps them and a missed card still comes back in that session. Retry answers still never change scheduler truth.
+
 ⸻
 
 G. Migration — Resolved
@@ -1977,12 +2013,16 @@ Rationale for per-suite schemas over transaction rollback:
 
 D. AI Grading Details
 
+> **Parked (2026-11-01):** Card grading tiers 2–3 aren't being built; see **29c. Parked**.
+
 Deferred to AI grading phase. Philosophy is settled (deterministic → embeddings →
 hosted LLM fallback). Thresholds, models, and caching details remain open.
 
 ⸻
 
 E. API Contract
+
+> **Resolved (2026-11-01):** Settled by the tRPC routers as built, which `CLAUDE.md`'s tRPC API table lists. Cram target-date APIs are deferred (see §24).
 
 Need tRPC router redesign for:
 
@@ -2005,6 +2045,8 @@ Deferred. Use Railway logs + Sentry initially. Analytics provider decision can w
 ⸻
 
 H. Marketplace Scope
+
+> **Parked (2026-11-01):** The marketplace isn't being built; see **29c. Parked**.
 
 Deferred to marketplace phase. Philosophy is settled (forks are independent,
 contribution scope is accepted variant suggestions only).
@@ -2040,7 +2082,32 @@ Open, and only relevant if the app is ever hosted. Before a public deployment:
 
 ⸻
 
+29c. Parked
+
+These were planned or proposed and are deliberately not being built, each for the reason given, so future audits needn't re-file them. Reviving one means filing an issue.
+
+* Marketplace: publishing, forking, accepted-variant suggestions, changelogs and moderation (§18.2–18.3, §20). Designed in May for a public flashcard product; Study Hall is now a personal learning app for a few allowlisted people.
+* Card grading tiers 2–3: embedding similarity and an AI fallback for typed card answers (§17). Accepted Variants (#4) and "My answer was correct" (#12) handle most false misses without a model call, and cards never getting Partially Correct suits exact recall. The unused schema values (`SEMANTIC`, `LLM`, `semanticScore`, `gradingConfidence`) stay. Would come back for a deck type with longer answers, or if learners keep overturning misses.
+* Cross-encoder scoring (§17.3): an upgrade on top of tier 2.
+* A per-deck accent-sensitive grading setting (deferred in spec #1 and `courses-plan.md`): an Accent Mismatch already shows the accented form and never counts as perfect (ADR-0002).
+* Reminders and notifications (§4.6): they need background jobs, which v2 rules out.
+* Voice and pronunciation practice (`courses-plan.md`): large, and no course needs it yet.
+* Units or other grouping above lessons (`courses-plan.md`): a Syllabus holds at most 100 lessons.
+* Multiple-choice and other new exercise types, and lesson modes such as "quiz me on this lesson" (deferred in `courses-plan.md`): revisit when a course needs them.
+* Open-ended recall cards graded by AI (deferred in `courses-plan.md`): revisit when a non-language course needs them.
+* Sessions sized by time (§12, `learning-model-and-scheduler.md` §14): card-count session types (#8) work.
+* A "no new cards" mode (§14.1): Drill Weakest (#9) already adds no new cards.
+* CSV alternate headers and a tags column (later nice-to-haves in `implementation-plan.md`): cards have no tags.
+* Playwright end-to-end tests (`implementation-plan.md`, testing): router and component tests cover behavior today; revisit with Go live.
+* Redis and background jobs (§4.5–4.6): ruled out for v2, and Retries are stored rows (#11).
+
+Not parked: cross-deck Study Sessions (§12.2). A Today dashboard with cross-deck review is design issue #92.
+
+⸻
+
 30. Recommended Next Implementation Planning Order
+
+> **Historical (2026-11-01):** This order was followed for v2 (#2–#13). What's next lives in GitHub issues and `CLAUDE.md`'s Implementation Order.
 
 Recommended next steps for a coding agent:
 

@@ -22,6 +22,8 @@ The canonical scheduler/product specification should still be treated as authori
 
 1. Existing MVP Status
 
+> **Historical (2026-11-01):** Sections 1–3 describe the app before v2 (SQLite, retry-until-success, no CardProgress). v2 has since been built (#2–#13) on Postgres; `CLAUDE.md` describes the app as it is, and `prisma/schema.prisma` is the current schema.
+
 This is NOT a greenfield rewrite.
 
 A working full-stack flashcard app already exists.
@@ -109,6 +111,8 @@ The app is NOT:
 - an infinite review queue system
 - a heavy adaptive-memory research project
 
+> **Superseded in part (2026-11-01):** "Not an AI tutor" no longer holds: courses have a contextual tutor and AI-generated lessons (ADR-0001), and AI proposes revisions to and new cards for any deck, applied only once the learner approves (ADR-0007, ADR-0010). The card recall rules are unchanged.
+
 ⸻
 
 Critical Scheduler Constraints
@@ -153,6 +157,8 @@ Quick ~5m
 Standard ~10m
 Deep ~20m
 
+> **As built (2026-11-01):** Sessions are sized by card count, not time: Quick 5–12, Standard 10–25 and Deep 20–50 cards (#8). Nothing measures time; `CardAttempt.latencyMs` exists but is never written.
+
 ⸻
 
 Queue generation philosophy
@@ -178,6 +184,8 @@ Rules:
 - reinsert after ~5 cards
 - cap at 2 reappearances
 - failures never block session completion
+
+> **As built (2026-11-01):** A Retry goes to the end of the session, after every card and earlier Retry, and is stored as a `StudySessionItem` with `isRetry` (#11). Its answer is a retry `CardAttempt` that never changes progress.
 
 ⸻
 
@@ -323,6 +331,8 @@ Likely candidates:
 - Redis
 - lightweight DB session blob
 
+> **As built (2026-11-01):** None of these: Retries are stored as `StudySessionItem` rows with `isRetry`, appended at most twice per card (#11). Retry answers never change `CardProgress`, so learning state stays clean.
+
 ⸻
 
 Time budgeting requires estimation
@@ -334,6 +344,8 @@ Queue generation likely needs:
 - card complexity heuristics
 
 May eventually require telemetry collection.
+
+> **As built (2026-11-01):** Not needed: sessions are sized by card count (#8), and sizing by time is parked (`updated-plan.md` **29c. Parked**).
 
 ⸻
 
@@ -360,6 +372,8 @@ Intended pipeline:
 1. deterministic exact/variant matching
 2. local semantic similarity
 3. hosted LLM fallback only for ambiguous cases
+
+> **Parked (2026-11-01):** Steps 2 and 3 aren't being built; card grading is deterministic. See **29c. Parked** in `updated-plan.md`.
 
 ⸻
 
@@ -405,6 +419,8 @@ This dramatically simplifies infra.
 9. Likely Future Schema Areas
 
 Expected new models/entities:
+
+> **Note (2026-11-01):** `prisma/schema.prisma` is the schema now. `ReverseDeckLink` is replaced by a Reversible Deck studied in two Study Directions (`docs/adr/0011-reversible-decks-are-one-deck-studied-two-ways.md`), and the marketplace models are parked (`updated-plan.md` **29c. Parked**).
 
 CardProgress
 AcceptedVariant
@@ -503,6 +519,8 @@ Do NOT accidentally optimize for:
 - graph-style curriculum systems
 
 Those are intentionally out of scope.
+
+> **Superseded in part (2026-11-01):** Courses now have AI tutoring and AI-generated syllabi and lessons (ADR-0001); a Syllabus is an ordered list of lessons, not a curriculum graph. The others still hold.
 
 ⸻
 

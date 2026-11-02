@@ -35,6 +35,8 @@ Not:
 - an infinite-review Anki clone
 - a social platform
 
+> **Superseded in part (2026-11-01):** Courses now have a contextual tutor and AI-generated lessons (ADR-0001), and AI proposes revisions to and new cards for any deck, applied only once the learner approves (ADR-0007, ADR-0010). The recall rules for cards below are unchanged.
+
 Core philosophy:
 
 - calm UX
@@ -111,6 +113,8 @@ The app IS:
 ⸻
 
 2. Existing MVP Snapshot
+
+> **Historical (2026-11-01):** This section describes the app before v2 (SQLite, retry-until-success, no CardProgress). v2 has since been built (#2–#13); `CLAUDE.md` describes the app as it is, and `prisma/schema.prisma` is the current schema.
 
 Current State
 
@@ -193,6 +197,8 @@ Already aligned with future design:
 
 3. Non-Goals (v1)
 
+> **Superseded in part (2026-11-01):** "AI-generated decks", "tutor/explainer mode" and "curriculum graphs" no longer hold. Courses have AI-generated syllabi, lessons and a tutor (ADR-0001), and AI proposes revisions to and new cards for any deck, applied only once the learner approves (ADR-0007, ADR-0010).
+
 Explicitly NOT part of v1:
 
 - full adaptive spaced repetition
@@ -247,6 +253,8 @@ Users may NOT:
 - directly mark answers correct
 - manually choose arbitrary grades
 
+> **As built (2026-11-01):** "My answer was correct" (#12), after a typed answer graded MISSED, adds that answer as an Accepted Variant and grades it again, so the learner still never assigns a grade. Marking a card known (#46) adjusts its timing and records no grade (ADR-0009).
+
 This preserves:
 
 - scheduler trustworthiness
@@ -272,6 +280,8 @@ Pipeline:
 1. Deterministic matching
 2. Local semantic similarity
 3. Hosted LLM adjudication only for ambiguous cases
+
+> **Parked (2026-11-01):** Steps 2 and 3 aren't being built; card grading is deterministic, with Accepted Variants and "My answer was correct" for false misses. See **29c. Parked** in `updated-plan.md`.
 
 Hosted LLM fallback target:
 
@@ -886,6 +896,8 @@ Sessions are:
 - primarily time-targeted
 - secondarily constrained by soft card-count bounds
 
+> **As built (2026-11-01):** Sessions are sized by card count alone: the session type sets the bounds below (Quick 5–12, Standard 10–25, Deep 20–50 cards) and the queue aims for its maximum (#8), with no time estimates. `CardAttempt.latencyMs` exists but is never written. Sizing by time is parked (`updated-plan.md` **29c. Parked**).
+
 The app optimizes for:
 
 - sustainable study energy
@@ -1015,6 +1027,8 @@ But:
 
 - NEW card share never automatically falls to 0
 - unless the user explicitly chooses a no-new mode
+
+> **As built (2026-11-01):** There is no separate no-new mode: Drill Weakest (#9) adds no NEW cards, and a no-new mode is parked (`updated-plan.md` **29c. Parked**).
 
 This preserves:
 
@@ -1167,6 +1181,8 @@ Cram behavior is:
 - deck-scoped
 - target-date-driven
 
+> **As built (2026-11-01):** Cram (#9) is a Study Mode chosen per session, with no target date: a card in review counts as due once half its interval has passed, and NEW cards take 40% of the session. Date-driven pacing (a cram target date) is #87.
+
 When cram ends:
 
 - normal Study behavior resumes
@@ -1289,6 +1305,8 @@ Optional audit metadata may still record:
 
 19. Reverse Deck Model
 
+> **Redesigned (2026-11-01):** A reverse deck becomes one deck studied in two Study Directions, a Reversible Deck, each direction with its own progress, stats and Accepted Variants, in place of two linked decks and `ReverseDeckLink`. See `docs/adr/0011-reversible-decks-are-one-deck-studied-two-ways.md`.
+
 Reverse decks are:
 
 - conceptually linked
@@ -1370,6 +1388,8 @@ Expected from the beginning:
 
 21. AI Deck Generation Philosophy
 
+> **Superseded (2026-11-01):** #75 built AI card generation for any deck from the learner's description, added only once they approve the cards (ADR-0010), and AI may revise any deck's cards (ADR-0007). So there are no prompts or templates for external LLMs.
+
 No built-in AI deck generation in v1.
 
 Instead:
@@ -1399,7 +1419,7 @@ These decisions are considered stable unless intentionally revisited.
 - Historical mastery does not decay
 - Freshness is derived, not persisted
 - Active intervals capped around 90 days
-- Reverse decks are independently graded
+- Reverse decks are independently graded (still true per Study Direction of a Reversible Deck; see ADR-0011)
 - Marketplace forks are permanently independent
 - Marketplace contribution scope is intentionally narrow
 - AI grading should remain mostly invisible
@@ -1426,6 +1446,8 @@ Need concrete models for:
 - ChangelogEvent
 - ContributionInbox
 - Session-local retry state
+
+> **Note (2026-11-01):** `prisma/schema.prisma` now holds these. `ReverseDeckLink` is replaced by ADR-0011's Reversible Deck, the marketplace models are parked (`updated-plan.md` **29c. Parked**), and retry state is stored as `StudySessionItem` rows with `isRetry` (#11).
 
 ⸻
 

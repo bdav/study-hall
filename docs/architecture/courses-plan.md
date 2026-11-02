@@ -34,7 +34,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - `docs/adr/0006-explanations-are-judged-against-what-the-question-asks.md`
 - `updated-plan.md` and `v2-implementation-plan.md`: the v2 flashcard and scheduler plan this builds on. Sections superseded by this plan carry dated notes.
 
-**Status:** Design agreed 2026-10-21. Not started.
+**Status:** Design agreed 2026-10-21. Slices A–C and the lesson layout are delivered (as of 2026-11-01; see the Implementation Order in `CLAUDE.md`), along with the Setup Interview (spec #63) and curriculum editing. Work and its status are tracked in GitHub issues.
 
 ---
 
@@ -58,6 +58,8 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - Course features may use generative AI (generation, tutoring, LLM evaluation). Flashcards keep v2's recall rules: typed recall, no multiple choice, no self-grading, and AI grading only as a fallback (ADR-0001).
 - AI proposes significant changes to persistent state (syllabi, cards); application code applies them only after the learner approves.
 - Application code owns persistence, progression and scheduling. AI is called for specific operations (below), never as an autonomous agent over app state.
+
+> **As built (2026-11-01):** AI now also proposes revisions to and new cards for any deck, standalone or Course Deck, applied only once the learner approves (ADR-0007, ADR-0010). The card recall rules are unchanged.
 
 ### AI platform
 
@@ -145,7 +147,7 @@ Rules:
 - **Make review cards:**
   - An explicit action in the lesson.
   - One AI call proposes cards from the lesson's important material, weighted toward exercises the learner got wrong.
-  - Proposals open in the existing import preview flow (`ImportPreviewDialog`, `csvDiff`), where the learner edits, deselects and gets duplicate detection against the course deck.
+  - Proposals open in `ReviewCardsDialog`, the import preview adapted for proposals (with `csvDiff`'s duplicate finder), where the learner edits, deselects and gets duplicate detection against the course deck.
   - Confirmed cards are created in the course deck with `sourceLessonId` set.
   - Tutor-initiated card suggestions are deferred.
 
@@ -186,6 +188,8 @@ The lesson page is an interactive textbook: neither one long document nor a slid
 | Card grading fallback (v2) | Ambiguous typed-recall answer                                  | Per `updated-plan.md` §17                                                                                                                              | Recall Grade                                                                                                                              | CardAttempt grading metadata                                                                    |
 
 Every row writes an AI usage record and goes through `canUseAI`.
+
+> **Parked (2026-11-01):** The card grading fallback row isn't built and isn't being built; card grading is deterministic. See **29c. Parked** in `updated-plan.md`.
 
 ---
 
@@ -273,7 +277,7 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 
 **C2: Make review cards (frontend)**
 
-- Adapts `ImportPreviewDialog` and `csvDiff` to card proposals: edit, deselect, and duplicate detection against the course deck.
+- Adapts `ImportPreviewDialog` and `csvDiff` to card proposals: edit, deselect, and duplicate detection against the course deck. Built as `ReviewCardsDialog` (#25).
 
 **C3: Completion, Continue and course Review**
 
@@ -289,6 +293,8 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 ---
 
 ## Deferred
+
+> **Parked (2026-11-01):** The per-deck accent-sensitive setting, multiple choice and other exercise types, units, voice and pronunciation practice, lesson modes, and open-ended LLM-graded recall cards are now parked, each with its reason, in **29c. Parked** in `updated-plan.md`. The Today dashboard with cross-deck review is design issue #92.
 
 - Concept model and mastery tracking per concept or lesson; weak-spot detection
 - Cross-lesson tutor context (from distilled learner state)

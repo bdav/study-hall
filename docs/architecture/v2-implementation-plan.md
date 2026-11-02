@@ -183,6 +183,7 @@ cap enforcement. Test empty/sparse deck edge cases. Test NEW card interleaving.
 - **Abandon session:** mark ABANDONED, set `endedAt`
 - Same-session retry: ephemeral `Map<cardId, retryState>`, cap at 2 reappearances,
   ~5 intervening cards
+  - **As built (2026-11-01):** no `Map`: a Retry is a stored `StudySessionItem` with `isRetry`, appended after every card and earlier Retry rather than ~5 cards later, at most twice per card (#11). Its answer is a retry `CardAttempt` that never changes progress.
 - New/updated tRPC procedures on study router replacing MVP study flow
 
 **Tests:** Integration tests for full session lifecycle. Resume/abandon edge cases. Retry
@@ -325,6 +326,8 @@ of PRs 4–6.
 ---
 
 ## Deferred (Future Phases)
+
+> **Status (2026-11-01):** Reverse decks became reversible decks, one deck studied in two directions (ADR-0011, #82–#84). The marketplace and AI grading tiers are parked (`updated-plan.md` **29c. Parked**); `AiUsage` (#15) took the place of AIUsageLog. Deployment is design issue #91.
 
 These are explicitly out of scope for this PR sequence:
 
