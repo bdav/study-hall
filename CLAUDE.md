@@ -10,28 +10,30 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-When picking the next ticket, work the first ticket in this list whose blockers are all closed. Remove a ticket's line in the commit that closes it. The issue's state on GitHub is the truth: when the list disagrees with it, fix the list. Completed work is in closed issues and git history.
+**Completed: 0/11 planned issues**
+
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
 1. Polish
-   - #80 Show courses as tiles, as Flashcards shows decks
+   - [ ] #80 Show courses as tiles, as Flashcards shows decks
 2. Reversible decks
-   - #82 Reversible decks: study a deck in either direction
-   - #83 AI-suggested Direction Labels for a reversible deck
-   - #84 Card-writing rule for reversible decks
+   - [ ] #82 Reversible decks: study a deck in either direction
+   - [ ] #83 AI-suggested Direction Labels for a reversible deck
+   - [ ] #84 Card-writing rule for reversible decks
 3. Go live: tickets join here once the design (#91) has a spec
 4. Review and scheduling
-   - #85 Stats on the scheduler's terms
-   - #86 Suggest retiring mastered cards, and unretire them
-   - #87 Cram toward a target date
+   - [ ] #85 Stats on the scheduler's terms
+   - [ ] #86 Suggest retiring mastered cards, and unretire them
+   - [ ] #87 Cram toward a target date
 5. Courses
-   - #88 View a lesson's earlier versions, read only
-   - #89 Permanently delete archived courses and lessons
-   - #70 Evaluation script for the Setup Interview and syllabus prompts
-   - #90 Seed data for courses and every card state
+   - [ ] #88 View a lesson's earlier versions, read only
+   - [ ] #89 Permanently delete archived courses and lessons
+   - [ ] #70 Evaluation script for the Setup Interview and syllabus prompts
+   - [ ] #90 Seed data for courses and every card state
 
 **Waiting on design or triage** (outside the order until a session readies them): designs #91 (go live: deploy, access, observability), #92 (a Today view with review across decks) and #71 (adapt a course to what the learner does); triage #41, #42, #61 and #76; exploration #32. Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
-New tickets join this list when they're created, unless labelled `needs-triage`.
+New tickets join this list, unchecked, when they're created, unless labelled `needs-triage`.
 
 Commit subjects stay plain sentences, with no issue-number prefix. Link a commit to its ticket with a trailer in the body: `Closes #N` on the commit that finishes it, and `Refs #N` on every other commit for it, including fixes after it's closed and planning commits (one `Refs` per issue).
 
