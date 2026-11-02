@@ -1804,7 +1804,9 @@ describe('course review', () => {
   /** Puts a card into review, due at the given time. */
   async function scheduleCard(cardId: string, dueAt: Date) {
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId } },
+      where: {
+        userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+      },
       data: { lifecycleState: 'LEARNING', dueAt },
     });
   }
@@ -1823,7 +1825,13 @@ describe('course review', () => {
   it('leaves out retired cards', async () => {
     const { id, cards } = await courseWithCards(['A']);
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: cards[0].id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: cards[0].id,
+          direction: 'FORWARD',
+        },
+      },
       data: { lifecycleState: 'RETIRED', dueAt: new Date(0) },
     });
 

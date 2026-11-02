@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -136,5 +137,67 @@ describe('DeckStatsPage', () => {
       screen.getByRole('button', { name: 'Restore deck' }),
     ).toBeInTheDocument();
     expect(screen.getByText('30')).toBeInTheDocument();
+  });
+});
+
+describe('a reversible deck (#82)', () => {
+  function setupReversible() {
+    setupMocks();
+    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+      data: {
+        id: 'deck-1',
+        name: 'World Capitals',
+        cards: [],
+        reversible: true,
+        forwardLabel: 'Capitals from countries',
+        reverseLabel: null,
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+  }
+
+  it('shows each direction’s stats on its own, Forward to start', async () => {
+    setupReversible();
+    const user = userEvent.setup();
+    renderDeckStatsPage();
+
+    const directions = within(screen.getByRole('group', { name: 'Direction' }));
+    expect(
+      directions.getByRole('button', { name: 'Capitals from countries' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(trpc.stats.deckStats.useQuery).toHaveBeenLastCalledWith(
+      { deckId: 'deck-1', direction: 'FORWARD' },
+      expect.anything(),
+    );
+
+    await user.click(directions.getByRole('button', { name: 'Reverse' }));
+
+    expect(trpc.stats.deckStats.useQuery).toHaveBeenLastCalledWith(
+      { deckId: 'deck-1', direction: 'REVERSE' },
+      expect.anything(),
+    );
+  });
+
+  it('offers the choice even before a direction has been studied', () => {
+    setupReversible();
+    vi.mocked(trpc.stats.deckStats.useQuery).mockReturnValue({
+      data: { totalAttempts: 0, cardStats: [] },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.stats.deckStats.useQuery>);
+    renderDeckStatsPage();
+
+    expect(
+      screen.getByRole('group', { name: 'Direction' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/no study data yet/i)).toBeInTheDocument();
+  });
+
+  it('offers no choice on a deck studied one way', () => {
+    setupMocks();
+    renderDeckStatsPage();
+
+    expect(screen.queryByRole('group', { name: 'Direction' })).toBeNull();
   });
 });

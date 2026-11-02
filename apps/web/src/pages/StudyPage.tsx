@@ -39,6 +39,12 @@ import { StudyCardEditor } from '@/components/StudyCardEditor';
 import { CardAnswersSummary } from '@/components/CardAnswers';
 import { CardHistory } from '@/components/CardHistory';
 import {
+  asDirected,
+  directionLabels,
+  STUDY_DIRECTIONS,
+  type StudyDirection,
+} from '@/lib/directions';
+import {
   gradeOf,
   recallGradeColors,
   recallGradeLabels,
@@ -255,8 +261,15 @@ function TitleCardDetails({
   deckSize: number;
   sessionSize: number | null;
   preview: { sessionSize: number; nextDueAt: string | null } | undefined;
-  /** An unfinished session, which starting resumes (#10). */
-  resumable: { answered: number; size: number } | null;
+  /**
+   * An unfinished session, which starting resumes (#10), and on a
+   * Reversible Deck the Direction Label of the direction it's in.
+   */
+  resumable: {
+    answered: number;
+    size: number;
+    directionLabel?: string;
+  } | null;
   /** Drill Weakest has nothing to drill, rather than nothing due (#9). */
   studyMode: StudyMode;
 }) {
@@ -271,6 +284,7 @@ function TitleCardDetails({
         <p className="mt-4 text-base text-white/80">Resume session?</p>
         <p className="mt-1 text-sm text-white/50">
           {resumable.answered} of {resumable.size} answered
+          {resumable.directionLabel && ` · ${resumable.directionLabel}`}
         </p>
       </>
     );
@@ -360,8 +374,23 @@ export default function StudyPage() {
     STUDY_MODES.map((mode) => mode.value),
     'STUDY',
   );
+  // On a Reversible Deck, which way to study, remembered by the browser for
+  // each deck; Forward on a deck studied one way (ADR-0011)
+  const [chosenDirection, setDirection] = useStoredChoice<StudyDirection>(
+    `study-hall:direction:${deckId}`,
+    STUDY_DIRECTIONS,
+    'FORWARD',
+  );
+  const deckQuery = trpc.deck.getById.useQuery(
+    { id: deckId ?? '' },
+    { enabled: !!deckId },
+  );
+  const deck = deckQuery.data;
+  const isReversible = !!deck?.reversible;
+  const labels = deck && isReversible ? directionLabels(deck) : undefined;
+  const direction = isReversible ? chosenDirection : 'FORWARD';
   const queuePreviewQuery = trpc.study.queuePreview.useQuery(
-    { deckId: deckId ?? '', sessionType, studyMode },
+    { deckId: deckId ?? '', sessionType, studyMode, direction },
     {
       enabled: !!deckId,
       // With nothing to study the title card starts nothing, so look again
@@ -370,16 +399,11 @@ export default function StudyPage() {
         query.state.data?.sessionSize === 0 ? 60_000 : false,
     },
   );
-  const deckQuery = trpc.deck.getById.useQuery(
-    { id: deckId ?? '' },
-    { enabled: !!deckId },
-  );
-
-  const deck = deckQuery.data;
   const cards = useMemo(() => deck?.cards.map(toFlashcard) ?? [], [deck]);
 
   const {
     studyState,
+    direction: sessionDirection,
     resumable,
     handleAbandon,
     currentCard,
@@ -412,7 +436,7 @@ export default function StudyPage() {
     handleForward,
     canGoBack,
     reviewEntry,
-  } = useStudySession(deckId, { sessionType, studyMode });
+  } = useStudySession(deckId, { sessionType, studyMode, direction });
 
   const isReviewing = studyState.phase === 'reviewing';
   const isIdle = studyState.phase === 'idle';
@@ -427,20 +451,32 @@ export default function StudyPage() {
       deckSize={cards.length}
       sessionSize={isIdle ? null : sessionSize}
       preview={preview}
-      resumable={isIdle ? resumable : null}
+      resumable={
+        isIdle && resumable
+          ? {
+              ...resumable,
+              directionLabel: labels?.[resumable.direction],
+            }
+          : null
+      }
       studyMode={studyMode}
     />
   );
 
-  const displayCard = isAtTitle
+  const studiedCard = isAtTitle
     ? undefined
     : isReviewing
       ? reviewEntry?.card
       : currentCard;
-  // Whether the card on screen is known already, when Mark known would do
-  // nothing (ADR-0009); the same query as its history below it
+  // The card on screen as it's asked in the session's direction: in
+  // Reverse, its primary answer asking for its front (ADR-0011). Edits go to
+  // the card itself
+  const displayCard = studiedCard && asDirected(studiedCard, sessionDirection);
+  // Whether the card on screen is known already in the session's direction,
+  // when Mark known would do nothing (ADR-0009); the same query as its
+  // history below it
   const displayProgress = trpc.card.history.useQuery(
-    { cardId: displayCard?.id ?? '' },
+    { cardId: displayCard?.id ?? '', direction: sessionDirection },
     { enabled: !!displayCard, gcTime: 0 },
   ).data?.progress;
   const canMarkDisplayKnown = !!displayProgress && !displayProgress.isKnown;
@@ -773,12 +809,15 @@ export default function StudyPage() {
     </CardStack>
   );
 
-  // The card on screen: the one in play, or one answered earlier
+  // The card on screen: the one in play, or one answered earlier, as asked
+  // in the session's direction, and edited as it is
   const renderDisplayCard = (card: Flashcard) =>
-    isEditing ? (
+    isEditing && studiedCard ? (
       <StudyCardEditor
         deckId={deckId ?? ''}
-        card={card}
+        card={studiedCard}
+        direction={sessionDirection}
+        labels={labels}
         queueLength={remainingCount}
         progress={progress}
         canMarkKnown={canMarkDisplayKnown}
@@ -804,7 +843,10 @@ export default function StudyPage() {
         acceptDisplayedAnswer,
         canMarkDisplayKnown
           ? () => {
-              markKnown.mutate({ cardIds: [card.id] });
+              markKnown.mutate({
+                cardIds: [card.id],
+                directions: [sessionDirection],
+              });
               // Its Retry, if missed, is skipped with it, as the session
               // does; dropped at once, before the learner can move on
               dropUnanswered(card.id);
@@ -1052,6 +1094,7 @@ export default function StudyPage() {
                 <CardHistory
                   key={displayCard.id}
                   cardId={displayCard.id}
+                  direction={sessionDirection}
                   // Coming back in this session, whatever its schedule says
                   showsNextReview={!hasRetryWaiting(displayCard.id)}
                 />
@@ -1064,6 +1107,13 @@ export default function StudyPage() {
               onSessionType={setSessionType}
               studyMode={studyMode}
               onStudyMode={setStudyMode}
+              direction={
+                labels && {
+                  value: direction,
+                  labels,
+                  onChange: setDirection,
+                }
+              }
             />
           ) : studyState.phase !== 'answering' ? (
             // Holds the answer's place, label included

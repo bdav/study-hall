@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
 import {
   SESSION_TYPES,
   STUDY_MODES,
@@ -6,20 +7,35 @@ import {
   type StudyMode,
 } from '@/lib/sessionChoices';
 
+/** What each Study Direction asks for, below its Direction Label. */
+const DIRECTION_DETAILS: Record<StudyDirection, string> = {
+  FORWARD: 'Type the answer',
+  REVERSE: 'Type the front',
+};
+
 /**
  * How to study, before a Study Session starts: its length, Quick, Standard
- * or Deep, and beside it its mode, Study, Drill weakest or Cram (#8, #9).
+ * or Deep, and beside it its mode, Study, Drill weakest or Cram (#8, #9),
+ * and, on a Reversible Deck, its Study Direction by the deck's Direction
+ * Labels (ADR-0011).
  */
 export function SessionPicker({
   sessionType,
   onSessionType,
   studyMode,
   onStudyMode,
+  direction,
 }: {
   sessionType: SessionType;
   onSessionType: (value: SessionType) => void;
   studyMode: StudyMode;
   onStudyMode: (value: StudyMode) => void;
+  /** On a Reversible Deck, the direction chosen and the deck's labels. */
+  direction?: {
+    value: StudyDirection;
+    labels: Record<StudyDirection, string>;
+    onChange: (value: StudyDirection) => void;
+  };
 }) {
   return (
     <div className="mx-auto mt-6 flex w-full max-w-md flex-col gap-3">
@@ -35,6 +51,18 @@ export function SessionPicker({
         value={studyMode}
         onChange={onStudyMode}
       />
+      {direction && (
+        <ChoiceRow
+          label="Direction"
+          options={STUDY_DIRECTIONS.map((value) => ({
+            value,
+            label: direction.labels[value],
+            detail: DIRECTION_DETAILS[value],
+          }))}
+          value={direction.value}
+          onChange={direction.onChange}
+        />
+      )}
     </div>
   );
 }

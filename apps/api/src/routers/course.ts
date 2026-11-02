@@ -317,6 +317,7 @@ export const courseRouter = router({
                 ...(await countDueAndNewCards(ctx.prisma, {
                   userId: ctx.userId,
                   deckId: deck.id,
+                  direction: 'FORWARD',
                 })),
               }
             : null,

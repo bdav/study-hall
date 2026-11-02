@@ -44,7 +44,10 @@ describe('StatsPage', () => {
         weakCards: [
           {
             cardId: 'card-1',
+            direction: 'FORWARD',
             front: 'Capital of France?',
+            question: 'Capital of France?',
+            deck: null,
             deckId: 'deck-1',
             deckName: 'Geography',
             avgAttemptsToCorrect: 2.5,
@@ -92,21 +95,30 @@ describe('StatsPage', () => {
         weakCards: [
           {
             cardId: 'card-1',
+            direction: 'FORWARD',
             front: 'Capital of France?',
+            question: 'Capital of France?',
+            deck: null,
             deckId: 'deck-1',
             deckName: 'Geography',
             avgAttemptsToCorrect: 3.0,
           },
           {
             cardId: 'card-2',
+            direction: 'FORWARD',
             front: 'What is 2+2?',
+            question: 'What is 2+2?',
+            deck: null,
             deckId: 'deck-2',
             deckName: 'Math',
             avgAttemptsToCorrect: 2.0,
           },
           {
             cardId: 'card-3',
+            direction: 'FORWARD',
             front: 'Capital of Japan?',
+            question: 'Capital of Japan?',
+            deck: null,
             deckId: 'deck-1',
             deckName: 'Geography',
             avgAttemptsToCorrect: 1.5,

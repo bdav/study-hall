@@ -118,7 +118,8 @@ describe('archiving a deck', () => {
 
     expect(await caller.deck.list()).toEqual([]);
     expect(await prisma.card.count({ where: { deckId: deck.id } })).toBe(1);
-    expect(await prisma.cardProgress.count()).toBe(1);
+    // One in each Study Direction
+    expect(await prisma.cardProgress.count()).toBe(2);
     expect(await prisma.cardAttempt.count()).toBe(1);
     expect(await prisma.studySession.count()).toBe(1);
     expect((await caller.deck.getById({ id: deck.id })).archivedAt).toEqual(
@@ -203,14 +204,20 @@ describe('restoring a deck', () => {
   it('puts it back in Flashcards as it was, its due dates included', async () => {
     const deck = await deckWithCard();
     const caller = createCaller();
-    const before = await prisma.cardProgress.findFirstOrThrow();
+    const before = await prisma.cardProgress.findFirstOrThrow({
+      where: { direction: 'FORWARD' },
+    });
     await caller.deck.archive({ id: deck.id });
 
     await caller.deck.restore({ id: deck.id });
 
     expect((await caller.deck.list()).map((d) => d.id)).toEqual([deck.id]);
     expect(await caller.deck.listArchived()).toEqual([]);
-    expect(await prisma.cardProgress.findFirstOrThrow()).toEqual(before);
+    expect(
+      await prisma.cardProgress.findFirstOrThrow({
+        where: { direction: 'FORWARD' },
+      }),
+    ).toEqual(before);
   });
 
   it('refuses a deck that is not archived', async () => {
@@ -344,7 +351,9 @@ describe('an archived deck', () => {
     const missed = await prisma.cardAttempt.findFirstOrThrow();
     const session = await caller.study.startSession({ deckId: deck.id });
     const [item] = session!.items;
-    const progressBefore = await prisma.cardProgress.findFirstOrThrow();
+    const progressBefore = await prisma.cardProgress.findFirstOrThrow({
+      where: { direction: 'FORWARD' },
+    });
     await caller.deck.archive({ id: deck.id });
 
     for (const attempt of [
@@ -356,9 +365,11 @@ describe('an archived deck', () => {
     }
     expect(await prisma.cardAttempt.count()).toBe(1);
     expect(await prisma.acceptedVariant.count()).toBe(0);
-    expect(await prisma.cardProgress.findFirstOrThrow()).toEqual(
-      progressBefore,
-    );
+    expect(
+      await prisma.cardProgress.findFirstOrThrow({
+        where: { direction: 'FORWARD' },
+      }),
+    ).toEqual(progressBefore);
   });
 
   it('takes no review cards, and leaves its course page without Review', async () => {

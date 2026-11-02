@@ -40,8 +40,14 @@ function texts(answers: { text: string }[]) {
  * answer, new or retyped. A variant typed but not added is added on Save,
  * unless it's already accepted. A variant that grades the same as one of
  * the answers adds nothing, so it holds off the Save until it's removed.
+ * The Reverse Variants of the card's front (ADR-0011) are edited alongside,
+ * the same way.
  */
 export function useAnswersForm(card: Flashcard) {
+  const [reverseVariants, setReverseVariants] = useState(() =>
+    texts(card.reverseVariants),
+  );
+  const [reverseVariantText, setReverseVariantText] = useState('');
   const [answers, setAnswers] = useState<AnswerDraft[]>(() =>
     card.answers.map(({ id, text, acceptedVariants }) => ({
       key: id,
@@ -101,6 +107,32 @@ export function useAnswersForm(card: Flashcard) {
     });
   }
 
+  /** Whether the text typed for a Reverse Variant is already accepted. */
+  const isReverseVariantTextAccepted =
+    isSameAnswer(reverseVariantText, card.front) ||
+    reverseVariants.some((variant) =>
+      isSameAnswer(reverseVariantText, variant),
+    );
+
+  function addReverseVariant() {
+    const text = reverseVariantText.trim();
+    if (text === '' || isReverseVariantTextAccepted) return;
+    setReverseVariants((prev) => [...prev, text]);
+    setReverseVariantText('');
+  }
+
+  function removeReverseVariant(index: number) {
+    setReverseVariants((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const typedReverse = reverseVariantText.trim();
+  const reverseEdits =
+    typedReverse !== '' && !isReverseVariantTextAccepted
+      ? [...reverseVariants, typedReverse]
+      : reverseVariants;
+  const reverseVariantsChanged =
+    reverseEdits.join('\n') !== texts(card.reverseVariants).join('\n');
+
   const edits: AnswerEdit[] = answers.flatMap((answer, i) => {
     const text = answer.text.trim();
     if (text === '') return [];
@@ -116,7 +148,7 @@ export function useAnswersForm(card: Flashcard) {
     ];
   });
 
-  const isChanged =
+  const answersChanged =
     JSON.stringify(edits) !==
     JSON.stringify(
       card.answers.map(({ id, text, acceptedVariants }) => ({
@@ -125,6 +157,7 @@ export function useAnswersForm(card: Flashcard) {
         acceptedVariants: texts(acceptedVariants),
       })),
     );
+  const isChanged = answersChanged || reverseVariantsChanged;
   const sorted = (list: string[]) => [...list].sort().join('\n');
   // Choosing another primary, or changing variants, keeps the card's progress
   const resetsProgress = sorted(texts(edits)) !== sorted(texts(card.answers));
@@ -142,6 +175,14 @@ export function useAnswersForm(card: Flashcard) {
     isSameAsAnswer,
     isVariantTextAccepted,
     edits,
+    reverseVariants,
+    reverseVariantText,
+    typeReverseVariant: setReverseVariantText,
+    addReverseVariant,
+    removeReverseVariant,
+    isReverseVariantTextAccepted,
+    /** All the front's Reverse Variants, once changed; none otherwise. */
+    reverseEdits: reverseVariantsChanged ? reverseEdits : undefined,
     isChanged,
     resetsProgress,
     canSave:

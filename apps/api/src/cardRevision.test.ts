@@ -429,13 +429,17 @@ describe('deck.proposeRevision', () => {
 
 function progressOf(cardId: string) {
   return prisma.cardProgress.findUniqueOrThrow({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
   });
 }
 
 function makeProgressAdvanced(cardId: string) {
   return prisma.cardProgress.update({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
     data: { lifecycleState: 'LEARNING', masteryScore: 5, lapseCount: 2 },
   });
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
@@ -13,22 +14,40 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatPercent } from '@/lib/format';
+import { directionLabels, type StudyDirection } from '@/lib/directions';
+import { DirectionPicker } from '@/components/DirectionPicker';
 
+/**
+ * A deck's stats, on a Reversible Deck in the Study Direction chosen, each
+ * counted on its own (ADR-0011), Forward to start.
+ */
 export default function DeckStatsPage() {
   const { deckId } = useParams<{ deckId: string }>();
+  const [chosenDirection, setDirection] = useState<StudyDirection>('FORWARD');
 
   const deckQuery = trpc.deck.getById.useQuery(
     { id: deckId ?? '' },
     { enabled: !!deckId },
   );
+  const deck = deckQuery.data;
+  const isReversible = !!deck?.reversible;
+  const direction = isReversible ? chosenDirection : 'FORWARD';
   const statsQuery = trpc.stats.deckStats.useQuery(
-    { deckId: deckId ?? '' },
+    { deckId: deckId ?? '', direction },
     { enabled: !!deckId },
   );
 
-  const deckName = deckQuery.data?.name ?? 'Deck';
-  const course = deckQuery.data?.course;
-  const archivedAt = deckQuery.data?.archivedAt;
+  const deckName = deck?.name ?? 'Deck';
+  const course = deck?.course;
+  const archivedAt = deck?.archivedAt;
+  const directionChoice = deck && isReversible && (
+    <DirectionPicker
+      labels={directionLabels(deck)}
+      value={direction}
+      onChange={setDirection}
+      className="mt-4"
+    />
+  );
 
   if (statsQuery.isLoading || deckQuery.isLoading) {
     return <StatsSkeleton />;
@@ -54,6 +73,7 @@ export default function DeckStatsPage() {
           course={course}
           archivedAt={archivedAt}
         />
+        {directionChoice}
         <p className="mt-6 text-center text-white/60">
           No study data yet. Study this deck to see stats here.
         </p>
@@ -71,6 +91,7 @@ export default function DeckStatsPage() {
         archivedAt={archivedAt}
       />
       <div className="w-full max-w-4xl text-white">
+        {directionChoice}
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard
             label="Total Attempts"
@@ -105,7 +126,7 @@ export default function DeckStatsPage() {
                 {stats.cardStats.map((card) => (
                   <TableRow key={card.cardId}>
                     <TableCell className="py-4 font-medium">
-                      {card.front}
+                      {card.question}
                     </TableCell>
                     <TableCell className="py-4 text-right text-white/60">
                       {card.totalAttempts}

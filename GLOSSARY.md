@@ -46,6 +46,10 @@ _Avoid_: Back, solution
 An alternative phrasing accepted as equivalent to a canonical answer, without changing what the card asks for.
 _Avoid_: Alias, synonym
 
+**Reverse Variant**:
+An Accepted Variant of a card's front, accepted when a Reversible Deck is studied in Reverse. Each Study Direction has its own variants, so a Reverse Variant never counts Forward.
+_Avoid_: Front variant, reverse alias
+
 **Card Version**:
 What a card asked at one time: its front and canonical answers. A card gets a new version whenever an edit changes what it asks, which also resets its progress; changing accepted variants doesn't, though a version that has ended records the accepted variants it ended with. Restoring an earlier version is an edit like any other: it starts a new version asking what the earlier one asked, which names the version it restored. Each card attempt records the version it answered.
 _Avoid_: Revision, edition

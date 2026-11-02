@@ -2,6 +2,7 @@ import {
   type Prisma,
   type PrismaClient,
   type SessionType,
+  type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
 import { deckOrder } from './cards.js';
@@ -372,7 +373,8 @@ function isWeak(card: Progress, misses: number) {
 
 /**
  * The cards a learner's Study Session on a deck can draw from now in a
- * Study Mode, by bucket, each as long as the biggest session could use. Weakness
+ * Study Mode and Study Direction, by their progress in that direction, by
+ * bucket, each as long as the biggest session could use. Weakness
  * is derived, never stored (§10), from answers since the card's progress
  * last reset, Retries left out as they don't count toward it. Study and
  * Cram take a weak card once it's due; Drill Weakest takes it before (§16.2)
@@ -383,7 +385,11 @@ function isWeak(card: Progress, misses: number) {
  */
 export async function findQueueCandidates(
   prisma: PrismaClient,
-  { userId, deckId }: { userId: string; deckId: string },
+  {
+    userId,
+    deckId,
+    direction,
+  }: { userId: string; deckId: string; direction: StudyDirection },
   {
     studyMode = 'STUDY',
     now = new Date(),
@@ -396,6 +402,7 @@ export async function findQueueCandidates(
       where: {
         userId,
         deckId,
+        direction,
         lifecycleState: { in: ['LEARNING', 'STABLE'] },
         dueAt: { not: null },
       },
@@ -409,6 +416,7 @@ export async function findQueueCandidates(
           where: {
             userId,
             deckId,
+            direction,
             lifecycleState: 'STABLE',
             masteryScore: { lte: WEAK_MASTERY },
           },
@@ -419,7 +427,7 @@ export async function findQueueCandidates(
       : [],
     takesNew
       ? prisma.cardProgress.findMany({
-          where: { userId, deckId, lifecycleState: 'NEW' },
+          where: { userId, deckId, direction, lifecycleState: 'NEW' },
           orderBy: deckOrder.map((order) => ({ card: order })),
           select: { cardId: true },
           take: most,
@@ -432,7 +440,9 @@ export async function findQueueCandidates(
       .filter((card) => card.lifecycleState === 'STABLE')
       .map((card) => [card.cardId, card]),
   );
-  const misses = await recentMisses(prisma, userId, [...stable.values()]);
+  const misses = await recentMisses(prisma, userId, direction, [
+    ...stable.values(),
+  ]);
   const weak = [...stable.values()]
     .map((card) => ({ card, misses: misses.get(card.cardId) ?? 0 }))
     .filter(
@@ -467,17 +477,20 @@ export async function findQueueCandidates(
 }
 
 /**
- * How many of each card's last RECENT_ANSWERS counted answers were
- * missed: those since its progress last reset, Retries left out.
+ * How many of each card's last RECENT_ANSWERS counted answers in a Study
+ * Direction were missed: those since its progress last reset, Retries left
+ * out.
  */
 async function recentMisses(
   prisma: PrismaClient,
   userId: string,
+  direction: StudyDirection,
   cards: { cardId: string; resetAt: Date }[],
 ) {
   const attempts = await prisma.cardAttempt.findMany({
     where: {
       cardId: { in: cards.map((card) => card.cardId) },
+      direction,
       studySession: { userId },
       isRetry: false,
     },

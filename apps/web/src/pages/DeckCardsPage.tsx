@@ -35,6 +35,13 @@ import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 import { ReviseCards } from '@/components/ReviseCards';
 import { GenerateCards } from '@/components/GenerateCards';
 import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
+import { directionLabels, directionsOf } from '@/lib/directions';
+import {
+  EditableDeckDescription,
+  SharedAnswersWarning,
+  StudyBothWays,
+} from '@/components/ReversibleDeckSettings';
+import { MarkKnownDialog } from '@/components/MarkKnownDialog';
 import {
   CardSelectionBar,
   SelectCardToggle,
@@ -169,6 +176,8 @@ export default function DeckCardsPage() {
   const [historyCardId, setHistoryCardId] = useState<string | null>(null);
   // The selected cards while selecting, none otherwise
   const [selection, setSelection] = useState<Set<string> | null>(null);
+  // On a Reversible Deck, the card whose Mark known is asking which way
+  const [markingKnownId, setMarkingKnownId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newCardButtonRef = useRef<HTMLDivElement | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
@@ -311,9 +320,16 @@ export default function DeckCardsPage() {
 
   const deck = deckQuery.data;
   const cards = (cardsQuery.data ?? []).map(toFlashcard);
-  // Cards known already, which Mark known would leave as they are
+  const directions = directionsOf(deck);
+  const labels = directionLabels(deck);
+  // Cards known already every way the deck is studied, which Mark known
+  // would leave as they are
   const knownCardIds = new Set(
-    (cardsQuery.data ?? []).filter((c) => c.isKnown).map((c) => c.id),
+    (cardsQuery.data ?? [])
+      .filter((c) =>
+        directions.every((direction) => c.knownDirections.includes(direction)),
+      )
+      .map((c) => c.id),
   );
 
   // Read only, its cards listed as text (#77)
@@ -375,6 +391,8 @@ export default function DeckCardsPage() {
           activeTab="cards"
           title={<EditableDeckTitle deckId={deckId} name={deck.name} />}
         />
+        <EditableDeckDescription deck={deck} />
+        <StudyBothWays deck={deck} />
 
         <p className="mt-2 text-sm text-white/50">
           {cards.length} {cards.length === 1 ? 'card' : 'cards'}
@@ -384,6 +402,7 @@ export default function DeckCardsPage() {
             </span>
           )}
         </p>
+        {deck.reversible && <SharedAnswersWarning cards={cards} />}
 
         {selection ? (
           // Pinned to the top while selecting, so its actions are in reach
@@ -392,6 +411,7 @@ export default function DeckCardsPage() {
             <CardSelectionBar
               deckId={deckId}
               cardIds={cards.map((card) => card.id)}
+              labels={deck.reversible ? labels : undefined}
               selected={selection}
               onSelect={setSelection}
               onDone={() => setSelection(null)}
@@ -725,7 +745,9 @@ export default function DeckCardsPage() {
                     onMarkKnown={
                       knownCardIds.has(card.id)
                         ? undefined
-                        : () => markKnown.mutate({ cardIds: [card.id] })
+                        : deck.reversible
+                          ? () => setMarkingKnownId(card.id)
+                          : () => markKnown.mutate({ cardIds: [card.id] })
                     }
                     onShowHistory={() => setHistoryCardId(card.id)}
                     isSelecting={selection !== null}
@@ -751,6 +773,7 @@ export default function DeckCardsPage() {
                 <CardAnswers
                   deckId={deckId}
                   card={card}
+                  reversible={deck.reversible}
                   disabled={selection !== null}
                   isOpen={answersCardId === card.id}
                   onOpen={() => setAnswersCardId(card.id)}
@@ -762,10 +785,23 @@ export default function DeckCardsPage() {
         </LayoutGroup>
       </div>
 
+      <MarkKnownDialog
+        count={1}
+        labels={labels}
+        open={markingKnownId !== null}
+        onOpenChange={(open) => !open && setMarkingKnownId(null)}
+        onMark={(directions) => {
+          if (markingKnownId) {
+            markKnown.mutate({ cardIds: [markingKnownId], directions });
+          }
+        }}
+      />
+
       {historyCardId && (
         <CardVersionsDialog
           deckId={deckId}
           cardId={historyCardId}
+          labels={deck.reversible ? labels : undefined}
           onClose={() => setHistoryCardId(null)}
         />
       )}

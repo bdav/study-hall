@@ -41,6 +41,13 @@ enum SessionType {
   DEEP
 }
 
+// Which way a card is asked (ADR-0011): its front prompting its canonical
+// answer, or its primary canonical answer prompting its front
+enum StudyDirection {
+  FORWARD
+  REVERSE
+}
+
 enum StudyMode {
   STUDY
   DRILL_WEAKEST
@@ -124,6 +131,12 @@ model Deck {
   courseId      String?        @unique
   name          String
   description   String?
+  // A Reversible Deck, studyable in both Study Directions (ADR-0011). Turned
+  // off, Reverse is hidden and its history kept
+  reversible    Boolean        @default(false)
+  // Its Direction Labels; Forward and Reverse stand in when none
+  forwardLabel  String?
+  reverseLabel  String?
   // Archived decks leave Flashcards and keep everything (ADR-0003, #77)
   archivedAt    DateTime?
   createdAt     DateTime       @default(now())
@@ -151,6 +164,7 @@ model Card {
   deck                Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
   sourceLesson        Lesson?            @relation(fields: [sourceLessonId], references: [id], onDelete: SetNull)
   canonicalAnswers    CanonicalAnswer[]
+  reverseVariants     ReverseVariant[]
   versions            CardVersion[]
   attempts            CardAttempt[]
   progress            CardProgress[]
@@ -176,6 +190,9 @@ model CardVersion {
   // whose are the card's own, and for versions that ended before they were
   // recorded (#51)
   acceptedVariants    Json?
+  // Once it's over, the Reverse Variants of its front it ended with; none
+  // for the current version, whose are the card's own (ADR-0011)
+  reverseVariants     String[]      @default([])
   // Set on a version a revision of the deck started (ADR-0007): the model
   // and prompt version that proposed the edit
   sourceModel         String?
@@ -218,11 +235,28 @@ model AcceptedVariant {
   @@index([canonicalAnswerId])
 }
 
+// An Accepted Variant of a card's front, accepted when it's studied in
+// Reverse (ADR-0011): each direction has its own
+model ReverseVariant {
+  id             String   @id @default(cuid())
+  cardId         String
+  text           String
+  normalizedText String?
+  createdAt      DateTime @default(now())
+  card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, text])
+  @@index([cardId])
+}
+
+// A learner's progress with a card in one Study Direction: every card has
+// one in each, Reverse staying NEW until it's studied in Reverse (ADR-0011)
 model CardProgress {
   id                 String             @id @default(cuid())
   userId             String
   cardId             String
   deckId             String
+  direction          StudyDirection     @default(FORWARD)
   lifecycleState     CardLifecycleState @default(NEW)
   masteryScore       Int                @default(0)
   dueAt              DateTime?
@@ -243,10 +277,10 @@ model CardProgress {
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   card               Card               @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, cardId])
-  @@index([userId, deckId, lifecycleState, dueAt])
-  @@index([userId, deckId, lifecycleState, masteryScore])
-  @@index([userId, deckId, dueAt])
+  @@unique([userId, cardId, direction])
+  @@index([userId, deckId, direction, lifecycleState, dueAt])
+  @@index([userId, deckId, direction, lifecycleState, masteryScore])
+  @@index([userId, deckId, direction, dueAt])
 }
 
 model StudySession {
@@ -256,6 +290,8 @@ model StudySession {
   status      StudySessionStatus @default(ACTIVE)
   sessionType SessionType
   studyMode   StudyMode          @default(STUDY)
+  // A session is in one Study Direction (ADR-0011)
+  direction   StudyDirection     @default(FORWARD)
   startedAt   DateTime           @default(now())
   endedAt     DateTime?
   updatedAt   DateTime           @updatedAt
@@ -299,6 +335,8 @@ model CardAttempt {
   // The Card Version answered; none for attempts from before versions were
   // recorded and before the card's last reset (ADR-0008)
   cardVersionId         String?
+  // Its session's Study Direction (ADR-0011)
+  direction             StudyDirection    @default(FORWARD)
   userAnswer            String?
   recallGrade           RecallGrade
   attemptNumber         Int               @default(1)
@@ -317,7 +355,7 @@ model CardAttempt {
 
   @@index([studySessionId])
   @@index([studySessionItemId])
-  @@index([cardId])
+  @@index([cardId, direction])
   @@index([cardVersionId])
   @@index([studySessionId, cardId])
 }

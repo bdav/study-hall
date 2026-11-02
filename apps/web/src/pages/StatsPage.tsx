@@ -12,10 +12,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatPercent } from '@/lib/format';
+import {
+  directionLabels,
+  type DirectedDeck,
+  type StudyDirection,
+} from '@/lib/directions';
 
+/**
+ * A card weak in one Study Direction: what it asks there, and, on a
+ * Reversible Deck, the direction's label (ADR-0011).
+ */
 interface WeakCard {
   cardId: string;
-  front: string;
+  direction: StudyDirection;
+  question: string;
+  deck: DirectedDeck | null;
   deckId: string;
   deckName: string;
   avgAttemptsToCorrect: number;
@@ -123,9 +134,14 @@ export default function StatsPage() {
                     </TableHeader>
                     <TableBody>
                       {group.cards.map((card) => (
-                        <TableRow key={card.cardId}>
+                        <TableRow key={`${card.cardId}:${card.direction}`}>
                           <TableCell className="py-4 font-medium">
-                            {card.front}
+                            {card.question}
+                            {card.deck?.reversible && (
+                              <span className="ml-2 text-xs text-white/50">
+                                {directionLabels(card.deck)[card.direction]}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="py-4 text-right font-medium">
                             {card.avgAttemptsToCorrect.toFixed(1)}

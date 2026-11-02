@@ -7,11 +7,13 @@ import {
   editCard,
   markCardsKnown,
   restoreCardVersion,
+  STUDY_DIRECTIONS,
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
 import { isKnown } from '../services/progressUpdater.js';
 import { assertCanChangeCards, findActiveDeck } from '../services/decks.js';
+import { studyDirection, studyDirections } from './inputs.js';
 
 const front = z.string().trim().min(1);
 const answerText = z.string().trim().min(1);
@@ -81,12 +83,17 @@ export const cardRouter = router({
             )
             .min(1)
             .optional(),
+          // All the Reverse Variants of its front (ADR-0011)
+          reverseVariants: z.array(variantText).optional(),
         })
         .refine(
-          (d) => d.front !== undefined || d.canonicalAnswers !== undefined,
+          (d) =>
+            d.front !== undefined ||
+            d.canonicalAnswers !== undefined ||
+            d.reverseVariants !== undefined,
           {
             message:
-              'At least one of front or canonical answers must be provided',
+              'At least one of front, canonical answers or Reverse Variants must be provided',
           },
         ),
     )
@@ -94,6 +101,8 @@ export const cardRouter = router({
       await assertCanChangeCards(ctx.prisma, {
         userId: ctx.userId,
         cardIds: [input.cardId],
+        // Reverse Variants only on a deck studied both ways
+        directions: input.reverseVariants ? ['REVERSE'] : [],
       });
 
       return ctx.prisma.$transaction((tx) => editCard(tx, input));
@@ -115,20 +124,24 @@ export const cardRouter = router({
     }),
 
   /**
-   * Marks cards known (ADR-0009): a timing adjustment, not a grade, so it
-   * records no attempt (`markCardsKnown`).
+   * Marks cards known (ADR-0009) in Study Directions, Forward unless given
+   * (ADR-0011): a timing adjustment, not a grade, so it records no attempt
+   * (`markCardsKnown`).
    */
   markKnown: protectedProcedure
-    .input(z.object({ cardIds }))
+    .input(
+      z.object({
+        cardIds,
+        directions: z.array(studyDirections).min(1).default(['FORWARD']),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       await assertCanChangeCards(ctx.prisma, {
         userId: ctx.userId,
         cardIds: input.cardIds,
+        directions: input.directions,
       });
-      return markCardsKnown(ctx.prisma, {
-        userId: ctx.userId,
-        cardIds: input.cardIds,
-      });
+      return markCardsKnown(ctx.prisma, { userId: ctx.userId, ...input });
     }),
 
   /** Deletes several cards, as `delete` deletes one. */
@@ -145,11 +158,12 @@ export const cardRouter = router({
       return { deletedCount: count };
     }),
 
-  // The learner's answers to a card, by Card Version, and its progress
+  // The learner's answers to a card in a Study Direction, by Card Version,
+  // and its progress there
   history: protectedProcedure
-    .input(z.object({ cardId: z.string() }))
+    .input(z.object({ cardId: z.string(), direction: studyDirection }))
     .query(({ ctx, input }) =>
-      cardHistory(ctx.prisma, { userId: ctx.userId, cardId: input.cardId }),
+      cardHistory(ctx.prisma, { userId: ctx.userId, ...input }),
     ),
 
   /** Puts a card back to asking what an earlier Card Version asked (#54). */
@@ -184,14 +198,19 @@ export const cardRouter = router({
           ...withCanonicalAnswers,
           progress: {
             where: { userId: ctx.userId },
-            select: { lifecycleState: true },
+            select: { direction: true, lifecycleState: true },
           },
         },
       });
-      // Whether each card is known already, so marking it known does nothing
-      return cards.map(({ progress: [progress], ...card }) => ({
+      // The Study Directions each card is known in already, where marking it
+      // known does nothing
+      return cards.map(({ progress, ...card }) => ({
         ...card,
-        isKnown: progress ? isKnown(progress.lifecycleState) : false,
+        knownDirections: STUDY_DIRECTIONS.filter((direction) =>
+          progress.some(
+            (p) => p.direction === direction && isKnown(p.lifecycleState),
+          ),
+        ),
       }));
     }),
 

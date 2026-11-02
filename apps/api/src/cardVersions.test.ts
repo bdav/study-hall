@@ -83,7 +83,13 @@ describe('Card Versions', () => {
 
       const [version] = await versionsOf(card.id);
       const progress = await prisma.cardProgress.findUniqueOrThrow({
-        where: { userId_cardId: { userId, cardId: card.id } },
+        where: {
+          userId_cardId_direction: {
+            userId,
+            cardId: card.id,
+            direction: 'FORWARD',
+          },
+        },
       });
       expect(version.startedAt).toEqual(progress.resetAt);
     });
@@ -123,7 +129,13 @@ describe('Card Versions', () => {
           canonicalAnswers: edited.canonicalAnswers.map((a) => a.text),
         });
         const progress = await prisma.cardProgress.findUniqueOrThrow({
-          where: { userId_cardId: { userId, cardId: card.id } },
+          where: {
+            userId_cardId_direction: {
+              userId,
+              cardId: card.id,
+              direction: 'FORWARD',
+            },
+          },
         });
         expect(versions[1].startedAt).toEqual(progress.resetAt);
         // The first version is kept as it was

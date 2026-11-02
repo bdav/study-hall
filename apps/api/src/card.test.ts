@@ -44,7 +44,9 @@ const NEW_PROGRESS = {
 // Card progress has no read procedure yet, so these read it directly.
 function progressOf(cardId: string) {
   return prisma.cardProgress.findUniqueOrThrow({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
   });
 }
 
@@ -54,7 +56,9 @@ function attemptsIn(studySessionId: string) {
 
 function makeProgressAdvanced(cardId: string) {
   return prisma.cardProgress.update({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
     data: {
       lifecycleState: 'LEARNING',
       masteryScore: 5,
@@ -106,7 +110,7 @@ describe('cardRouter', () => {
       expect(cards[1].front).toBe('Q2');
     });
 
-    it('says whether each card is already known', async () => {
+    it('says which directions each card is already known in', async () => {
       const deck = await createDeckWithCards(prisma, {
         userId,
         cards: [
@@ -119,9 +123,11 @@ describe('cardRouter', () => {
 
       const cards = await caller.card.listByDeck({ deckId: deck.id });
 
-      expect(cards.map(({ front, isKnown }) => ({ front, isKnown }))).toEqual([
-        { front: 'Q1', isKnown: false },
-        { front: 'Q2', isKnown: true },
+      expect(
+        cards.map(({ front, knownDirections }) => ({ front, knownDirections })),
+      ).toEqual([
+        { front: 'Q1', knownDirections: [] },
+        { front: 'Q2', knownDirections: ['FORWARD'] },
       ]);
     });
 

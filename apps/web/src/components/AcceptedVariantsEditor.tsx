@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
  * typed; a variant that is the same as one of the card's answers is
  * flagged, and typed text already accepted can't be added. `description`,
  * when given, explains variants below the box. With no variants yet, only
- * the box shows.
+ * the box shows. `reverse` makes them the Reverse Variants of a card's
+ * front (ADR-0011), named so.
  */
 export function AcceptedVariantsEditor({
   name,
@@ -24,6 +25,7 @@ export function AcceptedVariantsEditor({
   onAdd,
   onRemove,
   description,
+  reverse = false,
 }: {
   name: string;
   variants: string[];
@@ -34,7 +36,9 @@ export function AcceptedVariantsEditor({
   onAdd: () => void;
   onRemove: (index: number) => void;
   description?: string;
+  reverse?: boolean;
 }) {
+  const noun = reverse ? 'Reverse variant' : 'accepted variant';
   const inputId = useId();
   const descriptionId = useId();
   const canAdd = text.trim() !== '' && !isTextAccepted;
@@ -43,9 +47,11 @@ export function AcceptedVariantsEditor({
     <div className="text-sm">
       {variants.length > 0 && (
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-white/50">Variants</span>
+          <span className="text-xs text-white/50">
+            {reverse ? 'Reverse variants' : 'Variants'}
+          </span>
           <ul
-            aria-label={`Accepted variants of ${name}`}
+            aria-label={`${reverse ? 'Reverse' : 'Accepted'} variants of ${name}`}
             className="flex flex-wrap gap-2"
           >
             {variants.map((variant, i) => {
@@ -77,12 +83,12 @@ export function AcceptedVariantsEditor({
       )}
       <div className="flex items-end gap-2">
         <label htmlFor={inputId} className="sr-only">
-          New accepted variant of {name}
+          New {noun} of {name}
         </label>
         <Input
           id={inputId}
           value={text}
-          placeholder="Add variant"
+          placeholder={reverse ? 'Add Reverse variant' : 'Add variant'}
           aria-describedby={description ? descriptionId : undefined}
           onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
@@ -97,7 +103,7 @@ export function AcceptedVariantsEditor({
         <Button
           type="button"
           size="sm"
-          aria-label={`Add variant of ${name}`}
+          aria-label={`Add ${reverse ? 'Reverse variant' : 'variant'} of ${name}`}
           disabled={!canAdd}
           onClick={onAdd}
           className="bg-white/20 text-white hover:bg-white/30"

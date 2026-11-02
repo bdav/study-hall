@@ -1,3 +1,5 @@
+import { type StudyDirection } from '@/lib/directions';
+
 /**
  * The Study Session types a learner chooses between, each with the most
  * and fewest cards it holds (`updated-plan.md` §12.1, `SESSION_SIZES` in
@@ -28,5 +30,12 @@ export const STUDY_MODES = [
 
 export type StudyMode = (typeof STUDY_MODES)[number]['value'];
 
-/** How the learner chooses to study: a session's type and Study Mode. */
-export type SessionChoice = { sessionType: SessionType; studyMode: StudyMode };
+/**
+ * How the learner chooses to study: a session's type, Study Mode and Study
+ * Direction, Forward on a deck studied one way.
+ */
+export type SessionChoice = {
+  sessionType: SessionType;
+  studyMode: StudyMode;
+  direction: StudyDirection;
+};

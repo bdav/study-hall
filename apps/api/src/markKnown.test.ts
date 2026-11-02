@@ -60,7 +60,9 @@ function capitalsDeck(asUserId = userId) {
 
 function progressOf(cardId: string) {
   return prisma.cardProgress.findUniqueOrThrow({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
   });
 }
 
@@ -96,7 +98,13 @@ describe('card.markKnown', () => {
     const [france, japan, brazil] = deck.cards;
     const longAway = new Date(Date.now() + 60 * DAY_MS);
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: brazil.id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: brazil.id,
+          direction: 'FORWARD',
+        },
+      },
       data: { lifecycleState: 'STABLE', masteryScore: 9, dueAt: longAway },
     });
 
@@ -173,7 +181,13 @@ describe('card.markKnown', () => {
     const caller = createCaller();
     await caller.card.markKnown({ cardIds: [france.id] });
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: france.id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: france.id,
+          direction: 'FORWARD',
+        },
+      },
       data: { dueAt: new Date(Date.now() - 1000) },
     });
     const session = await caller.study.startSession({ deckId: deck.id });

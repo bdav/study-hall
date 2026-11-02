@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { cardsCount, markedKnownMessage } from '@/lib/cards';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { MarkKnownDialog } from '@/components/MarkKnownDialog';
+import { type StudyDirection } from '@/lib/directions';
 
 const actionClassName =
   'inline-flex items-center text-white/60 transition-colors hover:text-white disabled:pointer-events-none disabled:opacity-40';
@@ -11,11 +13,13 @@ const actionClassName =
 /**
  * The Cards tab's toolbar while selecting cards: how many are selected,
  * select all or none, and mark them known (ADR-0009) or delete them, each
- * after a confirmation that says how many. Either action ends selecting.
+ * after a confirmation that says how many, which on a Reversible Deck asks
+ * which Study Direction to mark (ADR-0011). Either action ends selecting.
  */
 export function CardSelectionBar({
   deckId,
   cardIds,
+  labels,
   selected,
   onSelect,
   onDone,
@@ -23,6 +27,8 @@ export function CardSelectionBar({
   deckId: string;
   /** The deck's cards, in deck order. */
   cardIds: string[];
+  /** A Reversible Deck's Direction Labels, for asking which way to mark. */
+  labels?: Record<StudyDirection, string>;
   selected: Set<string>;
   onSelect: (selected: Set<string>) => void;
   onDone: () => void;
@@ -91,14 +97,26 @@ export function CardSelectionBar({
         Done
       </button>
 
-      <ConfirmDialog
-        open={confirming === 'known'}
-        onOpenChange={(open) => !open && setConfirming(null)}
-        title={`Mark ${cardsCount(count)} known?`}
-        description="Each comes back for review a few days on, as a card you've learned would, instead of as new. Cards you already know well are left as they are, and your answers are kept."
-        confirmLabel="Mark known"
-        onConfirm={() => markKnown.mutate({ cardIds: selectedIds })}
-      />
+      {labels ? (
+        <MarkKnownDialog
+          count={count}
+          labels={labels}
+          open={confirming === 'known'}
+          onOpenChange={(open) => !open && setConfirming(null)}
+          onMark={(directions) =>
+            markKnown.mutate({ cardIds: selectedIds, directions })
+          }
+        />
+      ) : (
+        <ConfirmDialog
+          open={confirming === 'known'}
+          onOpenChange={(open) => !open && setConfirming(null)}
+          title={`Mark ${cardsCount(count)} known?`}
+          description="Each comes back for review a few days on, as a card you've learned would, instead of as new. Cards you already know well are left as they are, and your answers are kept."
+          confirmLabel="Mark known"
+          onConfirm={() => markKnown.mutate({ cardIds: selectedIds })}
+        />
+      )}
       <ConfirmDialog
         open={confirming === 'delete'}
         onOpenChange={(open) => !open && setConfirming(null)}

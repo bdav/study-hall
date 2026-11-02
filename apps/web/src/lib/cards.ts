@@ -10,13 +10,15 @@ export type CardAnswer = {
 
 /**
  * A card as the flashcard UI shows it: its Canonical Answers, primary
- * first, and, for the places that show one answer, the primary's text.
+ * first, and, for the places that show one answer, the primary's text,
+ * and the Reverse Variants of its front (ADR-0011).
  */
 export type Flashcard = {
   id: string;
   front: string;
   answers: CardAnswer[];
   canonicalAnswer: string;
+  reverseVariants: AcceptedVariant[];
 };
 
 /**
@@ -39,6 +41,7 @@ export function toFlashcard(card: {
     isPrimary: boolean;
     acceptedVariants: AcceptedVariant[];
   }[];
+  reverseVariants?: AcceptedVariant[];
 }): Flashcard {
   const primary =
     card.canonicalAnswers.find((a) => a.isPrimary) ?? card.canonicalAnswers[0];
@@ -50,6 +53,7 @@ export function toFlashcard(card: {
       ({ id, text, acceptedVariants }) => ({ id, text, acceptedVariants }),
     ),
     canonicalAnswer: primary?.text ?? '',
+    reverseVariants: card.reverseVariants ?? [],
   };
 }
 

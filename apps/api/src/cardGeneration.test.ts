@@ -434,7 +434,13 @@ describe('deck.addGeneratedCards', () => {
       canonicalAnswers: [expect.objectContaining({ text: 'hice' })],
     });
     const progress = await prisma.cardProgress.findUniqueOrThrow({
-      where: { userId_cardId: { userId, cardId: cards[2].id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: cards[2].id,
+          direction: 'FORWARD',
+        },
+      },
     });
     expect(progress.lifecycleState).toBe('NEW');
   });

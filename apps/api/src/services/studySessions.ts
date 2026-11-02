@@ -3,6 +3,7 @@ import {
   type PrismaClient,
   type RecallGrade,
   type SessionType,
+  type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
@@ -10,8 +11,10 @@ import { NO_MATCH, type Grading } from './answerGrader.js';
 import {
   addAcceptedVariant,
   alreadyAccepts,
+  addReverseVariant,
+  alreadyAcceptsFront,
   currentVersionId,
-  gradeCardAnswer,
+  gradeDirectedAnswer,
   withCanonicalAnswers,
 } from './cards.js';
 import {
@@ -20,7 +23,7 @@ import {
   type ScheduledAnswer,
 } from './progressUpdater.js';
 import { countsSinceReset } from './countedAttempts.js';
-import { assertDeckActive } from './decks.js';
+import { assertDeckActive, assertStudiesIn } from './decks.js';
 import { composeQueue, findQueueCandidates } from './queueGenerator.js';
 
 /**
@@ -74,21 +77,24 @@ export function findResumableSession(
 const MAX_RETRIES = 2;
 
 /**
- * A learner's counted answers to a card, oldest first: those since its
- * progress last reset (`countsSinceReset`, as a query), as the scheduler
- * takes them, leaving out the attempt being applied and retries, which
- * never change the card's progress.
+ * A learner's counted answers to a card in a Study Direction, oldest
+ * first: those since its progress in that direction last reset
+ * (`countsSinceReset`, as a query), as the scheduler takes them, leaving
+ * out the attempt being applied and retries, which never change the
+ * card's progress.
  */
 async function findCountedAnswers(
   tx: Prisma.TransactionClient,
   {
     userId,
     cardId,
+    direction,
     resetAt,
     exceptAttemptId,
   }: {
     userId: string;
     cardId: string;
+    direction: StudyDirection;
     resetAt: Date;
     exceptAttemptId?: string;
   },
@@ -96,6 +102,7 @@ async function findCountedAnswers(
   const attempts = await tx.cardAttempt.findMany({
     where: {
       cardId,
+      direction,
       studySession: { userId },
       createdAt: { gte: resetAt },
       isRetry: false,
@@ -122,34 +129,30 @@ function toScheduledAnswer(attempt: {
 /** A learner's cards in one deck. */
 type LearnerDeck = { userId: string; deckId: string };
 
+/** A learner's cards in one deck, studied in one Study Direction. */
+type DirectedDeck = LearnerDeck & { direction: StudyDirection };
+
 /** A deck's cards in review whose due time has come. */
-function dueCardsWhere({
-  userId,
-  deckId,
-}: LearnerDeck): Prisma.CardProgressWhereInput {
+function dueCardsWhere(deck: DirectedDeck): Prisma.CardProgressWhereInput {
   return {
-    userId,
-    deckId,
+    ...deck,
     lifecycleState: { in: ['LEARNING', 'STABLE'] },
     dueAt: { lte: new Date() },
   };
 }
 
-/** A deck's cards that have never been studied. */
-function newCardsWhere({
-  userId,
-  deckId,
-}: LearnerDeck): Prisma.CardProgressWhereInput {
-  return { userId, deckId, lifecycleState: 'NEW' };
+/** A deck's cards that have never been studied in the direction. */
+function newCardsWhere(deck: DirectedDeck): Prisma.CardProgressWhereInput {
+  return { ...deck, lifecycleState: 'NEW' };
 }
 
 /**
- * How many of a deck's cards are due and how many are NEW, the cards a
- * Study Session draws from (`findQueueCandidates`).
+ * How many of a deck's cards are due in a Study Direction and how many are
+ * NEW there, the cards a Study Session draws from (`findQueueCandidates`).
  */
 export async function countDueAndNewCards(
   prisma: PrismaClient,
-  deck: LearnerDeck,
+  deck: DirectedDeck,
 ) {
   const [dueCount, newCount] = await Promise.all([
     prisma.cardProgress.count({ where: dueCardsWhere(deck) }),
@@ -158,19 +161,24 @@ export async function countDueAndNewCards(
   return { dueCount, newCount };
 }
 
-/** How the learner chooses to study: a session's type and mode. */
-export type SessionChoice = { sessionType: SessionType; studyMode: StudyMode };
+/** How the learner chooses to study: a session's type, mode and direction. */
+export type SessionChoice = {
+  sessionType: SessionType;
+  studyMode: StudyMode;
+  direction: StudyDirection;
+};
 
 /**
- * What a Study Session of the given type and mode started now would hold:
- * its size, as starting it would compose it, and, for when it would hold
- * nothing, when the next card in review comes due.
+ * What a Study Session of the given type, mode and direction started now
+ * would hold: its size, as starting it would compose it, and, for when it
+ * would hold nothing, when the next card in review comes due.
  */
 export async function previewQueue(
   prisma: PrismaClient,
-  deck: LearnerDeck,
-  { sessionType, studyMode }: SessionChoice,
+  learnerDeck: LearnerDeck,
+  { sessionType, studyMode, direction }: SessionChoice,
 ) {
+  const deck = { ...learnerDeck, direction };
   const [{ dueCount, newCount }, candidates, next] = await Promise.all([
     countDueAndNewCards(prisma, deck),
     findQueueCandidates(prisma, deck, { studyMode }),
@@ -221,11 +229,12 @@ async function abandonStaleSessions(
 }
 
 /**
- * Starts a Study Session of the given type and mode on a deck, or resumes
- * the learner's unfinished one if it's recent enough
- * (`findResumableSession`), abandoning one that's too old. The queue is
- * composed from the deck's cards by the session type and mode
- * (`composeQueue`), in an order fixed by `seed`, random unless given.
+ * Starts a Study Session of the given type, mode and Study Direction on a
+ * deck, or resumes the learner's unfinished one, in its own direction, if
+ * it's recent enough (`findResumableSession`), abandoning one that's too
+ * old. The queue is composed from the deck's cards by the session type
+ * and mode (`composeQueue`), in an order fixed by `seed`, random unless
+ * given.
  * Returns null, and starts nothing, when the deck has nothing to study.
  */
 export async function startStudySession(
@@ -234,6 +243,7 @@ export async function startStudySession(
   {
     sessionType,
     studyMode,
+    direction,
     seed = Math.floor(Math.random() * 2 ** 32),
   }: SessionChoice & { seed?: number },
 ) {
@@ -250,7 +260,7 @@ export async function startStudySession(
   const queue = composeQueue({
     candidates: await findQueueCandidates(
       prisma,
-      { userId, deckId },
+      { userId, deckId, direction },
       { studyMode },
     ),
     sessionType,
@@ -266,6 +276,7 @@ export async function startStudySession(
         deckId,
         sessionType,
         studyMode,
+        direction,
         items: {
           create: queue.map((cardId, position) => ({ cardId, position })),
         },
@@ -338,7 +349,11 @@ export async function answerItem(
     include: {
       card: { include: withCanonicalAnswers },
       studySession: {
-        select: { status: true, deck: { select: { archivedAt: true } } },
+        select: {
+          status: true,
+          direction: true,
+          deck: { select: { archivedAt: true, reversible: true } },
+        },
       },
     },
   });
@@ -356,6 +371,9 @@ export async function answerItem(
       message: 'Session already finished',
     });
   }
+  const { direction } = item.studySession;
+  // A Reverse session on a deck turned one-way meanwhile
+  assertStudiesIn(item.studySession.deck, direction);
 
   const {
     recallGrade,
@@ -363,8 +381,12 @@ export async function answerItem(
     matchedAnswer,
     matchedVariant,
   }: Grading =
-    userAnswer === null ? NO_MATCH : gradeCardAnswer(userAnswer, item.card);
-  const progressKey = { userId_cardId: { userId, cardId: item.cardId } };
+    userAnswer === null
+      ? NO_MATCH
+      : gradeDirectedAnswer(userAnswer, item.card, direction);
+  const progressKey = {
+    userId_cardId_direction: { userId, cardId: item.cardId, direction },
+  };
 
   return prisma.$transaction(async (tx) => {
     // Answers in one session take turns, so they number their attempts and
@@ -395,6 +417,7 @@ export async function answerItem(
         studySessionItemId: item.id,
         cardId: item.cardId,
         cardVersionId: await currentVersionId(tx, item.cardId),
+        direction,
         userAnswer,
         recallGrade,
         attemptNumber: earlierInSession + 1,
@@ -410,6 +433,7 @@ export async function answerItem(
       const earlier = await findCountedAnswers(tx, {
         userId,
         cardId: item.cardId,
+        direction,
         resetAt: progress.resetAt,
         exceptAttemptId: attempt.id,
       });
@@ -434,7 +458,8 @@ export async function answerItem(
 /**
  * "My answer was correct": accepts a typed answer graded MISSED. The answer
  * becomes an Accepted Variant of the card's primary Canonical Answer, or of
- * the one given, unless grading already accepts it, and is graded again.
+ * the one given, or, answered in Reverse, a Reverse Variant of its front
+ * (ADR-0011), unless grading already accepts it, and is graded again.
  * The attempt becomes the final one, recording the MISSED it first had
  * (`updated-plan.md` §11.1), and the card's progress is rebuilt from its
  * counted attempts as if it had been graded so from the start, and its
@@ -459,7 +484,7 @@ export async function acceptAnswer(
       card: {
         include: {
           ...withCanonicalAnswers,
-          deck: { select: { archivedAt: true } },
+          deck: { select: { archivedAt: true, reversible: true } },
         },
       },
     },
@@ -468,14 +493,17 @@ export async function acceptAnswer(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Attempt not found' });
   }
   assertDeckActive(attempt.card.deck);
-  const { userAnswer } = attempt;
+  const { userAnswer, direction } = attempt;
+  assertStudiesIn(attempt.card.deck, direction);
   if (attempt.recallGrade !== 'MISSED' || userAnswer === null) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: 'Only a missed typed answer can be accepted',
     });
   }
-  const progressKey = { userId_cardId: { userId, cardId: attempt.cardId } };
+  const progressKey = {
+    userId_cardId_direction: { userId, cardId: attempt.cardId, direction },
+  };
   const { resetAt, markedKnownAt } =
     await prisma.cardProgress.findUniqueOrThrow({ where: progressKey });
   // It answered what was effectively a different card
@@ -485,10 +513,15 @@ export async function acceptAnswer(
       message: 'Answered before the card was edited',
     });
   }
-  const answer = canonicalAnswerId
-    ? attempt.card.canonicalAnswers.find((a) => a.id === canonicalAnswerId)
-    : attempt.card.canonicalAnswers[0];
-  if (!answer) {
+  // In Reverse the answer is the front, so there's no Canonical Answer to
+  // choose
+  const answer =
+    direction === 'REVERSE'
+      ? null
+      : canonicalAnswerId
+        ? attempt.card.canonicalAnswers.find((a) => a.id === canonicalAnswerId)
+        : attempt.card.canonicalAnswers[0];
+  if (answer === undefined) {
     throw new TRPCError({
       code: 'NOT_FOUND',
       message: 'Canonical answer not found',
@@ -496,13 +529,22 @@ export async function acceptAnswer(
   }
 
   return prisma.$transaction(async (tx) => {
-    const card = alreadyAccepts(answer, userAnswer)
+    const card = (
+      answer
+        ? alreadyAccepts(answer, userAnswer)
+        : alreadyAcceptsFront(attempt.card, userAnswer)
+    )
       ? attempt.card
-      : await addAcceptedVariant(tx, {
-          canonicalAnswerId: answer.id,
-          text: userAnswer,
-        });
-    const grading = gradeCardAnswer(userAnswer, card);
+      : answer
+        ? await addAcceptedVariant(tx, {
+            canonicalAnswerId: answer.id,
+            text: userAnswer,
+          })
+        : await addReverseVariant(tx, {
+            cardId: attempt.cardId,
+            text: userAnswer,
+          });
+    const grading = gradeDirectedAnswer(userAnswer, card, direction);
     // An answer with no letters or digits never matches, even itself
     if (grading.recallGrade === 'MISSED') {
       throw new TRPCError({
@@ -546,6 +588,7 @@ export async function acceptAnswer(
         await findCountedAnswers(tx, {
           userId,
           cardId: attempt.cardId,
+          direction,
           resetAt,
         }),
         markedKnownAt,

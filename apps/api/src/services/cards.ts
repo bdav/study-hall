@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient, type StudyDirection } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { markKnown, NEW_PROGRESS } from './progressUpdater.js';
@@ -14,9 +14,14 @@ type Db = PrismaClient | Prisma.TransactionClient;
 
 /**
  * Include for returning a card with its canonical answers, primary first,
- * each with its Accepted Variants in the order they were added.
+ * each with its Accepted Variants in the order they were added, and the
+ * Reverse Variants of its front (ADR-0011), in the order they were added.
  */
 export const withCanonicalAnswers = {
+  reverseVariants: {
+    select: { id: true, text: true },
+    orderBy: { createdAt: 'asc' },
+  },
   canonicalAnswers: {
     select: {
       id: true,
@@ -71,6 +76,17 @@ export function primaryAnswerText(card: {
 }
 
 /**
+ * What a card, loaded with `withCanonicalAnswers`, asks in a Study
+ * Direction (ADR-0011): its front Forward, its primary answer in Reverse.
+ */
+export function askedIn(
+  card: { front: string; canonicalAnswers: { text: string }[] },
+  direction: StudyDirection,
+) {
+  return direction === 'FORWARD' ? card.front : primaryAnswerText(card);
+}
+
+/**
  * Grades an answer to a card, loaded with `withCanonicalAnswers`, against
  * each of its canonical answers and their Accepted Variants. The best grade
  * wins, the primary answer first among equals.
@@ -94,6 +110,30 @@ export function gradeCardAnswer(
     NO_MATCH
   );
 }
+
+/**
+ * Grades an answer to a card, loaded with `withCanonicalAnswers`, studied
+ * in a Study Direction (ADR-0011): Forward against its canonical answers
+ * (`gradeCardAnswer`), Reverse against its front and its Reverse Variants.
+ */
+export function gradeDirectedAnswer(
+  userAnswer: string,
+  card: Parameters<typeof gradeCardAnswer>[1] & {
+    front: string;
+    reverseVariants: { text: string }[];
+  },
+  direction: StudyDirection,
+): Grading {
+  if (direction === 'FORWARD') return gradeCardAnswer(userAnswer, card);
+  return gradeAnswer(
+    userAnswer,
+    card.front,
+    card.reverseVariants.map((variant) => variant.text),
+  );
+}
+
+/** Every Study Direction, in each of which every card has progress. */
+export const STUDY_DIRECTIONS: StudyDirection[] = ['FORWARD', 'REVERSE'];
 
 /** A card to create: its front and its Canonical Answers, primary first. */
 export interface NewCard {
@@ -171,7 +211,8 @@ export interface CardSource {
 /**
  * Creates cards at the end of a deck, in the order given, each with its
  * Canonical Answers, the first primary, card progress in NEW state for the
- * deck owner, and its first Card Version, starting with that progress.
+ * deck owner in each Study Direction, studied in Reverse or not
+ * (ADR-0011), and its first Card Version, starting with that progress.
  */
 export async function createCards(
   db: Db,
@@ -205,7 +246,14 @@ export async function createCards(
           canonicalAnswers: {
             create: card.canonicalAnswers.map(answerData),
           },
-          progress: { create: { userId, deckId, resetAt: startedAt } },
+          progress: {
+            create: STUDY_DIRECTIONS.map((direction) => ({
+              userId,
+              deckId,
+              direction,
+              resetAt: startedAt,
+            })),
+          },
           versions: {
             create: {
               number: 1,
@@ -233,6 +281,10 @@ export async function createCards(
  * A listed variant still on its answer keeps its row. A removed answer's
  * variants go with it, and an unlisted variant that is now one of the
  * card's answers is dropped, as listing it would be refused.
+ * The Reverse Variants of the card's front (ADR-0011), when listed, are
+ * all of them; unlisted, an unchanged front keeps its own and a retyped
+ * one loses them, as an answer does. They're kept, like Accepted Variants,
+ * by the version an edit ends.
  * An edit from a revision of the deck (ADR-0007) records its model and
  * prompt version on the Card Version it starts, and one restoring an
  * earlier version (#54) that version's number.
@@ -243,12 +295,14 @@ export async function editCard(
     cardId,
     front,
     canonicalAnswers,
+    reverseVariants,
     source,
     restoredFromNumber,
   }: {
     cardId: string;
     front?: string;
     canonicalAnswers?: AnswerEdit[];
+    reverseVariants?: string[];
     source?: Omit<CardSource, 'lessonId'>;
     restoredFromNumber?: number;
   },
@@ -271,6 +325,25 @@ export async function editCard(
       answers: canonicalAnswers,
     }));
 
+  if (reverseVariants !== undefined) {
+    // The front's Reverse Variants, as its answers' are listed
+    assertUsefulVariants([
+      { text: front ?? card.front, acceptedVariants: reverseVariants },
+    ]);
+    await db.reverseVariant.deleteMany({
+      where: { cardId, text: { notIn: reverseVariants } },
+    });
+    const kept = new Set(card.reverseVariants.map((variant) => variant.text));
+    for (const text of reverseVariants.filter((text) => !kept.has(text))) {
+      await db.reverseVariant.create({
+        data: { cardId, text, normalizedText: normalizeAnswer(text) },
+      });
+    }
+  } else if (frontChanged) {
+    // A retyped front's old variants may not fit it
+    await db.reverseVariant.deleteMany({ where: { cardId } });
+  }
+
   const edited = await cardWithAnswers(db, cardId);
   if (frontChanged || answersChanged) {
     const resetAt = new Date();
@@ -286,7 +359,10 @@ export async function editCard(
     });
     await db.cardVersion.update({
       where: { id: ending.id },
-      data: { acceptedVariants: variantsByAnswer(card) },
+      data: {
+        acceptedVariants: variantsByAnswer(card),
+        reverseVariants: card.reverseVariants.map((variant) => variant.text),
+      },
     });
     await db.cardVersion.create({
       data: {
@@ -327,7 +403,8 @@ export function asksTheSame(
  * (`editCard`), setting the card's front and Canonical Answers to the
  * version's, and starting a new version that names it. When it recorded
  * its Accepted Variants, its answers come back as it ended with them,
- * primary first, with their variants; otherwise in the order it started
+ * primary first, with their variants, and its front with the Reverse
+ * Variants it ended with (ADR-0011); otherwise in the order it started
  * with, an answer whose text is unchanged keeping its variants and the
  * others having none.
  */
@@ -354,6 +431,8 @@ export async function restoreCardVersion(
     front: version.front,
     canonicalAnswers:
       recorded ?? version.canonicalAnswers.map((text) => ({ text })),
+    // Recorded with its Accepted Variants
+    reverseVariants: recorded ? version.reverseVariants : undefined,
     restoredFromNumber: version.number,
   });
 }
@@ -554,6 +633,50 @@ export function alreadyAccepts(
   );
 }
 
+/**
+ * Adds a Reverse Variant to a card's front (ADR-0011), as
+ * `addAcceptedVariant` adds one to a Canonical Answer: it resets nothing,
+ * and one grading can't tell apart from the front or another of its
+ * Reverse Variants is a duplicate. Returns the card.
+ */
+export async function addReverseVariant(
+  db: Db,
+  { cardId, text }: { cardId: string; text: string },
+) {
+  const card = await cardWithAnswers(db, cardId);
+  if (alreadyAcceptsFront(card, text)) throw alreadyAccepted();
+
+  try {
+    await db.reverseVariant.create({
+      data: { cardId, text, normalizedText: normalizeAnswer(text) },
+    });
+  } catch (error) {
+    // The same variant added concurrently, caught by its unique constraint
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw alreadyAccepted();
+    }
+    throw error;
+  }
+  return cardWithAnswers(db, cardId);
+}
+
+/**
+ * Whether grading in Reverse can't tell `text` apart from a card's front or
+ * one of its Reverse Variants.
+ */
+export function alreadyAcceptsFront(
+  card: { front: string; reverseVariants: { text: string }[] },
+  text: string,
+) {
+  return alreadyAccepts(
+    { text: card.front, acceptedVariants: card.reverseVariants },
+    text,
+  );
+}
+
 function alreadyAccepted() {
   return new TRPCError({
     code: 'CONFLICT',
@@ -569,20 +692,25 @@ function cardWithAnswers(db: Db, cardId: string) {
 }
 
 /**
- * Marks a learner's cards known (ADR-0009), in one transaction: NEW and
- * LEARNING cards take `markKnown`'s progress, and ones already STABLE or
- * RETIRED are left as they are. No attempt is recorded. The cards' items
- * waiting in a Study Session under way are skipped, as the study screen
- * moves past them. Returns how many cards were marked.
+ * Marks a learner's cards known (ADR-0009) in the given Study Directions
+ * (ADR-0011), in one transaction: NEW and LEARNING progress takes
+ * `markKnown`'s, and progress already STABLE or RETIRED is left as it is.
+ * No attempt is recorded. The cards' items waiting in a Study Session under
+ * way in one of those directions are skipped, as the study screen moves
+ * past them. Returns how many directions of cards were marked.
  */
 export async function markCardsKnown(
   prisma: PrismaClient,
-  { userId, cardIds }: { userId: string; cardIds: string[] },
+  {
+    userId,
+    cardIds,
+    directions,
+  }: { userId: string; cardIds: string[]; directions: StudyDirection[] },
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
     const progresses = await tx.cardProgress.findMany({
-      where: { userId, cardId: { in: cardIds } },
+      where: { userId, cardId: { in: cardIds }, direction: { in: directions } },
     });
     let markedCount = 0;
     for (const progress of progresses) {
@@ -595,7 +723,11 @@ export async function markCardsKnown(
       where: {
         cardId: { in: cardIds },
         status: 'PENDING',
-        studySession: { userId, status: 'ACTIVE' },
+        studySession: {
+          userId,
+          status: 'ACTIVE',
+          direction: { in: directions },
+        },
       },
       data: { status: 'SKIPPED' },
     });

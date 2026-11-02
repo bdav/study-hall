@@ -2194,7 +2194,10 @@ describe('StudyPage', () => {
       await startEditing(user);
       await user.click(screen.getByRole('button', { name: 'Mark known' }));
 
-      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(mockMarkKnown).toHaveBeenCalledWith({
+        cardIds: ['card-1'],
+        directions: ['FORWARD'],
+      });
       expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
       expect(screen.getByText('Card 1 of 1')).toBeInTheDocument();
     });
@@ -2206,7 +2209,10 @@ describe('StudyPage', () => {
       await startEditing(user);
       await user.click(screen.getByRole('button', { name: 'Mark known' }));
 
-      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(mockMarkKnown).toHaveBeenCalledWith({
+        cardIds: ['card-1'],
+        directions: ['FORWARD'],
+      });
       expect(
         screen.queryByRole('textbox', { name: 'Front' }),
       ).not.toBeInTheDocument();
@@ -2223,7 +2229,10 @@ describe('StudyPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'Mark known' }));
 
-      expect(mockMarkKnown).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+      expect(mockMarkKnown).toHaveBeenCalledWith({
+        cardIds: ['card-1'],
+        directions: ['FORWARD'],
+      });
       expect(screen.getByText('Marked known')).toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: 'Mark known' }),
@@ -2387,7 +2396,7 @@ describe('StudyPage', () => {
 
       const history = screen.getByRole('region', historyRegion);
       expect(trpc.card.history.useQuery).toHaveBeenCalledWith(
-        { cardId: 'card-1' },
+        { cardId: 'card-1', direction: 'FORWARD' },
         expect.anything(),
       );
       expect(history).toHaveTextContent('Answered 3 times · 2 right');
@@ -3035,7 +3044,12 @@ describe('StudyPage', () => {
       expect(standard).toHaveAttribute('aria-pressed', 'true');
       expect(quick).toHaveAttribute('aria-pressed', 'false');
       expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
-        { deckId: 'deck-1', sessionType: 'STANDARD', studyMode: 'STUDY' },
+        {
+          deckId: 'deck-1',
+          sessionType: 'STANDARD',
+          studyMode: 'STUDY',
+          direction: 'FORWARD',
+        },
         expect.anything(),
       );
     });
@@ -3056,13 +3070,19 @@ describe('StudyPage', () => {
         sessionTypes().getByRole('button', { name: /quick/i }),
       ).toHaveAttribute('aria-pressed', 'true');
       expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
-        { deckId: 'deck-1', sessionType: 'QUICK', studyMode: 'STUDY' },
+        {
+          deckId: 'deck-1',
+          sessionType: 'QUICK',
+          studyMode: 'STUDY',
+          direction: 'FORWARD',
+        },
         expect.anything(),
       );
       expect(start).toHaveBeenCalledWith({
         deckId: 'deck-1',
         sessionType: 'QUICK',
         studyMode: 'STUDY',
+        direction: 'FORWARD',
       });
     });
 
@@ -3100,6 +3120,7 @@ describe('StudyPage', () => {
           deckId: 'deck-1',
           sessionType: 'STANDARD',
           studyMode: 'DRILL_WEAKEST',
+          direction: 'FORWARD',
         },
         expect.anything(),
       );
@@ -3107,6 +3128,7 @@ describe('StudyPage', () => {
         deckId: 'deck-1',
         sessionType: 'STANDARD',
         studyMode: 'DRILL_WEAKEST',
+        direction: 'FORWARD',
       });
     });
 
@@ -3444,5 +3466,140 @@ describe('StudyPage', () => {
       });
       expect(screen.queryByText('Card 2 of 2')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('a reversible deck (#82)', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  const reversibleDeck = {
+    ...mockDeck,
+    reversible: true,
+    forwardLabel: 'Answers from questions',
+    reverseLabel: 'Questions from answers',
+  };
+
+  /** The deck made reversible, starting sessions in the direction asked. */
+  function setupReversible() {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+      data: reversibleDeck,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+    const start = vi.fn();
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+      onSuccess?: (data: unknown) => void;
+    }) => ({
+      mutate: start.mockImplementation((input: { direction: string }) =>
+        opts?.onSuccess?.({ ...mockSession, direction: input.direction }),
+      ),
+    })) as unknown as typeof trpc.study.startSession.useMutation);
+    return start;
+  }
+
+  const directions = () =>
+    within(screen.getByRole('group', { name: 'Direction' }));
+
+  it('offers the direction beside length and mode, by its Direction Labels, Forward to start', () => {
+    setupReversible();
+    renderStudyPage();
+
+    const forward = directions().getByRole('button', {
+      name: /answers from questions/i,
+    });
+    expect(forward).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      directions().getByRole('button', { name: /questions from answers/i }),
+    ).toHaveAttribute('aria-pressed', 'false');
+    expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+      {
+        deckId: 'deck-1',
+        sessionType: 'STANDARD',
+        studyMode: 'STUDY',
+        direction: 'FORWARD',
+      },
+      expect.anything(),
+    );
+  });
+
+  it("doesn't offer a direction on a deck studied one way", () => {
+    setupMocksWithStartSession();
+    renderStudyPage();
+
+    expect(screen.queryByRole('group', { name: 'Direction' })).toBeNull();
+  });
+
+  it('previews and starts the direction chosen, remembered for the deck', async () => {
+    const start = setupReversible();
+    const user = userEvent.setup();
+    const { unmount } = renderStudyPage();
+
+    await user.click(
+      directions().getByRole('button', { name: /questions from answers/i }),
+    );
+    expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ direction: 'REVERSE' }),
+      expect.anything(),
+    );
+    unmount();
+    renderStudyPage();
+    expect(
+      directions().getByRole('button', { name: /questions from answers/i }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+    expect(start).toHaveBeenCalledWith({
+      deckId: 'deck-1',
+      sessionType: 'STANDARD',
+      studyMode: 'STUDY',
+      direction: 'REVERSE',
+    });
+  });
+
+  it('asks for the front in Reverse, showing the primary answer', async () => {
+    setupReversible();
+    localStorage.setItem('study-hall:direction:deck-1', 'REVERSE');
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    expect(await screen.findByText('4')).toBeInTheDocument();
+    expect(screen.queryByText('What is 2+2?')).toBeNull();
+    await user.type(screen.getByRole('textbox'), 'What is 2+2?{Enter}');
+
+    expect(await screen.findByTestId('correct-answer')).toHaveTextContent(
+      /What is 2\+2\?/,
+    );
+    expect(trpc.card.history.useQuery).toHaveBeenLastCalledWith(
+      { cardId: 'card-1', direction: 'REVERSE' },
+      expect.anything(),
+    );
+  });
+
+  it('marks the card known in the direction being studied', async () => {
+    setupReversible();
+    localStorage.setItem('study-hall:direction:deck-1', 'REVERSE');
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(await screen.findByRole('textbox'), 'four{Enter}');
+    await user.click(await screen.findByRole('button', { name: 'Mark known' }));
+
+    expect(mockMarkKnown).toHaveBeenCalledWith({
+      cardIds: ['card-1'],
+      directions: ['REVERSE'],
+    });
+  });
+
+  it('says which direction an unfinished session is in', () => {
+    setupReversible();
+    mockActiveSession({ ...mockSession, direction: 'REVERSE' });
+    renderStudyPage();
+
+    expect(screen.getByText('Resume session?')).toBeInTheDocument();
+    expect(screen.getByText(/Questions from answers/)).toBeInTheDocument();
   });
 });

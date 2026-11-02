@@ -763,7 +763,9 @@ describe('the card lifecycle across Study Sessions', () => {
   /** Makes the card due now, as if its interval had passed. */
   async function dueNow(cardId: string) {
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId } },
+      where: {
+        userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+      },
       data: { dueAt: new Date(Date.now() - 1000) },
     });
   }
@@ -808,7 +810,9 @@ describe('the card lifecycle across Study Sessions', () => {
 
 function progressOf(cardId: string) {
   return prisma.cardProgress.findUniqueOrThrow({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
   });
 }
 
@@ -1012,7 +1016,13 @@ describe('missed cards coming back in the same Study Session', () => {
     });
     await caller.study.finishSession({ id: one.id });
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: card.id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: card.id,
+          direction: 'FORWARD',
+        },
+      },
       data: { dueAt: new Date(Date.now() - 1000) },
     });
 
@@ -1200,7 +1210,13 @@ describe('session types and queue buckets', () => {
     const deck = await deckWith(numbered(n));
     for (const [i, card] of deck.cards.entries()) {
       await prisma.cardProgress.update({
-        where: { userId_cardId: { userId, cardId: card.id } },
+        where: {
+          userId_cardId_direction: {
+            userId,
+            cardId: card.id,
+            direction: 'FORWARD',
+          },
+        },
         data: {
           lifecycleState: 'STABLE',
           masteryScore: 6,
@@ -1265,7 +1281,13 @@ describe('session types and queue buckets', () => {
     const deck = await stableBacklog(30);
     const leastOverdue = deck.cards[29];
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: leastOverdue.id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: leastOverdue.id,
+          direction: 'FORWARD',
+        },
+      },
       data: { masteryScore: 3 },
     });
 
@@ -1303,7 +1325,13 @@ describe('session types and queue buckets', () => {
     await missIn(deck.id, leastOverdue.id);
     await missIn(deck.id, leastOverdue.id);
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: leastOverdue.id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: leastOverdue.id,
+          direction: 'FORWARD',
+        },
+      },
       data: { resetAt: new Date() },
     });
 
@@ -1313,7 +1341,13 @@ describe('session types and queue buckets', () => {
   it('leaves out a weak card not yet due', async () => {
     const deck = await stableBacklog(3);
     await prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId: deck.cards[0].id } },
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: deck.cards[0].id,
+          direction: 'FORWARD',
+        },
+      },
       data: { masteryScore: 2, dueAt: new Date(Date.now() + hour) },
     });
 
@@ -1347,7 +1381,9 @@ describe('study modes', () => {
     data: Parameters<typeof prisma.cardProgress.update>[0]['data'],
   ) {
     return prisma.cardProgress.update({
-      where: { userId_cardId: { userId, cardId } },
+      where: {
+        userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+      },
       data,
     });
   }
@@ -1460,7 +1496,9 @@ async function startedSession(cards: NewCard[]) {
 /** Makes a card a LEARNING card due at the given time. */
 async function scheduleCard(cardId: string, dueAt: Date) {
   await prisma.cardProgress.update({
-    where: { userId_cardId: { userId, cardId } },
+    where: {
+      userId_cardId_direction: { userId, cardId, direction: 'FORWARD' },
+    },
     data: { lifecycleState: 'LEARNING', dueAt },
   });
 }

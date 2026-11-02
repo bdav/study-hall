@@ -9,6 +9,7 @@ import { CardStack } from '@/components/CardStack';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AnswersEditor } from '@/components/AnswersEditor';
 import { CardVersionsDialog } from '@/components/CardVersionsDialog';
+import { type StudyDirection } from '@/lib/directions';
 
 const flipButtonClasses =
   'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
@@ -22,7 +23,8 @@ const flipButtonClasses =
  * nothing, like choosing another primary or changing Accepted Variants,
  * goes to `onChanged`. Cancel drops the edits; Delete, once confirmed,
  * removes the card; Mark known, there when `canMarkKnown` (not for a card
- * known already), marks it known (ADR-0009), going to `onMarkedKnown`, and
+ * known already), marks it known (ADR-0009) in the Study Direction being
+ * studied (ADR-0011), going to `onMarkedKnown`, and
  * leaves edit mode. History opens the card's version history (#54), where
  * restoring an earlier version is an edit that resets progress, going to
  * `onEdited`, and leaves edit mode. Mounted each time edit mode turns on, so
@@ -32,6 +34,8 @@ const flipButtonClasses =
 export function StudyCardEditor({
   deckId,
   card,
+  direction,
+  labels,
   queueLength,
   progress,
   canMarkKnown,
@@ -45,6 +49,10 @@ export function StudyCardEditor({
 }: {
   deckId: string;
   card: Flashcard;
+  /** The Study Direction being studied, which Mark known marks. */
+  direction: StudyDirection;
+  /** A Reversible Deck's Direction Labels. */
+  labels?: Record<StudyDirection, string>;
   queueLength: number;
   progress: string | undefined;
   canMarkKnown: boolean;
@@ -141,7 +149,9 @@ export function StudyCardEditor({
           size="sm"
           variant="ghost"
           disabled={markKnown.isPending}
-          onClick={() => markKnown.mutate({ cardIds: [card.id] })}
+          onClick={() =>
+            markKnown.mutate({ cardIds: [card.id], directions: [direction] })
+          }
           className="text-white/70 hover:bg-white/10 hover:text-white"
         >
           <BadgeCheck className="mr-1 h-4 w-4" />
@@ -255,6 +265,8 @@ export function StudyCardEditor({
         <CardVersionsDialog
           deckId={deckId}
           cardId={card.id}
+          direction={direction}
+          labels={labels}
           onClose={() => setIsShowingHistory(false)}
           onRestored={(restored) => {
             onEdited(toFlashcard(restored));

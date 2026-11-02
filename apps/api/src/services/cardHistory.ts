@@ -1,4 +1,8 @@
-import { type PrismaClient, type RecallGrade } from '@prisma/client';
+import {
+  type PrismaClient,
+  type RecallGrade,
+  type StudyDirection,
+} from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { isCorrect } from './countedAttempts.js';
 import { isKnown } from './progressUpdater.js';
@@ -26,23 +30,29 @@ function summarizeAttempts(attempts: Attempt[]) {
 }
 
 /**
- * A learner's history with one of their cards (ADR-0008): each Card
- * Version, newest first, with its answers and how many were right, and the
+ * A learner's history with one of their cards in a Study Direction
+ * (ADR-0008, ADR-0011): each Card Version, newest first, with its answers
+ * in that direction and how many were right, and the
  * attempts from before versions were recorded, as an earlier version. Each
  * version has its answers' Accepted Variants: the card's own for the current
  * one, those it ended with for an earlier one, or none (`null`) for one that
- * ended before they were recorded. Each says when it started and ended,
- * whether a revision of the deck started it (`sourceModel`) or it restored
- * an earlier version (`restoredFromNumber`), and whether it can be restored
- * (#54): an earlier version that asks something the card doesn't now. An
- * attempt's grade is its final one, after "My answer was correct". The
- * card's progress is its lifecycle state, when it's next due and whether
+ * ended before they were recorded, and the Reverse Variants of its front
+ * likewise. Each says when it started and ended, whether a revision of
+ * the deck started it (`sourceModel`) or it restored an earlier version
+ * (`restoredFromNumber`), and whether it can be restored (#54): an earlier
+ * version that asks something the card doesn't now. An attempt's grade is
+ * its final one, after "My answer was correct". The card's progress, in
+ * the direction, is its lifecycle state, when it's next due and whether
  * it's known already (`isKnown`); the mastery score stays inside the
  * scheduler. Only the deck's owner sees it.
  */
 export async function cardHistory(
   prisma: PrismaClient,
-  { userId, cardId }: { userId: string; cardId: string },
+  {
+    userId,
+    cardId,
+    direction,
+  }: { userId: string; cardId: string; direction: StudyDirection },
 ) {
   const card = await prisma.card.findFirst({
     where: { id: cardId, deck: { userId } },
@@ -55,6 +65,7 @@ export async function cardHistory(
           front: true,
           canonicalAnswers: true,
           acceptedVariants: true,
+          reverseVariants: true,
           sourceModel: true,
           restoredFromNumber: true,
           startedAt: true,
@@ -62,8 +73,9 @@ export async function cardHistory(
       },
       front: true,
       canonicalAnswers: withCanonicalAnswers.canonicalAnswers,
+      reverseVariants: withCanonicalAnswers.reverseVariants,
       progress: {
-        where: { userId },
+        where: { userId, direction },
         select: { lifecycleState: true, dueAt: true },
       },
     },
@@ -73,7 +85,7 @@ export async function cardHistory(
   }
 
   const attempts = await prisma.cardAttempt.findMany({
-    where: { cardId, studySession: { userId } },
+    where: { cardId, direction, studySession: { userId } },
     orderBy: [{ createdAt: 'desc' }, { attemptNumber: 'desc' }],
     select: {
       id: true,
@@ -100,27 +112,32 @@ export async function cardHistory(
       ...progress,
       isKnown: isKnown(progress.lifecycleState),
     },
-    versions: card.versions.map(({ acceptedVariants, ...version }, i) => {
-      const isCurrent = i === 0;
-      // The card's own answers and variants for the current version, those it
-      // ended with for one that's over: primary first, as the primary may
-      // have changed without a new version
-      const byAnswer = isCurrent
-        ? variantsByAnswer(card)
-        : parseVariantsByAnswer(acceptedVariants);
-      return {
-        ...version,
-        canonicalAnswers:
-          byAnswer?.map((answer) => answer.text) ?? version.canonicalAnswers,
-        // When the next version started
-        endedAt: isCurrent ? null : card.versions[i - 1].startedAt,
-        isCurrent,
-        canRestore: !isCurrent && !asksTheSame(version, card),
-        acceptedVariants:
-          byAnswer?.map((answer) => answer.acceptedVariants) ?? null,
-        ...summarizeAttempts(attemptsOf(version.id)),
-      };
-    }),
+    versions: card.versions.map(
+      ({ acceptedVariants, reverseVariants, ...version }, i) => {
+        const isCurrent = i === 0;
+        // The card's own answers and variants for the current version, those it
+        // ended with for one that's over: primary first, as the primary may
+        // have changed without a new version
+        const byAnswer = isCurrent
+          ? variantsByAnswer(card)
+          : parseVariantsByAnswer(acceptedVariants);
+        return {
+          ...version,
+          canonicalAnswers:
+            byAnswer?.map((answer) => answer.text) ?? version.canonicalAnswers,
+          // When the next version started
+          endedAt: isCurrent ? null : card.versions[i - 1].startedAt,
+          isCurrent,
+          canRestore: !isCurrent && !asksTheSame(version, card),
+          acceptedVariants:
+            byAnswer?.map((answer) => answer.acceptedVariants) ?? null,
+          reverseVariants: isCurrent
+            ? card.reverseVariants.map((variant) => variant.text)
+            : reverseVariants,
+          ...summarizeAttempts(attemptsOf(version.id)),
+        };
+      },
+    ),
     unversioned: unversioned.length > 0 ? summarizeAttempts(unversioned) : null,
   };
 }

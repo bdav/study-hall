@@ -1,16 +1,18 @@
 import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { isSameAnswer, toFlashcard, type Flashcard } from '@/lib/cards';
 import { useAnswersForm } from '@/hooks/useAnswersForm';
 import { Button } from '@/components/ui/button';
 import { AnswersEditor } from '@/components/AnswersEditor';
+import { AcceptedVariantsEditor } from '@/components/AcceptedVariantsEditor';
 
 /**
  * A card's answers below it on the Cards tab: a summary of its Canonical
  * Answers and Accepted Variants that opens, in place, into the form for
- * them, saved together with Save. `onSaved` says whether the saved answers
- * reset the card's progress; variant changes reset nothing. Marked
+ * them, saved together with Save, and, on a Reversible Deck, the Reverse
+ * Variants of its front (ADR-0011). `onSaved` says whether the saved
+ * answers reset the card's progress; variant changes reset nothing. Marked
  * `data-card-answers`, so page shortcuts can leave its keys alone.
  */
 export function CardAnswers({
@@ -20,11 +22,14 @@ export function CardAnswers({
   onOpen,
   onClose,
   onSaved,
+  reversible = false,
   disabled = false,
   className = '',
 }: {
   deckId: string;
   card: Flashcard;
+  /** On a Reversible Deck, its front's Reverse Variants show too. */
+  reversible?: boolean;
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -44,6 +49,7 @@ export function CardAnswers({
         <AnswersForm
           deckId={deckId}
           card={card}
+          reversible={reversible}
           onDone={onClose}
           onSaved={onSaved}
         />
@@ -54,6 +60,7 @@ export function CardAnswers({
   return (
     <CardAnswersSummary
       card={card}
+      reversible={reversible}
       onOpen={onOpen}
       disabled={disabled}
       className={`text-left ${className}`}
@@ -67,15 +74,18 @@ export function CardAnswers({
  * heads it, saying what it is. A pencil, on the caption or else after the
  * answers, shows it can be chosen, unless `disabled`, as when they're open
  * for editing already. Every answer and variant shows in full, wrapping.
+ * On a Reversible Deck, the front's Reverse Variants follow (ADR-0011).
  */
 export function CardAnswersSummary({
   card,
   onOpen,
   caption,
+  reversible = false,
   disabled = false,
   className = '',
 }: {
   card: Flashcard;
+  reversible?: boolean;
   onOpen: () => void;
   caption?: string;
   disabled?: boolean;
@@ -112,6 +122,12 @@ export function CardAnswersSummary({
           Variants: {variants.join(', ')}
         </p>
       )}
+      {reversible && card.reverseVariants.length > 0 && (
+        <p className="break-words text-xs text-white/50">
+          Reverse variants:{' '}
+          {card.reverseVariants.map((variant) => variant.text).join(', ')}
+        </p>
+      )}
     </button>
   );
 }
@@ -123,11 +139,13 @@ export function CardAnswersSummary({
 function AnswersForm({
   deckId,
   card,
+  reversible,
   onDone,
   onSaved,
 }: {
   deckId: string;
   card: Flashcard;
+  reversible: boolean;
   onDone: () => void;
   onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
 }) {
@@ -156,12 +174,29 @@ function AnswersForm({
     update.mutate({
       cardId: card.id,
       canonicalAnswers: form.edits,
+      reverseVariants: form.reverseEdits,
     });
   }
 
   return (
     <>
       <AnswersEditor form={form} />
+      {reversible && (
+        <div className="mt-3">
+          <AcceptedVariantsEditor
+            reverse
+            name={card.front}
+            variants={form.reverseVariants}
+            isSameAsAnswer={(variant) => isSameAnswer(variant, card.front)}
+            text={form.reverseVariantText}
+            isTextAccepted={form.isReverseVariantTextAccepted}
+            onTextChange={form.typeReverseVariant}
+            onAdd={form.addReverseVariant}
+            onRemove={form.removeReverseVariant}
+            description="Reverse variants are other ways to write the front, accepted when the card is studied in Reverse."
+          />
+        </div>
+      )}
       <div className="mt-3 flex justify-end gap-2">
         <Button
           type="button"

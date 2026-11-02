@@ -76,7 +76,8 @@ const mockCards = [
     ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
-    isKnown: false,
+    reverseVariants: [] as { id: string; text: string }[],
+    knownDirections: [] as ('FORWARD' | 'REVERSE')[],
   },
   {
     id: 'card-2',
@@ -93,7 +94,8 @@ const mockCards = [
     ],
     createdAt: '2026-03-01T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
-    isKnown: false,
+    reverseVariants: [] as { id: string; text: string }[],
+    knownDirections: [] as ('FORWARD' | 'REVERSE')[],
   },
 ];
 
@@ -131,6 +133,10 @@ function setupMocks(overrides?: {
   deck?: {
     archivedAt?: string | null;
     course?: { id: string; title: string; archivedAt: string | null } | null;
+    description?: string | null;
+    reversible?: boolean;
+    forwardLabel?: string | null;
+    reverseLabel?: string | null;
   };
 }) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
@@ -169,6 +175,10 @@ function setupMocks(overrides?: {
           cards: [],
           archivedAt: null,
           course: null,
+          description: null,
+          reversible: false,
+          forwardLabel: null,
+          reverseLabel: null,
           ...overrides?.deck,
         },
     isLoading: overrides?.deckLoading ?? false,
@@ -1182,7 +1192,8 @@ describe('DeckCardsPage', () => {
       ],
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-01T00:00:00.000Z',
-      isKnown: false,
+      reverseVariants: [],
+      knownDirections: [],
     };
 
     function mockUpdate() {
@@ -1657,7 +1668,10 @@ describe('DeckCardsPage', () => {
 
     it("doesn't offer Mark known on a card already known", async () => {
       setupMocks({
-        cards: [mockCards[0], { ...mockCards[1], isKnown: true }],
+        cards: [
+          mockCards[0],
+          { ...mockCards[1], knownDirections: ['FORWARD'] },
+        ],
       });
       renderDeckCardsPage();
 
@@ -1902,6 +1916,7 @@ describe('DeckCardsPage', () => {
       ).toBeInTheDocument();
       expect(trpc.card.history.useQuery).toHaveBeenCalledWith({
         cardId: 'card-1',
+        direction: 'FORWARD',
       });
     });
 
@@ -1914,5 +1929,211 @@ describe('DeckCardsPage', () => {
 
       expect(screen.queryByTitle('History')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('a reversible deck on the Cards tab (#82)', () => {
+  function mockDeckUpdate() {
+    const mutate = vi.fn();
+    vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate,
+    } as unknown as ReturnType<typeof trpc.deck.update.useMutation>);
+    return mutate;
+  }
+
+  const reversible = {
+    reversible: true,
+    forwardLabel: 'Capitals from countries',
+    reverseLabel: null,
+  };
+
+  it("edits the deck's description in place below its title", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setupMocks();
+    const update = mockDeckUpdate();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add a description' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Deck description' }),
+      'Every capital in Europe',
+    );
+    vi.advanceTimersByTime(900);
+
+    expect(update).toHaveBeenCalledWith({
+      id: 'deck-1',
+      description: 'Every capital in Europe',
+    });
+    vi.useRealTimers();
+  });
+
+  it('turns Study both ways on', async () => {
+    setupMocks();
+    const update = mockDeckUpdate();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    const toggle = screen.getByRole('switch', { name: 'Study both ways' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    // Its labels show only while it's on
+    expect(screen.queryByRole('button', { name: /label/i })).toBeNull();
+    await user.click(toggle);
+
+    expect(update).toHaveBeenCalledWith({ id: 'deck-1', reversible: true });
+  });
+
+  it('turns it off', async () => {
+    setupMocks({ deck: reversible });
+    const update = mockDeckUpdate();
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('switch', { name: 'Study both ways' }));
+
+    expect(update).toHaveBeenCalledWith({ id: 'deck-1', reversible: false });
+  });
+
+  it('edits the Direction Labels in place beside it, Reverse standing in for a blank one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setupMocks({ deck: reversible });
+    const update = mockDeckUpdate();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderDeckCardsPage();
+
+    expect(screen.getByText('Capitals from countries')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Edit the Reverse label' }),
+    );
+    const label = screen.getByRole('textbox', { name: 'Reverse label' });
+    expect(label).toHaveAttribute('placeholder', 'Reverse');
+    expect(label).toHaveAttribute('maxLength', '40');
+    await user.type(label, 'Countries from capitals');
+    vi.advanceTimersByTime(900);
+
+    expect(update).toHaveBeenCalledWith({
+      id: 'deck-1',
+      reverseLabel: 'Countries from capitals',
+    });
+    vi.useRealTimers();
+  });
+
+  it("warns about cards Reverse can't tell apart, naming them", () => {
+    const sharing = {
+      ...mockCards[1],
+      id: 'card-3',
+      front: 'Capital of the French Republic',
+      canonicalAnswers: [
+        {
+          ...mockCards[0].canonicalAnswers[0],
+          id: 'answer-paris-2',
+          text: 'paris',
+        },
+      ],
+    };
+    setupMocks({ deck: reversible, cards: [...mockCards, sharing] });
+    renderDeckCardsPage();
+
+    const warning = screen.getByRole('status', { name: /can.t tell apart/i });
+    expect(warning).toHaveTextContent('Capital of France');
+    expect(warning).toHaveTextContent('Capital of the French Republic');
+    expect(warning).not.toHaveTextContent('Capital of Germany');
+  });
+
+  it("doesn't warn on a deck studied one way", () => {
+    setupMocks({
+      cards: [
+        mockCards[0],
+        { ...mockCards[1], canonicalAnswers: mockCards[0].canonicalAnswers },
+      ],
+    });
+    renderDeckCardsPage();
+
+    expect(
+      screen.queryByRole('status', { name: /can.t tell apart/i }),
+    ).toBeNull();
+  });
+
+  it('asks which direction to mark a card known', async () => {
+    setupMocks({ deck: reversible });
+    const markKnown = vi.fn();
+    vi.mocked(trpc.card.markKnown.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate: markKnown,
+    } as never);
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getAllByTitle('Mark known')[0]);
+    const dialog = screen.getByRole('alertdialog');
+    expect(markKnown).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Reverse' }));
+
+    expect(markKnown).toHaveBeenCalledWith({
+      cardIds: ['card-1'],
+      directions: ['REVERSE'],
+    });
+  });
+
+  it('asks which direction to mark a selection known, offering both', async () => {
+    setupMocks({ deck: reversible });
+    const markKnown = vi.fn();
+    vi.mocked(trpc.card.markKnown.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate: markKnown,
+    } as never);
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Select cards' }));
+    await user.click(screen.getByRole('button', { name: 'Select all' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Mark selected known' }),
+    );
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: 'Both ways',
+      }),
+    );
+
+    expect(markKnown).toHaveBeenCalledWith({
+      cardIds: ['card-1', 'card-2'],
+      directions: ['FORWARD', 'REVERSE'],
+    });
+  });
+
+  it("shows a card's Reverse Variants below it and adds one, saved with Save", async () => {
+    setupMocks({
+      deck: reversible,
+      cards: [
+        { ...mockCards[0], reverseVariants: [{ id: 'rv-1', text: 'France!' }] },
+      ],
+    });
+    const update = vi.fn();
+    vi.mocked(trpc.card.update.useMutation).mockReturnValue({
+      ...defaultMutationReturn,
+      mutate: update,
+    } as unknown as ReturnType<typeof trpc.card.update.useMutation>);
+    const user = userEvent.setup();
+    renderDeckCardsPage();
+
+    const summary = screen.getByRole('button', {
+      name: 'Answers of Capital of France',
+    });
+    expect(summary).toHaveTextContent('Reverse variants: France!');
+    await user.click(summary);
+    await user.type(
+      screen.getByLabelText('New Reverse variant of Capital of France'),
+      'French Republic',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cardId: 'card-1',
+        reverseVariants: ['France!', 'French Republic'],
+      }),
+    );
   });
 });

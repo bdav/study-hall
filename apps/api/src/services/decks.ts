@@ -1,4 +1,4 @@
-import { type PrismaClient } from '@prisma/client';
+import { type PrismaClient, type StudyDirection } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 /*
@@ -20,6 +20,22 @@ function deckNotFoundError() {
 /** Refuses a change to a deck once it's archived. */
 export function assertDeckActive(deck: { archivedAt: Date | null }) {
   if (deck.archivedAt) throw archivedDeckError();
+}
+
+/**
+ * Refuses studying a deck in Reverse unless it's a Reversible Deck
+ * (ADR-0011): turned off, Reverse is hidden.
+ */
+export function assertStudiesIn(
+  deck: { reversible: boolean },
+  direction: StudyDirection,
+) {
+  if (direction === 'REVERSE' && !deck.reversible) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'This deck isn’t studied both ways',
+    });
+  }
 }
 
 /** The user's deck, archived or not; NOT_FOUND for anyone else's. */
@@ -46,18 +62,27 @@ export async function findActiveDeck(
 
 /**
  * Refuses, as not found, any card that isn't in one of the user's decks,
- * and any in an archived deck as archived.
+ * and any in an archived deck as archived. When changing the cards in
+ * Study Directions, any in a deck not studied in one of them is refused
+ * (`assertStudiesIn`).
  */
 export async function assertCanChangeCards(
   prisma: PrismaClient,
-  { userId, cardIds }: { userId: string; cardIds: string[] },
+  {
+    userId,
+    cardIds,
+    directions = [],
+  }: { userId: string; cardIds: string[]; directions?: StudyDirection[] },
 ) {
   const cards = await prisma.card.findMany({
     where: { id: { in: cardIds }, deck: { userId } },
-    select: { deck: { select: { archivedAt: true } } },
+    select: { deck: { select: { archivedAt: true, reversible: true } } },
   });
   if (cards.length !== new Set(cardIds).size) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Card not found' });
   }
-  for (const { deck } of cards) assertDeckActive(deck);
+  for (const { deck } of cards) {
+    assertDeckActive(deck);
+    for (const direction of directions) assertStudiesIn(deck, direction);
+  }
 }

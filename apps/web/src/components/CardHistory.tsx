@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
 import { answeredLine, formatDay } from '@/lib/format';
+import { type StudyDirection } from '@/lib/directions';
 import {
   Select,
   SelectContent,
@@ -51,13 +52,17 @@ const BEFORE = 'before';
  * dates, how many were right, its state in plain words and, unless told
  * not to, when it's next due; a picker of version numbers shows an earlier version instead, as a
  * block of its front and each answer with the Accepted Variants it ended
- * with, above the answers given to it. Read only.
+ * with, above the answers given to it. Read only. It's the history of the
+ * Study Direction being studied (ADR-0011): its answers and progress, and
+ * in Reverse the Reverse Variants an earlier version's front ended with.
  */
 export function CardHistory({
   cardId,
+  direction = 'FORWARD',
   showsNextReview = true,
 }: {
   cardId: string;
+  direction?: StudyDirection;
   /** Off while the card is still to come back in the Study Session. */
   showsNextReview?: boolean;
 }) {
@@ -65,7 +70,10 @@ export function CardHistory({
   // A Card Version's id, or BEFORE; the current version until chosen
   const [chosen, setChosen] = useState<string | null>(null);
   // Not kept once off screen, so it always comes with the answer just given
-  const query = trpc.card.history.useQuery({ cardId }, { gcTime: 0 });
+  const query = trpc.card.history.useQuery(
+    { cardId, direction },
+    { gcTime: 0 },
+  );
   const history = query.data;
 
   if (query.isError) {
@@ -156,6 +164,11 @@ export function CardHistory({
           <p className="font-semibold uppercase tracking-wide text-white">
             {version.front}
           </p>
+          {direction === 'REVERSE' && version.reverseVariants.length > 0 && (
+            <p className="text-xs text-white/50">
+              Reverse variants: {version.reverseVariants.join(', ')}
+            </p>
+          )}
           <div className="mt-2 space-y-1">
             {version.canonicalAnswers.map((answer, i) => {
               const variants = version.acceptedVariants?.[i] ?? [];

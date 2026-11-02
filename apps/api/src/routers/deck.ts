@@ -31,6 +31,7 @@ import {
 } from '../services/cards.js';
 import { findCountedAttempts, isCorrect } from '../services/countedAttempts.js';
 import { matchAnswer } from '../services/answerGrader.js';
+import { MAX_DIRECTION_LABEL_LENGTH } from './inputs.js';
 import {
   assertDeckActive,
   findActiveDeck,
@@ -50,6 +51,15 @@ const generationInstruction = z
   .trim()
   .min(1)
   .max(MAX_GENERATION_INSTRUCTION_LENGTH);
+
+/** A Direction Label, blank for none, when Forward or Reverse stands in. */
+const directionLabel = z
+  .string()
+  .trim()
+  .max(MAX_DIRECTION_LABEL_LENGTH)
+  .transform((label) => label || null)
+  .nullable()
+  .optional();
 
 function changesEachCardOnce(cardIds: string[]) {
   return new Set(cardIds).size === cardIds.length;
@@ -217,12 +227,21 @@ export const deckRouter = router({
       });
     }),
 
+  /**
+   * Changes a deck's name, description, or whether it's a Reversible Deck
+   * and its Direction Labels (ADR-0011). Turning reversibility off hides
+   * Reverse and keeps its history, abandoning a Reverse Study Session under
+   * way; turning it back on picks up where it left off.
+   */
   update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
         name: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
+        reversible: z.boolean().optional(),
+        forwardLabel: directionLabel,
+        reverseLabel: directionLabel,
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -231,14 +250,23 @@ export const deckRouter = router({
         deckId: input.id,
       });
 
-      return ctx.prisma.deck.update({
-        where: { id: input.id },
-        data: {
-          ...(input.name !== undefined && { name: input.name }),
-          ...(input.description !== undefined && {
+      return ctx.prisma.$transaction(async (tx) => {
+        if (input.reversible === false) {
+          await tx.studySession.updateMany({
+            where: { deckId: input.id, direction: 'REVERSE', status: 'ACTIVE' },
+            data: { status: 'ABANDONED', endedAt: new Date() },
+          });
+        }
+        return tx.deck.update({
+          where: { id: input.id },
+          data: {
+            name: input.name,
             description: input.description,
-          }),
-        },
+            reversible: input.reversible,
+            forwardLabel: input.forwardLabel,
+            reverseLabel: input.reverseLabel,
+          },
+        });
       });
     }),
 

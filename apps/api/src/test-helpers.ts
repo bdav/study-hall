@@ -1,5 +1,9 @@
 import { config } from 'dotenv';
-import { type ExerciseType, PrismaClient } from '@prisma/client';
+import {
+  type ExerciseType,
+  PrismaClient,
+  type StudyDirection,
+} from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -8,7 +12,7 @@ import { LESSON_MODEL, LESSON_PROMPT_VERSION } from './ai/lesson.js';
 import {
   createCards,
   currentVersionId,
-  gradeCardAnswer,
+  gradeDirectedAnswer,
   withCanonicalAnswers,
   type NewCard,
 } from './services/cards.js';
@@ -71,8 +75,9 @@ export async function createDeckWithCards(
 }
 
 /**
- * Records a finished Study Session holding the given answers, in order, each
- * graded the way the app grades it. A card answered more than once gets
+ * Records a finished Study Session, Forward unless given another Study
+ * Direction, holding the given answers, in order, each graded the way the
+ * app grades it. A card answered more than once gets
  * retry attempts. For suites that need attempt history, such as several
  * attempts at one card, without going through the study flow.
  */
@@ -82,16 +87,19 @@ export async function recordStudySession(
     userId,
     deckId,
     answers,
+    direction = 'FORWARD',
   }: {
     userId: string;
     deckId: string;
     answers: { cardId: string; userAnswer: string }[];
+    direction?: StudyDirection;
   },
 ) {
   const session = await prisma.studySession.create({
     data: {
       userId,
       deckId,
+      direction,
       sessionType: 'STANDARD',
       status: 'COMPLETED',
       endedAt: new Date(),
@@ -112,8 +120,10 @@ export async function recordStudySession(
         studySessionId: session.id,
         cardId,
         cardVersionId: await currentVersionId(prisma, cardId),
+        direction,
         userAnswer,
-        recallGrade: gradeCardAnswer(userAnswer, card).recallGrade,
+        recallGrade: gradeDirectedAnswer(userAnswer, card, direction)
+          .recallGrade,
         attemptNumber,
         isRetry: attemptNumber > 1,
       },

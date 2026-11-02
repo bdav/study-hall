@@ -10,6 +10,8 @@ import {
   tallDialogClassName,
 } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { type StudyDirection } from '@/lib/directions';
+import { DirectionPicker } from '@/components/DirectionPicker';
 import {
   Dialog,
   DialogContent,
@@ -32,21 +34,30 @@ const blockClassName =
  * it or it restored an earlier one; then the answers from before versions
  * were recorded. An earlier version that asks something else can be
  * restored, after a confirmation, as a new version, the restored card going
- * to `onRestored`.
+ * to `onRestored`. The answers counted are those in one Study Direction
+ * (ADR-0011), `direction` to start; on a Reversible Deck, given its
+ * Direction Labels, the learner can choose the other, and each version's
+ * front shows its Reverse Variants.
  */
 export function CardVersionsDialog({
   deckId,
   cardId,
+  direction: initialDirection = 'FORWARD',
+  labels,
   onClose,
   onRestored,
 }: {
   deckId: string;
   cardId: string;
+  direction?: StudyDirection;
+  /** A Reversible Deck's Direction Labels. */
+  labels?: Record<StudyDirection, string>;
   onClose: () => void;
   onRestored?: (card: RestoredCard) => void;
 }) {
   const utils = trpc.useUtils();
-  const query = trpc.card.history.useQuery({ cardId });
+  const [direction, setDirection] = useState(initialDirection);
+  const query = trpc.card.history.useQuery({ cardId, direction });
   const history = query.data;
   // The version last chosen to restore, kept while its confirmation closes
   const [restoring, setRestoring] = useState<{
@@ -83,6 +94,15 @@ export function CardVersionsDialog({
             whenever an edit changes what the card asks.
           </DialogDescription>
         </DialogHeader>
+
+        {labels && (
+          <DirectionPicker
+            label="Answers counted"
+            labels={labels}
+            value={direction}
+            onChange={setDirection}
+          />
+        )}
 
         {query.isError && (
           <p className="text-sm text-white/60">
@@ -140,6 +160,11 @@ export function CardVersionsDialog({
                     <p className="font-semibold uppercase tracking-wide text-white">
                       {version.front}
                     </p>
+                    {labels && version.reverseVariants.length > 0 && (
+                      <p className="text-xs text-white/50">
+                        Reverse variants: {version.reverseVariants.join(', ')}
+                      </p>
+                    )}
                     <ul className="mt-1 space-y-1">
                       {version.canonicalAnswers.map((answer, i) => {
                         const variants = version.acceptedVariants?.[i] ?? [];

@@ -5,6 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { type SessionChoice } from '@/lib/sessionChoices';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
 import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
+import { type StudyDirection } from '@/lib/directions';
 
 /** One item of a Study Session: a card, or a Retry of a missed one (#11). */
 type QueueItem = { itemId: string; card: Flashcard; isRetry: boolean };
@@ -12,8 +13,15 @@ type QueueItem = { itemId: string; card: Flashcard; isRetry: boolean };
 /** An answered item, in the order answered: the queue's first items. */
 type HistoryEntry = GradedAnswer & { card: Flashcard; isRetry: boolean };
 
-/** A Study Session's queue, in the order the server keeps it. */
-type StudySessionQueue = { id: string; items: QueueItem[] };
+/**
+ * A Study Session's queue, in the order the server keeps it, and the Study
+ * Direction it's in (ADR-0011).
+ */
+type StudySessionQueue = {
+  id: string;
+  direction: StudyDirection;
+  items: QueueItem[];
+};
 
 /** A Study Session as the server returns it, new or unfinished. */
 type ServerSession = NonNullable<
@@ -63,6 +71,7 @@ function toQueueAndHistory(session: ServerSession) {
   return {
     queue: {
       id: session.id,
+      direction: session.direction,
       items: items.map(({ itemId, card, isRetry }) => ({
         itemId,
         card,
@@ -168,7 +177,11 @@ export function useStudySession(
     },
   });
   const resumable = activeSession.data
-    ? { id: activeSession.data.id, ...progressOf(activeSession.data) }
+    ? {
+        id: activeSession.data.id,
+        direction: activeSession.data.direction,
+        ...progressOf(activeSession.data),
+      }
     : null;
 
   const items = studySession?.items ?? [];
@@ -524,6 +537,8 @@ export function useStudySession(
 
   return {
     studyState,
+    // The session's own direction, once one has started or resumed
+    direction: studySession?.direction ?? choice.direction,
     resumable,
     handleAbandon,
     currentCard,
