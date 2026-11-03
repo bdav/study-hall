@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import StatsPage from './StatsPage';
 import { trpc } from '@/lib/trpc';
 
@@ -14,6 +16,78 @@ vi.mock('@/lib/trpc', () => ({
     },
   },
 }));
+
+type OverallStats = inferRouterOutputs<AppRouter>['stats']['overallStats'];
+
+const geography = {
+  id: 'deck-1',
+  name: 'Geography',
+  reversible: true,
+  forwardLabel: 'Capitals',
+  reverseLabel: 'Countries',
+  course: null,
+};
+const italian = {
+  id: 'deck-2',
+  name: 'Italian',
+  reversible: false,
+  forwardLabel: null,
+  reverseLabel: null,
+  course: { id: 'course-1', title: 'Italian for travel' },
+};
+
+/** The learner's stats, as the API returns them. */
+function overallStats(overrides: Partial<OverallStats> = {}): OverallStats {
+  return {
+    answers: { MISSED: 15, PARTIALLY_CORRECT: 0, GOOD: 5, NAILED: 30 },
+    answerCount: 50,
+    accuracy: 0.7,
+    lifecycle: { NEW: 20, LEARNING: 6, REINFORCING: 14, RETIRED: 0 },
+    bands: { fragile: 5, developing: 7, solid: 6, mastered: 2 },
+    weakCount: 2,
+    deckCount: 3,
+    weakCards: [
+      {
+        cardId: 'card-1',
+        direction: 'REVERSE',
+        question: 'Paris',
+        recentMisses: 2,
+        deck: geography,
+      },
+      {
+        cardId: 'card-2',
+        direction: 'FORWARD',
+        question: 'Hello',
+        recentMisses: 1,
+        deck: italian,
+      },
+    ],
+    sessions: [
+      {
+        id: 'session-1',
+        startedAt: '2026-11-01T12:00:00.000Z',
+        endedAt: '2026-11-01T12:10:00.000Z',
+        sessionType: 'QUICK',
+        studyMode: 'DRILL_WEAKEST',
+        direction: 'FORWARD',
+        status: 'COMPLETED',
+        deck: { id: 'deck-2', name: 'Italian', course: italian.course },
+        answered: 6,
+        right: 4,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function mockStats(data: OverallStats | undefined, state = {}) {
+  vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
+    data,
+    isLoading: false,
+    isError: false,
+    ...state,
+  } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
+}
 
 function renderStatsPage() {
   const queryClient = new QueryClient({
@@ -29,151 +103,138 @@ function renderStatsPage() {
   );
 }
 
+const region = (name: string) => screen.getByRole('region', { name });
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('StatsPage', () => {
-  it('renders overall stats when data is available', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: {
-        totalAttempts: 50,
-        totalCorrect: 35,
-        overallAccuracy: 0.7,
-        deckCount: 3,
-        weakCards: [
-          {
-            cardId: 'card-1',
-            direction: 'FORWARD',
-            front: 'Capital of France?',
-            question: 'Capital of France?',
-            deck: null,
-            deckId: 'deck-1',
-            deckName: 'Geography',
-            avgAttemptsToCorrect: 2.5,
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
+  it('shows how many answers count, their accuracy, and how many decks they span', () => {
+    mockStats(overallStats());
     renderStatsPage();
 
-    expect(screen.getByRole('heading', { name: /stats/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Stats' })).toBeInTheDocument();
     expect(screen.getByText('50')).toBeInTheDocument();
-    expect(screen.getByText('35')).toBeInTheDocument();
     expect(screen.getByText('70%')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('Decks studied').previousSibling).toHaveTextContent(
+      '3',
+    );
   });
 
-  it('renders empty state when no study sessions exist', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: {
-        totalAttempts: 0,
-        totalCorrect: 0,
-        overallAccuracy: 0,
+  it('shows answers by Recall Grade', () => {
+    mockStats(overallStats());
+    renderStatsPage();
+
+    expect(
+      within(region('Answers by grade'))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['15Needs review', '5Good', '30Nailed it']);
+  });
+
+  it('shows how many cards are in each Lifecycle State and Mastery Band', () => {
+    mockStats(overallStats());
+    renderStatsPage();
+
+    const items = (name: string) =>
+      within(region(name))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+    expect(items('Cards')).toEqual([
+      '20New',
+      '6Still learning',
+      '14Reinforcing',
+      '0Retired',
+    ]);
+    expect(items('Mastery')).toEqual([
+      '5Fragile',
+      '7Developing',
+      '6Solid',
+      '2Mastered',
+    ]);
+  });
+
+  it("lists the Weak cards by deck, naming a deck's course and a Reversible Deck's direction", () => {
+    mockStats(overallStats());
+    renderStatsPage();
+    const weak = region('Weak cards');
+
+    expect(
+      within(weak).getByRole('link', { name: 'Geography' }),
+    ).toHaveAttribute('href', '/decks/deck-1');
+    expect(within(weak).getByRole('link', { name: 'Italian' })).toHaveAttribute(
+      'href',
+      '/decks/deck-2',
+    );
+    expect(within(weak).getByText('Italian for travel')).toBeInTheDocument();
+    expect(
+      within(weak)
+        .getAllByRole('row')
+        .filter((row) => within(row).queryAllByRole('cell').length > 0)
+        .map((row) => row.textContent),
+    ).toEqual(['ParisCountries2', 'Hello1']);
+  });
+
+  it('says when no card is Weak', () => {
+    mockStats(overallStats({ weakCards: [], weakCount: 0 }));
+    renderStatsPage();
+
+    expect(
+      within(region('Weak cards')).getByText(/no weak cards right now/i),
+    ).toBeInTheDocument();
+  });
+
+  it('lists recent Study Sessions, each naming its deck and course', () => {
+    mockStats(overallStats());
+    renderStatsPage();
+
+    const [, row] = within(region('Recent sessions')).getAllByRole('row');
+    expect(
+      within(row)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual([
+      'Nov 1, 2026',
+      'Italian · Italian for travel',
+      'Quick',
+      'Drill weakest',
+      '6',
+      '4',
+      'Finished',
+    ]);
+  });
+
+  it('says when no session has finished yet', () => {
+    mockStats(overallStats({ sessions: [] }));
+    renderStatsPage();
+
+    expect(
+      within(region('Recent sessions')).getByText(/no finished sessions yet/i),
+    ).toBeInTheDocument();
+  });
+
+  it('renders empty state when nothing has been studied', () => {
+    mockStats(
+      overallStats({
+        answers: { MISSED: 0, PARTIALLY_CORRECT: 0, GOOD: 0, NAILED: 0 },
+        answerCount: 0,
+        accuracy: 0,
+        lifecycle: { NEW: 4, LEARNING: 0, REINFORCING: 0, RETIRED: 0 },
+        bands: { fragile: 0, developing: 0, solid: 0, mastered: 0 },
+        weakCount: 0,
         deckCount: 0,
         weakCards: [],
-      },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
+        sessions: [],
+      }),
+    );
     renderStatsPage();
 
     expect(screen.getByText(/no study data yet/i)).toBeInTheDocument();
   });
 
-  it('renders weak cards grouped by deck in tables', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: {
-        totalAttempts: 50,
-        totalCorrect: 35,
-        overallAccuracy: 0.7,
-        deckCount: 2,
-        weakCards: [
-          {
-            cardId: 'card-1',
-            direction: 'FORWARD',
-            front: 'Capital of France?',
-            question: 'Capital of France?',
-            deck: null,
-            deckId: 'deck-1',
-            deckName: 'Geography',
-            avgAttemptsToCorrect: 3.0,
-          },
-          {
-            cardId: 'card-2',
-            direction: 'FORWARD',
-            front: 'What is 2+2?',
-            question: 'What is 2+2?',
-            deck: null,
-            deckId: 'deck-2',
-            deckName: 'Math',
-            avgAttemptsToCorrect: 2.0,
-          },
-          {
-            cardId: 'card-3',
-            direction: 'FORWARD',
-            front: 'Capital of Japan?',
-            question: 'Capital of Japan?',
-            deck: null,
-            deckId: 'deck-1',
-            deckName: 'Geography',
-            avgAttemptsToCorrect: 1.5,
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
-    renderStatsPage();
-
-    expect(screen.getByText(/needs work/i)).toBeInTheDocument();
-    // Deck names appear as links to study pages
-    const geoLink = screen.getByRole('link', { name: 'Geography' });
-    expect(geoLink).toHaveAttribute('href', '/decks/deck-1');
-    const mathLink = screen.getByRole('link', { name: 'Math' });
-    expect(mathLink).toHaveAttribute('href', '/decks/deck-2');
-    // Card data in tables
-    expect(screen.getByText('Capital of France?')).toBeInTheDocument();
-    expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
-    expect(screen.getByText('Capital of Japan?')).toBeInTheDocument();
-    expect(screen.getByText('3.0')).toBeInTheDocument();
-    expect(screen.getByText('2.0')).toBeInTheDocument();
-    expect(screen.getByText('1.5')).toBeInTheDocument();
-    // Table headers present
-    const questionHeaders = screen.getAllByText('Question');
-    expect(questionHeaders).toHaveLength(2); // one per deck group
-  });
-
-  it('does not render weak cards section when none exist', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: {
-        totalAttempts: 10,
-        totalCorrect: 10,
-        overallAccuracy: 1,
-        deckCount: 1,
-        weakCards: [],
-      },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
-    renderStatsPage();
-
-    expect(screen.queryByText(/needs work/i)).not.toBeInTheDocument();
-  });
-
   it('shows loading state', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isError: false,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
+    mockStats(undefined, { isLoading: true });
     renderStatsPage();
 
     expect(
@@ -182,12 +243,7 @@ describe('StatsPage', () => {
   });
 
   it('shows error state', () => {
-    vi.mocked(trpc.stats.overallStats.useQuery).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-    } as ReturnType<typeof trpc.stats.overallStats.useQuery>);
-
+    mockStats(undefined, { isError: true });
     renderStatsPage();
 
     expect(screen.getByText(/error/i)).toBeInTheDocument();

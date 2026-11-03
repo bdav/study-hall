@@ -172,6 +172,28 @@ describe('deckRouter', () => {
       expect(result[0].accuracy).toBe(1);
     });
 
+    it('leaves Retries out of its accuracy, as Counted Answers do', async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Retried Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
+        ],
+      });
+      // Q1 missed, then its Retry right
+      await study(deck.id, [
+        [deck.cards[0].id, 'wrong'],
+        [deck.cards[1].id, 'A2'],
+        [deck.cards[0].id, 'A1'],
+      ]);
+
+      const [listed] = await createCaller().deck.list();
+
+      expect(listed.totalAttempts).toBe(2);
+      expect(listed.accuracy).toBeCloseTo(0.5, 5);
+    });
+
     it('returns null lastStudied when deck has no sessions', async () => {
       await prisma.deck.create({
         data: { name: 'Unstudied Deck', userId },

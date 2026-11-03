@@ -6,6 +6,15 @@ import { DeckHeader } from '@/components/DeckHeader';
 import { StatsSkeleton } from '@/components/PageSkeleton';
 import { StatCard } from '@/components/StatCard';
 import {
+  BandCounts,
+  EmptySection,
+  GradeCounts,
+  LifecycleCounts,
+  RecentSessions,
+  StatsSection,
+  WeakestOf,
+} from '@/components/StatsSections';
+import {
   Table,
   TableBody,
   TableCell,
@@ -18,8 +27,11 @@ import { directionLabels, type StudyDirection } from '@/lib/directions';
 import { DirectionPicker } from '@/components/DirectionPicker';
 
 /**
- * A deck's stats, on a Reversible Deck in the Study Direction chosen, each
- * counted on its own (ADR-0011), Forward to start.
+ * A deck's stats on the scheduler's terms, on a Reversible Deck in the
+ * Study Direction chosen, each counted on its own (ADR-0011), Forward to
+ * start: its Counted Answers by Recall Grade and their accuracy, its cards
+ * by Lifecycle State and Mastery Band, its weakest cards and its recent
+ * Study Sessions.
  */
 export default function DeckStatsPage() {
   const { deckId } = useParams<{ deckId: string }>();
@@ -63,7 +75,7 @@ export default function DeckStatsPage() {
 
   const stats = statsQuery.data;
 
-  if (!stats || stats.totalAttempts === 0) {
+  if (!stats || (stats.answerCount === 0 && stats.sessions.length === 0)) {
     return (
       <CenteredPage>
         <DeckHeader
@@ -92,56 +104,47 @@ export default function DeckStatsPage() {
       />
       <div className="w-full max-w-4xl text-white">
         {directionChoice}
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard
-            label="Total Attempts"
-            value={String(stats.totalAttempts)}
-          />
-          <StatCard
-            label="Cards Studied"
-            value={String(stats.uniqueCardsStudied)}
-          />
-          <StatCard
-            label="First-Try Accuracy"
-            value={formatPercent(stats.firstTryAccuracy)}
-          />
-          <StatCard
-            label="Overall Accuracy"
-            value={formatPercent(stats.overallAccuracy)}
-          />
+        <div className="mt-6 grid grid-cols-2 gap-4">
+          <StatCard label="Answers" value={String(stats.answerCount)} />
+          <StatCard label="Accuracy" value={formatPercent(stats.accuracy)} />
         </div>
 
-        {stats.cardStats.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-lg font-semibold">Per-Card Breakdown</h2>
+        <GradeCounts answers={stats.answers} />
+        <LifecycleCounts lifecycle={stats.lifecycle} />
+        <BandCounts bands={stats.bands} />
+
+        <StatsSection title="Weak cards">
+          <WeakestOf
+            shown={stats.weakCards.length}
+            weakCount={stats.weakCount}
+          />
+          {stats.weakCards.length === 0 ? (
+            <EmptySection>No weak cards right now.</EmptySection>
+          ) : (
             <Table className="mt-3">
               <TableHeader>
                 <TableRow>
                   <TableHead>Question</TableHead>
-                  <TableHead className="text-right">Attempts</TableHead>
-                  <TableHead className="text-right">Avg. to Correct</TableHead>
+                  <TableHead className="text-right">Recent misses</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {stats.cardStats.map((card) => (
+                {stats.weakCards.map((card) => (
                   <TableRow key={card.cardId}>
                     <TableCell className="py-4 font-medium">
                       {card.question}
                     </TableCell>
-                    <TableCell className="py-4 text-right text-white/60">
-                      {card.totalAttempts}
-                    </TableCell>
-                    <TableCell className="py-4 text-right font-medium">
-                      {card.avgAttemptsToCorrect !== null
-                        ? card.avgAttemptsToCorrect.toFixed(1)
-                        : '—'}
+                    <TableCell className="py-4 text-right">
+                      {card.recentMisses}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </div>
-        )}
+          )}
+        </StatsSection>
+
+        <RecentSessions sessions={stats.sessions} />
       </div>
     </CenteredPage>
   );

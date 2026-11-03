@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
 import { answeredLine, formatDay } from '@/lib/format';
+import { lifecycleLabels } from '@/lib/lifecycle';
 import { type StudyDirection } from '@/lib/directions';
 import {
   Select,
@@ -13,17 +14,6 @@ import {
 
 // How many of the current version's answers show
 const RECENT_ANSWERS = 5;
-
-// The progress a learner sees, in plain words; never the mastery score
-const lifecycleLabels: Record<
-  'NEW' | 'LEARNING' | 'REINFORCING' | 'RETIRED',
-  string
-> = {
-  NEW: 'New',
-  LEARNING: 'Still learning',
-  REINFORCING: 'Reinforcing',
-  RETIRED: 'Retired',
-};
 
 const relative = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' });
 

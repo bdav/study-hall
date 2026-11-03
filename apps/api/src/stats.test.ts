@@ -1,63 +1,29 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { type PrismaClient } from '@prisma/client';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { type PrismaClient, type RecallGrade } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
-  recordStudySession,
+  recordCardHistory,
+  type HistoryAnswer,
 } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
-
 let userId: string;
-let deckId: string;
-let deck2Id: string;
-let cardIds: string[];
-let deck2CardIds: string[];
+
+const day = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => new Date(Date.now() - n * day);
 
 beforeAll(async () => {
   const testDb = createTestPrisma();
   prisma = testDb.prisma;
   cleanup = testDb.cleanup;
-
   const user = await prisma.user.create({
-    data: {
-      email: 'stats-test@example.com',
-      passwordHash: 'fakehash',
-    },
+    data: { email: 'stats-test@example.com', passwordHash: 'fakehash' },
   });
   userId = user.id;
-
-  const deck = await createDeckWithCards(prisma, {
-    userId: user.id,
-    name: 'Stats Deck 1',
-    cards: [
-      { front: 'Capital of France', canonicalAnswers: ['Paris'] },
-      { front: 'Capital of Japan', canonicalAnswers: ['Tokyo'] },
-      { front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] },
-    ],
-  });
-  deckId = deck.id;
-  cardIds = deck.cards.map((c) => c.id);
-
-  const deck2 = await createDeckWithCards(prisma, {
-    userId: user.id,
-    name: 'Stats Deck 2',
-    cards: [
-      { front: '2+2', canonicalAnswers: ['4'] },
-      { front: '3+3', canonicalAnswers: ['6'] },
-    ],
-  });
-  deck2Id = deck2.id;
-  deck2CardIds = deck2.cards.map((c) => c.id);
-});
-
-beforeEach(async () => {
-  // Clean up all study sessions and attempts between tests for isolation
-  await prisma.cardAttempt.deleteMany({});
-  await prisma.studySession.deleteMany({});
 });
 
 afterAll(async () => {
@@ -73,213 +39,192 @@ function createCaller(overrideUserId?: string) {
   });
 }
 
+/** A deck of cards "Card 1" to "Card n", answered "A1" to "An". */
+function deckOf(n: number, name = 'Stats Deck') {
+  return createDeckWithCards(prisma, {
+    userId,
+    name,
+    cards: Array.from({ length: n }, (_, i) => ({
+      front: `Card ${i + 1}`,
+      canonicalAnswers: [`A${i + 1}`],
+    })),
+  });
+}
+
+function history(
+  cardId: string,
+  answers: HistoryAnswer[],
+  options: { resetAt?: Date } = {},
+) {
+  return recordCardHistory(prisma, { userId, cardId, answers, ...options });
+}
+
+/** Answers with these grades, a day apart, the last a day ago. */
+function answers(grades: RecallGrade[]): HistoryAnswer[] {
+  return grades.map((grade, i) => ({
+    grade,
+    at: daysAgo(grades.length - i),
+  }));
+}
+
 describe('statsRouter', () => {
   describe('deckStats', () => {
-    it('returns total attempts, first-try accuracy, and overall accuracy for a single session', async () => {
-      const caller = createCaller();
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [
-          // Card 0: correct on first try
-          { cardId: cardIds[0], userAnswer: 'Paris' },
-          // Card 1: incorrect first, then correct
-          { cardId: cardIds[1], userAnswer: 'Beijing' },
-          { cardId: cardIds[1], userAnswer: 'Tokyo' },
-          // Card 2: incorrect (never corrected)
-          { cardId: cardIds[2], userAnswer: 'Lima' },
-        ],
+    it('counts Counted Answers by Recall Grade, with accuracy over them', async () => {
+      const deck = await deckOf(2);
+      const [retried, reset] = deck.cards;
+      // A miss with its Retry right, then a Good
+      await history(retried.id, [
+        { grade: 'MISSED', at: daysAgo(3) },
+        { grade: 'NAILED', at: daysAgo(2.9), retry: true },
+        { grade: 'GOOD', at: daysAgo(2) },
+      ]);
+      // Two misses, a reset, then a Nailed
+      await history(reset.id, answers(['MISSED', 'MISSED', 'NAILED']), {
+        resetAt: daysAgo(1.5),
       });
 
-      const stats = await caller.stats.deckStats({ deckId });
+      const stats = await createCaller().stats.deckStats({ deckId: deck.id });
 
-      expect(stats.totalAttempts).toBe(4);
-      expect(stats.uniqueCardsStudied).toBe(3);
-      // First-try: card0=correct, card1=incorrect, card2=incorrect → 1/3
-      expect(stats.firstTryAccuracy).toBeCloseTo(1 / 3, 5);
-      // Overall: 2 correct out of 4 total
-      expect(stats.overallAccuracy).toBeCloseTo(2 / 4, 5);
+      expect(stats.answers).toEqual({
+        MISSED: 1,
+        PARTIALLY_CORRECT: 0,
+        GOOD: 1,
+        NAILED: 1,
+      });
+      expect(stats.answerCount).toBe(3);
+      expect(stats.accuracy).toBeCloseTo(2 / 3, 5);
     });
 
-    it('counts an answer wrong only in its accents as correct (ADR-0002)', async () => {
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [
-          { cardId: cardIds[0], userAnswer: 'Paris' },
-          // An Accent Mismatch, graded GOOD
-          { cardId: cardIds[2], userAnswer: 'Brasilia' },
-        ],
+    it('counts the cards in each Lifecycle State and mastery band', async () => {
+      const deck = await deckOf(3);
+      const [learning, graduated] = deck.cards;
+      // Mastery 2, and 4
+      await history(learning.id, answers(['NAILED']));
+      await history(graduated.id, answers(['NAILED', 'NAILED']));
+
+      const stats = await createCaller().stats.deckStats({ deckId: deck.id });
+
+      expect(stats.lifecycle).toEqual({
+        NEW: 1,
+        LEARNING: 1,
+        REINFORCING: 1,
+        RETIRED: 0,
       });
-
-      const stats = await createCaller().stats.deckStats({ deckId });
-
-      expect(stats.firstTryAccuracy).toBe(1);
-      expect(stats.overallAccuracy).toBe(1);
+      expect(stats.bands).toEqual({
+        fragile: 1,
+        developing: 1,
+        solid: 0,
+        mastered: 0,
+      });
+      // Counts, never a card's mastery score
+      expect(JSON.stringify(stats)).not.toMatch(/mastery/i);
     });
 
-    it('scopes first-try accuracy per session when deck is studied multiple times', async () => {
-      const caller = createCaller();
-
-      // Session 1: card 0 incorrect
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [{ cardId: cardIds[0], userAnswer: 'London' }],
-      });
-
-      // Session 2: card 0 correct on first try
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [{ cardId: cardIds[0], userAnswer: 'Paris' }],
-      });
-
-      const stats = await caller.stats.deckStats({ deckId });
-
-      // 2 total attempts across sessions
-      expect(stats.totalAttempts).toBe(2);
-      // Per-session first try: s1 card0=incorrect, s2 card0=correct → 1 of 2 first tries correct
-      expect(stats.firstTryAccuracy).toBeCloseTo(1 / 2, 5);
-    });
-
-    it('returns per-card attempts-to-correct averaged across sessions', async () => {
-      const caller = createCaller();
-
-      // Session 1: card 0 correct on first try
-      await recordStudySession(prisma, {
-        userId,
-        deckId: deck2Id,
-        answers: [
-          { cardId: deck2CardIds[0], userAnswer: '4' },
-          // Session 1: card 1 takes 3 attempts
-          { cardId: deck2CardIds[1], userAnswer: '5' },
-          { cardId: deck2CardIds[1], userAnswer: '7' },
-          { cardId: deck2CardIds[1], userAnswer: '6' },
-        ],
-      });
-
-      const stats = await caller.stats.deckStats({ deckId: deck2Id });
-
-      expect(stats.cardStats).toHaveLength(2);
-
-      const card0Stats = stats.cardStats.find(
-        (c: { cardId: string }) => c.cardId === deck2CardIds[0],
+    it('lists the Weak cards Drill Weakest would take, ranked, with what they ask', async () => {
+      const deck = await deckOf(3);
+      const [lowMastery, twoMisses, notWeak] = deck.cards;
+      // Mastery 1 after a miss, and mastery 7 with 2 misses in its last 5
+      await history(lowMastery.id, answers(['NAILED', 'NAILED', 'MISSED']));
+      await history(
+        twoMisses.id,
+        answers([
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+        ]),
       );
-      const card1Stats = stats.cardStats.find(
-        (c: { cardId: string }) => c.cardId === deck2CardIds[1],
-      );
-
-      expect(card0Stats?.avgAttemptsToCorrect).toBe(1);
-      expect(card1Stats?.avgAttemptsToCorrect).toBe(3);
-    });
-
-    it('includes card front text in cardStats', async () => {
-      const caller = createCaller();
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [{ cardId: cardIds[0], userAnswer: 'Paris' }],
-      });
-
-      const stats = await caller.stats.deckStats({ deckId });
-
-      const card0Stats = stats.cardStats.find(
-        (c: { cardId: string }) => c.cardId === cardIds[0],
-      );
-      expect(card0Stats?.front).toBe('Capital of France');
-    });
-
-    it('returns null avgAttemptsToCorrect for cards never answered correctly', async () => {
-      const caller = createCaller();
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [
-          // Only attempt card 2, get it wrong
-          { cardId: cardIds[2], userAnswer: 'Lima' },
-        ],
-      });
-
-      const stats = await caller.stats.deckStats({ deckId });
-
-      const card2Stats = stats.cardStats.find(
-        (c: { cardId: string }) => c.cardId === cardIds[2],
-      );
-
-      expect(card2Stats?.avgAttemptsToCorrect).toBeNull();
-    });
-
-    it("counts only attempts made since the card's latest progress reset", async () => {
-      const editedDeck = await createDeckWithCards(prisma, {
-        userId,
-        name: 'Edited Deck',
-        cards: [
-          { front: 'Capital of Australia', canonicalAnswers: ['Sydney'] },
-          { front: 'Capital of Canada', canonicalAnswers: ['Ottawa'] },
-        ],
-      });
-      const [australia, canada] = editedDeck.cards;
+      await history(notWeak.id, answers(['NAILED', 'NAILED']));
       const caller = createCaller();
 
-      // Before the edit: Australia answered with the old answer, Canada missed
-      await recordStudySession(prisma, {
-        userId,
-        deckId: editedDeck.id,
-        answers: [
-          { cardId: australia.id, userAnswer: 'Melbourne' },
-          { cardId: australia.id, userAnswer: 'Sydney' },
-          { cardId: canada.id, userAnswer: 'Toronto' },
-        ],
+      const stats = await caller.stats.deckStats({ deckId: deck.id });
+      const drill = await caller.study.startSession({
+        deckId: deck.id,
+        studyMode: 'DRILL_WEAKEST',
       });
 
-      await caller.card.update({
-        cardId: australia.id,
-        canonicalAnswers: [{ text: 'Canberra' }],
-      });
-
-      // After the edit: Australia right first time
-      await recordStudySession(prisma, {
-        userId,
-        deckId: editedDeck.id,
-        answers: [{ cardId: australia.id, userAnswer: 'Canberra' }],
-      });
-
-      const stats = await caller.stats.deckStats({ deckId: editedDeck.id });
-
-      // Australia: only the post-edit attempt. Canada: its one miss.
-      expect(stats.totalAttempts).toBe(2);
-      expect(stats.uniqueCardsStudied).toBe(2);
-      expect(stats.overallAccuracy).toBeCloseTo(1 / 2, 5);
-      expect(stats.firstTryAccuracy).toBeCloseTo(1 / 2, 5);
-      const australiaStats = stats.cardStats.find(
-        (c: { cardId: string }) => c.cardId === australia.id,
+      expect(stats.weakCount).toBe(2);
+      expect(stats.weakCards).toMatchObject([
+        {
+          cardId: twoMisses.id,
+          direction: 'FORWARD',
+          question: 'Card 2',
+          recentMisses: 2,
+        },
+        {
+          cardId: lowMastery.id,
+          direction: 'FORWARD',
+          question: 'Card 1',
+          recentMisses: 1,
+        },
+      ]);
+      expect(drill!.items.map((item) => item.cardId).sort()).toEqual(
+        stats.weakCards.map((card) => card.cardId).sort(),
       );
-      expect(australiaStats?.totalAttempts).toBe(1);
-      expect(australiaStats?.avgAttemptsToCorrect).toBe(1);
     });
 
-    it('handles zero-attempt case gracefully', async () => {
-      const emptyDeck = await createDeckWithCards(prisma, {
-        userId,
-        name: 'Empty Deck',
-        cards: [{ front: 'Q', canonicalAnswers: ['A'] }],
-      });
-
+    it('lists recent Study Sessions, newest first, finished or abandoned', async () => {
+      // Cards still NEW after each session, so another can start
+      const deck = await deckOf(4);
       const caller = createCaller();
-      const stats = await caller.stats.deckStats({ deckId: emptyDeck.id });
+      const finished = await caller.study.startSession({
+        deckId: deck.id,
+        sessionType: 'QUICK',
+        studyMode: 'CRAM',
+      });
+      const [first, second] = finished!.items;
+      await caller.study.submitAnswer({ itemId: first.id, userAnswer: 'A1' });
+      await caller.study.dontKnow({ itemId: second.id });
+      await caller.study.finishSession({ id: finished!.id });
+      const abandoned = await caller.study.startSession({ deckId: deck.id });
+      await caller.study.abandonSession({ id: abandoned!.id });
+      // Under way, so not listed
+      await caller.study.startSession({ deckId: deck.id });
 
-      expect(stats.totalAttempts).toBe(0);
-      expect(stats.uniqueCardsStudied).toBe(0);
-      expect(stats.firstTryAccuracy).toBe(0);
-      expect(stats.overallAccuracy).toBe(0);
-      expect(stats.cardStats).toHaveLength(0);
+      const { sessions } = await caller.stats.deckStats({ deckId: deck.id });
+
+      expect(sessions).toMatchObject([
+        {
+          id: abandoned!.id,
+          sessionType: 'STANDARD',
+          studyMode: 'STUDY',
+          status: 'ABANDONED',
+          answered: 0,
+          right: 0,
+        },
+        {
+          id: finished!.id,
+          sessionType: 'QUICK',
+          studyMode: 'CRAM',
+          status: 'COMPLETED',
+          answered: 2,
+          right: 1,
+        },
+      ]);
+      expect(sessions[0].startedAt).toBeInstanceOf(Date);
+    });
+
+    it('has nothing to show for a deck never studied', async () => {
+      const deck = await deckOf(2);
+
+      const stats = await createCaller().stats.deckStats({ deckId: deck.id });
+
+      expect(stats).toMatchObject({
+        answerCount: 0,
+        accuracy: 0,
+        weakCards: [],
+        sessions: [],
+      });
     });
 
     it('throws NOT_FOUND for a nonexistent deck', async () => {
-      const caller = createCaller();
       await expect(
-        caller.stats.deckStats({ deckId: 'nonexistent-id' }),
+        createCaller().stats.deckStats({ deckId: 'nonexistent-id' }),
       ).rejects.toThrow(/not found/i);
     });
 
@@ -291,103 +236,145 @@ describe('statsRouter', () => {
         data: { name: 'Other Stats Deck', userId: otherUser.id },
       });
 
-      const caller = createCaller();
       await expect(
-        caller.stats.deckStats({ deckId: otherDeck.id }),
+        createCaller().stats.deckStats({ deckId: otherDeck.id }),
       ).rejects.toThrow(/not found/i);
     });
   });
 
   describe('overallStats', () => {
-    it('aggregates across all decks with weakCards', async () => {
-      const caller = createCaller();
-
-      // Deck 1: card 0 correct first try, card 1 takes 2 attempts
-      await recordStudySession(prisma, {
-        userId,
-        deckId,
-        answers: [
-          { cardId: cardIds[0], userAnswer: 'Paris' },
-          { cardId: cardIds[1], userAnswer: 'Beijing' },
-          { cardId: cardIds[1], userAnswer: 'Tokyo' },
-        ],
+    it("adds up the active decks, naming each Weak card and session's deck and course", async () => {
+      const userA = await prisma.user.create({
+        data: { email: 'overall-a@example.com', passwordHash: 'x' },
       });
-
-      // Deck 2: card 0 takes 3 attempts
-      await recordStudySession(prisma, {
-        userId,
-        deckId: deck2Id,
-        answers: [
-          { cardId: deck2CardIds[0], userAnswer: '1' },
-          { cardId: deck2CardIds[0], userAnswer: '2' },
-          { cardId: deck2CardIds[0], userAnswer: '4' },
-        ],
+      const caller = createCaller(userA.id);
+      const plain = await createDeckWithCards(prisma, {
+        userId: userA.id,
+        name: 'Capitals',
+        cards: [{ front: 'Capital of France', canonicalAnswers: ['Paris'] }],
+      });
+      const courseDeck = await createDeckWithCards(prisma, {
+        userId: userA.id,
+        name: 'Italian',
+        cards: [{ front: 'Hello', canonicalAnswers: ['Ciao'] }],
+      });
+      const course = await prisma.course.create({
+        data: {
+          userId: userA.id,
+          title: 'Italian for travel',
+          topic: 'Italian',
+          goal: 'A2',
+          priorKnowledge: '',
+          minutesPerWeek: 60,
+          sessionMinutes: 20,
+          depth: 'Balanced',
+          notes: '',
+        },
+      });
+      await prisma.deck.update({
+        where: { id: courseDeck.id },
+        data: { courseId: course.id },
+      });
+      // Weak: mastery 1 after a miss
+      await recordCardHistory(prisma, {
+        userId: userA.id,
+        cardId: courseDeck.cards[0].id,
+        answers: answers(['NAILED', 'NAILED', 'MISSED']),
+      });
+      await recordCardHistory(prisma, {
+        userId: userA.id,
+        cardId: plain.cards[0].id,
+        answers: answers(['NAILED']),
       });
 
       const stats = await caller.stats.overallStats();
 
-      expect(stats.totalAttempts).toBe(6);
-      expect(stats.totalCorrect).toBe(3);
-      expect(stats.overallAccuracy).toBeCloseTo(3 / 6, 5);
-      expect(stats.deckCount).toBe(2);
-
-      // weakCards: only cards with avgAttemptsToCorrect > 1, sorted descending
-      // deck1 card0 = 1 attempt (excluded), deck1 card1 = 2, deck2 card0 = 3
-      expect(stats.weakCards).toHaveLength(2);
-      // deck2 card0 took 3 attempts — should be first
-      expect(stats.weakCards[0].cardId).toBe(deck2CardIds[0]);
-      expect(stats.weakCards[0].avgAttemptsToCorrect).toBe(3);
-      expect(stats.weakCards[0].front).toBe('2+2');
-      expect(stats.weakCards[0].deckId).toBe(deck2Id);
-      expect(stats.weakCards[0].deckName).toBe('Stats Deck 2');
-      // deck1 card1 took 2 attempts
-      expect(stats.weakCards[1].cardId).toBe(cardIds[1]);
-      expect(stats.weakCards[1].avgAttemptsToCorrect).toBe(2);
-      expect(stats.weakCards[1].front).toBe('Capital of Japan');
-      expect(stats.weakCards[1].deckName).toBe('Stats Deck 1');
+      expect(stats.answers).toEqual({
+        MISSED: 1,
+        PARTIALLY_CORRECT: 0,
+        GOOD: 0,
+        NAILED: 3,
+      });
+      expect(stats).toMatchObject({
+        answerCount: 4,
+        accuracy: 0.75,
+        deckCount: 2,
+        weakCount: 1,
+      });
+      expect(stats.lifecycle).toEqual({
+        NEW: 0,
+        LEARNING: 1,
+        REINFORCING: 1,
+        RETIRED: 0,
+      });
+      // Mastery 2, and 1
+      expect(stats.bands).toEqual({
+        fragile: 2,
+        developing: 0,
+        solid: 0,
+        mastered: 0,
+      });
+      expect(stats.weakCards).toMatchObject([
+        {
+          question: 'Hello',
+          recentMisses: 1,
+          deck: {
+            id: courseDeck.id,
+            name: 'Italian',
+            course: { title: 'Italian for travel' },
+          },
+        },
+      ]);
+      expect(stats.sessions).toHaveLength(4);
+      expect(stats.sessions[0]).toMatchObject({
+        deck: { id: plain.id, name: 'Capitals', course: null },
+      });
+      expect(stats.sessions.at(-1)).toMatchObject({
+        deck: { name: 'Italian', course: { title: 'Italian for travel' } },
+      });
     });
 
-    it('stops treating a card as weak once it is edited', async () => {
-      const editedDeck = await createDeckWithCards(prisma, {
-        userId,
-        name: 'Weak Deck',
+    it('stops counting a card once it is edited', async () => {
+      const userB = await prisma.user.create({
+        data: { email: 'overall-b@example.com', passwordHash: 'x' },
+      });
+      const deck = await createDeckWithCards(prisma, {
+        userId: userB.id,
         cards: [{ front: '5+5', canonicalAnswers: ['11'] }],
       });
-      const cardId = editedDeck.cards[0].id;
-      const caller = createCaller();
-
-      await recordStudySession(prisma, {
-        userId,
-        deckId: editedDeck.id,
-        answers: [
-          { cardId, userAnswer: '10' },
-          { cardId, userAnswer: '11' },
-        ],
+      const cardId = deck.cards[0].id;
+      await recordCardHistory(prisma, {
+        userId: userB.id,
+        cardId,
+        answers: answers(['NAILED', 'NAILED', 'MISSED']),
       });
-
-      const before = await caller.stats.overallStats();
-      expect(before.weakCards.map((c) => c.cardId)).toContain(cardId);
+      const caller = createCaller(userB.id);
+      expect((await caller.stats.overallStats()).weakCards).toHaveLength(1);
 
       await caller.card.update({ cardId, canonicalAnswers: [{ text: '10' }] });
 
-      const after = await caller.stats.overallStats();
-      expect(after.totalAttempts).toBe(0);
-      expect(after.weakCards).toHaveLength(0);
+      expect(await caller.stats.overallStats()).toMatchObject({
+        answerCount: 0,
+        weakCards: [],
+      });
     });
 
-    it('handles no study data gracefully', async () => {
+    it('has nothing to show for a learner who has never studied', async () => {
       const freshUser = await prisma.user.create({
         data: { email: 'fresh-stats@example.com', passwordHash: 'fakehash' },
       });
 
-      const caller = createCaller(freshUser.id);
-      const stats = await caller.stats.overallStats();
-
-      expect(stats.totalAttempts).toBe(0);
-      expect(stats.totalCorrect).toBe(0);
-      expect(stats.overallAccuracy).toBe(0);
-      expect(stats.deckCount).toBe(0);
-      expect(stats.weakCards).toHaveLength(0);
+      expect(await createCaller(freshUser.id).stats.overallStats()).toEqual({
+        answers: { MISSED: 0, PARTIALLY_CORRECT: 0, GOOD: 0, NAILED: 0 },
+        answerCount: 0,
+        accuracy: 0,
+        lifecycle: { NEW: 0, LEARNING: 0, REINFORCING: 0, RETIRED: 0 },
+        bands: { fragile: 0, developing: 0, solid: 0, mastered: 0 },
+        weakCount: 0,
+        deckCount: 0,
+        weakCards: [],
+        sessions: [],
+      });
     });
   });
 });

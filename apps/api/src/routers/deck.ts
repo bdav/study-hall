@@ -29,7 +29,12 @@ import {
   primaryAnswerText,
   withCanonicalAnswers,
 } from '../services/cards.js';
-import { findCountedAttempts, isCorrect } from '../services/countedAttempts.js';
+import {
+  accuracy,
+  addAnswers,
+  answerCount,
+  readCardStanding,
+} from '../services/cardStanding.js';
 import { matchAnswer } from '../services/answerGrader.js';
 import {
   buildDirectionLabelsPrompt,
@@ -157,33 +162,20 @@ export const deckRouter = router({
       },
     });
 
-    // Fetch counted attempt stats per deck in a single query
-    const deckIds = decks.map((d) => d.id);
-    const attemptsByDeck = new Map<
-      string,
-      { total: number; correct: number }
-    >();
-
-    if (deckIds.length > 0) {
-      const attempts = await findCountedAttempts(ctx.prisma, {
-        userId: ctx.userId,
-        deckIds,
-      });
-
-      for (const attempt of attempts) {
-        const stats = attemptsByDeck.get(attempt.deckId) ?? {
-          total: 0,
-          correct: 0,
-        };
-        stats.total++;
-        if (isCorrect(attempt.recallGrade)) stats.correct++;
-        attemptsByDeck.set(attempt.deckId, stats);
-      }
-    }
+    // Each deck's Counted Answers, from one read of its cards' standing
+    const { cards } = await readCardStanding(ctx.prisma, {
+      userId: ctx.userId,
+      deckIds: decks.map((deck) => deck.id),
+    });
+    const answersOf = (deckId: string) =>
+      addAnswers(
+        cards
+          .filter((card) => card.deckId === deckId)
+          .map((card) => card.countedAnswers),
+      );
 
     return decks.map((deck) => {
-      const stats = attemptsByDeck.get(deck.id) ?? { total: 0, correct: 0 };
-      const accuracy = stats.total === 0 ? 0 : stats.correct / stats.total;
+      const answers = answersOf(deck.id);
 
       return {
         id: deck.id,
@@ -194,8 +186,8 @@ export const deckRouter = router({
         userId: deck.userId,
         course: deck.course,
         cardCount: deck._count.cards,
-        totalAttempts: stats.total,
-        accuracy,
+        totalAttempts: answerCount(answers),
+        accuracy: accuracy(answers),
         lastStudied: deck.studySessions[0]?.startedAt ?? null,
       };
     });

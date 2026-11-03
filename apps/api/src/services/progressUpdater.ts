@@ -40,8 +40,17 @@ const LEARNING_INTERVAL_DAYS: Record<RecallGrade, number> = {
   NAILED: 2,
 };
 
-/** REINFORCING intervals by mastery band (`updated-plan.md` §8.4). */
-export type MasteryBand = 'fragile' | 'developing' | 'solid' | 'mastered';
+/**
+ * The Mastery Bands, weakest first, by which REINFORCING intervals are set
+ * (`updated-plan.md` §8.4).
+ */
+export const MASTERY_BANDS = [
+  'fragile',
+  'developing',
+  'solid',
+  'mastered',
+] as const;
+export type MasteryBand = (typeof MASTERY_BANDS)[number];
 
 export function masteryBand(mastery: number): MasteryBand {
   if (mastery <= 2) return 'fragile';

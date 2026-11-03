@@ -120,7 +120,7 @@ describe('card.markKnown', () => {
     });
   });
 
-  it("doesn't change the deck's stats", async () => {
+  it("doesn't change the deck's answers, accuracy or sessions", async () => {
     const deck = await capitalsDeck();
     const [france, japan] = deck.cards;
     await recordStudySession(prisma, {
@@ -135,8 +135,16 @@ describe('card.markKnown', () => {
     const before = await caller.stats.deckStats({ deckId: deck.id });
 
     await caller.card.markKnown({ cardIds: deck.cards.map((c) => c.id) });
+    const after = await caller.stats.deckStats({ deckId: deck.id });
 
-    expect(await caller.stats.deckStats({ deckId: deck.id })).toEqual(before);
+    // No answer is recorded, so only where the cards stand changes
+    expect(after).toMatchObject({
+      answers: before.answers,
+      answerCount: before.answerCount,
+      accuracy: before.accuracy,
+      sessions: before.sessions,
+    });
+    expect(after.lifecycle.REINFORCING).toBe(3);
   });
 
   it('leaves a card marked known out of Study Sessions until it is due', async () => {

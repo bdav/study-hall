@@ -18,6 +18,7 @@ import {
   gradeDirectedAnswer,
   withCanonicalAnswers,
 } from './cards.js';
+import { isCorrect } from './countedAttempts.js';
 import { assertDeckActive, assertStudiesIn } from './decks.js';
 import {
   answeredSinceReset,
@@ -118,7 +119,7 @@ export async function previewQueue(
       seed: 0,
     }).length,
     dueCount: standings.counts.due,
-    newCount: standings.counts.new,
+    newCount: standings.counts.lifecycle.NEW,
     nextDueAt: standings.nextDueAt,
   };
 }
@@ -627,4 +628,64 @@ export async function abandonStudySession(
     where: { id },
     include: withItems,
   });
+}
+
+/** How many recent Study Sessions the stats pages list. */
+const RECENT_SESSIONS = 10;
+
+/**
+ * A learner's latest finished or abandoned Study Sessions on the given
+ * decks, in one Study Direction when given and otherwise in each they're
+ * studied in, newest first: when, their type
+ * and mode, how they ended, how many cards they answered and how many of
+ * those right, Retries left out, and their deck, with its course if any.
+ */
+export async function findRecentSessions(
+  prisma: PrismaClient,
+  {
+    userId,
+    deckIds,
+    direction,
+  }: { userId: string; deckIds: string[]; direction?: StudyDirection },
+) {
+  const sessions = await prisma.studySession.findMany({
+    where: {
+      userId,
+      deckId: { in: deckIds },
+      status: { in: ['COMPLETED', 'ABANDONED'] },
+      // Reverse none while its deck isn't reversible (ADR-0011)
+      ...(direction
+        ? { direction }
+        : {
+            OR: [{ direction: 'FORWARD' }, { deck: { reversible: true } }],
+          }),
+    },
+    orderBy: [{ startedAt: 'desc' }, { id: 'asc' }],
+    take: RECENT_SESSIONS,
+    select: {
+      id: true,
+      startedAt: true,
+      endedAt: true,
+      sessionType: true,
+      studyMode: true,
+      direction: true,
+      status: true,
+      deck: {
+        select: {
+          id: true,
+          name: true,
+          course: { select: { id: true, title: true } },
+        },
+      },
+      attempts: {
+        where: { isRetry: false },
+        select: { recallGrade: true },
+      },
+    },
+  });
+  return sessions.map(({ attempts, ...session }) => ({
+    ...session,
+    answered: attempts.length,
+    right: attempts.filter((attempt) => isCorrect(attempt.recallGrade)).length,
+  }));
 }

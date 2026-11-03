@@ -83,9 +83,10 @@ export async function createDeckWithCards(
 /**
  * Records a finished Study Session, Forward unless given another Study
  * Direction, holding the given answers, in order, each graded the way the
- * app grades it. A card answered more than once gets
- * retry attempts. For suites that need attempt history, such as several
- * attempts at one card, without going through the study flow.
+ * app grades it and applied to its progress through Card Standing, as
+ * studying would. A card answered more than once gets retry attempts,
+ * which change nothing. For suites that need attempt history, such as
+ * several attempts at one card, without going through the study flow.
  */
 export async function recordStudySession(
   prisma: PrismaClient,
@@ -121,7 +122,7 @@ export async function recordStudySession(
     const attemptNumber = (attemptsByCard.get(cardId) ?? 0) + 1;
     attemptsByCard.set(cardId, attemptNumber);
 
-    await prisma.cardAttempt.create({
+    const attempt = await prisma.cardAttempt.create({
       data: {
         studySessionId: session.id,
         cardId,
@@ -134,6 +135,7 @@ export async function recordStudySession(
         isRetry: attemptNumber > 1,
       },
     });
+    await applyCardAnswer(prisma, { userId, attempt });
   }
 
   return session;

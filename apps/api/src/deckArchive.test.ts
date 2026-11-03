@@ -167,7 +167,7 @@ describe('archiving a deck', () => {
     await caller.deck.archive({ id: archived.id });
 
     expect(await caller.stats.overallStats()).toMatchObject({
-      totalAttempts: 1,
+      answerCount: 1,
       deckCount: 1,
     });
   });
@@ -341,7 +341,15 @@ describe('an archived deck', () => {
   });
 
   it('refuses answering in a session started before it was archived, and "My answer was correct"', async () => {
-    const deck = await deckWithCard();
+    // A second card still NEW, as the missed one isn't due yet
+    const deck = await createDeckWithCards(prisma, {
+      userId,
+      name: 'Italian',
+      cards: [
+        { front: 'ciao', canonicalAnswers: ['hello'] },
+        { front: 'grazie', canonicalAnswers: ['thank you'] },
+      ],
+    });
     const caller = createCaller();
     await recordStudySession(prisma, {
       userId,

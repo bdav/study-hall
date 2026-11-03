@@ -183,7 +183,7 @@ async function reviewCounts(
     userId,
     deckIds: [deckId],
   });
-  return { deckId, dueCount: counts.due, newCount: counts.new };
+  return { deckId, dueCount: counts.due, newCount: counts.lifecycle.NEW };
 }
 
 export const courseRouter = router({

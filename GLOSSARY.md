@@ -114,8 +114,12 @@ _Avoid_: Scheduled, overdue (that's how late a due card is)
 A Reinforcing card that's slipping: low mastery, or repeated misses among its recent Counted Answers, though not yet enough to send it back to Learning. Weakness is instability, not urgency: a well-known card can be due without being Weak, and a card Marked Known since it was last answered isn't Weak.
 _Avoid_: Struggling, difficult, hard card
 
+**Mastery Band**:
+How well the scheduler takes a card to be known, in one of four bands: Fragile, Developing, Solid or Mastered. The learner sees how many cards are in each band, never a single card's mastery.
+_Avoid_: Mastery score, level, strength
+
 **Card Standing**:
-Where one Study Direction of a card stands for the learner: its Lifecycle State, and whether it's due or Weak, as its schedule and Counted Answers show. Reverse has none while its deck isn't reversible.
+Where one Study Direction of a card stands for the learner: its Lifecycle State, its Mastery Band, and whether it's due or Weak, as its schedule and Counted Answers show. Reverse has none while its deck isn't reversible.
 _Avoid_: Card status, card progress
 
 **Reversible Deck**:

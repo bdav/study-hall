@@ -1,8 +1,19 @@
 import { Link } from 'react-router-dom';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StatsSkeleton } from '@/components/PageSkeleton';
 import { StatCard } from '@/components/StatCard';
+import {
+  BandCounts,
+  EmptySection,
+  GradeCounts,
+  LifecycleCounts,
+  RecentSessions,
+  StatsSection,
+  WeakestOf,
+} from '@/components/StatsSections';
 import {
   Table,
   TableBody,
@@ -12,48 +23,32 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatPercent } from '@/lib/format';
-import {
-  directionLabels,
-  type DirectedDeck,
-  type StudyDirection,
-} from '@/lib/directions';
+import { directionLabels } from '@/lib/directions';
+
+type WeakCard =
+  inferRouterOutputs<AppRouter>['stats']['overallStats']['weakCards'][number];
+
+/** Weak cards grouped by deck, the decks in the order their cards rank. */
+function groupByDeck(cards: WeakCard[]) {
+  const groups = new Map<
+    string,
+    { deck: WeakCard['deck']; cards: WeakCard[] }
+  >();
+  for (const card of cards) {
+    const group = groups.get(card.deck.id) ?? { deck: card.deck, cards: [] };
+    group.cards.push(card);
+    groups.set(card.deck.id, group);
+  }
+  return [...groups.values()];
+}
 
 /**
- * A card weak in one Study Direction: what it asks there, and, on a
- * Reversible Deck, the direction's label (ADR-0011).
+ * The learner's stats on the scheduler's terms, across their decks in
+ * Flashcards, as a deck's stats page shows its own: Counted Answers by
+ * Recall Grade and their accuracy, cards by Lifecycle State and Mastery
+ * Band, the weakest cards by deck, and recent Study Sessions, each naming
+ * its deck and its course, if any.
  */
-interface WeakCard {
-  cardId: string;
-  direction: StudyDirection;
-  question: string;
-  deck: DirectedDeck | null;
-  deckId: string;
-  deckName: string;
-  avgAttemptsToCorrect: number;
-}
-
-function groupByDeck(cards: WeakCard[]) {
-  const groups: { deckId: string; deckName: string; cards: WeakCard[] }[] = [];
-  const map = new Map<string, WeakCard[]>();
-
-  for (const card of cards) {
-    const existing = map.get(card.deckId);
-    if (existing) {
-      existing.push(card);
-    } else {
-      const group: WeakCard[] = [card];
-      map.set(card.deckId, group);
-      groups.push({
-        deckId: card.deckId,
-        deckName: card.deckName,
-        cards: group,
-      });
-    }
-  }
-
-  return groups;
-}
-
 export default function StatsPage() {
   const statsQuery = trpc.stats.overallStats.useQuery();
 
@@ -75,7 +70,7 @@ export default function StatsPage() {
     return null;
   }
 
-  if (stats.totalAttempts === 0) {
+  if (stats.answerCount === 0 && stats.sessions.length === 0) {
     return (
       <CenteredPage centered>
         <h1 className="text-2xl font-bold text-white">Stats</h1>
@@ -86,65 +81,67 @@ export default function StatsPage() {
     );
   }
 
-  const deckGroups = groupByDeck(stats.weakCards);
-
   return (
     <CenteredPage>
       <div className="w-full max-w-2xl text-white">
         <h1 className="text-2xl font-bold">Stats</h1>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard
-            label="Total Attempts"
-            value={String(stats.totalAttempts)}
-          />
-          <StatCard label="Correct" value={String(stats.totalCorrect)} />
-          <StatCard
-            label="Accuracy"
-            value={formatPercent(stats.overallAccuracy)}
-          />
-          <StatCard label="Decks Studied" value={String(stats.deckCount)} />
+        <div className="mt-6 grid grid-cols-3 gap-4">
+          <StatCard label="Answers" value={String(stats.answerCount)} />
+          <StatCard label="Accuracy" value={formatPercent(stats.accuracy)} />
+          <StatCard label="Decks studied" value={String(stats.deckCount)} />
         </div>
 
-        {deckGroups.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-lg font-semibold">Needs Work</h2>
-            <p className="text-sm text-white/60">
-              Cards that take multiple attempts to get right
-            </p>
+        <GradeCounts answers={stats.answers} />
+        <LifecycleCounts lifecycle={stats.lifecycle} />
+        <BandCounts bands={stats.bands} />
+
+        <StatsSection title="Weak cards">
+          <WeakestOf
+            shown={stats.weakCards.length}
+            weakCount={stats.weakCount}
+          />
+          {stats.weakCards.length === 0 ? (
+            <EmptySection>No weak cards right now.</EmptySection>
+          ) : (
             <div className="mt-4 space-y-6">
-              {deckGroups.map((group) => (
-                <div key={group.deckId}>
+              {groupByDeck(stats.weakCards).map(({ deck, cards }) => (
+                <div key={deck.id}>
                   <h3 className="mb-2 text-sm font-medium text-white/80">
                     <Link
-                      to={`/decks/${group.deckId}`}
-                      className="hover:text-white underline underline-offset-2"
+                      to={`/decks/${deck.id}`}
+                      className="underline underline-offset-2 hover:text-white"
                     >
-                      {group.deckName}
+                      {deck.name}
                     </Link>
+                    {deck.course && (
+                      <span className="ml-2 text-white/50">
+                        {deck.course.title}
+                      </span>
+                    )}
                   </h3>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Question</TableHead>
                         <TableHead className="text-right">
-                          Avg. Attempts
+                          Recent misses
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {group.cards.map((card) => (
+                      {cards.map((card) => (
                         <TableRow key={`${card.cardId}:${card.direction}`}>
                           <TableCell className="py-4 font-medium">
                             {card.question}
-                            {card.deck?.reversible && (
+                            {card.deck.reversible && (
                               <span className="ml-2 text-xs text-white/50">
                                 {directionLabels(card.deck)[card.direction]}
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="py-4 text-right font-medium">
-                            {card.avgAttemptsToCorrect.toFixed(1)}
+                          <TableCell className="py-4 text-right">
+                            {card.recentMisses}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -153,8 +150,10 @@ export default function StatsPage() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </StatsSection>
+
+        <RecentSessions sessions={stats.sessions} showDeck />
       </div>
     </CenteredPage>
   );

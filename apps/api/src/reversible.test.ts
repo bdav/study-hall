@@ -812,7 +812,10 @@ describe('editing a reversible card', () => {
 });
 
 describe('stats by Study Direction', () => {
-  /** France and Japan answered Forward, France missed then right in Reverse. */
+  /**
+   * France and Japan answered Forward; France in Reverse right in two
+   * sessions, so Reinforcing, then missed, so Weak there.
+   */
   async function studiedDeck() {
     const deck = await capitalsDeck();
     const [france, japan] = deck.cards;
@@ -824,15 +827,14 @@ describe('stats by Study Direction', () => {
         { cardId: japan.id, userAnswer: 'Tokyo' },
       ],
     });
-    await recordStudySession(prisma, {
-      userId,
-      deckId: deck.id,
-      direction: 'REVERSE',
-      answers: [
-        { cardId: france.id, userAnswer: 'Spain' },
-        { cardId: france.id, userAnswer: 'France' },
-      ],
-    });
+    for (const userAnswer of ['France', 'France', 'Spain']) {
+      await recordStudySession(prisma, {
+        userId,
+        deckId: deck.id,
+        direction: 'REVERSE',
+        answers: [{ cardId: france.id, userAnswer }],
+      });
+    }
     return deck;
   }
 
@@ -847,16 +849,17 @@ describe('stats by Study Direction', () => {
     });
 
     expect(forward).toMatchObject({
-      totalAttempts: 2,
-      uniqueCardsStudied: 2,
-      overallAccuracy: 1,
+      answerCount: 2,
+      accuracy: 1,
+      weakCards: [],
     });
+    expect(forward.sessions).toHaveLength(1);
     expect(reverse).toMatchObject({
-      totalAttempts: 2,
-      uniqueCardsStudied: 1,
-      firstTryAccuracy: 0,
-      cardStats: [{ question: 'Paris', avgAttemptsToCorrect: 2 }],
+      answerCount: 3,
+      answers: { MISSED: 1, NAILED: 2 },
+      weakCards: [{ question: 'Paris', direction: 'REVERSE' }],
     });
+    expect(reverse.sessions).toHaveLength(3);
   });
 
   it('counts every direction in overall stats, each card direction its own', async () => {
@@ -864,9 +867,12 @@ describe('stats by Study Direction', () => {
 
     const stats = await createCaller().stats.overallStats();
 
-    expect(stats).toMatchObject({ totalAttempts: 4, totalCorrect: 3 });
+    expect(stats).toMatchObject({
+      answerCount: 5,
+      answers: { MISSED: 1, NAILED: 4 },
+    });
     expect(stats.weakCards).toMatchObject([
-      { front: 'France', question: 'Paris', direction: 'REVERSE' },
+      { question: 'Paris', direction: 'REVERSE' },
     ]);
   });
 
@@ -876,10 +882,11 @@ describe('stats by Study Direction', () => {
 
     await caller.deck.update({ id: deck.id, reversible: false });
 
-    expect(await caller.stats.overallStats()).toMatchObject({
-      totalAttempts: 2,
-      weakCards: [],
-    });
+    const overall = await caller.stats.overallStats();
+    expect(overall).toMatchObject({ answerCount: 2, weakCards: [] });
+    expect(overall.sessions.map((session) => session.direction)).toEqual([
+      'FORWARD',
+    ]);
     expect((await caller.deck.list())[0].totalAttempts).toBe(2);
     await expect(
       caller.stats.deckStats({ deckId: deck.id, direction: 'REVERSE' }),

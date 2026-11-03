@@ -1,17 +1,18 @@
 import {
-  type CardLifecycleState,
+  CardLifecycleState,
   type Prisma,
   type PrismaClient,
   type RecallGrade,
   type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
-import { countsSinceReset } from './countedAttempts.js';
+import { countsSinceReset, isCorrect } from './countedAttempts.js';
 import {
   applyAnswer,
   isKnown,
   type LifecycleMark,
   markKnown,
+  MASTERY_BANDS,
   masteryBand,
   type MasteryBand,
   NEW_PROGRESS,
@@ -21,7 +22,7 @@ import {
 
 /**
  * Where one Study Direction of a learner's card stands (GLOSSARY.md, Card
- * Standing): its Lifecycle State, mastery band, whether it's Due and Weak,
+ * Standing): its Lifecycle State, Mastery Band, whether it's Due and Weak,
  * and its recent misses. Its mastery score stays on the server, never shown
  * to the learner.
  */
@@ -37,7 +38,59 @@ export type CardStanding = {
   isWeak: boolean;
   /** How many of its last 5 Counted Answers were missed. */
   recentMisses: number;
+  /** Its Counted Answers, by Recall Grade. */
+  countedAnswers: AnswersByGrade;
 };
+
+/** How many answers had each Recall Grade. */
+export type AnswersByGrade = Record<RecallGrade, number>;
+
+const noAnswers = (): AnswersByGrade => ({
+  MISSED: 0,
+  PARTIALLY_CORRECT: 0,
+  GOOD: 0,
+  NAILED: 0,
+});
+
+/** Answers by Recall Grade, added up. */
+export function addAnswers(tallies: AnswersByGrade[]): AnswersByGrade {
+  const sum = noAnswers();
+  for (const tally of tallies) {
+    for (const grade of Object.keys(sum) as RecallGrade[]) {
+      sum[grade] += tally[grade];
+    }
+  }
+  return sum;
+}
+
+/** How many answers there are, given how many had each Recall Grade. */
+export function answerCount(answers: AnswersByGrade) {
+  return Object.values(answers).reduce((sum, n) => sum + n, 0);
+}
+
+/**
+ * The share of answers that were right (`isCorrect`), given how many had
+ * each Recall Grade; none when there are no answers.
+ */
+export function accuracy(answers: AnswersByGrade) {
+  const total = answerCount(answers);
+  const right = (Object.keys(answers) as RecallGrade[])
+    .filter(isCorrect)
+    .reduce((sum, grade) => sum + answers[grade], 0);
+  return total === 0 ? 0 : right / total;
+}
+
+/** How many cards are in each Lifecycle State, or of each Mastery Band. */
+function countBy<T extends string>(keys: readonly T[], values: T[]) {
+  const counts = Object.fromEntries(keys.map((k) => [k, 0])) as Record<
+    T,
+    number
+  >;
+  for (const value of values) counts[value]++;
+  return counts;
+}
+
+const LIFECYCLE_STATES = Object.values(CardLifecycleState);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -149,11 +202,14 @@ export async function readCardStanding(
   progress.sort(
     (a, b) => deckPosition.get(a.deckId)! - deckPosition.get(b.deckId)!,
   );
-  const misses = await recentMisses(prisma, userId, progress);
+  const tallies = await countedAnswers(prisma, userId, progress);
 
   const read = progress.map((card) => {
     const due = dueFrom(card, studyMode);
-    const cardMisses = misses.get(key(card)) ?? 0;
+    const { recentMisses: cardMisses, byGrade } = tallies.get(key(card)) ?? {
+      recentMisses: 0,
+      byGrade: noAnswers(),
+    };
     const standing: CardStanding = {
       cardId: card.cardId,
       deckId: card.deckId,
@@ -164,6 +220,7 @@ export async function readCardStanding(
       isDue: due !== null && due <= now,
       isWeak: isWeak(card, cardMisses),
       recentMisses: cardMisses,
+      countedAnswers: byGrade,
     };
     return { standing, progress: card, due };
   });
@@ -192,7 +249,18 @@ export async function readCardStanding(
       .map(({ standing }) => standing),
     counts: {
       due: cards.filter((card) => card.isDue).length,
-      new: cards.filter((card) => card.lifecycleState === 'NEW').length,
+      lifecycle: countBy(
+        LIFECYCLE_STATES,
+        cards.map((card) => card.lifecycleState),
+      ),
+      // A NEW card's mastery says nothing yet
+      bands: countBy(
+        MASTERY_BANDS,
+        cards
+          .filter((card) => card.lifecycleState !== 'NEW')
+          .map((card) => card.masteryBand),
+      ),
+      answers: addAnswers(cards.map((card) => card.countedAnswers)),
     },
     nextDueAt,
   };
@@ -223,19 +291,18 @@ const key = ({
 }) => `${cardId}:${direction}`;
 
 /**
- * How many of each card's last RECENT_ANSWERS Counted Answers in each Study
- * Direction were missed: answers since its progress there last reset
- * (ADR-0004), Retries left out. A card not in review has none: a NEW one
- * has had no answer since, and a RETIRED one isn't scheduled.
+ * Each card's Counted Answers in each Study Direction, answers since its
+ * progress there last reset (ADR-0004), Retries left out: how many of its
+ * last RECENT_ANSWERS were missed, and how many had each Recall Grade. A
+ * NEW card has none: it has had no answer since.
  */
-async function recentMisses(
+async function countedAnswers(
   prisma: PrismaClient,
   userId: string,
   progress: Progress[],
 ) {
   const cards = progress.filter(
-    ({ lifecycleState }) =>
-      lifecycleState === 'LEARNING' || lifecycleState === 'REINFORCING',
+    ({ lifecycleState }) => lifecycleState !== 'NEW',
   );
   const attempts = await prisma.cardAttempt.findMany({
     where: {
@@ -252,19 +319,27 @@ async function recentMisses(
     },
   });
   const resetAt = new Map(cards.map((card) => [key(card), card.resetAt]));
-  const seen = new Map<string, number>();
-  const misses = new Map<string, number>();
+  const tallies = new Map<
+    string,
+    { answers: number; recentMisses: number; byGrade: AnswersByGrade }
+  >();
+  // Newest first, so each card's first RECENT_ANSWERS are its last
   for (const attempt of attempts) {
     const reset = resetAt.get(key(attempt));
     if (!reset || !countsSinceReset(attempt.createdAt, reset)) continue;
-    const answered = seen.get(key(attempt)) ?? 0;
-    if (answered >= RECENT_ANSWERS) continue;
-    seen.set(key(attempt), answered + 1);
-    if (attempt.recallGrade === 'MISSED') {
-      misses.set(key(attempt), (misses.get(key(attempt)) ?? 0) + 1);
+    const card = tallies.get(key(attempt)) ?? {
+      answers: 0,
+      recentMisses: 0,
+      byGrade: noAnswers(),
+    };
+    if (card.answers < RECENT_ANSWERS && attempt.recallGrade === 'MISSED') {
+      card.recentMisses++;
     }
+    card.answers++;
+    card.byGrade[attempt.recallGrade]++;
+    tallies.set(key(attempt), card);
   }
-  return misses;
+  return tallies;
 }
 
 /** The standing of a learner's cards, as `readCardStanding` reads it. */

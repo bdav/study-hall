@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import DeckStatsPage from './DeckStatsPage';
 import { trpc } from '@/lib/trpc';
 
@@ -35,6 +37,63 @@ function renderDeckStatsPage(deckId = 'deck-1') {
   );
 }
 
+type DeckStats = inferRouterOutputs<AppRouter>['stats']['deckStats'];
+
+/** A deck's stats, as the API returns them. */
+function deckStats(overrides: Partial<DeckStats> = {}): DeckStats {
+  return {
+    answers: { MISSED: 3, PARTIALLY_CORRECT: 0, GOOD: 1, NAILED: 8 },
+    answerCount: 12,
+    accuracy: 0.75,
+    lifecycle: { NEW: 4, LEARNING: 3, REINFORCING: 5, RETIRED: 0 },
+    bands: { fragile: 2, developing: 3, solid: 2, mastered: 1 },
+    weakCount: 1,
+    weakCards: [
+      {
+        cardId: 'card-1',
+        direction: 'FORWARD',
+        question: 'Capital of Peru',
+        recentMisses: 2,
+        deck: {
+          id: 'deck-1',
+          name: 'World Capitals',
+          reversible: false,
+          forwardLabel: null,
+          reverseLabel: null,
+          course: null,
+        },
+      },
+    ],
+    sessions: [
+      {
+        id: 'session-2',
+        startedAt: '2026-11-01T12:00:00.000Z',
+        endedAt: '2026-11-01T12:10:00.000Z',
+        sessionType: 'QUICK',
+        studyMode: 'CRAM',
+        direction: 'FORWARD',
+        status: 'ABANDONED',
+        deck: { id: 'deck-1', name: 'World Capitals', course: null },
+        answered: 3,
+        right: 1,
+      },
+      {
+        id: 'session-1',
+        startedAt: '2026-10-30T12:00:00.000Z',
+        endedAt: '2026-10-30T12:20:00.000Z',
+        sessionType: 'STANDARD',
+        studyMode: 'STUDY',
+        direction: 'FORWARD',
+        status: 'COMPLETED',
+        deck: { id: 'deck-1', name: 'World Capitals', course: null },
+        answered: 10,
+        right: 8,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 function setupMocks(
   overrides?: Partial<ReturnType<typeof trpc.stats.deckStats.useQuery>>,
 ) {
@@ -45,20 +104,30 @@ function setupMocks(
   } as ReturnType<typeof trpc.deck.getById.useQuery>);
 
   vi.mocked(trpc.stats.deckStats.useQuery).mockReturnValue({
-    data: {
-      totalAttempts: 30,
-      uniqueCardsStudied: 10,
-      firstTryAccuracy: 0.6,
-      overallAccuracy: 0.8,
-      cardStats: [
-        { cardId: 'card-1', totalAttempts: 5, avgAttemptsToCorrect: 2.5 },
-        { cardId: 'card-2', totalAttempts: 3, avgAttemptsToCorrect: 1.0 },
-      ],
-    },
+    data: deckStats(),
     isLoading: false,
     isError: false,
     ...overrides,
   } as ReturnType<typeof trpc.stats.deckStats.useQuery>);
+}
+
+/** Each item of a section's list, as its text reads. */
+function itemsOf(name: string) {
+  return within(screen.getByRole('region', { name }))
+    .getAllByRole('listitem')
+    .map((item) => item.textContent);
+}
+
+/** Each row of a section's table below its header, cell by cell. */
+function rowsOf(name: string) {
+  return within(screen.getByRole('region', { name }))
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) =>
+      within(row)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    );
 }
 
 beforeEach(() => {
@@ -66,36 +135,142 @@ beforeEach(() => {
 });
 
 describe('DeckStatsPage', () => {
-  it('renders deck stats with totals and accuracy', () => {
+  it('shows how many answers count, and their accuracy', () => {
     setupMocks();
     renderDeckStatsPage();
 
     expect(
       screen.getByRole('heading', { name: /world capitals/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText('30')).toBeInTheDocument();
-    expect(screen.getByText('10')).toBeInTheDocument();
-    expect(screen.getByText('60%')).toBeInTheDocument();
-    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('75%')).toBeInTheDocument();
   });
 
-  it('renders per-card stats', () => {
+  it('shows answers by Recall Grade, Partially correct only once there are any', () => {
     setupMocks();
     renderDeckStatsPage();
 
-    expect(screen.getByText('2.5')).toBeInTheDocument();
-    expect(screen.getByText('1.0')).toBeInTheDocument();
+    expect(itemsOf('Answers by grade')).toEqual([
+      '3Needs review',
+      '1Good',
+      '8Nailed it',
+    ]);
   });
 
-  it('renders empty state when no attempts exist', () => {
+  it('shows Partially correct answers when there are some', () => {
     setupMocks({
-      data: {
-        totalAttempts: 0,
-        uniqueCardsStudied: 0,
-        firstTryAccuracy: 0,
-        overallAccuracy: 0,
-        cardStats: [],
-      },
+      data: deckStats({
+        answers: { MISSED: 1, PARTIALLY_CORRECT: 2, GOOD: 0, NAILED: 1 },
+      }),
+    });
+    renderDeckStatsPage();
+
+    expect(itemsOf('Answers by grade')).toEqual([
+      '1Needs review',
+      '2Partially correct',
+      '0Good',
+      '1Nailed it',
+    ]);
+  });
+
+  it('shows how many cards are in each Lifecycle State', () => {
+    setupMocks();
+    renderDeckStatsPage();
+
+    expect(itemsOf('Cards')).toEqual([
+      '4New',
+      '3Still learning',
+      '5Reinforcing',
+      '0Retired',
+    ]);
+  });
+
+  it("shows how many answered cards are in each mastery band, never a card's score", () => {
+    setupMocks();
+    renderDeckStatsPage();
+
+    expect(itemsOf('Mastery')).toEqual([
+      '2Fragile',
+      '3Developing',
+      '2Solid',
+      '1Mastered',
+    ]);
+  });
+
+  it('says when no card has been answered yet to have a mastery band', () => {
+    setupMocks({
+      data: deckStats({
+        bands: { fragile: 0, developing: 0, solid: 0, mastered: 0 },
+      }),
+    });
+    renderDeckStatsPage();
+
+    expect(
+      within(screen.getByRole('region', { name: 'Mastery' })).getByText(
+        /no cards answered yet/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('lists the Weak cards with their recent misses', () => {
+    setupMocks();
+    renderDeckStatsPage();
+
+    expect(rowsOf('Weak cards')).toEqual([['Capital of Peru', '2']]);
+  });
+
+  it('says when only the weakest of more Weak cards are listed', () => {
+    setupMocks({ data: deckStats({ weakCount: 25 }) });
+    renderDeckStatsPage();
+
+    expect(
+      within(screen.getByRole('region', { name: 'Weak cards' })).getByText(
+        'The weakest 1 of 25',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says when no card is Weak', () => {
+    setupMocks({ data: deckStats({ weakCards: [], weakCount: 0 }) });
+    renderDeckStatsPage();
+
+    expect(
+      within(screen.getByRole('region', { name: 'Weak cards' })).getByText(
+        /no weak cards right now/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('lists recent Study Sessions: when, type, mode, answered, right and how they ended', () => {
+    setupMocks();
+    renderDeckStatsPage();
+
+    expect(rowsOf('Recent sessions')).toEqual([
+      ['Nov 1, 2026', 'Quick', 'Cram', '3', '1', 'Abandoned'],
+      ['Oct 30, 2026', 'Standard', 'Study', '10', '8', 'Finished'],
+    ]);
+  });
+
+  it('says when no session has finished yet', () => {
+    setupMocks({ data: deckStats({ sessions: [] }) });
+    renderDeckStatsPage();
+
+    expect(
+      within(screen.getByRole('region', { name: 'Recent sessions' })).getByText(
+        /no finished sessions yet/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders empty state when nothing has been studied', () => {
+    setupMocks({
+      data: deckStats({
+        answers: { MISSED: 0, PARTIALLY_CORRECT: 0, GOOD: 0, NAILED: 0 },
+        answerCount: 0,
+        accuracy: 0,
+        weakCards: [],
+        sessions: [],
+      }),
     });
     renderDeckStatsPage();
 
@@ -136,7 +311,7 @@ describe('DeckStatsPage', () => {
     expect(
       screen.getByRole('button', { name: 'Restore deck' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('30')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 });
 
@@ -182,10 +357,10 @@ describe('a reversible deck (#82)', () => {
   it('offers the choice even before a direction has been studied', () => {
     setupReversible();
     vi.mocked(trpc.stats.deckStats.useQuery).mockReturnValue({
-      data: { totalAttempts: 0, cardStats: [] },
+      data: deckStats({ answerCount: 0, weakCards: [], sessions: [] }),
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof trpc.stats.deckStats.useQuery>);
+    } as ReturnType<typeof trpc.stats.deckStats.useQuery>);
     renderDeckStatsPage();
 
     expect(

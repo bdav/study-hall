@@ -152,6 +152,31 @@ describe('Card Standing', () => {
     expect(read[graduatedCard.id]).not.toHaveProperty('masteryScore');
   });
 
+  it('counts the cards in each Lifecycle State, and the answered ones in each mastery band', async () => {
+    const deck = await deckOf(4);
+    const [, learning, graduated, missedAfter] = deck.cards;
+    // Mastery 2, 4 and 1
+    await history(learning.id, [nailed(daysAgo(1))]);
+    await history(graduated.id, reinforcing());
+    await history(missedAfter.id, reinforcing('MISSED'));
+
+    const { counts } = await standing([deck.id]);
+
+    expect(counts.lifecycle).toEqual({
+      NEW: 1,
+      LEARNING: 1,
+      REINFORCING: 2,
+      RETIRED: 0,
+    });
+    // The NEW card has no mastery to speak of
+    expect(counts.bands).toEqual({
+      fragile: 2,
+      developing: 1,
+      solid: 0,
+      mastered: 0,
+    });
+  });
+
   it('reads several decks at once, each in deck order, in the order asked', async () => {
     const first = await deckOf(2);
     const second = await deckOf(2);
@@ -244,7 +269,8 @@ describe('Card Standing', () => {
       missedYesterday.id,
       weak.id,
     ]);
-    expect(counts).toEqual({ due: 3, new: 1 });
+    expect(counts).toMatchObject({ due: 3 });
+    expect(counts.lifecycle.NEW).toBe(1);
   });
 
   it(
@@ -265,6 +291,46 @@ describe('Card Standing', () => {
   );
 
   describe('Counted Answers', () => {
+    it("tallies each card's by Recall Grade, and the read's together", async () => {
+      const deck = await deckOf(2);
+      const [retried, reset] = deck.cards;
+      // A miss with its Retry nailed, then a Good and a Nailed
+      await history(retried.id, [
+        missed(daysAgo(4)),
+        { grade: 'NAILED', at: daysAgo(3.9), retry: true },
+        { grade: 'GOOD', at: daysAgo(3) },
+        nailed(daysAgo(2)),
+      ]);
+      // Two misses, a reset, then a Nailed
+      await history(
+        reset.id,
+        answers(['MISSED', 'MISSED', 'NAILED'], daysAgo(3)),
+        {
+          resetAt: daysAgo(3.5),
+        },
+      );
+
+      const read = await standing([deck.id]);
+
+      expect(
+        Object.fromEntries(
+          read.cards.map(({ cardId, countedAnswers }) => [
+            cardId,
+            countedAnswers,
+          ]),
+        ),
+      ).toEqual({
+        [retried.id]: { MISSED: 1, PARTIALLY_CORRECT: 0, GOOD: 1, NAILED: 1 },
+        [reset.id]: { MISSED: 0, PARTIALLY_CORRECT: 0, GOOD: 0, NAILED: 1 },
+      });
+      expect(read.counts.answers).toEqual({
+        MISSED: 1,
+        PARTIALLY_CORRECT: 0,
+        GOOD: 1,
+        NAILED: 2,
+      });
+    });
+
     it("leaves out a Retry's miss", async () => {
       const deck = await deckOf(1);
       const [card] = deck.cards;
