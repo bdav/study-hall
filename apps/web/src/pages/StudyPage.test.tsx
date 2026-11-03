@@ -110,6 +110,8 @@ const mockDeck = {
 // none answered yet.
 const mockSession = {
   id: 'session-1',
+  direction: 'FORWARD',
+  studyMode: 'STUDY',
   items: mockDeck.cards.map((card, i) => ({
     id: `item-${i + 1}`,
     card,
@@ -798,46 +800,26 @@ describe('StudyPage', () => {
     expect(screen.getByText(/you answered 2 of 2 cards/i)).toBeInTheDocument();
   });
 
-  it('moves on after a miss without bringing the card back', async () => {
-    setupMocksWithStartSession('incorrect');
-    const user = userEvent.setup();
-    renderStudyPage();
-
-    await user.click(screen.getByRole('button', { name: /test deck/i }));
-    for (const answer of ['5', 'Lyon']) {
-      await user.type(screen.getByRole('textbox'), answer);
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toHaveTextContent('Needs review');
-      });
-      await user.click(screen.getByRole('button', { name: /next/i }));
-    }
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-    });
-  });
-
   describe('a missed card coming back', () => {
-    /**
-     * Answers graded as the server grades them, each miss bringing its card
-     * back as a Retry at the end of the session: "I don't know" and wrong
-     * answers are missed, the card's answer nailed.
-     */
-    function mockMissesComingBack() {
+    type Graded = { recallGrade: string; retryItem: { id: string } | null };
+    const missed: Graded = { recallGrade: 'MISSED', retryItem: null };
+    const nailed: Graded = { recallGrade: 'NAILED', retryItem: null };
+    /** A miss that brings its card back as the Retry given. */
+    const missedWithRetry = (id: string): Graded => ({
+      ...missed,
+      retryItem: { id },
+    });
+
+    /** The server's grades for the session's answers, in the order given. */
+    function mockGrades(grades: Graded[]) {
       setupMocksWithStartSession();
-      let retries = 0;
-      const answer = (itemId: string, userAnswer: string | null) => {
-        const missed = userAnswer !== '4' && userAnswer !== 'Paris';
-        return Promise.resolve({
+      const results = [...grades];
+      const answer = (itemId: string, userAnswer: string | null) =>
+        Promise.resolve({
           id: `attempt-${itemId}`,
           userAnswer,
-          recallGrade: missed ? 'MISSED' : 'NAILED',
-          retryItem: missed ? { id: `retry-${++retries}` } : null,
+          ...results.shift(),
         });
-      };
       vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
         mutate: vi.fn(),
         mutateAsync: vi.fn(
@@ -853,8 +835,8 @@ describe('StudyPage', () => {
       } as unknown as ReturnType<typeof trpc.study.dontKnow.useMutation>);
     }
 
-    async function startStudying() {
-      mockMissesComingBack();
+    async function startStudying(grades: Graded[]) {
+      mockGrades(grades);
       const user = userEvent.setup();
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));
@@ -881,7 +863,7 @@ describe('StudyPage', () => {
     }
 
     it('comes back after the last card, counted as a Retry, not another card', async () => {
-      const user = await startStudying();
+      const user = await startStudying([missedWithRetry('retry-1'), nailed]);
 
       await dontKnow(user);
       await next(user);
@@ -892,23 +874,8 @@ describe('StudyPage', () => {
       expect(await screen.findByText('Retry 1 of 1')).toBeInTheDocument();
     });
 
-    it('counts up the Retries as more are missed', async () => {
-      const user = await startStudying();
-      await dontKnow(user);
-      await next(user);
-      await dontKnow(user);
-      await next(user);
-      expect(await screen.findByText('Retry 1 of 2')).toBeInTheDocument();
-
-      // Missed again, so it comes back once more
-      await dontKnow(user);
-      await next(user);
-
-      expect(await screen.findByText('Retry 2 of 3')).toBeInTheDocument();
-    });
-
     it("leaves out when it's next reviewed while its Retry is waiting", async () => {
-      const user = await startStudying();
+      const user = await startStudying([missedWithRetry('retry-1')]);
 
       await dontKnow(user);
 
@@ -920,7 +887,11 @@ describe('StudyPage', () => {
     });
 
     it("says when it's next reviewed once no Retry is waiting", async () => {
-      const user = await startStudying();
+      const user = await startStudying([
+        missedWithRetry('retry-1'),
+        nailed,
+        nailed,
+      ]);
       await dontKnow(user);
       await next(user);
       await answer(user, 'Paris');
@@ -934,84 +905,6 @@ describe('StudyPage', () => {
       expect(history).toHaveTextContent(
         'Still learning · Next review in 2 days',
       );
-    });
-
-    it('doesn\'t come back once "My answer was correct" accepts the missed answer', async () => {
-      const user = await startStudying();
-      await answer(user, 'four');
-
-      await user.click(
-        screen.getByRole('button', { name: 'My answer was correct' }),
-      );
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
-      });
-      await next(user);
-      await answer(user, 'Paris');
-      await next(user);
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-    });
-
-    it("doesn't come back once marked known", async () => {
-      const user = await startStudying();
-      await answer(user, 'four');
-
-      await user.click(screen.getByRole('button', { name: 'Mark known' }));
-      await next(user);
-      await answer(user, 'Paris');
-      await next(user);
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-    });
-
-    it('finishes the session when accepting an answer reviewed with Back drops the last card to come', async () => {
-      const user = await startStudying();
-      await answer(user, '4');
-      await next(user);
-      await answer(user, 'Lyon');
-      await next(user);
-      expect(await screen.findByText('Retry 1 of 1')).toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await user.click(
-        await screen.findByRole('button', { name: 'My answer was correct' }),
-      );
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toHaveTextContent('Nailed it');
-      });
-      await next(user);
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-      expect(
-        vi.mocked(trpc.study.finishSession.useMutation).mock.results.at(-1)
-          ?.value.mutateAsync,
-      ).toHaveBeenCalledWith({ id: 'session-1' });
-    });
-
-    it('sums up the cards, by their first answers, not the Retries', async () => {
-      const user = await startStudying();
-      await dontKnow(user);
-      await next(user);
-      await answer(user, 'Paris');
-      await next(user);
-      await answer(user, '4');
-      await next(user);
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/you answered 2 of 2 cards/i),
-      ).toBeInTheDocument();
-      expect(screen.getByText('1 Needs review')).toBeInTheDocument();
-      expect(screen.getByText('1 Nailed it')).toBeInTheDocument();
     });
   });
 
@@ -1743,19 +1636,6 @@ describe('StudyPage', () => {
       expect(screen.getByLabelText('Answer 1')).toHaveValue('4');
     });
 
-    it('leaves edit mode on moving to another card', async () => {
-      const user = await startStudying();
-      await answerCard(user);
-
-      await startEditing(user);
-      await user.click(screen.getByRole('button', { name: /next/i }));
-
-      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
-      expect(
-        screen.queryByRole('textbox', { name: 'Front' }),
-      ).not.toBeInTheDocument();
-    });
-
     it('turns on edit mode with Enter on the toggle without moving on', async () => {
       const user = await startStudying();
       await answerCard(user);
@@ -2096,16 +1976,6 @@ describe('StudyPage', () => {
       });
     });
 
-    async function deleteCard(user: ReturnType<typeof userEvent.setup>) {
-      await startEditing(user);
-      await user.click(screen.getByRole('button', { name: 'Delete' }));
-      await user.click(
-        within(screen.getByRole('alertdialog')).getByRole('button', {
-          name: 'Delete',
-        }),
-      );
-    }
-
     it('deletes the card from edit mode once confirmed and moves on to the next', async () => {
       const user = await startStudying();
 
@@ -2118,22 +1988,6 @@ describe('StudyPage', () => {
       expect(mockDeleteCard).toHaveBeenCalledWith({ cardId: 'card-1' });
       expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
       expect(screen.getByText('Card 1 of 1')).toBeInTheDocument();
-    });
-
-    it('leaves a deleted card out of the session summary', async () => {
-      const user = await startStudying();
-      await answerCard(user);
-
-      await deleteCard(user);
-      await screen.findByText('Capital of France?');
-      await user.click(screen.getByRole('button', { name: /finish session/i }));
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/you answered 0 of 1 cards/i),
-      ).toBeInTheDocument();
     });
 
     /** Answers the first card, moves on, then goes Back to review it. */
@@ -2180,23 +2034,6 @@ describe('StudyPage', () => {
       ).toBeInTheDocument();
     });
 
-    it('deletes a card reviewed with Back, and the session goes on without it', async () => {
-      const user = await startStudying();
-      await reviewFirstCard(user);
-
-      await deleteCard(user);
-      expect(mockDeleteCard).toHaveBeenCalledWith({ cardId: 'card-1' });
-
-      // No answered cards are left to review, so forward returns to the
-      // card in play
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
-      await waitFor(() =>
-        expect(screen.getAllByText('Card 1 of 1').length).toBeGreaterThan(0),
-      );
-      expect(screen.queryByText('What is 2+2?')).not.toBeInTheDocument();
-    });
-
     it('marks the card in play known from edit mode and moves on to the next', async () => {
       const user = await startStudying();
 
@@ -2209,27 +2046,6 @@ describe('StudyPage', () => {
       });
       expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
       expect(screen.getByText('Card 1 of 1')).toBeInTheDocument();
-    });
-
-    it('marks a card reviewed with Back known, keeping its answer in the session', async () => {
-      const user = await startStudying();
-      await reviewFirstCard(user);
-
-      await startEditing(user);
-      await user.click(screen.getByRole('button', { name: 'Mark known' }));
-
-      expect(mockMarkKnown).toHaveBeenCalledWith({
-        cardIds: ['card-1'],
-        directions: ['FORWARD'],
-      });
-      expect(
-        screen.queryByRole('textbox', { name: 'Front' }),
-      ).not.toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      expect(await screen.findByText('Capital of France?')).toBeInTheDocument();
-      await waitFor(() =>
-        expect(screen.getAllByText('Card 2 of 2').length).toBeGreaterThan(0),
-      );
     });
 
     it('marks an answered card known from below its grade, keeping it in the session', async () => {
@@ -2346,19 +2162,6 @@ describe('StudyPage', () => {
         screen.queryByRole('textbox', { name: 'Front' }),
       ).not.toBeInTheDocument();
       expect(screen.getByText('What is two plus two?')).toBeInTheDocument();
-    });
-
-    it('finishes the session when its last card is deleted', async () => {
-      const user = await startStudying();
-
-      for (const front of ['What is 2+2?', 'Capital of France?']) {
-        await screen.findByText(front);
-        await deleteCard(user);
-      }
-
-      expect(
-        await screen.findByRole('heading', { name: /session complete/i }),
-      ).toBeInTheDocument();
     });
   });
 
@@ -2651,141 +2454,6 @@ describe('StudyPage', () => {
       });
     });
 
-    it('navigates back from result phase to review earlier card', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // Answer card 1, advance, answer card 2
-      await startAndAnswerCard(user, '4');
-      await advanceToNextCard(user);
-      await startAndAnswerCard(user, 'Paris');
-
-      // Now in result phase for card 2 — back should show card 1
-      const backButton = screen.getByRole('button', { name: /previous/i });
-      await user.click(backButton);
-
-      await waitFor(() => {
-        const answerArea = screen.getByTestId('correct-answer');
-        expect(answerArea).toHaveTextContent('What is 2+2?');
-        expect(answerArea).toHaveTextContent('4');
-      });
-    });
-
-    it('navigates forward from review to resume answering', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // Answer card 1, advance to card 2
-      await startAndAnswerCard(user, '4');
-      await advanceToNextCard(user);
-
-      // Go back to review card 1
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
-          'What is 2+2?',
-        );
-      });
-
-      // Go forward to resume answering card 2
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      await waitFor(() => {
-        expect(screen.getByText('Capital of France?')).toBeInTheDocument();
-      });
-      expect(screen.getByRole('textbox')).toBeInTheDocument();
-    });
-
-    it('navigates forward from review to resume result phase', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // Answer card 1, advance, answer card 2 (stay on result)
-      await startAndAnswerCard(user, '4');
-      await advanceToNextCard(user);
-      await startAndAnswerCard(user, 'Paris');
-
-      // Go back to card 1
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
-          'What is 2+2?',
-        );
-      });
-
-      // Go forward to return to card 2's result
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      await waitFor(() => {
-        const answerArea = screen.getByTestId('correct-answer');
-        expect(answerArea).toHaveTextContent('Capital of France?');
-        expect(answerArea).toHaveTextContent('Paris');
-      });
-    });
-
-    it('back button is always enabled so user can return to the title card', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // On the first card with no history — back is still enabled (goes to title)
-      const backButton = screen.getByRole('button', { name: /previous/i });
-      expect(backButton).not.toBeDisabled();
-    });
-
-    it('shows title card when backing from first card before answering', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
-
-      // Back from first card with no answers — should show title card
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-
-      await waitFor(() => {
-        expect(
-          screen.getByText(`${mockDeck.cards.length} cards`),
-        ).toBeInTheDocument();
-      });
-    });
-
-    it('resumes the same session going forward from the title card before any answer', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await waitFor(() => {
-        expect(
-          screen.getByText(`${mockDeck.cards.length} cards`),
-        ).toBeInTheDocument();
-      });
-      await user.click(screen.getByRole('button', { name: /next/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
-      });
-      const startSession = vi.mocked(trpc.study.startSession.useMutation).mock
-        .results;
-      const starts = startSession.reduce(
-        (total, r) => total + r.value.mutate.mock.calls.length,
-        0,
-      );
-      expect(starts).toBe(1);
-    });
-
     it('shows title card when backing past first history entry', async () => {
       setupMocksWithStartSession();
       const user = userEvent.setup();
@@ -2809,71 +2477,6 @@ describe('StudyPage', () => {
       expect(
         screen.queryByRole('button', { name: /previous/i }),
       ).not.toBeInTheDocument();
-    });
-
-    it('forward from title card resumes session', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // Answer card 1 and stay on result
-      await startAndAnswerCard(user, '4');
-
-      // Back to title card
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await waitFor(() => {
-        expect(
-          screen.getByText(`${mockDeck.cards.length} cards`),
-        ).toBeInTheDocument();
-      });
-
-      // Forward should go to card 1's review entry
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
-          'What is 2+2?',
-        );
-      });
-    });
-
-    it('forward from last review entry advances to next card', async () => {
-      setupMocksWithStartSession();
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-
-      // Answer card 1, advance, answer card 2 (stay on result)
-      await startAndAnswerCard(user, '4');
-      await advanceToNextCard(user);
-      await startAndAnswerCard(user, 'Paris');
-
-      // Go back to card 2's review (last entry)
-      await user.click(screen.getByRole('button', { name: /previous/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
-          'What is 2+2?',
-        );
-      });
-
-      // Go forward to card 2's review (now at last review entry)
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('correct-answer')).toHaveTextContent(
-          'Capital of France?',
-        );
-      });
-
-      // Forward again from the last review entry — should advance past
-      // the already-answered card and complete the session
-      await user.click(screen.getByRole('button', { name: /next/i }));
-      await waitFor(() => {
-        expect(
-          screen.getByRole('heading', { name: /session complete/i }),
-        ).toBeInTheDocument();
-      });
     });
   });
 
@@ -3433,17 +3036,6 @@ describe('StudyPage', () => {
       screen.getByRole('button', button).focus();
 
       await user.keyboard('{Enter}');
-
-      expect(start).toHaveBeenCalledTimes(1);
-    });
-
-    it("doesn't start again while a start is under way", async () => {
-      const start = mockStart({ resolves: false });
-      const user = userEvent.setup();
-      renderStudyPage();
-
-      await user.click(screen.getByRole('button', { name: /test deck/i }));
-      await user.click(screen.getByRole('button', { name: 'Next' }));
 
       expect(start).toHaveBeenCalledTimes(1);
     });

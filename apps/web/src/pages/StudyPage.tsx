@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
@@ -54,20 +47,8 @@ import {
   STUDY_DIRECTIONS,
   type StudyDirection,
 } from '@/lib/directions';
-import {
-  gradeOf,
-  recallGradeColors,
-  recallGradeLabels,
-  type RecallGrade,
-} from '@/lib/recallGrades';
-
-// The session summary lists grades best first.
-const summaryGradeOrder: RecallGrade[] = [
-  'NAILED',
-  'GOOD',
-  'PARTIALLY_CORRECT',
-  'MISSED',
-];
+import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
+import { type Failure, type KnownState } from '@/lib/studySession';
 
 const answerInputClasses =
   'h-auto flex-1 rounded-none border-0 border-b-2 border-white/40 bg-transparent py-2 text-center text-3xl font-bold uppercase tracking-wide text-white shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-white/30';
@@ -130,9 +111,6 @@ function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
     </>
   );
 }
-
-/** What marking a card known did, once done. */
-type KnownState = 'marked' | 'already';
 
 function CardBack({
   card,
@@ -349,40 +327,19 @@ function AnswerNotes({
   );
 }
 
+const failureMessages: Record<Failure, string> = {
+  start: 'Failed to start study session. Please try again.',
+  answer: 'Failed to submit answer. Please try again.',
+  finish: 'Failed to finish study session. Please try again.',
+  accept: "Couldn't accept your answer. Please try again.",
+};
+
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
   // Where the deck was reached from, which its links within it carry
   const location = useLocation();
-  const utils = trpc.useUtils();
-  // Answered cards marked known from below their grade, and what it did
-  const [knownCards, setKnownCards] = useState<Map<string, KnownState>>(
-    () => new Map(),
-  );
-  const markKnown = trpc.card.markKnown.useMutation({
-    onSuccess: ({ markedCount }, { cardIds }) => {
-      setKnownCards((prev) => {
-        const next = new Map(prev);
-        for (const cardId of cardIds) {
-          next.set(cardId, markedCount > 0 ? 'marked' : 'already');
-        }
-        return next;
-      });
-      for (const cardId of cardIds) utils.card.history.invalidate({ cardId });
-    },
-  });
   const yourAnswerId = useId();
   const answerChoiceId = useId();
-  // The card in edit mode, for the slide it was turned on in, and, for a
-  // card not yet answered, whether its back is in view
-  const [editing, setEditing] = useState<{
-    cardId: string;
-    slideKey: number;
-    showsBack: boolean;
-  } | null>(null);
-  // The attempt whose "My answer was correct" is choosing an answer
-  const [choosingAnswerFor, setChoosingAnswerFor] = useState<string | null>(
-    null,
-  );
 
   // How to study: Quick, Standard or Deep (#8), Standard each time the page
   // opens, and Study, Drill Weakest or Cram (#9), remembered by the browser
@@ -407,69 +364,27 @@ export default function StudyPage() {
   const isReversible = !!deck?.reversible;
   const labels = deck && isReversible ? directionLabels(deck) : undefined;
   const direction = isReversible ? chosenDirection : 'FORWARD';
-  const queuePreviewQuery = trpc.study.queuePreview.useQuery(
-    { deckId: deckId ?? '', sessionType, studyMode, direction },
-    {
-      enabled: !!deckId,
-      // With nothing to study the title card starts nothing, so look again
-      // now and then for cards come due
-      refetchInterval: (query) =>
-        query.state.data?.sessionSize === 0 ? 60_000 : false,
-    },
-  );
   const cards = useMemo(() => deck?.cards.map(toFlashcard) ?? [], [deck]);
 
-  const {
-    studyState,
-    direction: sessionDirection,
-    resumable,
-    handleAbandon,
-    currentCard,
-    cardNumber,
-    sessionSize,
-    isRetry,
-    retryNumber,
-    retryCount,
-    hasRetryWaiting,
-    remainingCount,
-    isFlipped,
-    toggleFlip,
-    answerInput,
-    setAnswerInput,
-    error,
-    refusal,
-    history,
-    handleStart,
-    handleSubmitAnswer,
-    handleDontKnow,
-    handleAcceptAnswer,
-    isAcceptingAnswer,
-    handleFinish,
-    returnToTitle,
-    replaceCard,
-    showUnresetChange,
-    removeCard,
-    dropUnanswered,
-    editedAfterAnswer,
-    handleNext,
-    handleBack,
-    handleForward,
-    canGoBack,
-    reviewEntry,
-  } = useStudySession(deckId, { sessionType, studyMode, direction });
-
-  const isReviewing = studyState.phase === 'reviewing';
-  const isIdle = studyState.phase === 'idle';
-  const isAtTitle = isIdle || (isReviewing && !reviewEntry);
-  // Before a session, what one would hold; during one, its size
-  const preview = queuePreviewQuery.data;
-  const titleQueueLength = isIdle
-    ? (preview?.sessionSize ?? cards.length)
-    : sessionSize;
+  const { view, act, preview, resumable, isAcceptingAnswer } = useStudySession(
+    deckId,
+    { sessionType, studyMode, direction },
+  );
+  const { screen } = view;
+  const cardScreen = screen.kind === 'card' ? screen : null;
+  const isAtTitle = screen.kind === 'title';
+  // Before a session, rather than gone back to the title card within one
+  const isIdle = isAtTitle && screen.sessionSize === null;
+  const isAnswering = cardScreen?.stage === 'answering';
+  const isGraded = cardScreen?.stage === 'graded';
+  const isReviewing = cardScreen?.stage === 'reviewing';
+  const titleQueueLength = isAtTitle
+    ? (screen.sessionSize ?? preview?.sessionSize ?? cards.length)
+    : 0;
   const titleDetails = (
     <TitleCardDetails
       deckSize={cards.length}
-      sessionSize={isIdle ? null : sessionSize}
+      sessionSize={isAtTitle ? screen.sessionSize : null}
       preview={preview}
       resumable={
         isIdle && resumable
@@ -483,77 +398,26 @@ export default function StudyPage() {
     />
   );
 
-  const studiedCard = isAtTitle
-    ? undefined
-    : isReviewing
-      ? reviewEntry?.card
-      : currentCard;
-  // The card on screen as it's asked in the session's direction: in
-  // Reverse, its primary answer asking for its front (ADR-0011). Edits go to
-  // the card itself
-  const displayCard = studiedCard && asDirected(studiedCard, sessionDirection);
-  // Whether the card on screen is known already in the session's direction,
-  // when Mark known would do nothing (ADR-0009); the same query as its
-  // history below it
+  const studiedItem = cardScreen?.item;
+  const itemDirection = studiedItem?.direction ?? direction;
+  // The card on screen as it's asked in its item's direction: in Reverse,
+  // its primary answer asking for its front (ADR-0011). Edits go to the card
+  // itself
+  const displayCard =
+    studiedItem && asDirected(studiedItem.card, studiedItem.direction);
+  // Whether the card on screen is known already in its direction, when Mark
+  // known would do nothing (ADR-0009); the same query as its history below
+  // it
   const displayProgress = trpc.card.history.useQuery(
-    { cardId: displayCard?.id ?? '', direction: sessionDirection },
+    { cardId: displayCard?.id ?? '', direction: itemDirection },
     { enabled: !!displayCard, gcTime: 0 },
   ).data?.progress;
   const canMarkDisplayKnown = !!displayProgress && !displayProgress.isKnown;
-  const displayResult =
-    isReviewing && reviewEntry
-      ? reviewEntry
-      : studyState.phase === 'result'
-        ? {
-            attemptId: studyState.attemptId,
-            userAnswer: studyState.userAnswer,
-            ...gradeOf(studyState),
-            otherFront: studyState.otherFront,
-          }
-        : null;
-  // "My answer was correct" regrades the answer, so the card's history shows
-  // its new grade
-  async function acceptAnswer(
-    attemptId: string,
-    cardId: string,
-    canonicalAnswerId?: string,
-  ) {
-    await handleAcceptAnswer(attemptId, canonicalAnswerId);
-    utils.card.history.invalidate({ cardId });
-  }
-  // On a card with several answers it first asks which one the answer is
-  // another way of saying
-  const acceptDisplayedAnswer =
-    displayResult && displayCard
-      ? () => {
-          if (displayCard.answers.length > 1) {
-            setChoosingAnswerFor(displayResult.attemptId);
-          } else {
-            acceptAnswer(displayResult.attemptId, displayCard.id);
-            // Its button goes once accepted
-            focusNavigation();
-          }
-        }
-      : undefined;
-  const isChoosingAnswer =
-    !!displayResult && choosingAnswerFor === displayResult.attemptId;
-  // Retries, after every card, are counted on their own; their total grows
-  // as more are missed
-  const progress = isReviewing
-    ? undefined
-    : isRetry
-      ? `Retry ${retryNumber} of ${retryCount}`
-      : `Card ${cardNumber} of ${sessionSize}`;
-
-  // Before a session, the title card starts one, unless the mode chosen has
-  // nothing to study, when another mode or length can be chosen
-  const canStart = isIdle && !(!resumable && preview?.sessionSize === 0);
-
-  const onSlideNext = useCallback(() => {
-    if (isIdle) handleStart();
-    else if (isReviewing) handleForward();
-    else handleNext();
-  }, [isIdle, isReviewing, handleStart, handleForward, handleNext]);
+  const displayResult = cardScreen?.answer ?? null;
+  const isFlipped = cardScreen?.flipped ?? false;
+  const progress = cardScreen?.progress;
+  const remainingCount = cardScreen?.remaining ?? 0;
+  const error = view.failure && failureMessages[view.failure];
 
   const {
     slideKey,
@@ -572,33 +436,23 @@ export default function StudyPage() {
       queueLength: remainingCount,
       progress,
     },
-    onSlideNext,
-    handleBack,
+    act.next,
+    act.back,
   );
 
-  // Moving to another card leaves edit mode
-  const isEditing =
-    !!displayCard &&
-    editing?.cardId === displayCard.id &&
-    editing.slideKey === slideKey;
+  const isEditing = !!displayCard && !!cardScreen?.editing;
   // An answered card keeps the side it shows; an unanswered one has no back
   // outside edit mode
   const editorShowsBack = displayResult
     ? isFlipped
-    : isEditing && editing.showsBack;
-  const flipEditor = displayResult
-    ? toggleFlip
-    : () =>
-        setEditing((prev) => prev && { ...prev, showsBack: !prev.showsBack });
+    : !!cardScreen?.editing?.showsBack;
 
   // While a card slides in it's drawn in the slide, then again once it
   // settles, so an editor opened mid-slide would lose its edits
   const canEdit = !exitingCard;
 
-  function startEditing(cardId: string, onBack = false) {
-    if (!canEdit) return;
-    setEditing({ cardId, slideKey, showsBack: onBack });
-    if (onBack && displayResult && !isFlipped) toggleFlip();
+  function startEditing(onBack = false) {
+    if (canEdit) act.edit(onBack);
   }
 
   const forwardButtonRef = useRef<HTMLButtonElement>(null);
@@ -618,26 +472,31 @@ export default function StudyPage() {
     document.getElementById(goingBack ? previousId : nextId)?.focus();
   }
 
+  // On a card with several answers "My answer was correct" first asks which
+  // one the answer is another way of saying
+  const acceptDisplayedAnswer =
+    displayResult && displayCard
+      ? () => {
+          act.accept(displayResult.attemptId);
+          // Its button goes once accepted
+          if (!cardScreen?.asksWhichAnswer) focusNavigation();
+        }
+      : undefined;
+  const isChoosingAnswer = !!cardScreen?.choosingAnswer;
+
   // Next and Previous, as buttons and as swipes across the card. A session
   // that's complete has only Previous
-  const canGoForward = isIdle
-    ? canStart
-    : studyState.phase !== 'answering' && studyState.phase !== 'complete';
-  const canGoPrevious = !isAtTitle && canGoBack;
+  const { canStart, canGoForward } = view;
+  const canGoPrevious = view.canGoBack;
 
   // Focus goes to the control Enter should press next (#94) once the deck
   // has loaded, a slide ends, an answer is graded or edit mode ends:
   // Previous after going back, otherwise Next. Answering, the answer has it,
   // and once the session is over, Start another session
   const isDeckLoaded = !!deck;
+  const isOver = screen.kind === 'summary';
   useEffect(() => {
-    if (
-      !isDeckLoaded ||
-      exitingCard ||
-      isEditing ||
-      studyState.phase === 'answering' ||
-      studyState.phase === 'complete'
-    )
+    if (!isDeckLoaded || exitingCard || isEditing || isAnswering || isOver)
       return;
     if (lastNavDirection === 'back' && !isAtTitle) {
       backButtonRef.current?.focus();
@@ -650,14 +509,14 @@ export default function StudyPage() {
     isEditing,
     lastNavDirection,
     isAtTitle,
-    studyState.phase,
+    isAnswering,
+    isOver,
   ]);
 
   // Enter with nothing that takes it focused presses Next: on the title
   // card before a session, which starts it, and on a graded card, unless
   // editing (#81)
-  const pageEnterPressesNext =
-    canStart || (studyState.phase === 'result' && !isEditing);
+  const pageEnterPressesNext = canStart || (isGraded && !isEditing);
   useEffect(() => {
     if (!pageEnterPressesNext) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -677,7 +536,7 @@ export default function StudyPage() {
   const previousGlows = canGoPrevious && active?.id === previousId;
   const titleCardGlows = canStart && isFocusWithin(active, '[data-title-card]');
   const submitGlows =
-    !!answerInput.trim() && isFocusWithin(active, '[data-answer-form]');
+    !!view.answerInput.trim() && isFocusWithin(active, '[data-answer-form]');
   const swipe = useSwipe((direction) => {
     if (isEditing) return;
     if (direction === 'left' && canGoForward) slideToNext();
@@ -688,10 +547,7 @@ export default function StudyPage() {
   // the next one is chosen and started (#93); what was marked known or
   // being accepted in the last session is put away with it
   function startAnother() {
-    setKnownCards(new Map());
-    setChoosingAnswerFor(null);
-    setEditing(null);
-    slideTo('right', returnToTitle);
+    slideTo('right', act.startAnother);
   }
 
   if (deckQuery.isLoading) {
@@ -744,7 +600,7 @@ export default function StudyPage() {
     );
   }
 
-  if (studyState.phase === 'nothing-due') {
+  if (screen.kind === 'nothing-due') {
     return (
       <CenteredPage>
         <DeckHeader
@@ -766,16 +622,7 @@ export default function StudyPage() {
     );
   }
 
-  if (studyState.phase === 'complete') {
-    // Each card by its first answer, which scheduled it; retries didn't
-    const firstAnswers = history.filter((h) => !h.isRetry);
-    const gradeCounts = summaryGradeOrder
-      .map((grade) => ({
-        grade,
-        count: firstAnswers.filter((h) => h.recallGrade === grade).length,
-      }))
-      .filter(({ count }) => count > 0);
-
+  if (screen.kind === 'summary') {
     return (
       <CenteredPage>
         <DeckHeader
@@ -795,10 +642,10 @@ export default function StudyPage() {
                 Session complete!
               </h2>
               <p className="mt-2 text-sm text-white/50">
-                You answered {firstAnswers.length} of {sessionSize} cards.
+                You answered {screen.answered} of {screen.size} cards.
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {gradeCounts.map(({ grade, count }) => (
+                {screen.grades.map(({ grade, count }) => (
                   <span
                     key={grade}
                     className={`inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${recallGradeColors[grade]}`}
@@ -838,18 +685,24 @@ export default function StudyPage() {
 
   // Helper to render a study card — used for both the active card and the
   // frozen snapshot during slide animations, avoiding JSX duplication.
-  const renderStudyCard = (
-    card: CardSnapshot['card'],
-    result: CardSnapshot['result'],
-    flipped: boolean,
-    queueLength: number,
-    cardProgress: string | undefined,
-    onFlip?: () => void,
-    gradedBeforeEdit = false,
-    onAcceptAnswer?: () => void,
-    onMarkKnown?: () => void,
-    knownState?: KnownState,
-  ) => (
+  const renderStudyCard = ({
+    card,
+    result,
+    isFlipped: flipped,
+    queueLength,
+    progress: cardProgress,
+    onFlip,
+    editedAfterAnswer = false,
+    onAcceptAnswer,
+    onMarkKnown,
+    knownState,
+  }: CardSnapshot & {
+    onFlip?: () => void;
+    editedAfterAnswer?: boolean;
+    onAcceptAnswer?: () => void;
+    onMarkKnown?: () => void;
+    knownState?: KnownState;
+  }) => (
     <CardStack
       queueLength={queueLength}
       progress={cardProgress}
@@ -859,7 +712,7 @@ export default function StudyPage() {
           <CardBack
             card={card}
             result={result}
-            editedAfterAnswer={gradedBeforeEdit}
+            editedAfterAnswer={editedAfterAnswer}
             onFlip={onFlip}
             onAcceptAnswer={onAcceptAnswer}
             isAcceptingAnswer={isAcceptingAnswer}
@@ -877,63 +730,59 @@ export default function StudyPage() {
   );
 
   // The card on screen: the one in play, or one answered earlier, as asked
-  // in the session's direction, and edited as it is
+  // in its item's direction, and edited as it is
   const renderDisplayCard = (card: Flashcard) =>
-    isEditing && studiedCard ? (
+    isEditing && studiedItem ? (
       <StudyCardEditor
         deckId={deckId ?? ''}
-        card={studiedCard}
-        direction={sessionDirection}
+        card={studiedItem.card}
+        direction={itemDirection}
         labels={labels}
         queueLength={remainingCount}
         progress={progress}
         canMarkKnown={canMarkDisplayKnown}
         isFlipped={editorShowsBack}
-        onFlip={flipEditor}
-        onEdited={replaceCard}
-        onChanged={showUnresetChange}
-        onDeleted={() => removeCard(card.id)}
+        onFlip={act.flip}
+        onEdited={act.cardEdited}
+        onChanged={act.cardChanged}
+        onDeleted={() => act.cardDeleted(card.id)}
         // The card in play is done with, as is its Retry; an answered one
         // stays answered
-        onMarkedKnown={() => dropUnanswered(card.id)}
+        onMarkedKnown={() => act.dropUnanswered(card.id)}
         onDone={() => {
-          setEditing(null);
+          act.stopEditing();
           // An unanswered card goes back to its answer; an answered one's
           // Next is focused once edit mode ends
-          if (studyState.phase === 'answering') {
+          if (isAnswering) {
             document.getElementById(answerId)?.focus();
           }
         }}
       />
     ) : (
-      renderStudyCard(
+      renderStudyCard({
         card,
-        displayResult,
+        result: displayResult,
         isFlipped,
-        remainingCount,
+        queueLength: remainingCount,
         progress,
-        () => {
-          toggleFlip();
+        onFlip: () => {
+          act.flip();
           // The front's flip button goes once flipped
           focusNavigation();
         },
-        !!displayResult && editedAfterAnswer.has(displayResult.attemptId),
-        acceptDisplayedAnswer,
-        canMarkDisplayKnown
+        editedAfterAnswer: !!displayResult?.editedAfter,
+        onAcceptAnswer: acceptDisplayedAnswer,
+        onMarkKnown: canMarkDisplayKnown
           ? () => {
-              markKnown.mutate({
-                cardIds: [card.id],
-                directions: [sessionDirection],
-              });
               // Its Retry, if missed, is skipped with it, as the session
-              // does; dropped at once, before the learner can move on
-              dropUnanswered(card.id);
+              // does
+              act.markKnown();
               // Its button goes once it's marked
               focusNavigation();
             }
           : undefined,
-        knownCards.get(card.id),
-      )
+        knownState: cardScreen?.known,
+      })
     );
 
   return (
@@ -964,13 +813,7 @@ export default function StudyPage() {
                       : 'animate-card-out-right'
                   }
                 >
-                  {renderStudyCard(
-                    exitingCard.card,
-                    exitingCard.result,
-                    exitingCard.isFlipped,
-                    exitingCard.queueLength,
-                    exitingCard.progress,
-                  )}
+                  {renderStudyCard(exitingCard)}
                 </div>
                 {/* Entering card — absolutely positioned, slides in */}
                 {(displayCard || isAtTitle) && (
@@ -1024,7 +867,7 @@ export default function StudyPage() {
                 aria-label="Edit card"
                 disabled={!canEdit}
                 title="Edit card"
-                onClick={() => startEditing(displayCard.id)}
+                onClick={() => startEditing()}
                 className="relative touch-target rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
               >
                 <Pencil className="h-4 w-4" />
@@ -1064,20 +907,20 @@ export default function StudyPage() {
         </div>
 
         <div className="mt-6 w-full max-w-md">
-          {studyState.phase === 'answering' && (
+          {isAnswering && (
             <form
               className="relative w-full"
               data-answer-form
               onSubmit={(e) => {
                 e.preventDefault();
-                handleSubmitAnswer();
+                act.submit();
               }}
             >
               <Input
                 id={answerId}
                 type="text"
-                value={answerInput}
-                onChange={(e) => setAnswerInput(e.target.value)}
+                value={view.answerInput}
+                onChange={(e) => act.type(e.target.value)}
                 autoFocus
                 className={answerInputClasses}
               />
@@ -1086,7 +929,7 @@ export default function StudyPage() {
                 variant="ghost"
                 size="icon"
                 aria-label="Submit"
-                disabled={!answerInput.trim()}
+                disabled={!view.answerInput.trim()}
                 className={`absolute right-0 top-1/2 -translate-y-1/2 active:translate-y-[-50%] text-white/50 disabled:opacity-40 ${submitGlows ? ENTER_GLOW : ''}`}
               >
                 <CornerDownLeft className="size-7" />
@@ -1094,20 +937,20 @@ export default function StudyPage() {
             </form>
           )}
 
-          {studyState.phase === 'answering' && refusal && (
+          {isAnswering && cardScreen.refusal && (
             <p
               role="status"
               className="mt-2 text-center text-sm text-amber-100"
             >
-              {refusal}
+              {cardScreen.refusal}
             </p>
           )}
 
-          {studyState.phase === 'answering' && (
+          {isAnswering && (
             <div className="mt-2 text-center">
               <button
                 type="button"
-                onClick={handleDontKnow}
+                onClick={act.dontKnow}
                 className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 I don't know
@@ -1115,7 +958,7 @@ export default function StudyPage() {
             </div>
           )}
 
-          {(studyState.phase === 'result' || isReviewing) && displayResult ? (
+          {(isGraded || isReviewing) && displayResult ? (
             <>
               <div
                 role="group"
@@ -1136,7 +979,7 @@ export default function StudyPage() {
                     <AnswerNotes card={displayCard} result={displayResult} />
                     <CardAnswersSummary
                       card={displayCard}
-                      onOpen={() => startEditing(displayCard.id, true)}
+                      onOpen={() => startEditing(true)}
                       caption="Accepted answers"
                       disabled={isEditing}
                       className="mx-auto max-w-md text-center"
@@ -1162,14 +1005,9 @@ export default function StudyPage() {
                           size="sm"
                           disabled={isAcceptingAnswer}
                           onClick={() => {
-                            setChoosingAnswerFor(null);
                             // The choice goes once made
                             focusNavigation();
-                            acceptAnswer(
-                              displayResult.attemptId,
-                              displayCard.id,
-                              answer.id,
-                            );
+                            act.accept(displayResult.attemptId, answer.id);
                           }}
                           className="bg-white/20 text-white hover:bg-white/30"
                         >
@@ -1181,7 +1019,7 @@ export default function StudyPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setChoosingAnswerFor(null);
+                          act.cancelChoosing();
                           focusNavigation();
                         }}
                         className="text-white/70 hover:bg-white/10 hover:text-white"
@@ -1196,9 +1034,9 @@ export default function StudyPage() {
                 <CardHistory
                   key={displayCard.id}
                   cardId={displayCard.id}
-                  direction={sessionDirection}
+                  direction={itemDirection}
                   // Coming back in this session, whatever its schedule says
-                  showsNextReview={!hasRetryWaiting(displayCard.id)}
+                  showsNextReview={!cardScreen?.retryWaiting}
                 />
               )}
             </>
@@ -1217,7 +1055,7 @@ export default function StudyPage() {
                 }
               }
             />
-          ) : studyState.phase !== 'answering' ? (
+          ) : !isAnswering ? (
             // Holds the answer's place, label included
             <div className="py-2 text-center" aria-hidden>
               <p className="text-xs">&nbsp;</p>
@@ -1229,7 +1067,7 @@ export default function StudyPage() {
             <div className="mt-2 text-center">
               <button
                 type="button"
-                onClick={handleAbandon}
+                onClick={act.abandon}
                 className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 Abandon session
@@ -1237,12 +1075,11 @@ export default function StudyPage() {
             </div>
           )}
 
-          {(studyState.phase === 'answering' ||
-            studyState.phase === 'result') && (
+          {(isAnswering || isGraded) && (
             <div className="mt-2 text-center">
               <button
                 type="button"
-                onClick={handleFinish}
+                onClick={act.finish}
                 className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 Finish session

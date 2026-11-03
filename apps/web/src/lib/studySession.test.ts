@@ -5,6 +5,7 @@ import {
   canGoForward,
   canStart,
   initialState,
+  studyView,
   transition,
   type ItemAnswer,
   type SessionItem,
@@ -19,6 +20,17 @@ function card(id: string): Flashcard {
     answers: [{ id: `${id}-a`, text: `${id} back`, acceptedVariants: [] }],
     canonicalAnswer: `${id} back`,
     reverseVariants: [],
+  };
+}
+
+/** A card with two Canonical Answers, "four" primary, then "4". */
+function cardWithTwoAnswers(id: string): Flashcard {
+  return {
+    ...card(id),
+    answers: [
+      { id: `${id}-1`, text: 'four', acceptedVariants: [] },
+      { id: `${id}-2`, text: '4', acceptedVariants: [] },
+    ],
   };
 }
 
@@ -74,12 +86,19 @@ function graded(
 
 const started = (...items: SessionItem[]): StudySessionEvent[] => [
   { type: 'start' },
-  { type: 'started', session: { id: 'session-1', items } },
+  { type: 'started', session: { id: 'session-1', items, studyMode: 'STUDY' } },
 ];
 
 describe('the Study Session machine', () => {
   it('starts a session from the title card', () => {
     const { state, commands } = transition(initialState, { type: 'start' });
+
+    expect(state.session.status).toBe('starting');
+    expect(commands).toEqual([{ type: 'start' }]);
+  });
+
+  it('starts a session with Next from the title card', () => {
+    const { state, commands } = transition(initialState, { type: 'next' });
 
     expect(state.session.status).toBe('starting');
     expect(commands).toEqual([{ type: 'start' }]);
@@ -110,6 +129,25 @@ describe('the Study Session machine', () => {
     const retried = run(started(item('a')), failed.state);
     expect(retried.state.session.status).toBe('in-progress');
     expect(retried.state.failure).toBeNull();
+  });
+
+  it('keeps the Study Mode the session was started in', () => {
+    const { state } = run([
+      { type: 'start' },
+      {
+        type: 'started',
+        session: { id: 'session-1', items: [item('a')], studyMode: 'CRAM' },
+      },
+    ]);
+
+    expect(state.session).toMatchObject({ studyMode: 'CRAM' });
+  });
+
+  it("doesn't start again on Next while a start is under way", () => {
+    const { state, commands } = run([{ type: 'next' }, { type: 'next' }]);
+
+    expect(state.session.status).toBe('starting');
+    expect(commands).toEqual([]);
   });
 
   it('puts the first card in play once the session has started', () => {
@@ -161,6 +199,17 @@ describe('the Study Session machine', () => {
     });
     expect(state.view).toEqual({ at: 'play' });
     expect(state.flipped).toBe(true);
+  });
+
+  it("doesn't bring a missed card back when the server queues no Retry", () => {
+    const { state } = run([
+      ...started(item('a'), item('b')),
+      graded('item-a', { recallGrade: 'MISSED' }),
+    ]);
+
+    expect(state.session).toMatchObject({
+      items: [{ itemId: 'item-a' }, { itemId: 'item-b' }],
+    });
   });
 
   it('brings a missed card back as a Retry at the end of the session', () => {
@@ -633,6 +682,88 @@ describe('the Study Session machine', () => {
       });
     });
 
+    it('first asks which answer it means, on a card with several', () => {
+      const twoAnswers = cardWithTwoAnswers('a');
+      const atA = run([
+        ...started(item('a', { card: twoAnswers })),
+        graded('item-a', { recallGrade: 'MISSED' }),
+      ]).state;
+
+      const choosing = run(
+        [{ type: 'accept', attemptId: 'attempt-item-a' }],
+        atA,
+      );
+      expect(choosing.state.choosingAnswerFor).toBe('attempt-item-a');
+      expect(choosing.commands).toEqual([]);
+
+      const cancelled = run([{ type: 'cancelChoosing' }], choosing.state);
+      expect(cancelled.state.choosingAnswerFor).toBeNull();
+
+      const chosen = run(
+        [
+          {
+            type: 'accept',
+            attemptId: 'attempt-item-a',
+            canonicalAnswerId: 'a-2',
+          },
+        ],
+        choosing.state,
+      );
+      expect(chosen.state.choosingAnswerFor).toBeNull();
+      expect(chosen.commands).toEqual([
+        {
+          type: 'accept',
+          attemptId: 'attempt-item-a',
+          canonicalAnswerId: 'a-2',
+        },
+      ]);
+    });
+
+    it('finishes going forward once accepting an answer gone back to drops the last card to come', () => {
+      // a's Retry in play, then back to a's miss
+      const reviewing = run(
+        [
+          { type: 'type', text: 'x' },
+          graded('item-b'),
+          { type: 'next' },
+          { type: 'back' },
+          { type: 'back' },
+        ],
+        atB,
+      ).state;
+      expect(reviewing.view).toEqual({ at: 'answered', index: 0 });
+
+      const accepted = run(
+        [{ type: 'accept', attemptId: 'attempt-item-a' }, { type: 'next' }],
+        reviewing,
+      ).state;
+      const { commands } = run([{ type: 'next' }], accepted);
+      expect(commands).toEqual([{ type: 'finish', sessionId: 'session-1' }]);
+    });
+
+    it('asks no question in Reverse, where the answer asked for is the front', () => {
+      const reverse = item('a', {
+        card: cardWithTwoAnswers('a'),
+        direction: 'REVERSE',
+      });
+      const graded_ = run([
+        ...started(reverse),
+        graded('item-a', { recallGrade: 'MISSED' }),
+      ]).state;
+      expect(studyView(graded_, { resumable: false }).screen).toMatchObject({
+        asksWhichAnswer: false,
+      });
+
+      const { state, commands } = run(
+        [{ type: 'accept', attemptId: 'attempt-item-a' }],
+        graded_,
+      );
+      expect(state.choosingAnswerFor).toBeNull();
+      expect(commands).toEqual([
+        { type: 'accept', attemptId: 'attempt-item-a' },
+      ]);
+    });
+
     it('records a failure to accept, cleared by the next try', () => {
       const failed = run(
         [
@@ -723,6 +854,143 @@ describe('the Study Session machine', () => {
     });
   });
 
+  describe('marking a card known', () => {
+    // a missed, its Retry waiting, b in play
+    const atB = run([
+      ...started(item('a'), item('b', { direction: 'REVERSE' })),
+      graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+      { type: 'next' },
+    ]).state;
+
+    it("drops its waiting Retry and asks the server to mark it, in the card's direction", () => {
+      const { state, commands } = run(
+        [{ type: 'back' }, { type: 'markKnown' }],
+        atB,
+      );
+
+      expect(state.session).toMatchObject({
+        items: [{ itemId: 'item-a' }, { itemId: 'item-b' }],
+      });
+      expect(commands).toEqual([
+        { type: 'markKnown', cardId: 'a', direction: 'FORWARD' },
+      ]);
+    });
+
+    it('keeps a graded card in play on screen, dropping its Retry', () => {
+      const { state, commands } = run(
+        [{ type: 'markKnown' }],
+        run([
+          ...started(item('a'), item('b')),
+          graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+        ]).state,
+      );
+
+      expect(state.session).toMatchObject({
+        position: 0,
+        items: [{ itemId: 'item-a' }, { itemId: 'item-b' }],
+      });
+      expect(state.view).toEqual({ at: 'play' });
+      expect(commands).toEqual([
+        { type: 'markKnown', cardId: 'a', direction: 'FORWARD' },
+      ]);
+    });
+
+    it('moves on from the card in play, marked before it was answered', () => {
+      const { state, commands } = run([{ type: 'markKnown' }], atB);
+
+      // a's Retry comes next
+      expect(state.session).toMatchObject({
+        position: 1,
+        items: [{ itemId: 'item-a' }, { itemId: 'r1' }],
+      });
+      expect(commands).toEqual([
+        { type: 'markKnown', cardId: 'b', direction: 'REVERSE' },
+      ]);
+    });
+
+    it('says whether marking it changed anything, until another session', () => {
+      const marked = run(
+        [
+          { type: 'back' },
+          { type: 'markKnown' },
+          { type: 'markedKnown', cardId: 'a', changed: true },
+          { type: 'markedKnown', cardId: 'b', changed: false },
+        ],
+        atB,
+      ).state;
+      expect(marked.known).toEqual({ a: 'marked', b: 'already' });
+
+      const another = run(
+        [{ type: 'finish' }, { type: 'finished' }, { type: 'startAnother' }],
+        marked,
+      ).state;
+      expect(another.known).toEqual({});
+    });
+  });
+
+  describe('edit mode', () => {
+    // a answered, b in play
+    const atB = run([
+      ...started(item('a'), item('b')),
+      graded('item-a'),
+      { type: 'next' },
+    ]).state;
+
+    it('edits the card in view until done', () => {
+      const editing = run([{ type: 'edit' }], atB).state;
+      expect(editing.editing).toEqual({ showsBack: false });
+
+      const done = run([{ type: 'stopEditing' }], editing).state;
+      expect(done.editing).toBeNull();
+    });
+
+    it("turns an unanswered card's editor over, not the card", () => {
+      const { state } = run([{ type: 'edit' }, { type: 'flip' }], atB);
+
+      expect(state.editing).toEqual({ showsBack: true });
+    });
+
+    it("opens on an answered card's back, turning the card over to it", () => {
+      const reviewing = run([{ type: 'back' }, { type: 'flip' }], atB).state;
+      expect(reviewing.flipped).toBe(false);
+
+      const { state } = run([{ type: 'edit', onBack: true }], reviewing);
+      expect(state.editing).toEqual({ showsBack: true });
+      expect(state.flipped).toBe(true);
+    });
+
+    it('ends when the card in view changes', () => {
+      const back = run([{ type: 'edit' }, { type: 'back' }], atB).state;
+      expect(back.editing).toBeNull();
+
+      const gradedB = run([graded('item-b')], atB).state;
+      const next = run([{ type: 'edit' }, { type: 'next' }], gradedB).state;
+      expect(next.session).toMatchObject({ position: 1 });
+      expect(next.editing).toBeNull();
+    });
+
+    it('ends when the card being edited is deleted, the next taking its place', () => {
+      const { state } = run(
+        [{ type: 'edit' }, { type: 'cardDeleted', cardId: 'b' }],
+        run([...started(item('a'), item('b'), item('c'))]).state,
+      );
+      expect(state.editing).toEqual({ showsBack: false });
+
+      const deleted = run(
+        [{ type: 'edit' }, { type: 'cardDeleted', cardId: 'a' }],
+        run([...started(item('a'), item('b'))]).state,
+      ).state;
+      expect(deleted.session).toMatchObject({ position: 0 });
+      expect(deleted.editing).toBeNull();
+    });
+
+    it('stays on while the card in view stays, as when it is answered', () => {
+      const { state } = run([{ type: 'edit' }, graded('item-b')], atB);
+
+      expect(state.editing).toEqual({ showsBack: false });
+    });
+  });
+
   it("submits I don't know as no answer", () => {
     const { commands } = run([...started(item('a')), { type: 'dontKnow' }]);
 
@@ -739,5 +1007,195 @@ describe('the Study Session machine', () => {
     expect(state.session).toMatchObject({ status: 'complete', position: 2 });
     expect(state.view).toEqual({ at: 'summary' });
     expect(commands).toEqual([{ type: 'finish', sessionId: 'session-1' }]);
+  });
+
+  describe('the view: what the study screen shows', () => {
+    const due = { resumable: false, sessionSize: 2 };
+
+    it('shows the title card before a session, which starts one', () => {
+      const view = studyView(initialState, due);
+
+      expect(view.screen).toEqual({ kind: 'title', sessionSize: null });
+      expect(view.canStart).toBe(true);
+    });
+
+    it("shows the session's size on the title card gone back to", () => {
+      const { state } = run([
+        ...started(item('a'), item('b')),
+        { type: 'back' },
+      ]);
+
+      expect(studyView(state, due).screen).toEqual({
+        kind: 'title',
+        sessionSize: 2,
+      });
+    });
+
+    it('shows the card in play waiting for its answer, counting the cards', () => {
+      const { state } = run([
+        ...started(item('a'), item('b')),
+        { type: 'type', text: 'ci' },
+      ]);
+
+      expect(studyView(state, due)).toMatchObject({
+        screen: {
+          kind: 'card',
+          stage: 'answering',
+          item: { itemId: 'item-a' },
+          answer: null,
+          progress: 'Card 1 of 2',
+          remaining: 2,
+        },
+        answerInput: 'ci',
+        canGoForward: false,
+      });
+    });
+
+    it('counts the Retries on their own, after the cards', () => {
+      const { state } = run([
+        ...started(item('a')),
+        graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+        { type: 'next' },
+      ]);
+
+      expect(studyView(state, due).screen).toMatchObject({
+        stage: 'answering',
+        progress: 'Retry 1 of 1',
+        remaining: 1,
+      });
+    });
+
+    it('counts up the Retries as more are missed', () => {
+      const missed = { recallGrade: 'MISSED' } as const;
+      const first = run([
+        ...started(item('a'), item('b')),
+        graded('item-a', missed, 'r1'),
+        { type: 'next' },
+        graded('item-b', missed, 'r2'),
+        { type: 'next' },
+      ]).state;
+      expect(studyView(first, due).screen).toMatchObject({
+        progress: 'Retry 1 of 2',
+      });
+
+      // Missed again, so it comes back once more
+      const again = run(
+        [graded('r1', missed, 'r3'), { type: 'next' }],
+        first,
+      ).state;
+      expect(studyView(again, due).screen).toMatchObject({
+        progress: 'Retry 2 of 3',
+      });
+    });
+
+    it('shows a graded card with its answer, and whether its Retry is to come', () => {
+      const { state } = run([
+        ...started(item('a'), item('b')),
+        graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+      ]);
+
+      expect(studyView(state, due).screen).toMatchObject({
+        stage: 'graded',
+        answer: { recallGrade: 'MISSED' },
+        flipped: true,
+        retryWaiting: true,
+      });
+    });
+
+    it('shows a card gone back to without a progress line', () => {
+      const { state } = run([
+        ...started(item('a'), item('b')),
+        graded('item-a'),
+        { type: 'next' },
+        { type: 'back' },
+      ]);
+
+      const { screen } = studyView(state, due);
+      expect(screen).toMatchObject({
+        stage: 'reviewing',
+        item: { itemId: 'item-a' },
+      });
+      expect(screen).toHaveProperty('progress', undefined);
+    });
+
+    it('shows edit mode, choosing an answer and marked known on the card in view', () => {
+      const twoAnswers = cardWithTwoAnswers('a');
+      const { state } = run([
+        ...started(item('a', { card: twoAnswers })),
+        graded('item-a', { recallGrade: 'MISSED' }),
+        { type: 'accept', attemptId: 'attempt-item-a' },
+        { type: 'markKnown' },
+        { type: 'markedKnown', cardId: 'a', changed: true },
+        { type: 'edit' },
+      ]);
+
+      expect(studyView(state, due).screen).toMatchObject({
+        editing: { showsBack: false },
+        asksWhichAnswer: true,
+        choosingAnswer: true,
+        known: 'marked',
+      });
+    });
+
+    it('shows a refusal while its card waits for an answer', () => {
+      const { state } = run([
+        ...started(item('a')),
+        { type: 'dontKnow' },
+        { type: 'refused', itemId: 'item-a', message: 'Already given' },
+      ]);
+
+      expect(studyView(state, due).screen).toMatchObject({
+        refusal: 'Already given',
+      });
+    });
+
+    it('sums up the session by first answers, best grade first', () => {
+      const { state } = run([
+        ...started(item('a'), item('b'), item('c')),
+        graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+        { type: 'next' },
+        graded('item-b', { recallGrade: 'NAILED' }),
+        { type: 'next' },
+        { type: 'finish' },
+        { type: 'finished' },
+      ]);
+
+      expect(studyView(state, due).screen).toEqual({
+        kind: 'summary',
+        answered: 2,
+        size: 3,
+        grades: [
+          { grade: 'NAILED', count: 1 },
+          { grade: 'MISSED', count: 1 },
+        ],
+      });
+    });
+
+    it("leaves a Retry's answer out of the summary, counting its card once", () => {
+      const { state } = run([
+        ...started(item('a')),
+        graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+        { type: 'next' },
+        graded('r1', { recallGrade: 'NAILED' }),
+        { type: 'next' },
+        { type: 'finished' },
+      ]);
+
+      expect(studyView(state, due).screen).toEqual({
+        kind: 'summary',
+        answered: 1,
+        size: 1,
+        grades: [{ grade: 'MISSED', count: 1 }],
+      });
+    });
+
+    it('says when nothing is due', () => {
+      const { state } = run([
+        { type: 'start' },
+        { type: 'started', session: null },
+      ]);
+
+      expect(studyView(state, due).screen).toEqual({ kind: 'nothing-due' });
+    });
   });
 });

@@ -5,20 +5,15 @@ import { TRPCClientError } from '@trpc/client';
 import { trpc } from '@/lib/trpc';
 import { type SessionChoice } from '@/lib/sessionChoices';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
-import { gradeOf, type GradedAnswer } from '@/lib/recallGrades';
+import { gradeOf } from '@/lib/recallGrades';
 import {
-  canGoBack,
   initialState,
+  studyView,
   transition,
-  type Failure,
   type SessionItem,
   type StudySessionCommand,
   type StudySessionEvent,
-  type StudySessionState,
 } from '@/lib/studySession';
-
-/** An answered item, in the order answered: the session's first items. */
-type HistoryEntry = GradedAnswer & { card: Flashcard; isRetry: boolean };
 
 /** A Study Session as the server returns it, new or unfinished. */
 type ServerSession = NonNullable<
@@ -76,61 +71,11 @@ function progressOf(session: ServerSession) {
   };
 }
 
-const failureMessages: Record<Failure, string> = {
-  start: 'Failed to start study session. Please try again.',
-  answer: 'Failed to submit answer. Please try again.',
-  finish: 'Failed to finish study session. Please try again.',
-  accept: "Couldn't accept your answer. Please try again.",
-};
-
-type StudyState =
-  | { phase: 'idle' }
-  // The deck has no due or NEW cards, so no session started
-  | { phase: 'nothing-due' }
-  | { phase: 'answering' }
-  | ({ phase: 'result'; showingBack: boolean } & GradedAnswer)
-  | {
-      phase: 'reviewing';
-      reviewIndex: number;
-      showingBack: boolean;
-    }
-  | { phase: 'complete' };
-
-/** The machine's state as the study page reads it. */
-function toStudyState({
-  session,
-  view,
-  flipped,
-}: StudySessionState): StudyState {
-  if (session.status === 'not-started' || session.status === 'starting') {
-    return { phase: 'idle' };
-  }
-  if (session.status === 'nothing-due') return { phase: 'nothing-due' };
-  switch (view.at) {
-    case 'summary':
-      return { phase: 'complete' };
-    case 'title':
-      // Back to the title card, still inside this session: going forward
-      // resumes it rather than starting another
-      return { phase: 'reviewing', reviewIndex: -1, showingBack: flipped };
-    case 'answered':
-      return {
-        phase: 'reviewing',
-        reviewIndex: view.index,
-        showingBack: flipped,
-      };
-    case 'play': {
-      const answer = session.items[session.position]?.answer;
-      return answer
-        ? { phase: 'result', ...answer, showingBack: flipped }
-        : { phase: 'answering' };
-    }
-  }
-}
-
 /**
  * The study page's Study Session: the machine in `lib/studySession.ts`,
- * whose commands this makes through tRPC, feeding their results back in.
+ * whose commands this makes through tRPC, feeding their results back in,
+ * and the title card's queries. It gives what's on screen (`view`) and the
+ * learner's intents (`act`).
  */
 export function useStudySession(
   deckId: string | undefined,
@@ -142,7 +87,17 @@ export function useStudySession(
   const latest = useRef(initialState);
 
   const utils = trpc.useUtils();
-  const finishSession = trpc.study.finishSession.useMutation();
+  // What a session started now would hold, in the options chosen
+  const queuePreview = trpc.study.queuePreview.useQuery(
+    { deckId: deckId ?? '', ...choice },
+    {
+      enabled: !!deckId,
+      // With nothing to study the title card starts nothing, so look again
+      // now and then for cards come due
+      refetchInterval: (query) =>
+        query.state.data?.sessionSize === 0 ? 60_000 : false,
+    },
+  );
   // The deck's unfinished session, which starting resumes; not kept once
   // off screen, so a session finished since isn't offered meanwhile
   const activeSession = trpc.study.activeSession.useQuery(
@@ -155,6 +110,7 @@ export function useStudySession(
         type: 'started',
         session: started && {
           id: started.id,
+          studyMode: started.studyMode,
           items: toItems(started, deckId ?? ''),
         },
       });
@@ -165,12 +121,21 @@ export function useStudySession(
   });
   const submitAnswer = trpc.study.submitAnswer.useMutation();
   const dontKnow = trpc.study.dontKnow.useMutation();
+  const finishSession = trpc.study.finishSession.useMutation();
   const acceptAnswer = trpc.study.acceptAnswer.useMutation();
   // Abandoning the unfinished session offers a new one in its place
   const abandonSession = trpc.study.abandonSession.useMutation({
     onSuccess: () => {
       utils.study.activeSession.invalidate({ deckId });
       utils.study.queuePreview.invalidate({ deckId });
+    },
+  });
+  const markKnown = trpc.card.markKnown.useMutation({
+    onSuccess: ({ markedCount }, { cardIds }) => {
+      for (const cardId of cardIds) {
+        send({ type: 'markedKnown', cardId, changed: markedCount > 0 });
+        utils.card.history.invalidate({ cardId });
+      }
     },
   });
 
@@ -253,10 +218,18 @@ export function useStudySession(
           grade: gradeOf(accepted),
           card: toFlashcard(accepted.card),
         });
+        // Graded again, so the card's history shows its new grade
+        utils.card.history.invalidate({ cardId: accepted.card.id });
         return;
       }
       case 'abandon':
         abandonSession.mutate({ id: command.sessionId });
+        return;
+      case 'markKnown':
+        markKnown.mutate({
+          cardIds: [command.cardId],
+          directions: [command.direction],
+        });
         return;
     }
   }
@@ -268,114 +241,65 @@ export function useStudySession(
         ...progressOf(activeSession.data),
       }
     : null;
-
-  const studyState = toStudyState(machine);
-  const { session } = machine;
-  const items = 'items' in session ? session.items : [];
-  const position = 'position' in session ? session.position : 0;
-  const history: HistoryEntry[] = items.flatMap(({ card, isRetry, answer }) =>
-    answer ? [{ card, isRetry, ...answer }] : [],
-  );
-  const currentItem = items[position] ?? null;
-  // Progress counts cards, then Retries, which come after them all
-  const sessionSize = items.filter((item) => !item.isRetry).length;
-  const retryCount = items.length - sessionSize;
-  // Whether a card has a Retry still to come in the session
-  const hasRetryWaiting = (cardId: string) =>
-    items.some(
-      (item, i) =>
-        i >= history.length && item.isRetry && item.card.id === cardId,
-    );
+  const preview = queuePreview.data;
 
   return {
-    studyState,
-    // The session's own direction, once one has started or resumed
-    direction: items[0]?.direction ?? choice.direction,
+    view: studyView(machine, {
+      resumable: !!resumable,
+      sessionSize: preview?.sessionSize,
+    }),
+    // What a session started now would hold, and the unfinished one, which
+    // starting resumes (#10)
+    preview,
     resumable,
-    /** Abandons the deck's unfinished session, rather than resuming it. */
-    handleAbandon: () => {
-      if (resumable) send({ type: 'abandon', sessionId: resumable.id });
-    },
-    currentCard: currentItem?.card ?? null,
-    cardNumber: Math.min(position + 1, sessionSize),
-    sessionSize,
-    isRetry: currentItem?.isRetry ?? false,
-    retryNumber: position + 1 - sessionSize,
-    retryCount,
-    hasRetryWaiting,
-    remainingCount: items.length - position,
-    isFlipped:
-      (studyState.phase === 'result' || studyState.phase === 'reviewing') &&
-      studyState.showingBack,
-    toggleFlip: () => send({ type: 'flip' }),
-    answerInput: machine.answerInput,
-    setAnswerInput: (text: string) => send({ type: 'type', text }),
-    error: machine.failure && failureMessages[machine.failure],
-    // Shown only while the item refused is the one to answer
-    refusal:
-      machine.refusal && machine.refusal.itemId === currentItem?.itemId
-        ? machine.refusal.message
-        : null,
-    history,
-    /**
-     * Starts a Study Session, or resumes the deck's unfinished one, unless
-     * one is already being started.
-     */
-    handleStart: () => {
-      if (deckId) send({ type: 'start' });
-    },
-    handleSubmitAnswer: () => send({ type: 'submit' }),
-    handleDontKnow: () => send({ type: 'dontKnow' }),
-    /**
-     * "My answer was correct": the answer becomes an Accepted Variant and is
-     * graded again, here and in the session's summary.
-     */
-    handleAcceptAnswer: (attemptId: string, canonicalAnswerId?: string) =>
-      send({ type: 'accept', attemptId, canonicalAnswerId }),
     isAcceptingAnswer: acceptAnswer.isPending,
-    /** Ends the session; unanswered cards are skipped. */
-    handleFinish: () => send({ type: 'finish' }),
-    /**
-     * Back to the title card once a session is over, starting nothing, so
-     * another can be chosen and started there (#93): the finished session
-     * isn't offered to resume, and what a new one would hold is looked at
-     * again.
-     */
-    returnToTitle: () => {
-      send({ type: 'startAnother' });
-      utils.study.activeSession.setData({ deckId: deckId ?? '' }, null);
-      utils.study.queuePreview.invalidate({ deckId });
+    act: {
+      /** Next: starts a session from the title card, or moves on. */
+      next: () => {
+        if (deckId) send({ type: 'next' });
+      },
+      back: () => send({ type: 'back' }),
+      flip: () => send({ type: 'flip' }),
+      type: (text: string) => send({ type: 'type', text }),
+      submit: () => send({ type: 'submit' }),
+      dontKnow: () => send({ type: 'dontKnow' }),
+      /**
+       * "My answer was correct": the answer becomes an Accepted Variant and
+       * is graded again; on a card with several answers, it first asks
+       * which one is meant.
+       */
+      accept: (attemptId: string, canonicalAnswerId?: string) =>
+        send({ type: 'accept', attemptId, canonicalAnswerId }),
+      cancelChoosing: () => send({ type: 'cancelChoosing' }),
+      /** Marks the card on screen known, its Retry skipped with it. */
+      markKnown: () => send({ type: 'markKnown' }),
+      edit: (onBack = false) => send({ type: 'edit', onBack }),
+      stopEditing: () => send({ type: 'stopEditing' }),
+      /** Ends the session; unanswered cards are skipped. */
+      finish: () => send({ type: 'finish' }),
+      /** Abandons the deck's unfinished session, rather than resuming it. */
+      abandon: () => {
+        if (resumable) send({ type: 'abandon', sessionId: resumable.id });
+      },
+      /**
+       * Back to the title card once a session is over, starting nothing, so
+       * another can be chosen and started there (#93): the finished session
+       * isn't offered to resume, and what a new one would hold is looked at
+       * again.
+       */
+      startAnother: () => {
+        send({ type: 'startAnother' });
+        utils.study.activeSession.setData({ deckId: deckId ?? '' }, null);
+        utils.study.queuePreview.invalidate({ deckId });
+      },
+      /** An edit to a card of the session that reset its progress. */
+      cardEdited: (card: Flashcard) => send({ type: 'cardEdited', card }),
+      /** A change to a card's variants or primary answer, resetting nothing. */
+      cardChanged: (card: Flashcard) => send({ type: 'cardChanged', card }),
+      cardDeleted: (cardId: string) => send({ type: 'cardDeleted', cardId }),
+      /** A card marked known in its editor: its Retry is skipped. */
+      dropUnanswered: (cardId: string) =>
+        send({ type: 'dropUnanswered', cardId }),
     },
-    /**
-     * Shows an edit to a card of the session, the one in play or one
-     * answered earlier, wherever it appears from now on.
-     */
-    replaceCard: (card: Flashcard) => send({ type: 'cardEdited', card }),
-    // A change to a card's variants or primary answer resets nothing, so
-    // the card wasn't edited after its answer
-    showUnresetChange: (card: Flashcard) => send({ type: 'cardChanged', card }),
-    /** Drops a card deleted from its deck from the session and its summary. */
-    removeCard: (cardId: string) => send({ type: 'cardDeleted', cardId }),
-    /**
-     * Drops a card's items not yet answered, such as its Retry once its
-     * missed answer is accepted, or once it's marked known; its answers stay.
-     */
-    dropUnanswered: (cardId: string) =>
-      send({ type: 'dropUnanswered', cardId }),
-    // Answers to cards edited since, whose shown grade is for the card as it
-    // was, by attempt
-    editedAfterAnswer: new Set(
-      items.flatMap(({ answer }) =>
-        answer?.editedAfter ? [answer.attemptId] : [],
-      ),
-    ) as ReadonlySet<string>,
-    handleNext: () => send({ type: 'next' }),
-    handleBack: () => send({ type: 'back' }),
-    handleForward: () => send({ type: 'next' }),
-    canGoBack: canGoBack(machine),
-    reviewEntry:
-      studyState.phase === 'reviewing'
-        ? history[studyState.reviewIndex]
-        : undefined,
   };
 }
