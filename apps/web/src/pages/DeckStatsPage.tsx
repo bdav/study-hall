@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { keepPreviousData } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
@@ -46,8 +47,16 @@ export default function DeckStatsPage() {
   const direction = isReversible ? chosenDirection : 'FORWARD';
   const statsQuery = trpc.stats.deckStats.useQuery(
     { deckId: deckId ?? '', direction },
-    { enabled: !!deckId },
+    // The shown direction's stats stay while the other's load, dimmed,
+    // rather than the page flashing to a skeleton
+    { enabled: !!deckId, placeholderData: keepPreviousData },
   );
+  const switching = statsQuery.isPlaceholderData;
+  const contentProps = {
+    'data-testid': 'deck-stats',
+    'aria-busy': switching,
+  };
+  const dimmed = switching ? 'opacity-60 transition-opacity' : '';
 
   const deckName = deck?.name ?? 'Deck';
   const course = deck?.course;
@@ -85,10 +94,13 @@ export default function DeckStatsPage() {
           course={course}
           archivedAt={archivedAt}
         />
-        {directionChoice}
-        <p className="mt-6 text-center text-white/60">
-          No study data yet. Study this deck to see stats here.
-        </p>
+        {/* Pinned left, as when there are stats to show */}
+        <div {...contentProps} className={`w-full max-w-4xl ${dimmed}`}>
+          {directionChoice}
+          <p className="mt-6 text-center text-white/60">
+            No study data yet. Study this deck to see stats here.
+          </p>
+        </div>
       </CenteredPage>
     );
   }
@@ -102,7 +114,10 @@ export default function DeckStatsPage() {
         course={course}
         archivedAt={archivedAt}
       />
-      <div className="w-full max-w-4xl text-white">
+      <div
+        {...contentProps}
+        className={`w-full max-w-4xl text-white ${dimmed}`}
+      >
         {directionChoice}
         <div className="mt-6 grid grid-cols-2 gap-4">
           <StatCard label="Answers" value={String(stats.answerCount)} />

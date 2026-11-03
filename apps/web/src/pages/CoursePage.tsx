@@ -1,4 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { cameFromCourse } from '@/lib/decks';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
@@ -130,10 +131,12 @@ function cardWord(count: number) {
  * way into the study flow every deck uses.
  */
 function Review({
+  courseId,
   deckId,
   dueCount,
   newCount,
 }: {
+  courseId: string;
   deckId: string;
   dueCount: number;
   newCount: number;
@@ -155,6 +158,8 @@ function Review({
           </p>
           <Link
             to={`/decks/${deckId}`}
+            // So the deck links back here rather than to Flashcards
+            state={cameFromCourse(courseId)}
             className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30"
           >
             Study now
@@ -360,7 +365,9 @@ export default function CoursePage() {
                   </button>
                 </div>
               )}
-              {course.review && <Review {...course.review} />}
+              {course.review && (
+                <Review courseId={course.id} {...course.review} />
+              )}
               <h2 id="syllabus-heading" className="mt-8 text-lg font-semibold">
                 Syllabus
               </h2>

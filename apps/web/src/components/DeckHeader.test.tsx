@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DeckHeader } from './DeckHeader';
+import { cameFromCourse } from '@/lib/decks';
 
 function renderDeckHeader(
   deckName: string,
@@ -43,18 +45,61 @@ describe('DeckHeader', () => {
     );
   });
 
-  it('links a Course Deck back to its course', () => {
-    render(
-      <MemoryRouter>
-        <DeckHeader
-          deckName="Italian"
-          deckId="deck-1"
-          activeTab="study"
-          course={{ id: 'course-1', title: 'Italian' }}
-        />
+  const italianCourse = { id: 'course-1', title: 'Italian' };
+
+  /** The deck's pages, reached from `state`, each showing its header. */
+  function renderDeckPages(state: unknown) {
+    const page = (activeTab: 'study' | 'cards' | 'stats') => (
+      <DeckHeader
+        deckName="Italian"
+        deckId="deck-1"
+        activeTab={activeTab}
+        course={italianCourse}
+      />
+    );
+    return render(
+      <MemoryRouter initialEntries={[{ pathname: '/decks/deck-1', state }]}>
+        <Routes>
+          <Route path="/decks/:deckId" element={page('study')} />
+          <Route path="/decks/:deckId/cards" element={page('cards')} />
+          <Route path="/decks/:deckId/stats" element={page('stats')} />
+        </Routes>
       </MemoryRouter>,
     );
+  }
 
+  it('links a Course Deck back to its course when its course page led there', () => {
+    renderDeckPages(cameFromCourse('course-1'));
+
+    expect(screen.getByRole('link', { name: /^italian$/i })).toHaveAttribute(
+      'href',
+      '/courses/course-1',
+    );
+  });
+
+  it('links a Course Deck back to Flashcards when anywhere else led there', () => {
+    renderDeckPages(null);
+
+    expect(screen.getByRole('link', { name: /^flashcards$/i })).toHaveAttribute(
+      'href',
+      '/flashcards',
+    );
+    expect(
+      screen.queryByRole('link', { name: /^italian$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps where the deck was reached from across the deck's tabs", async () => {
+    const user = userEvent.setup();
+    renderDeckPages(cameFromCourse('course-1'));
+
+    await user.click(screen.getByRole('tab', { name: /cards/i }));
+    await user.click(screen.getByRole('tab', { name: /stats/i }));
+
+    expect(screen.getByRole('tab', { name: /stats/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     expect(screen.getByRole('link', { name: /^italian$/i })).toHaveAttribute(
       'href',
       '/courses/course-1',

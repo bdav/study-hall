@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
@@ -351,6 +351,8 @@ function AnswerNotes({
 
 export default function StudyPage() {
   const { deckId } = useParams<{ deckId: string }>();
+  // Where the deck was reached from, which its links within it carry
+  const location = useLocation();
   const utils = trpc.useUtils();
   // Answered cards marked known from below their grade, and what it did
   const [knownCards, setKnownCards] = useState<Map<string, KnownState>>(
@@ -733,6 +735,7 @@ export default function StudyPage() {
         </p>
         <Link
           to={`/decks/${deckId}/cards`}
+          state={location.state}
           className="mt-2 text-white/80 underline hover:text-white"
         >
           Add cards

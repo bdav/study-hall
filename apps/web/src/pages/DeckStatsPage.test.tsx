@@ -369,6 +369,27 @@ describe('a reversible deck (#82)', () => {
     expect(screen.getByText(/no study data yet/i)).toBeInTheDocument();
   });
 
+  it("keeps the shown direction's stats, marked busy, while the other loads", () => {
+    setupReversible();
+    vi.mocked(trpc.stats.deckStats.useQuery).mockReturnValue({
+      data: deckStats(),
+      isLoading: false,
+      isError: false,
+      isPlaceholderData: true,
+    } as ReturnType<typeof trpc.stats.deckStats.useQuery>);
+    renderDeckStatsPage();
+
+    expect(screen.queryByRole('status', { name: /loading/i })).toBeNull();
+    expect(screen.getByTestId('deck-stats')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    expect(trpc.stats.deckStats.useQuery).toHaveBeenLastCalledWith(
+      { deckId: 'deck-1', direction: 'FORWARD' },
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
   it('offers no choice on a deck studied one way', () => {
     setupMocks();
     renderDeckStatsPage();

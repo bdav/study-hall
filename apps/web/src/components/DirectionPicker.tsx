@@ -4,7 +4,7 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 
 /**
  * A Reversible Deck's two Study Directions as a segmented control by their
- * Direction Labels (ADR-0011), beside a label saying what the choice is
+ * Direction Labels (ADR-0011), below a label saying what the choice is
  * for.
  */
 export function DirectionPicker({
@@ -22,7 +22,7 @@ export function DirectionPicker({
 }) {
   const labelId = useId();
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+    <div className={`flex flex-col items-start gap-1.5 ${className}`}>
       <span
         id={labelId}
         className="text-xs uppercase tracking-wide text-white/50"

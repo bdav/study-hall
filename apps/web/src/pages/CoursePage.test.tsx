@@ -1,9 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import CoursePage from './CoursePage';
 import { trpc } from '@/lib/trpc';
+import { courseLedHere } from '@/lib/decks';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -178,8 +179,17 @@ function renderPage(
     <MemoryRouter initialEntries={['/courses/course-1']}>
       <Routes>
         <Route path="/courses/:courseId" element={<CoursePage />} />
+        <Route path="/decks/:deckId" element={<DeckPageProbe />} />
       </Routes>
     </MemoryRouter>,
+  );
+}
+
+/** Stands in for a deck's page: says whether course-1's page led to it. */
+function DeckPageProbe() {
+  const { state } = useLocation();
+  return (
+    <p>{courseLedHere(state, 'course-1') ? 'From the course' : 'Elsewhere'}</p>
   );
 }
 
@@ -585,6 +595,15 @@ describe('CoursePage', () => {
         'href',
         '/decks/deck-1',
       );
+    });
+
+    it('leads to the deck as from the course, so the deck links back here', async () => {
+      const user = userEvent.setup();
+      const review = renderReview({ dueCount: 1, newCount: 0 });
+
+      await user.click(review.getByRole('link', { name: 'Study now' }));
+
+      expect(screen.getByText('From the course')).toBeInTheDocument();
     });
 
     it('says when there is nothing to review', () => {
