@@ -295,10 +295,11 @@ export const NEW_PROGRESS: ScheduledProgress = {
 };
 
 /**
- * Something the learner does to a card's lifecycle that isn't an answer,
- * and when: today, marking it known (ADR-0009). Replay applies each at its
- * time, between the answers (`applyMark`), so a mark is never undone by
- * rebuilding the card's progress; the next kind of mark joins here.
+ * A Lifecycle Mark: something the learner does to a card's lifecycle that
+ * isn't an answer, and when. Today, marking it known (ADR-0009); retiring
+ * and unretiring (#86) join here. Replay applies each at its time, between
+ * the answers (`applyMark`), so a mark is never undone by rebuilding the
+ * card's progress.
  */
 export type LifecycleMark = { kind: 'MARKED_KNOWN'; at: Date };
 

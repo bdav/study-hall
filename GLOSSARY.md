@@ -98,6 +98,10 @@ _Avoid_: Stable, mastered, known
 A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept.
 _Avoid_: Suspended, archived, deleted
 
+**Lifecycle Mark**:
+Something the learner does to one Study Direction of a card's lifecycle that isn't an answer: marking it known, retiring it or unretiring it. Each takes effect at its moment among the card's Counted Answers, so grading an answer again never undoes one, and an edit that resets the card clears them as it clears its Counted Answers.
+_Avoid_: Lifecycle event, override, manual transition
+
 **Counted Answer**:
 An answer the scheduler takes into account: given since the card's progress in that Study Direction last reset, and not a Retry. Other answers are kept as history but count toward nothing, in scheduling or stats.
 _Avoid_: Valid attempt, scored answer

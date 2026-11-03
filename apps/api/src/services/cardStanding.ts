@@ -367,9 +367,9 @@ export async function applyCardAnswer(
 }
 
 /**
- * The learner's own lifecycle marks on a card's progress since its last
- * reset, which replay applies between its answers: today, when they last
- * marked it known (ADR-0009). The next mark, retirement (#86), joins here.
+ * The learner's Lifecycle Marks on a card's progress since its last reset,
+ * which replay applies between its answers: today, when they last marked
+ * it known (ADR-0009). Retiring and unretiring (#86) join here.
  */
 function lifecycleMarks(progress: {
   markedKnownAt: Date | null;
