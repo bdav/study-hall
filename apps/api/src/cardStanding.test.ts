@@ -1,0 +1,423 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import {
+  type PrismaClient,
+  type RecallGrade,
+  type StudyMode,
+} from '@prisma/client';
+import {
+  createDeckWithCards,
+  createTestPrisma,
+  recordCardHistory,
+  type HistoryAnswer,
+} from './test-helpers.js';
+import {
+  type CardStanding,
+  readCardStanding,
+} from './services/cardStanding.js';
+
+let prisma: PrismaClient;
+let cleanup: () => Promise<void>;
+let userId: string;
+
+const hour = 60 * 60 * 1000;
+const day = 24 * hour;
+const now = new Date('2026-11-02T12:00:00.000Z');
+const daysAgo = (n: number) => new Date(now.getTime() - n * day);
+
+beforeAll(async () => {
+  const testDb = createTestPrisma();
+  prisma = testDb.prisma;
+  cleanup = testDb.cleanup;
+  const user = await prisma.user.create({
+    data: { email: 'standing-test@example.com', passwordHash: 'fakehash' },
+  });
+  userId = user.id;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
+
+/** A deck of cards "Card 1" to "Card n", answered "A1" to "An". */
+function deckOf(n: number) {
+  return createDeckWithCards(prisma, {
+    userId,
+    cards: Array.from({ length: n }, (_, i) => ({
+      front: `Card ${i + 1}`,
+      canonicalAnswers: [`A${i + 1}`],
+    })),
+  });
+}
+
+function history(
+  cardId: string,
+  answers: HistoryAnswer[],
+  options: Omit<
+    Parameters<typeof recordCardHistory>[1],
+    'userId' | 'cardId' | 'answers'
+  > = {},
+) {
+  return recordCardHistory(prisma, { userId, cardId, answers, ...options });
+}
+
+const nailed = (at: Date): HistoryAnswer => ({ grade: 'NAILED', at });
+const missed = (at: Date): HistoryAnswer => ({ grade: 'MISSED', at });
+
+/**
+ * Nailed the day before `at` and again at `at`: REINFORCING from `at`, at
+ * mastery 4, due 4 days later.
+ */
+const graduated = (at: Date): HistoryAnswer[] => [
+  nailed(new Date(at.getTime() - day)),
+  nailed(at),
+];
+
+/** Answers with these grades, a day apart, the last at `last`. */
+function answers(grades: RecallGrade[], last = daysAgo(1)): HistoryAnswer[] {
+  return grades.map((grade, i) => ({
+    grade,
+    at: new Date(last.getTime() - (grades.length - 1 - i) * day),
+  }));
+}
+
+/** Nailed twice, so REINFORCING at mastery 4, then answered with `grades`. */
+const reinforcing = (...grades: RecallGrade[]) =>
+  answers(['NAILED', 'NAILED', ...grades]);
+
+/** The standings read, each as `pick` gives it, by card id. */
+async function byCard<T>(
+  deckIds: string[],
+  pick: (standing: CardStanding) => T,
+  options = {},
+) {
+  const { cards } = await standing(deckIds, options);
+  return Object.fromEntries(cards.map((card) => [card.cardId, pick(card)]));
+}
+
+function standing(deckIds: string[], options = {}) {
+  return readCardStanding(prisma, { userId, deckIds, now, ...options });
+}
+
+describe('Card Standing', () => {
+  it("reads each card's Lifecycle State and whether it's due", async () => {
+    const deck = await deckOf(3);
+    const [learning, unanswered, notDue] = deck.cards;
+    // Missed 2 days ago: LEARNING, due again 30 minutes later
+    await history(learning.id, [missed(daysAgo(2))]);
+    // Nailed an hour ago: LEARNING, due in 2 days
+    await history(notDue.id, [nailed(new Date(now.getTime() - hour))]);
+
+    const { cards } = await standing([deck.id], { direction: 'FORWARD' });
+
+    expect(
+      cards.map(({ cardId, lifecycleState, isDue }) => ({
+        cardId,
+        lifecycleState,
+        isDue,
+      })),
+    ).toEqual([
+      { cardId: learning.id, lifecycleState: 'LEARNING', isDue: true },
+      { cardId: unanswered.id, lifecycleState: 'NEW', isDue: false },
+      { cardId: notDue.id, lifecycleState: 'LEARNING', isDue: false },
+    ]);
+  });
+
+  it("gives each card's mastery band, never its score, and whether it's known already", async () => {
+    const deck = await deckOf(3);
+    const [unanswered, learning, graduatedCard] = deck.cards;
+    await history(learning.id, [nailed(daysAgo(1))]);
+    // Mastery 4
+    await history(graduatedCard.id, reinforcing());
+
+    const read = await byCard([deck.id], (card) => card);
+
+    expect(read[unanswered.id]).toMatchObject({
+      masteryBand: 'fragile',
+      isKnown: false,
+    });
+    expect(read[learning.id]).toMatchObject({
+      masteryBand: 'fragile',
+      isKnown: false,
+    });
+    expect(read[graduatedCard.id]).toMatchObject({
+      masteryBand: 'developing',
+      isKnown: true,
+    });
+    expect(read[graduatedCard.id]).not.toHaveProperty('masteryScore');
+  });
+
+  it('reads several decks at once, each in deck order, in the order asked', async () => {
+    const first = await deckOf(2);
+    const second = await deckOf(2);
+    await history(second.cards[1].id, [missed(daysAgo(1))]);
+
+    const { cards } = await standing([second.id, first.id]);
+
+    expect(cards.map(({ cardId, deckId }) => ({ cardId, deckId }))).toEqual([
+      { cardId: second.cards[0].id, deckId: second.id },
+      { cardId: second.cards[1].id, deckId: second.id },
+      { cardId: first.cards[0].id, deckId: first.id },
+      { cardId: first.cards[1].id, deckId: first.id },
+    ]);
+  });
+
+  describe('Reverse', () => {
+    it("has no standing while its deck isn't reversible", async () => {
+      const deck = await deckOf(1);
+      const [card] = deck.cards;
+
+      const directions = async () =>
+        (await standing([deck.id])).cards.map(({ direction }) => direction);
+
+      expect(await directions()).toEqual(['FORWARD']);
+      expect(
+        (await standing([deck.id], { direction: 'REVERSE' })).cards,
+      ).toEqual([]);
+
+      await prisma.deck.update({
+        where: { id: deck.id },
+        data: { reversible: true },
+      });
+      expect(await directions()).toEqual(['FORWARD', 'REVERSE']);
+      expect(
+        (await standing([deck.id], { direction: 'REVERSE' })).cards,
+      ).toMatchObject([{ cardId: card.id, direction: 'REVERSE' }]);
+    });
+  });
+
+  describe('Due', () => {
+    it('counts a card due in Cram once half its interval has passed, but not before', async () => {
+      const deck = await deckOf(2);
+      const [halfway, early] = deck.cards;
+      // 4-day intervals: three quarters gone, and one quarter
+      await history(halfway.id, graduated(daysAgo(3)));
+      await history(early.id, graduated(daysAgo(1)));
+
+      const due = async (studyMode: StudyMode) =>
+        (await standing([deck.id], { studyMode })).cards.map(
+          ({ isDue }) => isDue,
+        );
+
+      expect(await due('CRAM')).toEqual([true, false]);
+      expect(await due('STUDY')).toEqual([false, false]);
+      expect(await due('DRILL_WEAKEST')).toEqual([false, false]);
+    });
+
+    it('says when the next card not yet due comes due in the Study Mode, if any', async () => {
+      const deck = await deckOf(3);
+      const [alreadyDue, inThreeDays] = deck.cards;
+      await history(alreadyDue.id, [missed(daysAgo(1))]);
+      // A 4-day interval, 1 day gone: due in 3 days, halfway in 1
+      await history(inThreeDays.id, graduated(daysAgo(1)));
+      const nextDueAt = async (studyMode: StudyMode) =>
+        (await standing([deck.id], { studyMode })).nextDueAt;
+
+      expect(await nextDueAt('STUDY')).toEqual(
+        new Date(now.getTime() + 3 * day),
+      );
+      expect(await nextDueAt('CRAM')).toEqual(new Date(now.getTime() + day));
+      expect((await standing([(await deckOf(1)).id])).nextDueAt).toBeNull();
+    });
+  });
+
+  it('lists the due cards most overdue first, and counts due and NEW cards', async () => {
+    const deck = await deckOf(5);
+    // Card 2 stays NEW
+    const [missedYesterday, , weak, missedEarlier, notDue] = deck.cards;
+    // Missed a day ago: LEARNING, due 30 minutes later
+    await history(missedYesterday.id, [missed(daysAgo(1))]);
+    // Mastery 1 after missing a day ago: Weak, due 6 hours later
+    await history(weak.id, reinforcing('MISSED'));
+    await history(missedEarlier.id, [missed(daysAgo(3))]);
+    await history(notDue.id, [nailed(new Date(now.getTime() - hour))]);
+
+    const { due, counts } = await standing([deck.id]);
+
+    expect(due.map(({ cardId }) => cardId)).toEqual([
+      missedEarlier.id,
+      missedYesterday.id,
+      weak.id,
+    ]);
+    expect(counts).toEqual({ due: 3, new: 1 });
+  });
+
+  it('considers every card, however many are due', async () => {
+    const deck = await deckOf(205);
+    for (const card of deck.cards) {
+      await history(card.id, [missed(daysAgo(1))]);
+    }
+
+    const { due, counts } = await standing([deck.id]);
+
+    expect(due).toHaveLength(205);
+    expect(counts.due).toBe(205);
+  });
+
+  describe('Counted Answers', () => {
+    it("leaves out a Retry's miss", async () => {
+      const deck = await deckOf(1);
+      const [card] = deck.cards;
+      // A miss, then its Retry missed too, in the same session
+      const missedTwice = reinforcing('NAILED', 'NAILED', 'MISSED');
+      missedTwice.push({ grade: 'MISSED', at: daysAgo(0.5), retry: true });
+      await history(card.id, missedTwice);
+
+      expect(
+        await byCard([deck.id], ({ isWeak, recentMisses }) => ({
+          isWeak,
+          recentMisses,
+        })),
+      ).toEqual({ [card.id]: { isWeak: false, recentMisses: 1 } });
+    });
+
+    it("leaves out answers from before the card's progress last reset", async () => {
+      const deck = await deckOf(1);
+      const [card] = deck.cards;
+      // Two misses, a reset, then nailed into REINFORCING at mastery 6
+      await history(
+        card.id,
+        answers(['MISSED', 'MISSED', 'NAILED', 'NAILED', 'NAILED']),
+        { resetAt: daysAgo(3.5) },
+      );
+
+      expect(
+        await byCard([deck.id], ({ lifecycleState, isWeak, recentMisses }) => ({
+          lifecycleState,
+          isWeak,
+          recentMisses,
+        })),
+      ).toEqual({
+        [card.id]: {
+          lifecycleState: 'REINFORCING',
+          isWeak: false,
+          recentMisses: 0,
+        },
+      });
+    });
+  });
+
+  describe('Weak', () => {
+    it('takes a REINFORCING card with mastery 3 or less, but not 4', async () => {
+      const deck = await deckOf(2);
+      const [three, four] = deck.cards;
+      // Mastery 4, then 6, then a miss takes 3: still REINFORCING
+      await history(three.id, reinforcing('NAILED', 'MISSED'));
+      await history(four.id, reinforcing());
+
+      expect(
+        await byCard([deck.id], ({ lifecycleState, isWeak }) => ({
+          lifecycleState,
+          isWeak,
+        })),
+      ).toEqual({
+        [three.id]: { lifecycleState: 'REINFORCING', isWeak: true },
+        [four.id]: { lifecycleState: 'REINFORCING', isWeak: false },
+      });
+    });
+
+    it('leaves out a card Marked Known since it was last answered, until answered again', async () => {
+      const deck = await deckOf(2);
+      const [markedSince, answeredSince] = deck.cards;
+      // Mastery 3 after its miss, a day ago
+      await history(markedSince.id, reinforcing('NAILED', 'MISSED'), {
+        markedKnownAt: daysAgo(0.5),
+      });
+      await history(answeredSince.id, reinforcing('NAILED', 'MISSED'), {
+        markedKnownAt: daysAgo(1.5),
+      });
+
+      expect(await byCard([deck.id], ({ isWeak }) => isWeak)).toEqual({
+        [markedSince.id]: false,
+        [answeredSince.id]: true,
+      });
+    });
+
+    it('ranks Weak cards by recent misses, then mastery, then how overdue', async () => {
+      const deck = await deckOf(5);
+      const [lessOverdue, moreOverdue, lowMastery, twoMisses, notWeak] =
+        deck.cards;
+      // Mastery 3 and a miss each, one due 2 days before the other
+      await history(lessOverdue.id, reinforcing('NAILED', 'MISSED'));
+      await history(
+        moreOverdue.id,
+        answers(['NAILED', 'NAILED', 'NAILED', 'MISSED'], daysAgo(3)),
+      );
+      // Mastery 1 and a miss
+      await history(lowMastery.id, reinforcing('MISSED'));
+      // Mastery 7 and 2 misses
+      await history(
+        twoMisses.id,
+        reinforcing(
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+        ),
+      );
+      await history(notWeak.id, reinforcing());
+
+      const { weak } = await standing([deck.id]);
+
+      expect(weak.map(({ cardId }) => cardId)).toEqual([
+        twoMisses.id,
+        lowMastery.id,
+        moreOverdue.id,
+        lessOverdue.id,
+      ]);
+    });
+
+    it('takes one missed twice in its last 5 Counted Answers, but not 6', async () => {
+      const deck = await deckOf(2);
+      const [inFive, inSix] = deck.cards;
+      // Mastery 7 or more throughout, and never 2 misses in 3
+      await history(
+        inFive.id,
+        reinforcing(
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+        ),
+      );
+      await history(
+        inSix.id,
+        reinforcing(
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'NAILED',
+          'MISSED',
+        ),
+      );
+
+      expect(
+        await byCard([deck.id], ({ lifecycleState, isWeak, recentMisses }) => ({
+          lifecycleState,
+          isWeak,
+          recentMisses,
+        })),
+      ).toEqual({
+        [inFive.id]: {
+          lifecycleState: 'REINFORCING',
+          isWeak: true,
+          recentMisses: 2,
+        },
+        [inSix.id]: {
+          lifecycleState: 'REINFORCING',
+          isWeak: false,
+          recentMisses: 1,
+        },
+      });
+    });
+  });
+});

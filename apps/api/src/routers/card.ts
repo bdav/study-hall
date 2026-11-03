@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { type StudyDirection } from '@prisma/client';
 import { protectedProcedure, router } from './trpc.js';
 import {
   createCards,
@@ -11,7 +12,7 @@ import {
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
-import { isKnown } from '../services/progressUpdater.js';
+import { readCardStanding } from '../services/cardStanding.js';
 import { assertCanChangeCards, findActiveDeck } from '../services/decks.js';
 import { studyDirection, studyDirections } from './inputs.js';
 
@@ -191,25 +192,28 @@ export const cardRouter = router({
         });
       }
 
-      const cards = await ctx.prisma.card.findMany({
-        where: { deckId: input.deckId },
-        orderBy: deckOrder,
-        include: {
-          ...withCanonicalAnswers,
-          progress: {
-            where: { userId: ctx.userId },
-            select: { direction: true, lifecycleState: true },
-          },
-        },
-      });
+      const [cards, standings] = await Promise.all([
+        ctx.prisma.card.findMany({
+          where: { deckId: input.deckId },
+          orderBy: deckOrder,
+          include: withCanonicalAnswers,
+        }),
+        readCardStanding(ctx.prisma, {
+          userId: ctx.userId,
+          deckIds: [input.deckId],
+        }),
+      ]);
       // The Study Directions each card is known in already, where marking it
       // known does nothing
-      return cards.map(({ progress, ...card }) => ({
+      const known = new Map<string, Set<StudyDirection>>();
+      for (const { cardId, direction, isKnown } of standings.cards) {
+        if (!isKnown) continue;
+        known.set(cardId, (known.get(cardId) ?? new Set()).add(direction));
+      }
+      return cards.map((card) => ({
         ...card,
         knownDirections: STUDY_DIRECTIONS.filter((direction) =>
-          progress.some(
-            (p) => p.direction === direction && isKnown(p.lifecycleState),
-          ),
+          known.get(card.id)?.has(direction),
         ),
       }));
     }),

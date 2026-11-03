@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import {
   type ExerciseType,
   PrismaClient,
+  type RecallGrade,
   type StudyDirection,
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -16,6 +17,11 @@ import {
   withCanonicalAnswers,
   type NewCard,
 } from './services/cards.js';
+import { countsSinceReset } from './services/countedAttempts.js';
+import {
+  replayAnswers,
+  type ScheduledAnswer,
+} from './services/progressUpdater.js';
 
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 config({ path: `${projectRoot}.env` });
@@ -131,6 +137,103 @@ export async function recordStudySession(
   }
 
   return session;
+}
+
+/** One answer in a card's history: its grade and when it was given. */
+export type HistoryAnswer = {
+  grade: RecallGrade;
+  at: Date;
+  /** A Retry, in the Study Session of the answer before it. */
+  retry?: boolean;
+};
+
+/**
+ * Gives a learner's card, in one Study Direction (Forward unless given),
+ * a history of answers, each in a finished Study Session of its own unless
+ * a Retry, and the progress the scheduler would have left from them: its
+ * Counted Answers replayed (`replayAnswers`), since `resetAt` when the
+ * card's progress last reset then, and the card marked known at
+ * `markedKnownAt`, if given. Progress built this way always agrees with
+ * the attempts, as studying would leave it.
+ */
+export async function recordCardHistory(
+  prisma: PrismaClient,
+  {
+    userId,
+    cardId,
+    direction = 'FORWARD',
+    answers,
+    resetAt,
+    markedKnownAt = null,
+  }: {
+    userId: string;
+    cardId: string;
+    direction?: StudyDirection;
+    answers: HistoryAnswer[];
+    resetAt?: Date;
+    markedKnownAt?: Date | null;
+  },
+) {
+  const card = await prisma.card.findUniqueOrThrow({
+    where: { id: cardId },
+    include: withCanonicalAnswers,
+  });
+  const cardVersionId = await currentVersionId(prisma, cardId);
+
+  const counted: ScheduledAnswer[] = [];
+  let session: { id: string } | null = null;
+  let attemptNumber = 0;
+  for (const answer of answers) {
+    if (!answer.retry || !session) {
+      session = await prisma.studySession.create({
+        data: {
+          userId,
+          deckId: card.deckId,
+          direction,
+          sessionType: 'STANDARD',
+          status: 'COMPLETED',
+          startedAt: answer.at,
+          endedAt: answer.at,
+        },
+      });
+      attemptNumber = 0;
+    }
+    attemptNumber++;
+    await prisma.cardAttempt.create({
+      data: {
+        studySessionId: session.id,
+        cardId,
+        cardVersionId,
+        direction,
+        // "I don't know" for a miss, the primary answer otherwise
+        userAnswer:
+          answer.grade === 'MISSED' ? null : card.canonicalAnswers[0].text,
+        recallGrade: answer.grade,
+        attemptNumber,
+        isRetry: answer.retry ?? false,
+        createdAt: answer.at,
+      },
+    });
+    if (!answer.retry && (!resetAt || countsSinceReset(answer.at, resetAt))) {
+      counted.push({
+        recallGrade: answer.grade,
+        answeredAt: answer.at,
+        studySessionId: session.id,
+      });
+    }
+  }
+
+  // Without a reset, the progress started before its first answer
+  const startedAt = new Date(
+    Math.min(Date.now(), ...answers.map(({ at }) => at.getTime())),
+  );
+  return prisma.cardProgress.update({
+    where: { userId_cardId_direction: { userId, cardId, direction } },
+    data: {
+      ...replayAnswers(counted, markedKnownAt),
+      resetAt: resetAt ?? startedAt,
+    },
+  });
 }
 
 /**

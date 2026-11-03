@@ -41,9 +41,9 @@ const LEARNING_INTERVAL_DAYS: Record<RecallGrade, number> = {
 };
 
 /** REINFORCING intervals by mastery band (`updated-plan.md` §8.4). */
-type MasteryBand = 'fragile' | 'developing' | 'solid' | 'mastered';
+export type MasteryBand = 'fragile' | 'developing' | 'solid' | 'mastered';
 
-function masteryBand(mastery: number): MasteryBand {
+export function masteryBand(mastery: number): MasteryBand {
   if (mastery <= 2) return 'fragile';
   if (mastery <= 5) return 'developing';
   if (mastery <= 8) return 'solid';

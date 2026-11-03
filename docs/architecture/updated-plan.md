@@ -1006,6 +1006,8 @@ Node/application code handles:
 
 Do not implement queue generation as one giant clever SQL query.
 
+As built (#98): the candidates come from Card Standing (`readCardStanding` in `services/cardStanding.ts`), which reads every card in the deck and direction, unbounded, and works out Due, Weak and their order in application code; the queue's buckets are filters over it. A deck's cards are few enough that reading them all costs less than a backlog hiding a Weak card past a bound.
+
 ⸻
 
 ## 13.2 Determinism

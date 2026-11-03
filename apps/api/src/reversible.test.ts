@@ -578,6 +578,21 @@ describe('Mark known in a Study Direction', () => {
     ]);
   });
 
+  it('lists Reverse as known only while its deck is reversible', async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    const caller = createCaller();
+    await caller.card.markKnown({
+      cardIds: [france.id],
+      directions: ['FORWARD', 'REVERSE'],
+    });
+
+    await caller.deck.update({ id: deck.id, reversible: false });
+    const cards = await caller.card.listByDeck({ deckId: deck.id });
+
+    expect(cards[0].knownDirections).toEqual(['FORWARD']);
+  });
+
   it("refuses marking Reverse on a deck that isn't reversible", async () => {
     const deck = await capitalsDeck({ reversible: false });
 

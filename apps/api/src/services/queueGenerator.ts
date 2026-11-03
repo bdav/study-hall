@@ -1,12 +1,14 @@
 import {
-  type Prisma,
   type PrismaClient,
   type SessionType,
   type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
-import { deckOrder } from './cards.js';
-import { countsSinceReset } from './countedAttempts.js';
+import {
+  type CardStanding,
+  readCardStanding,
+  type Standings,
+} from './cardStanding.js';
 
 /**
  * The cards a Study Session can draw from, by bucket, each in the order it
@@ -202,10 +204,10 @@ function cramCounts(candidates: QueueCandidates, { max }: Size): Counts {
 }
 
 /**
- * What each Study Mode does differently, all else, the scheduler above all,
- * being the same (§16): how it mixes a session, whether it takes weak cards
- * before they're due and NEW cards at all, and whether a card in review
- * counts as due once half its interval has passed.
+ * What each Study Mode does differently in a session, all else, the
+ * scheduler above all, being the same (§16): how it mixes a session, and
+ * whether it takes weak cards before they're due and NEW cards at all.
+ * Cram's counting cards due sooner is Card Standing's (`readCardStanding`).
  */
 const MODE_RULES: Record<
   StudyMode,
@@ -213,26 +215,22 @@ const MODE_RULES: Record<
     counts: (candidates: QueueCandidates, size: Size) => Counts;
     weakBeforeDue: boolean;
     takesNew: boolean;
-    dueAtHalfInterval: boolean;
   }
 > = {
   STUDY: {
     counts: studyCounts,
     weakBeforeDue: false,
     takesNew: true,
-    dueAtHalfInterval: false,
   },
   DRILL_WEAKEST: {
     counts: drillCounts,
     weakBeforeDue: true,
     takesNew: false,
-    dueAtHalfInterval: false,
   },
   CRAM: {
     counts: cramCounts,
     weakBeforeDue: false,
     takesNew: true,
-    dueAtHalfInterval: true,
   },
 };
 
@@ -312,81 +310,43 @@ function mulberry32(seed: number) {
   };
 }
 
-/** A REINFORCING card with this mastery or less is weak (§10). */
-const WEAK_MASTERY = 3;
-/** Or one missed this often in its last RECENT_ANSWERS answers. */
-const WEAK_MISSES = 2;
-const RECENT_ANSWERS = 5;
+/** The most cards of a bucket any session could take. */
+const MOST = Math.max(...Object.values(SESSION_SIZES).map(({ max }) => max));
 
 /**
- * How many LEARNING and REINFORCING cards, soonest due first, are considered: a
- * bound on what a backlog makes each preview and start read (§13.1), and
- * well past what the biggest session takes.
+ * The cards a Study Session can draw from in a Study Mode, by bucket, from
+ * their Card Standing in the session's deck and Study Direction, each as
+ * long as the biggest session could use. Study and Cram take a Weak card
+ * once it's due; Drill Weakest takes it before (§16.2) and takes no NEW
+ * cards.
  */
-const CANDIDATE_POOL = 200;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const progressFields = {
-  cardId: true,
-  lifecycleState: true,
-  masteryScore: true,
-  dueAt: true,
-  lastIntervalDays: true,
-  lastReviewedAt: true,
-  markedKnownAt: true,
-  resetAt: true,
-} as const;
-
-type Progress = Prisma.CardProgressGetPayload<{
-  select: typeof progressFields;
-}>;
-
-/**
- * Whether a card in review is due for a session in a Study Mode: its due
- * time has come, or, in Cram, half its interval has passed (§16.3: the
- * earlier of its due time and Cram's; the date-driven pacing is to come).
- */
-function isDue(
-  { dueAt, lastIntervalDays }: Progress,
+export function queueCandidates(
+  { cards, due, weak }: Standings,
   studyMode: StudyMode,
-  now: Date,
-) {
-  if (!dueAt) return false;
-  if (dueAt <= now) return true;
-  if (!MODE_RULES[studyMode].dueAtHalfInterval || lastIntervalDays === null) {
-    return false;
-  }
-  return dueAt.getTime() - (lastIntervalDays * DAY_MS) / 2 <= now.getTime();
-}
-
-/**
- * Whether a REINFORCING card is weak (§10): mastery 3 or less, or 2 misses in
- * its last 5 answers. A card marked known since it was last answered isn't,
- * though marking it known sets its mastery to 3: the learner says they know
- * it, until an answer says otherwise (ADR-0009).
- */
-function isWeak(card: Progress, misses: number) {
-  const markedKnownSinceAnswered =
-    card.markedKnownAt !== null &&
-    (card.lastReviewedAt === null || card.markedKnownAt > card.lastReviewedAt);
-  return (
-    !markedKnownSinceAnswered &&
-    (card.masteryScore <= WEAK_MASTERY || misses >= WEAK_MISSES)
-  );
+): QueueCandidates {
+  const { weakBeforeDue, takesNew } = MODE_RULES[studyMode];
+  const ids = (standings: CardStanding[]) =>
+    standings.slice(0, MOST).map(({ cardId }) => cardId);
+  return {
+    dueLearning: ids(due.filter((card) => card.lifecycleState === 'LEARNING')),
+    dueReinforcing: ids(
+      due.filter(
+        (card) => card.lifecycleState === 'REINFORCING' && !card.isWeak,
+      ),
+    ),
+    weakReinforcing: ids(
+      weakBeforeDue ? weak : weak.filter((card) => card.isDue),
+    ),
+    newCards: takesNew
+      ? ids(cards.filter((card) => card.lifecycleState === 'NEW'))
+      : [],
+  };
 }
 
 /**
  * The cards a learner's Study Session on a deck can draw from now in a
- * Study Mode and Study Direction, by their progress in that direction, by
- * bucket, each as long as the biggest session could use. Weakness
- * is derived, never stored (§10), from answers since the card's progress
- * last reset, Retries left out as they don't count toward it. Study and
- * Cram take a weak card once it's due; Drill Weakest takes it before (§16.2)
- * and takes no NEW cards. Only the CANDIDATE_POOL soonest due cards in
- * review, and in Drill Weakest as many with the lowest mastery, are
- * considered. Cards due at the same moment, as cards marked known together
- * are, go in a fixed order, so a seed always gives one queue.
+ * Study Mode and Study Direction (`queueCandidates`), read from their Card
+ * Standing.
  */
 export async function findQueueCandidates(
   prisma: PrismaClient,
@@ -400,122 +360,14 @@ export async function findQueueCandidates(
     now = new Date(),
   }: { studyMode?: StudyMode; now?: Date } = {},
 ): Promise<QueueCandidates> {
-  const most = Math.max(...Object.values(SESSION_SIZES).map(({ max }) => max));
-  const { weakBeforeDue, takesNew } = MODE_RULES[studyMode];
-  const [inReview, lowMastery, newCards] = await Promise.all([
-    prisma.cardProgress.findMany({
-      where: {
-        userId,
-        deckId,
-        direction,
-        lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
-        dueAt: { not: null },
-      },
-      orderBy: [{ dueAt: 'asc' }, { cardId: 'asc' }],
-      select: progressFields,
-      take: CANDIDATE_POOL,
-    }),
-    // Weak cards taken before they're due may be far from it
-    weakBeforeDue
-      ? prisma.cardProgress.findMany({
-          where: {
-            userId,
-            deckId,
-            direction,
-            lifecycleState: 'REINFORCING',
-            masteryScore: { lte: WEAK_MASTERY },
-          },
-          orderBy: [{ masteryScore: 'asc' }, { cardId: 'asc' }],
-          select: progressFields,
-          take: CANDIDATE_POOL,
-        })
-      : [],
-    takesNew
-      ? prisma.cardProgress.findMany({
-          where: { userId, deckId, direction, lifecycleState: 'NEW' },
-          orderBy: deckOrder.map((order) => ({ card: order })),
-          select: { cardId: true },
-          take: most,
-        })
-      : [],
-  ]);
-
-  const reinforcing = new Map(
-    [...inReview, ...lowMastery]
-      .filter((card) => card.lifecycleState === 'REINFORCING')
-      .map((card) => [card.cardId, card]),
-  );
-  const misses = await recentMisses(prisma, userId, direction, [
-    ...reinforcing.values(),
-  ]);
-  const weak = [...reinforcing.values()]
-    .map((card) => ({ card, misses: misses.get(card.cardId) ?? 0 }))
-    .filter(
-      ({ card, misses }) =>
-        isWeak(card, misses) && (weakBeforeDue || isDue(card, studyMode, now)),
-    )
-    // Ranked by recent misses, then mastery, then how overdue (§10)
-    .sort(
-      (a, b) =>
-        b.misses - a.misses ||
-        a.card.masteryScore - b.card.masteryScore ||
-        a.card.dueAt!.getTime() - b.card.dueAt!.getTime(),
-    )
-    .map(({ card }) => card.cardId);
-  const weakIds = new Set(weak);
-
-  const due = inReview.filter((card) => isDue(card, studyMode, now));
-  return {
-    dueLearning: due
-      .filter((card) => card.lifecycleState === 'LEARNING')
-      .slice(0, most)
-      .map((card) => card.cardId),
-    dueReinforcing: due
-      .filter(
-        (card) =>
-          card.lifecycleState === 'REINFORCING' && !weakIds.has(card.cardId),
-      )
-      .slice(0, most)
-      .map((card) => card.cardId),
-    weakReinforcing: weak.slice(0, most),
-    newCards: newCards.map((card) => card.cardId),
-  };
-}
-
-/**
- * How many of each card's last RECENT_ANSWERS counted answers in a Study
- * Direction were missed: those since its progress last reset, Retries left
- * out.
- */
-async function recentMisses(
-  prisma: PrismaClient,
-  userId: string,
-  direction: StudyDirection,
-  cards: { cardId: string; resetAt: Date }[],
-) {
-  const attempts = await prisma.cardAttempt.findMany({
-    where: {
-      cardId: { in: cards.map((card) => card.cardId) },
+  return queueCandidates(
+    await readCardStanding(prisma, {
+      userId,
+      deckIds: [deckId],
       direction,
-      studySession: { userId },
-      isRetry: false,
-    },
-    orderBy: { createdAt: 'desc' },
-    select: { cardId: true, recallGrade: true, createdAt: true },
-  });
-  const resetAt = new Map(cards.map((card) => [card.cardId, card.resetAt]));
-  const recent = new Map<string, number>();
-  const misses = new Map<string, number>();
-  for (const attempt of attempts) {
-    if (!countsSinceReset(attempt.createdAt, resetAt.get(attempt.cardId)!)) {
-      continue;
-    }
-    const seen = recent.get(attempt.cardId) ?? 0;
-    if (seen >= RECENT_ANSWERS) continue;
-    recent.set(attempt.cardId, seen + 1);
-    if (attempt.recallGrade === 'MISSED') {
-      misses.set(attempt.cardId, (misses.get(attempt.cardId) ?? 0) + 1);
-    }
-  }
-  return misses;
+      studyMode,
+      now,
+    }),
+    studyMode,
+  );
 }

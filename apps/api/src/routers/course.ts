@@ -17,7 +17,7 @@ import {
   syllabusRevisionOutputSchema,
   toProposedRevision,
 } from '../ai/syllabusRevision.js';
-import { countDueAndNewCards } from '../services/studySessions.js';
+import { readCardStanding } from '../services/cardStanding.js';
 import { generateStructured } from '../ai/generate.js';
 import { isChipChoice, MAX_FEEDBACK_LENGTH } from '../ai/feedback.js';
 import {
@@ -169,6 +169,23 @@ async function findEditableCourse(
   return course;
 }
 
+/**
+ * The course page's review section: how many of its Course Deck's cards
+ * are due and how many NEW, in both Study Directions of a Reversible Deck
+ * and Forward otherwise.
+ */
+async function reviewCounts(
+  prisma: PrismaClient,
+  userId: string,
+  deckId: string,
+) {
+  const { counts } = await readCardStanding(prisma, {
+    userId,
+    deckIds: [deckId],
+  });
+  return { deckId, dueCount: counts.due, newCount: counts.new };
+}
+
 export const courseRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const courses = await ctx.prisma.course.findMany({
@@ -312,14 +329,7 @@ export const courseRouter = router({
         // cards, while the deck isn't archived
         review:
           deck && !deck.archivedAt
-            ? {
-                deckId: deck.id,
-                ...(await countDueAndNewCards(ctx.prisma, {
-                  userId: ctx.userId,
-                  deckId: deck.id,
-                  direction: 'FORWARD',
-                })),
-              }
+            ? await reviewCounts(ctx.prisma, ctx.userId, deck.id)
             : null,
         proposal: proposal && {
           ...proposal,

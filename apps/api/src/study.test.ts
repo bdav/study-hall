@@ -3,7 +3,7 @@ import { type PrismaClient, type StudyMode } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
-  recordStudySession,
+  recordCardHistory,
 } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
@@ -235,6 +235,44 @@ describe('studyRouter', () => {
         dueCount: 0,
         newCount: 0,
         nextDueAt: soon,
+      });
+    });
+
+    it('counts and times what Cram offers when Cram is chosen, as Study does otherwise', async () => {
+      const deck = await deckWith(capitals.slice(0, 2));
+      const [halfway, early] = deck.cards;
+      const day = 24 * 60 * 60 * 1000;
+      // Each REINFORCING on a 4-day interval from its second NAILED, at
+      // `graduatedAt`: three quarters gone, and three eighths
+      const graduate = (cardId: string, graduatedAt: Date) =>
+        recordCardHistory(prisma, {
+          userId,
+          cardId,
+          answers: [
+            { grade: 'NAILED', at: new Date(graduatedAt.getTime() - day) },
+            { grade: 'NAILED', at: graduatedAt },
+          ],
+        });
+      const halfwayAt = new Date(Date.now() - 3 * day);
+      const earlyAt = new Date(Date.now() - 1.5 * day);
+      await graduate(halfway.id, halfwayAt);
+      await graduate(early.id, earlyAt);
+      const caller = createCaller();
+
+      expect(
+        await caller.study.queuePreview({ deckId: deck.id, studyMode: 'CRAM' }),
+      ).toEqual({
+        sessionSize: 1,
+        dueCount: 1,
+        newCount: 0,
+        // Halfway through its interval
+        nextDueAt: new Date(earlyAt.getTime() + 2 * day),
+      });
+      expect(await caller.study.queuePreview({ deckId: deck.id })).toEqual({
+        sessionSize: 0,
+        dueCount: 0,
+        newCount: 0,
+        nextDueAt: new Date(halfwayAt.getTime() + 4 * day),
       });
     });
 
@@ -1227,15 +1265,6 @@ describe('session types and queue buckets', () => {
     return deck;
   }
 
-  /** A miss of the card in a finished session of its own. */
-  function missIn(deckId: string, cardId: string) {
-    return recordStudySession(prisma, {
-      userId,
-      deckId,
-      answers: [{ cardId, userAnswer: 'wrong' }],
-    });
-  }
-
   async function startedFronts(deckId: string) {
     const session = await createCaller().study.startSession({ deckId });
     return session!.items.map((item) => item.card.front);
@@ -1275,67 +1304,6 @@ describe('session types and queue buckets', () => {
 
     expect(session?.sessionType).toBe('STANDARD');
     expect(session?.items).toHaveLength(25);
-  });
-
-  it('brings in a weak card, mastery 3 or less, ahead of a backlog of more overdue ones', async () => {
-    const deck = await reinforcingBacklog(30);
-    const leastOverdue = deck.cards[29];
-    await prisma.cardProgress.update({
-      where: {
-        userId_cardId_direction: {
-          userId,
-          cardId: leastOverdue.id,
-          direction: 'FORWARD',
-        },
-      },
-      data: { masteryScore: 3 },
-    });
-
-    expect(await startedFronts(deck.id)).toContain('Card 30');
-  });
-
-  it('brings in a weak card, missed twice in its last five answers, ahead of the backlog', async () => {
-    const deck = await reinforcingBacklog(30);
-    const leastOverdue = deck.cards[29];
-    await missIn(deck.id, leastOverdue.id);
-    await missIn(deck.id, leastOverdue.id);
-
-    expect(await startedFronts(deck.id)).toContain('Card 30');
-  });
-
-  it("doesn't count a Retry's miss toward weakness", async () => {
-    const deck = await reinforcingBacklog(30);
-    const leastOverdue = deck.cards[29];
-    // One miss, then its Retry missed too
-    await recordStudySession(prisma, {
-      userId,
-      deckId: deck.id,
-      answers: [
-        { cardId: leastOverdue.id, userAnswer: 'wrong' },
-        { cardId: leastOverdue.id, userAnswer: 'wrong' },
-      ],
-    });
-
-    expect(await startedFronts(deck.id)).not.toContain('Card 30');
-  });
-
-  it('counts only misses since the card last started over', async () => {
-    const deck = await reinforcingBacklog(30);
-    const leastOverdue = deck.cards[29];
-    await missIn(deck.id, leastOverdue.id);
-    await missIn(deck.id, leastOverdue.id);
-    await prisma.cardProgress.update({
-      where: {
-        userId_cardId_direction: {
-          userId,
-          cardId: leastOverdue.id,
-          direction: 'FORWARD',
-        },
-      },
-      data: { resetAt: new Date() },
-    });
-
-    expect(await startedFronts(deck.id)).not.toContain('Card 30');
   });
 
   it('leaves out a weak card not yet due', async () => {
@@ -1422,20 +1390,6 @@ describe('study modes', () => {
     ]);
   });
 
-  it("doesn't drill a card marked known since it was last answered", async () => {
-    const deck = await deckWith(numbered(2));
-    const [weak, known] = deck.cards;
-    await setProgress(weak.id, {
-      lifecycleState: 'REINFORCING',
-      masteryScore: 2,
-      dueAt: new Date(Date.now() + day),
-      lastReviewedAt: new Date(Date.now() - day),
-    });
-    await createCaller().card.markKnown({ cardIds: [known.id] });
-
-    expect(fronts(await started(deck.id, 'DRILL_WEAKEST'))).toEqual(['Card 1']);
-  });
-
   it('has nothing to drill in a deck of NEW cards, and previews it so', async () => {
     const deck = await deckWith(numbered(3));
     const caller = createCaller();
@@ -1470,18 +1424,6 @@ describe('study modes', () => {
       'Card 1',
       'Card 3',
     ]);
-  });
-
-  it("doesn't review early in Study mode", async () => {
-    const deck = await deckWith(numbered(2));
-    await setProgress(deck.cards[0].id, {
-      lifecycleState: 'REINFORCING',
-      masteryScore: 6,
-      lastIntervalDays: 4,
-      dueAt: new Date(Date.now() + day),
-    });
-
-    expect(fronts(await started(deck.id, 'STUDY'))).toEqual(['Card 2']);
   });
 });
 

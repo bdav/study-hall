@@ -26,7 +26,12 @@ import {
 } from './progressUpdater.js';
 import { countsSinceReset } from './countedAttempts.js';
 import { assertDeckActive, assertStudiesIn } from './decks.js';
-import { composeQueue, findQueueCandidates } from './queueGenerator.js';
+import { readCardStanding } from './cardStanding.js';
+import {
+  composeQueue,
+  findQueueCandidates,
+  queueCandidates,
+} from './queueGenerator.js';
 
 /**
  * Include for returning a Study Session with its items in queue order, each
@@ -131,38 +136,6 @@ function toScheduledAnswer(attempt: {
 /** A learner's cards in one deck. */
 type LearnerDeck = { userId: string; deckId: string };
 
-/** A learner's cards in one deck, studied in one Study Direction. */
-type DirectedDeck = LearnerDeck & { direction: StudyDirection };
-
-/** A deck's cards in review whose due time has come. */
-function dueCardsWhere(deck: DirectedDeck): Prisma.CardProgressWhereInput {
-  return {
-    ...deck,
-    lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
-    dueAt: { lte: new Date() },
-  };
-}
-
-/** A deck's cards that have never been studied in the direction. */
-function newCardsWhere(deck: DirectedDeck): Prisma.CardProgressWhereInput {
-  return { ...deck, lifecycleState: 'NEW' };
-}
-
-/**
- * How many of a deck's cards are due in a Study Direction and how many are
- * NEW there, the cards a Study Session draws from (`findQueueCandidates`).
- */
-export async function countDueAndNewCards(
-  prisma: PrismaClient,
-  deck: DirectedDeck,
-) {
-  const [dueCount, newCount] = await Promise.all([
-    prisma.cardProgress.count({ where: dueCardsWhere(deck) }),
-    prisma.cardProgress.count({ where: newCardsWhere(deck) }),
-  ]);
-  return { dueCount, newCount };
-}
-
 /** How the learner chooses to study: a session's type, mode and direction. */
 export type SessionChoice = {
   sessionType: SessionType;
@@ -172,39 +145,33 @@ export type SessionChoice = {
 
 /**
  * What a Study Session of the given type, mode and direction started now
- * would hold: its size, as starting it would compose it, and, for when it
- * would hold nothing, when the next card in review comes due.
+ * would hold: its size, as starting it would compose it, how many cards are
+ * due in the Study Mode and how many NEW, and, for when it would hold
+ * nothing, when the next card comes due in the mode. All from one read of
+ * the cards' standing, so they agree.
  */
 export async function previewQueue(
   prisma: PrismaClient,
-  learnerDeck: LearnerDeck,
+  { userId, deckId }: LearnerDeck,
   { sessionType, studyMode, direction }: SessionChoice,
 ) {
-  const deck = { ...learnerDeck, direction };
-  const [{ dueCount, newCount }, candidates, next] = await Promise.all([
-    countDueAndNewCards(prisma, deck),
-    findQueueCandidates(prisma, deck, { studyMode }),
-    prisma.cardProgress.findFirst({
-      where: {
-        ...deck,
-        lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
-        dueAt: { gt: new Date() },
-      },
-      orderBy: { dueAt: 'asc' },
-      select: { dueAt: true },
-    }),
-  ]);
+  const standings = await readCardStanding(prisma, {
+    userId,
+    deckIds: [deckId],
+    direction,
+    studyMode,
+  });
   return {
     // Its order varies with the seed, never its size
     sessionSize: composeQueue({
-      candidates,
+      candidates: queueCandidates(standings, studyMode),
       sessionType,
       studyMode,
       seed: 0,
     }).length,
-    dueCount,
-    newCount,
-    nextDueAt: next?.dueAt ?? null,
+    dueCount: standings.counts.due,
+    newCount: standings.counts.new,
+    nextDueAt: standings.nextDueAt,
   };
 }
 

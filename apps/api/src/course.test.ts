@@ -8,8 +8,8 @@ import {
   afterEach,
   vi,
 } from 'vitest';
-import { type PrismaClient } from '@prisma/client';
-import { createTestPrisma } from './test-helpers.js';
+import { type PrismaClient, type StudyDirection } from '@prisma/client';
+import { createTestPrisma, recordCardHistory } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
 
@@ -1820,6 +1820,29 @@ describe('course review', () => {
     const course = await createCaller().course.getById({ id });
 
     expect(course.review).toEqual({ deckId, dueCount: 1, newCount: 2 });
+  });
+
+  it('counts both Study Directions of a reversible Course Deck', async () => {
+    const { id, deckId, cards } = await courseWithCards(['A', 'B', 'C']);
+    await prisma.deck.update({
+      where: { id: deckId },
+      data: { reversible: true },
+    });
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const missedYesterday = (cardId: string, direction: StudyDirection) =>
+      recordCardHistory(prisma, {
+        userId,
+        cardId,
+        direction,
+        answers: [{ grade: 'MISSED', at: yesterday }],
+      });
+    // A due Forward, B due in Reverse: the rest of each direction NEW
+    await missedYesterday(cards[0].id, 'FORWARD');
+    await missedYesterday(cards[1].id, 'REVERSE');
+
+    const course = await createCaller().course.getById({ id });
+
+    expect(course.review).toEqual({ deckId, dueCount: 2, newCount: 4 });
   });
 
   it('leaves out retired cards', async () => {
