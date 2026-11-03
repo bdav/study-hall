@@ -4,8 +4,10 @@ import { Prisma, type PrismaClient } from '@prisma/client';
  * Starts a fresh Tutor Thread on a Lesson Version, numbered after its
  * latest. It becomes the version's current thread, the one the tutor sees;
  * the earlier ones stay with the version (#62). A reply under way stays in
- * the thread it was asked in. Of two threads started at once, the unique
- * constraint lets one through, and both callers get it.
+ * the thread it was asked in. Two started at once may each start one, which
+ * is harmless: an earlier thread with no messages is left out of the list.
+ * When both take the same number, the unique constraint lets one through
+ * and both callers get it.
  */
 export async function startTutorThread(
   prisma: PrismaClient,

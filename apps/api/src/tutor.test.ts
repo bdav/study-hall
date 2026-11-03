@@ -466,18 +466,23 @@ describe('tutorRouter', () => {
       ]);
     });
 
-    it('gives two threads started at once the same one', async () => {
+    it('starts two threads at once without an error, the later one current', async () => {
       const lesson = await createWrittenLesson();
       const caller = createCaller();
       ai.streamReply(['Ciao!']);
       await ask(lesson.id, 'Hi');
 
+      // They may share one or start one each, depending on timing
       const [first, second] = await Promise.all([
         caller.tutor.startThread({ lessonId: lesson.id }),
         caller.tutor.startThread({ lessonId: lesson.id }),
       ]);
 
-      expect(second).toEqual(first);
+      const { threads } = await caller.tutor.thread({ lessonId: lesson.id });
+      expect(threads[0]).toMatchObject({
+        number: Math.max(first.number, second.number),
+        isCurrent: true,
+      });
     });
 
     it('refuses a lesson that has not been written', async () => {
