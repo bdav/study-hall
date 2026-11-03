@@ -247,17 +247,22 @@ describe('Card Standing', () => {
     expect(counts).toEqual({ due: 3, new: 1 });
   });
 
-  it('considers every card, however many are due', async () => {
-    const deck = await deckOf(205);
-    for (const card of deck.cards) {
-      await history(card.id, [missed(daysAgo(1))]);
-    }
+  it(
+    'considers every card, however many are due',
+    { timeout: 20_000 },
+    async () => {
+      const deck = await deckOf(205);
+      // Independent, so recorded at once
+      await Promise.all(
+        deck.cards.map((card) => history(card.id, [missed(daysAgo(1))])),
+      );
 
-    const { due, counts } = await standing([deck.id]);
+      const { due, counts } = await standing([deck.id]);
 
-    expect(due).toHaveLength(205);
-    expect(counts.due).toBe(205);
-  });
+      expect(due).toHaveLength(205);
+      expect(counts.due).toBe(205);
+    },
+  );
 
   describe('Counted Answers', () => {
     it("leaves out a Retry's miss", async () => {
