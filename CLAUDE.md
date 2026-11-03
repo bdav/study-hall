@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 11/35 planned issues**
+**Completed: 12/35 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -31,7 +31,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #110 Move CI's actions off Node 20
    - [x] #111 Pin CI's runner to Ubuntu 24.04
 4. Review and scheduling
-   - [ ] #97 Rename the Stable lifecycle state to Reinforcing
+   - [x] #97 Rename the Stable lifecycle state to Reinforcing
    - [ ] #98 Card Standing: read every card's standing from one place
    - [ ] #99 Card Standing: change card progress only through it
    - [ ] #85 Stats on the scheduler's terms
@@ -142,7 +142,7 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 
 - **`answerGrader.ts`**: Tier 1 deterministic grading. `matchAnswer` is the one comparison for any correct answer: case, punctuation and extra whitespace never matter but the spaces between words do, and an answer wrong only in its accents is an Accent Mismatch, which `gradeAnswer` grades GOOD, never NAILED (ADR-0002). AI grading tiers for typed card answers (embedding similarity, then a model fallback) are parked (`updated-plan.md` §29c).
 
-- **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer (`applyAnswer`), given the counted answers before it (`findCountedAnswers` in `studySessions.ts`, which leaves out same-session retries, #11), and the same as a replay of them all (`replayAnswers`), #7. Mastery changes by Recall Grade (0–10). NEW → LEARNING on the first answer; LEARNING → STABLE on a success (GOOD or NAILED) that makes 2 or more since the card entered LEARNING (`lifecycleChangedAt`), across 2 or more Study Sessions or UTC days; STABLE → LEARNING on a MISSED that makes 2 in the last 3 answers since it became STABLE; every STABLE MISSED counts a lapse; nothing retires. LEARNING cards are scheduled on the LEARNING table, a first-ever NAILED with GOOD's 1 day; STABLE cards on the band table by mastery before the answer, with a flat 1.25× lateness bonus, for a card already STABLE, on GOOD or NAILED at 1.5 or more intervals overdue, never past 90 days (decisions in `learning-model-and-scheduler.md`).
+- **`progressUpdater.ts`**: The scheduler's pure update of a card's progress after one answer (`applyAnswer`), given the counted answers before it (`findCountedAnswers` in `studySessions.ts`, which leaves out same-session retries, #11), and the same as a replay of them all (`replayAnswers`), #7. Mastery changes by Recall Grade (0–10). NEW → LEARNING on the first answer; LEARNING → REINFORCING on a success (GOOD or NAILED) that makes 2 or more since the card entered LEARNING (`lifecycleChangedAt`), across 2 or more Study Sessions or UTC days; REINFORCING → LEARNING on a MISSED that makes 2 in the last 3 answers since it became REINFORCING; every REINFORCING MISSED counts a lapse; nothing retires. LEARNING cards are scheduled on the LEARNING table, a first-ever NAILED with GOOD's 1 day; REINFORCING cards on the band table by mastery before the answer, with a flat 1.25× lateness bonus, for a card already REINFORCING, on GOOD or NAILED at 1.5 or more intervals overdue, never past 90 days (decisions in `learning-model-and-scheduler.md`).
 - **`queueGenerator.ts`**: A Study Session's queue (#8): `findQueueCandidates` fetches each bucket's cards, deriving weakness from attempts, and `composeQueue`, pure and seeded, sizes and mixes them by session type and study mode; golden tests in `queueGenerator.test.ts`.
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue (`queueGenerator.ts`), applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 

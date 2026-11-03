@@ -138,7 +138,7 @@ type DirectedDeck = LearnerDeck & { direction: StudyDirection };
 function dueCardsWhere(deck: DirectedDeck): Prisma.CardProgressWhereInput {
   return {
     ...deck,
-    lifecycleState: { in: ['LEARNING', 'STABLE'] },
+    lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
     dueAt: { lte: new Date() },
   };
 }
@@ -187,7 +187,7 @@ export async function previewQueue(
     prisma.cardProgress.findFirst({
       where: {
         ...deck,
-        lifecycleState: { in: ['LEARNING', 'STABLE'] },
+        lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
         dueAt: { gt: new Date() },
       },
       orderBy: { dueAt: 'asc' },

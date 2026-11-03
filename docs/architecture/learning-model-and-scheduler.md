@@ -364,7 +364,7 @@ Lifecycle States
 type CardLifecycleState =
 | "NEW"
 | "LEARNING"
-| "STABLE"
+| "REINFORCING"
 | "RETIRED";
 
 ⸻
@@ -379,7 +379,7 @@ Cards leave NEW on first exposure.
 
 LEARNING
 
-Early stabilization phase.
+Early phase, before graduating to REINFORCING.
 
 Characteristics:
 
@@ -390,7 +390,7 @@ Characteristics:
 
 ⸻
 
-STABLE
+REINFORCING
 
 Normal spaced repetition behavior.
 
@@ -438,9 +438,9 @@ Once shown, it is no longer new.
 
 ⸻
 
-LEARNING → STABLE
+LEARNING → REINFORCING
 
-A card moves from LEARNING to STABLE when:
+A card moves from LEARNING to REINFORCING when:
 
 - it has at least 2 successful recalls
 - those successful recalls occur across at least 2 separate sessions or days
@@ -452,22 +452,22 @@ Successful means:
 - GOOD
 - NAILED
 
-PARTIALLY_CORRECT does not count as successful for stabilization.
+PARTIALLY_CORRECT does not count as successful toward graduation.
 
 ⸻
 
-STABLE → LEARNING
+REINFORCING → LEARNING
 
-A single miss does not demote a stable card.
+A single miss does not demote a REINFORCING card.
 
 On one miss:
 
-- stay STABLE
+- stay REINFORCING
 - lower masteryScore
 - increment lapseCount
 - schedule soon
 
-A STABLE card moves back to LEARNING only after:
+A REINFORCING card moves back to LEARNING only after:
 
 - 2 MISSED results within the last 3 attempts
 
@@ -475,7 +475,7 @@ This keeps ordinary lapses from feeling punitive.
 
 ⸻
 
-STABLE → RETIRED
+REINFORCING → RETIRED
 
 Retirement is:
 
@@ -484,7 +484,7 @@ Retirement is:
 
 A card becomes retirement-eligible when:
 
-- lifecycleState = STABLE
+- lifecycleState = REINFORCING
 - masteryScore >= 9
 - latest result is NAILED
 - lastIntervalDays >= 60
@@ -493,9 +493,9 @@ Retirement is never automatic.
 
 ⸻
 
-RETIRED → STABLE
+RETIRED → REINFORCING
 
-A retired card returns to STABLE only through explicit user action.
+A retired card returns to REINFORCING only through explicit user action.
 
 Examples:
 
@@ -526,7 +526,7 @@ This preserves:
 
 while allowing:
 
-- stabilization behavior
+- graduation behavior
 - lateness bonuses
 - cram pacing overrides
 - retirement eligibility
@@ -608,11 +608,11 @@ These are intentionally separate systems.
 
 ⸻
 
-9. STABLE Scheduler
+9. REINFORCING Scheduler
 
-Stable Interval Table Uses Mastery Bands
+Reinforcing Interval Table Uses Mastery Bands
 
-STABLE cards use mastery bands, not exact per-score interval rows.
+REINFORCING cards use mastery bands, not exact per-score interval rows.
 
 This keeps v1:
 
@@ -623,7 +623,7 @@ This keeps v1:
 
 ⸻
 
-STABLE Baseline Intervals
+REINFORCING Baseline Intervals
 
 mastery band score MISSED PARTIAL GOOD NAILED
 fragile 0–2 1h 1d 2d 4d
@@ -633,7 +633,7 @@ mastered 9–10 3d 10d 45d 90d
 
 MISSED interval values determine persisted dueAt after the attempt.
 
-As built (#7): the band is the card's mastery before the answer (a MISSED never leaves a card in the mastered band, so banding after it would leave that column unused), and the table is that of the card's state after the answer: a card that graduates gets a STABLE interval, one that lapses back to LEARNING a LEARNING one.
+As built (#7): the band is the card's mastery before the answer (a MISSED never leaves a card in the mastered band, so banding after it would leave that column unused), and the table is that of the card's state after the answer: a card that graduates gets a REINFORCING interval, one that lapses back to LEARNING a LEARNING one.
 
 Same-session retries are queue behavior, not interval behavior.
 
@@ -665,7 +665,7 @@ After the retry cap is reached:
 
 Repeated failures never block session completion.
 
-Same-session retries do not count toward stabilization requirements.
+Same-session retries do not count toward graduation.
 
 As built (#11): a missed card comes back at the end of the session instead, after every card and earlier retry, in the order missed, so the reinsertion spacing above is not used: a card missed early waits longer than ~5 cards, which strengthens the retrieval, and one missed late comes back as soon as it would have. A retry missed again goes to the end again, within the cap. The page counts the cards, then the retries on their own ("Retry 2 of 3"), a total that grows as more are missed. A retry item is a `StudySessionItem` with `isRetry`, so the reappearance count is the card's retry items in the session rather than an in-memory map. A retry's answer is a `CardAttempt` with `isRetry`, which never changes `CardProgress` and which the scheduler leaves out of the answers it counts. Accepting a missed answer ("My answer was correct") or marking the card known skips its waiting retry, as it was not missed after all, or needs no more practice. A card edited after its miss still comes back for practice, but its progress, reset to NEW by the edit (ADR-0004), waits for its next session's answer.
 
@@ -691,7 +691,7 @@ It does not affect:
 
 - masteryScore
 - lifecycleState
-- stabilization tracking
+- graduation tracking
 
 ⸻
 
@@ -720,7 +720,7 @@ Lateness Rules
 - no bonus until overdueRatio >= 1.5
 - cap interval bonus around 1.25×
 - apply only on GOOD or NAILED
-- as built (#7): a flat 1.25× from an overdueRatio of 1.5, only for a card already STABLE (not on the answer that graduates it), never past the 90-day cap
+- as built (#7): a flat 1.25× from an overdueRatio of 1.5, only for a card already REINFORCING (not on the answer that graduates it), never past the 90-day cap
 
 Lateness is intentionally asymmetric:
 
@@ -817,9 +817,9 @@ Prefer softer phrasing such as:
 
 ⸻
 
-13. Weak STABLE Definition
+13. Weak Reinforcing Definition
 
-A STABLE card is considered weak if either:
+A REINFORCING card is considered weak if either:
 
 - masteryScore <= 3
   OR
@@ -838,9 +838,9 @@ Weakness is NOT defined solely by:
 
 ⸻
 
-Weak STABLE Ranking
+Weak Reinforcing Ranking
 
-Weak STABLE cards are prioritized by:
+Weak Reinforcing cards are prioritized by:
 
 1. recent lapse frequency
 2. masteryScore ascending
@@ -850,9 +850,9 @@ Weak STABLE cards are prioritized by:
 
 Important Conceptual Distinction
 
-Due STABLE
+Due REINFORCING
 = scheduling urgency
-Weak STABLE
+Weak Reinforcing
 = retrieval instability
 
 A highly-mastered but overdue card is not automatically considered weak.
@@ -956,8 +956,8 @@ The queue generator may consider:
 Default Study mode builds sessions from these buckets:
 
 1. Due LEARNING
-2. Due STABLE
-3. Weak STABLE
+2. Due REINFORCING
+3. Weak Reinforcing
 4. New cards
 5. Same-session reappearances
 
@@ -969,8 +969,8 @@ Default Study Target Shares
 
 bucket target share
 Due LEARNING 20–30%
-Due STABLE 40–60%
-Weak STABLE 10–20%
+Due REINFORCING 40–60%
+Weak Reinforcing 10–20%
 New cards 10–20%
 
 ⸻
@@ -978,11 +978,11 @@ New cards 10–20%
 Caps
 
 bucket cap
-Due STABLE ~60%
-Weak STABLE ~20%
+Due REINFORCING ~60%
+Weak Reinforcing ~20%
 New cards ~20%
 
-Due LEARNING may exceed its target because early stabilization is fragile.
+Due LEARNING may exceed its target because a card just learning is fragile.
 
 Unused budget redistributes.
 
@@ -1086,9 +1086,9 @@ It does NOT introduce:
 
 Drill Weakest Queue Priorities
 
-1. Weak STABLE
+1. Weak Reinforcing
 2. Due LEARNING
-3. Due STABLE
+3. Due REINFORCING
 4. New cards (disabled)
 
 ⸻
@@ -1106,9 +1106,9 @@ Drill Weakest Characteristics
 Example Target Mix
 
 bucket target share
-Weak STABLE 60–80%
+Weak Reinforcing 60–80%
 Due LEARNING 20–40%
-Due STABLE minimal overflow only
+Due REINFORCING minimal overflow only
 New cards 0%
 
 ⸻
@@ -1203,8 +1203,8 @@ Example Queue Shift
 bucket Study Cram All
 New cards 10–20% 30–50%
 Due LEARNING high high
-Due STABLE moderate moderate/lower
-Weak STABLE 10–20% lower unless due/learning
+Due REINFORCING moderate moderate/lower
+Weak Reinforcing 10–20% lower unless due/learning
 
 ⸻
 

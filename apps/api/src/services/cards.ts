@@ -736,7 +736,7 @@ function cardWithAnswers(db: Db, cardId: string) {
 /**
  * Marks a learner's cards known (ADR-0009) in the given Study Directions
  * (ADR-0011), in one transaction: NEW and LEARNING progress takes
- * `markKnown`'s, and progress already STABLE or RETIRED is left as it is.
+ * `markKnown`'s, and progress already REINFORCING or RETIRED is left as it is.
  * No attempt is recorded. The cards' items waiting in a Study Session under
  * way in one of those directions are skipped, as the study screen moves
  * past them. Returns how many directions of cards were marked.

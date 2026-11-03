@@ -432,7 +432,7 @@ describe('card.history', () => {
     const history = await createCaller().card.history({ cardId: card.id });
 
     expect(history.progress).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       isKnown: true,
     });
   });

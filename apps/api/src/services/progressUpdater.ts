@@ -40,7 +40,7 @@ const LEARNING_INTERVAL_DAYS: Record<RecallGrade, number> = {
   NAILED: 2,
 };
 
-/** STABLE intervals by mastery band (`updated-plan.md` §8.4). */
+/** REINFORCING intervals by mastery band (`updated-plan.md` §8.4). */
 type MasteryBand = 'fragile' | 'developing' | 'solid' | 'mastered';
 
 function masteryBand(mastery: number): MasteryBand {
@@ -52,7 +52,10 @@ function masteryBand(mastery: number): MasteryBand {
 
 const HOUR_IN_DAYS = 1 / 24;
 
-const STABLE_INTERVAL_DAYS: Record<MasteryBand, Record<RecallGrade, number>> = {
+const REINFORCING_INTERVAL_DAYS: Record<
+  MasteryBand,
+  Record<RecallGrade, number>
+> = {
   fragile: { MISSED: HOUR_IN_DAYS, PARTIALLY_CORRECT: 1, GOOD: 2, NAILED: 4 },
   developing: {
     MISSED: 6 * HOUR_IN_DAYS,
@@ -78,7 +81,7 @@ const LATENESS_BONUS = 1.25;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Successful for stabilization (`updated-plan.md` §7.2): GOOD or NAILED,
+ * Successful toward graduating (`updated-plan.md` §7.2): GOOD or NAILED,
  * as stats count correct answers.
  */
 const isSuccess = isCorrect;
@@ -98,7 +101,7 @@ function dayOf(answer: ScheduledAnswer) {
 }
 
 /**
- * LEARNING → STABLE (`updated-plan.md` §7.2): 2 or more successes since the
+ * LEARNING → REINFORCING (`updated-plan.md` §7.2): 2 or more successes since the
  * card entered LEARNING, across 2 or more Study Sessions or days, the
  * latest of them this answer.
  */
@@ -120,8 +123,8 @@ function graduates(
 }
 
 /**
- * STABLE → LEARNING (`updated-plan.md` §7.3): a miss that makes 2 MISSED in
- * the card's last 3 answers since it became STABLE. A single miss is only
+ * REINFORCING → LEARNING (`updated-plan.md` §7.3): a miss that makes 2 MISSED in
+ * the card's last 3 answers since it became REINFORCING. A single miss is only
  * a lapse, whatever the card missed before it graduated.
  */
 function lapsesBackToLearning(
@@ -155,9 +158,9 @@ function nextLifecycle(
       return { lifecycleState: 'LEARNING', lifecycleChangedAt: now };
     case 'LEARNING':
       return graduates(progress, answer, earlier)
-        ? { lifecycleState: 'STABLE', lifecycleChangedAt: now }
+        ? { lifecycleState: 'REINFORCING', lifecycleChangedAt: now }
         : unchanged;
-    case 'STABLE':
+    case 'REINFORCING':
       return lapsesBackToLearning(progress, answer, earlier)
         ? { lifecycleState: 'LEARNING', lifecycleChangedAt: now }
         : unchanged;
@@ -182,8 +185,8 @@ export function applyAnswer(
   const intervalDays =
     lifecycle.lifecycleState === 'LEARNING'
       ? learningIntervalDays(progress, recallGrade)
-      : // STABLE, and RETIRED as STABLE until its review mode comes
-        stableIntervalDays(progress, answer);
+      : // REINFORCING, and RETIRED as REINFORCING until its review mode comes
+        reinforcingIntervalDays(progress, answer);
 
   return {
     dueAt: new Date(now.getTime() + intervalDays * DAY_IN_MS),
@@ -192,7 +195,7 @@ export function applyAnswer(
     lastIntervalDays: intervalDays,
     ...lifecycle,
     lapseCount:
-      progress.lifecycleState === 'STABLE' && recallGrade === 'MISSED'
+      progress.lifecycleState === 'REINFORCING' && recallGrade === 'MISSED'
         ? progress.lapseCount + 1
         : progress.lapseCount,
     masteryScore: Math.min(
@@ -218,22 +221,22 @@ function learningIntervalDays(
   ];
 }
 
-function stableIntervalDays(
+function reinforcingIntervalDays(
   progress: ScheduledProgress,
   { recallGrade, answeredAt }: ScheduledAnswer,
 ) {
   // The band is the card's mastery as it came to this answer
   const base =
-    STABLE_INTERVAL_DAYS[masteryBand(progress.masteryScore)][recallGrade];
+    REINFORCING_INTERVAL_DAYS[masteryBand(progress.masteryScore)][recallGrade];
   const { dueAt, lastIntervalDays } = progress;
   const overdueRatio =
     dueAt && lastIntervalDays
       ? (answeredAt.getTime() - dueAt.getTime()) / DAY_IN_MS / lastIntervalDays
       : 0;
-  // Only a card already STABLE: lateness on the answer that graduates a
+  // Only a card already REINFORCING: lateness on the answer that graduates a
   // card is measured against its short LEARNING interval
   const bonus =
-    progress.lifecycleState === 'STABLE' &&
+    progress.lifecycleState === 'REINFORCING' &&
     isSuccess(recallGrade) &&
     overdueRatio >= LATENESS_BONUS_FROM_OVERDUE_RATIO
       ? LATENESS_BONUS
@@ -246,18 +249,18 @@ const KNOWN_MIN_MASTERY = 3;
 
 /**
  * Whether a card is known already, so marking it known would leave it as it
- * is (ADR-0009): STABLE or RETIRED.
+ * is (ADR-0009): REINFORCING or RETIRED.
  */
 export function isKnown(lifecycleState: CardLifecycleState) {
-  return lifecycleState === 'STABLE' || lifecycleState === 'RETIRED';
+  return lifecycleState === 'REINFORCING' || lifecycleState === 'RETIRED';
 }
 
 /**
  * A card's progress once the learner marks it known (ADR-0009): a timing
- * adjustment, not an answer. A NEW or LEARNING card becomes STABLE as if it
+ * adjustment, not an answer. A NEW or LEARNING card becomes REINFORCING as if it
  * had just graduated, its mastery raised to at least 3, and is next due a
- * STABLE GOOD interval away for its band. Its last review and lapses stay.
- * Null for a card already STABLE or RETIRED, which is left as it is.
+ * REINFORCING GOOD interval away for its band. Its last review and lapses stay.
+ * Null for a card already REINFORCING or RETIRED, which is left as it is.
  */
 export function markKnown(
   progress: ScheduledProgress,
@@ -265,9 +268,10 @@ export function markKnown(
 ): ScheduledProgress | null {
   if (isKnown(progress.lifecycleState)) return null;
   const masteryScore = Math.max(progress.masteryScore, KNOWN_MIN_MASTERY);
-  const intervalDays = STABLE_INTERVAL_DAYS[masteryBand(masteryScore)].GOOD;
+  const intervalDays =
+    REINFORCING_INTERVAL_DAYS[masteryBand(masteryScore)].GOOD;
   return {
-    lifecycleState: 'STABLE',
+    lifecycleState: 'REINFORCING',
     lifecycleChangedAt: now,
     masteryScore,
     dueAt: new Date(now.getTime() + intervalDays * DAY_IN_MS),

@@ -67,7 +67,7 @@ function progressOf(cardId: string) {
 }
 
 describe('card.markKnown', () => {
-  it('makes a new card STABLE, due 5 days on, recording no attempt', async () => {
+  it('makes a new card REINFORCING, due 5 days on, recording no attempt', async () => {
     const deck = await capitalsDeck();
     const [france] = deck.cards;
     const before = Date.now();
@@ -79,7 +79,7 @@ describe('card.markKnown', () => {
     expect(result).toEqual({ markedCount: 1 });
     const progress = await progressOf(france.id);
     expect(progress).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 3,
       lastIntervalDays: 5,
       lastReviewedAt: null,
@@ -93,7 +93,7 @@ describe('card.markKnown', () => {
     expect(await prisma.cardAttempt.count()).toBe(0);
   });
 
-  it('marks several cards known at once, leaving one already STABLE as it is', async () => {
+  it('marks several cards known at once, leaving one already REINFORCING as it is', async () => {
     const deck = await capitalsDeck();
     const [france, japan, brazil] = deck.cards;
     const longAway = new Date(Date.now() + 60 * DAY_MS);
@@ -105,7 +105,7 @@ describe('card.markKnown', () => {
           direction: 'FORWARD',
         },
       },
-      data: { lifecycleState: 'STABLE', masteryScore: 9, dueAt: longAway },
+      data: { lifecycleState: 'REINFORCING', masteryScore: 9, dueAt: longAway },
     });
 
     const result = await createCaller().card.markKnown({
@@ -113,7 +113,7 @@ describe('card.markKnown', () => {
     });
 
     expect(result).toEqual({ markedCount: 2 });
-    expect((await progressOf(japan.id)).lifecycleState).toBe('STABLE');
+    expect((await progressOf(japan.id)).lifecycleState).toBe('REINFORCING');
     expect(await progressOf(brazil.id)).toMatchObject({
       masteryScore: 9,
       dueAt: longAway,
@@ -199,7 +199,7 @@ describe('card.markKnown', () => {
     await caller.study.acceptAnswer({ attemptId: missed.id });
 
     expect(await progressOf(france.id)).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       lapseCount: 0,
     });
   });

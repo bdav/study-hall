@@ -2273,7 +2273,7 @@ describe('StudyPage', () => {
     it("doesn't offer Mark known on a card already known, below its grade or in edit mode", async () => {
       mockCardHistory(() => ({
         ...historyOfCardOne(),
-        progress: { lifecycleState: 'STABLE', dueAt: null, isKnown: true },
+        progress: { lifecycleState: 'REINFORCING', dueAt: null, isKnown: true },
       }));
       const user = await startStudying();
       await answerCard(user);
@@ -2419,6 +2419,22 @@ describe('StudyPage', () => {
         'fourNailed itOct 21',
       ]);
       expect(history).not.toHaveTextContent(/mastery/i);
+    });
+
+    it('labels a card graduated from Learning as Reinforcing', async () => {
+      mockCardHistory(() => ({
+        ...historyOfCardOne(),
+        progress: {
+          lifecycleState: 'REINFORCING',
+          isKnown: false,
+          dueAt: new Date(Date.now() + 2 * DAY + 60 * 60 * 1000).toISOString(),
+        },
+      }));
+      await answerFirstCard();
+
+      expect(screen.getByRole('region', historyRegion)).toHaveTextContent(
+        'Reinforcing · Next review in 2 days',
+      );
     });
 
     it('shows the five most recent answers to the current version', async () => {

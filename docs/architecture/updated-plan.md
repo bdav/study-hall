@@ -370,7 +370,7 @@ Lifecycle states are explicit persisted scheduler state:
 type CardLifecycleState =
 | "NEW"
 | "LEARNING"
-| "STABLE"
+| "REINFORCING"
 | "RETIRED";
 
 Lifecycle state is not purely derived from masteryScore.
@@ -393,7 +393,7 @@ NEW cards:
 
 ## 6.2 LEARNING
 
-Early stabilization phase.
+Early phase, before graduating to REINFORCING.
 
 Characteristics:
 
@@ -405,7 +405,7 @@ Characteristics:
 
 ⸻
 
-## 6.3 STABLE
+## 6.3 REINFORCING
 
 Normal spaced repetition phase.
 
@@ -451,7 +451,7 @@ This happens even if first answer is MISSED.
 
 ⸻
 
-## 7.2 LEARNING → STABLE
+## 7.2 LEARNING → REINFORCING
 
 Requirements:
 
@@ -464,24 +464,24 @@ Successful means:
 GOOD
 NAILED
 
-PARTIALLY_CORRECT does not count toward stabilization.
+PARTIALLY_CORRECT does not count toward graduation.
 
-Same-session retries do not count toward stabilization requirements.
+Same-session retries do not count toward graduation.
 
 ⸻
 
-## 7.3 STABLE → LEARNING
+## 7.3 REINFORCING → LEARNING
 
-A single miss does not demote a stable card.
+A single miss does not demote a REINFORCING card.
 
 On one miss:
 
-- remain STABLE
+- remain REINFORCING
 - reduce masteryScore
 - increment lapseCount
 - schedule soon
 
-A STABLE card moves back to LEARNING only after:
+A REINFORCING card moves back to LEARNING only after:
 
 2 MISSED results within the last 3 finalized attempts
 
@@ -489,7 +489,7 @@ This keeps ordinary lapses from feeling punitive.
 
 ⸻
 
-## 7.4 STABLE → RETIRED
+## 7.4 REINFORCING → RETIRED
 
 Retirement is:
 
@@ -499,14 +499,14 @@ Retirement is:
 
 Eligibility:
 
-- lifecycleState = STABLE
+- lifecycleState = REINFORCING
 - masteryScore >= 9
 - latest result = NAILED
 - lastIntervalDays >= 60
 
 ⸻
 
-## 7.5 RETIRED → STABLE
+## 7.5 RETIRED → REINFORCING
 
 Only through explicit user action.
 
@@ -634,7 +634,7 @@ Rules:
 
 ⸻
 
-## 8.4 STABLE Interval Table
+## 8.4 REINFORCING Interval Table
 
 Use mastery bands, not exact 0–10 rows.
 
@@ -742,9 +742,9 @@ Do not store:
 isWeak: boolean
 weaknessScore: number
 
-A STABLE card is weak if:
+A REINFORCING card is weak if:
 
-lifecycleState === "STABLE" &&
+lifecycleState === "REINFORCING" &&
 (masteryScore <= 3 || recentMissCount >= 2)
 
 Where recentMissCount means:
@@ -759,12 +759,12 @@ Implementation guidance:
 
 Conceptual distinction:
 
-Due STABLE = scheduling urgency
-Weak STABLE = retrieval instability
+Due REINFORCING = scheduling urgency
+Weak Reinforcing = retrieval instability
 
 A highly mastered but overdue card is not automatically weak.
 
-Weak STABLE ranking:
+Weak Reinforcing ranking:
 
 1. recent lapse frequency
 2. masteryScore ascending
@@ -1036,8 +1036,8 @@ seed,
 Default Study mode builds from:
 
 1. Due LEARNING
-2. Due STABLE
-3. Weak STABLE
+2. Due REINFORCING
+3. Weak Reinforcing
 4. New cards
 5. Same-session reappearances
 
@@ -1047,22 +1047,22 @@ Target shares:
 
 Bucket Target Share
 Due LEARNING 20–30%
-Due STABLE 40–60%
-Weak STABLE 10–20%
+Due REINFORCING 40–60%
+Weak Reinforcing 10–20%
 New cards 10–20%
 
 Caps:
 
 Bucket Cap
-Due STABLE ~60%
-Weak STABLE ~20%
+Due REINFORCING ~60%
+Weak Reinforcing ~20%
 New cards ~20%
 
-Due LEARNING may exceed target because early stabilization is fragile.
+Due LEARNING may exceed target because a card just learning is fragile.
 
 Unused budget redistributes.
 
-As built (#8, `queueGenerator.ts`): sessions aim for their type's maximum. NEW takes 20%, or 10% when due LEARNING and weak STABLE candidates could fill half the session, and at least one card while any are NEW; weak STABLE up to 20%; due LEARNING up to half, past its target but never crowding out due STABLE; due STABLE up to 60%. Unused budget goes first to reviews past their caps, due LEARNING first, and to NEW only to reach the type's minimum, so an all-NEW deck's session is the minimum. In Study mode a weak STABLE card is drawn only once due: weakness prioritizes among due cards, and reviewing weak cards early is Drill Weakest's (#9). Sessions aren't sized by time estimates; the card bounds stand in for the target durations.
+As built (#8, `queueGenerator.ts`): sessions aim for their type's maximum. NEW takes 20%, or 10% when due LEARNING and weak Reinforcing candidates could fill half the session, and at least one card while any are NEW; weak Reinforcing up to 20%; due LEARNING up to half, past its target but never crowding out due REINFORCING; due REINFORCING up to 60%. Unused budget goes first to reviews past their caps, due LEARNING first, and to NEW only to reach the type's minimum, so an all-NEW deck's session is the minimum. In Study mode a weak Reinforcing card is drawn only once due: weakness prioritizes among due cards, and reviewing weak cards early is Drill Weakest's (#9). Sessions aren't sized by time estimates; the card bounds stand in for the target durations.
 
 ⸻
 
@@ -1237,17 +1237,17 @@ It does not introduce:
 
 Priorities:
 
-1. Weak STABLE
+1. Weak Reinforcing
 2. Due LEARNING
-3. Due STABLE
+3. Due REINFORCING
 4. New cards disabled
 
 Target mix:
 
 Bucket Target
-Weak STABLE 60–80%
+Weak Reinforcing 60–80%
 Due LEARNING 20–40%
-Due STABLE minimal overflow
+Due REINFORCING minimal overflow
 New cards 0%
 
 Drill Weakest is focused remediation, not punishment.
@@ -1283,7 +1283,7 @@ Cram is:
 
 Attempts still update ordinary scheduler state.
 
-As built (#9, `queueGenerator.ts`): with date-driven pacing deferred, Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40% and weak STABLE a tenth, due LEARNING up to half and due STABLE up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak STABLE cards up to 80% whether due or not, then due LEARNING, then due STABLE as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
+As built (#9, `queueGenerator.ts`): with date-driven pacing deferred, Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40% and weak Reinforcing a tenth, due LEARNING up to half and due REINFORCING up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak Reinforcing cards up to 80% whether due or not, then due LEARNING, then due REINFORCING as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
 
 > **Deferred (2026-11-01):** "Target-date-driven" above describes date-driven pacing, which isn't built: a cram target date is #87. Until then Cram counts a card in review as due once half its interval has passed (#9).
 
@@ -1292,8 +1292,8 @@ Example shift:
 Bucket Study Cram All
 New cards 10–20% 30–50%
 Due LEARNING high high
-Due STABLE moderate moderate/lower
-Weak STABLE 10–20% lower unless due/learning
+Due REINFORCING moderate moderate/lower
+Weak Reinforcing 10–20% lower unless due/learning
 
 ⸻
 

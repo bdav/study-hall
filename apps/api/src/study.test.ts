@@ -525,11 +525,11 @@ describe('studyRouter', () => {
 
       await createCaller().study.acceptAnswer({ attemptId: missed.id });
 
-      // NAILED in two sessions: mastery 0 → 2 → 4, and STABLE, due 4 days
+      // NAILED in two sessions: mastery 0 → 2 → 4, and REINFORCING, due 4 days
       // after the second (NAILED on a fragile card)
       const progress = await progressOf(cardId);
       expect(progress.masteryScore).toBe(4);
-      expect(progress.lifecycleState).toBe('STABLE');
+      expect(progress.lifecycleState).toBe('REINFORCING');
       expect(progress.dueAt).toEqual(
         new Date(missed.createdAt.getTime() + 4 * DAY_MS),
       );
@@ -770,7 +770,7 @@ describe('the card lifecycle across Study Sessions', () => {
     });
   }
 
-  it('graduates a card recalled in two Study Sessions to STABLE, on the STABLE table', async () => {
+  it('graduates a card recalled in two Study Sessions to REINFORCING, on the REINFORCING table', async () => {
     const deck = await deckWith(france);
     const [card] = deck.cards;
 
@@ -785,9 +785,9 @@ describe('the card lifecycle across Study Sessions', () => {
     await dueNow(card.id);
     await answerInNewSession(deck.id, 'Paris');
 
-    // NAILED on a fragile (mastery 2) STABLE card is 4 days
+    // NAILED on a fragile (mastery 2) REINFORCING card is 4 days
     expect(await progressOf(card.id)).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 4,
       lastIntervalDays: 4,
     });
@@ -804,7 +804,7 @@ describe('the card lifecycle across Study Sessions', () => {
 
     await createCaller().study.acceptAnswer({ attemptId: missed.id });
 
-    expect((await progressOf(card.id)).lifecycleState).toBe('STABLE');
+    expect((await progressOf(card.id)).lifecycleState).toBe('REINFORCING');
   });
 });
 
@@ -1203,10 +1203,10 @@ describe('session types and queue buckets', () => {
   }
 
   /**
-   * A deck of n STABLE cards, all due, Card 1 most overdue: a backlog
+   * A deck of n REINFORCING cards, all due, Card 1 most overdue: a backlog
    * bigger than a Standard session when n is over 25.
    */
-  async function stableBacklog(n: number) {
+  async function reinforcingBacklog(n: number) {
     const deck = await deckWith(numbered(n));
     for (const [i, card] of deck.cards.entries()) {
       await prisma.cardProgress.update({
@@ -1218,7 +1218,7 @@ describe('session types and queue buckets', () => {
           },
         },
         data: {
-          lifecycleState: 'STABLE',
+          lifecycleState: 'REINFORCING',
           masteryScore: 6,
           dueAt: new Date(Date.now() - (n - i) * hour),
         },
@@ -1242,7 +1242,7 @@ describe('session types and queue buckets', () => {
   }
 
   it('sizes the session by its type, as its preview says, however big the backlog', async () => {
-    const deck = await stableBacklog(60);
+    const deck = await reinforcingBacklog(60);
     const caller = createCaller();
 
     for (const [sessionType, size] of [
@@ -1267,7 +1267,7 @@ describe('session types and queue buckets', () => {
   });
 
   it('starts a Standard session when no type is given', async () => {
-    const deck = await stableBacklog(30);
+    const deck = await reinforcingBacklog(30);
 
     const session = await createCaller().study.startSession({
       deckId: deck.id,
@@ -1278,7 +1278,7 @@ describe('session types and queue buckets', () => {
   });
 
   it('brings in a weak card, mastery 3 or less, ahead of a backlog of more overdue ones', async () => {
-    const deck = await stableBacklog(30);
+    const deck = await reinforcingBacklog(30);
     const leastOverdue = deck.cards[29];
     await prisma.cardProgress.update({
       where: {
@@ -1295,7 +1295,7 @@ describe('session types and queue buckets', () => {
   });
 
   it('brings in a weak card, missed twice in its last five answers, ahead of the backlog', async () => {
-    const deck = await stableBacklog(30);
+    const deck = await reinforcingBacklog(30);
     const leastOverdue = deck.cards[29];
     await missIn(deck.id, leastOverdue.id);
     await missIn(deck.id, leastOverdue.id);
@@ -1304,7 +1304,7 @@ describe('session types and queue buckets', () => {
   });
 
   it("doesn't count a Retry's miss toward weakness", async () => {
-    const deck = await stableBacklog(30);
+    const deck = await reinforcingBacklog(30);
     const leastOverdue = deck.cards[29];
     // One miss, then its Retry missed too
     await recordStudySession(prisma, {
@@ -1320,7 +1320,7 @@ describe('session types and queue buckets', () => {
   });
 
   it('counts only misses since the card last started over', async () => {
-    const deck = await stableBacklog(30);
+    const deck = await reinforcingBacklog(30);
     const leastOverdue = deck.cards[29];
     await missIn(deck.id, leastOverdue.id);
     await missIn(deck.id, leastOverdue.id);
@@ -1339,7 +1339,7 @@ describe('session types and queue buckets', () => {
   });
 
   it('leaves out a weak card not yet due', async () => {
-    const deck = await stableBacklog(3);
+    const deck = await reinforcingBacklog(3);
     await prisma.cardProgress.update({
       where: {
         userId_cardId_direction: {
@@ -1409,7 +1409,7 @@ describe('study modes', () => {
     const deck = await deckWith(numbered(4));
     for (const card of deck.cards.slice(0, 2)) {
       await setProgress(card.id, {
-        lifecycleState: 'STABLE',
+        lifecycleState: 'REINFORCING',
         masteryScore: 2,
         dueAt: new Date(Date.now() + day),
         lastReviewedAt: new Date(Date.now() - day),
@@ -1426,7 +1426,7 @@ describe('study modes', () => {
     const deck = await deckWith(numbered(2));
     const [weak, known] = deck.cards;
     await setProgress(weak.id, {
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 2,
       dueAt: new Date(Date.now() + day),
       lastReviewedAt: new Date(Date.now() - day),
@@ -1454,13 +1454,13 @@ describe('study modes', () => {
     const [halfway, early] = deck.cards;
     // 4-day intervals: three quarters gone, and one quarter
     await setProgress(halfway.id, {
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 6,
       lastIntervalDays: 4,
       dueAt: new Date(Date.now() + day),
     });
     await setProgress(early.id, {
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 6,
       lastIntervalDays: 4,
       dueAt: new Date(Date.now() + 3 * day),
@@ -1475,7 +1475,7 @@ describe('study modes', () => {
   it("doesn't review early in Study mode", async () => {
     const deck = await deckWith(numbered(2));
     await setProgress(deck.cards[0].id, {
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 6,
       lastIntervalDays: 4,
       dueAt: new Date(Date.now() + day),

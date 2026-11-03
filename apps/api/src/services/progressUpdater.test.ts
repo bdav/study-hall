@@ -116,7 +116,7 @@ describe('applyAnswer', () => {
     });
   });
 
-  describe('LEARNING → STABLE', () => {
+  describe('LEARNING → REINFORCING', () => {
     const goodYesterday = answer('GOOD', {
       at: daysAgo(1),
       studySession: 'yesterday',
@@ -125,7 +125,7 @@ describe('applyAnswer', () => {
     it('graduates a card after 2 successes in 2 sessions, the latest one of them', () => {
       const next = applyAnswer(progress(), answer('GOOD'), [goodYesterday]);
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
       expect(next.lifecycleChangedAt).toEqual(now);
     });
 
@@ -134,7 +134,7 @@ describe('applyAnswer', () => {
         answer('NAILED', { at: daysAgo(1), studySession: 'yesterday' }),
       ]);
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
     });
 
     it('graduates a card after 2 successes on 2 days of one session', () => {
@@ -147,7 +147,7 @@ describe('applyAnswer', () => {
         [answer('GOOD', { at: lateLastNight, studySession: 'one' })],
       );
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
     });
 
     it("doesn't graduate a card after 2 successes in one session on one day", () => {
@@ -199,9 +199,9 @@ describe('applyAnswer', () => {
     });
   });
 
-  describe('STABLE → LEARNING', () => {
-    const stable = progress({
-      lifecycleState: 'STABLE',
+  describe('REINFORCING → LEARNING', () => {
+    const reinforcing = progress({
+      lifecycleState: 'REINFORCING',
       masteryScore: 7,
       lapseCount: 1,
       lifecycleChangedAt: daysAgo(10),
@@ -215,14 +215,14 @@ describe('applyAnswer', () => {
       );
     }
 
-    it('keeps a card STABLE on a single miss, counting a lapse', () => {
+    it('keeps a card REINFORCING on a single miss, counting a lapse', () => {
       const next = applyAnswer(
-        stable,
+        reinforcing,
         answer('MISSED'),
         earlier('GOOD', 'GOOD'),
       );
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
       expect(next.lifecycleChangedAt).toEqual(daysAgo(10));
       expect(next.lapseCount).toBe(2);
     });
@@ -235,7 +235,7 @@ describe('applyAnswer', () => {
       'moves a card back to LEARNING on a second miss in its last 3 answers (%s, %s, MISSED)',
       (first, second) => {
         const next = applyAnswer(
-          stable,
+          reinforcing,
           answer('MISSED'),
           earlier('GOOD', first, second),
         );
@@ -247,22 +247,22 @@ describe('applyAnswer', () => {
       },
     );
 
-    it("keeps a card STABLE when its earlier miss isn't in its last 3 answers", () => {
+    it("keeps a card REINFORCING when its earlier miss isn't in its last 3 answers", () => {
       const next = applyAnswer(
-        stable,
+        reinforcing,
         answer('MISSED'),
         earlier('MISSED', 'GOOD', 'GOOD'),
       );
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
     });
 
     it.each(['PARTIALLY_CORRECT', 'GOOD', 'NAILED'] as const)(
       "doesn't count a lapse on %s, nor move the card",
       (grade) => {
-        const next = applyAnswer(stable, answer(grade), earlier('MISSED'));
+        const next = applyAnswer(reinforcing, answer(grade), earlier('MISSED'));
 
-        expect(next.lifecycleState).toBe('STABLE');
+        expect(next.lifecycleState).toBe('REINFORCING');
         expect(next.lapseCount).toBe(1);
       },
     );
@@ -274,7 +274,7 @@ describe('applyAnswer', () => {
     });
   });
 
-  describe('STABLE intervals', () => {
+  describe('REINFORCING intervals', () => {
     const hours = (n: number) => n / 24;
 
     it.each([
@@ -299,7 +299,7 @@ describe('applyAnswer', () => {
       'schedules a %s card (mastery %i) answered %s in %f days',
       (_, masteryScore, grade, days) => {
         const next = applyAnswer(
-          progress({ lifecycleState: 'STABLE', masteryScore }),
+          progress({ lifecycleState: 'REINFORCING', masteryScore }),
           answer(grade),
           [],
         );
@@ -320,7 +320,7 @@ describe('applyAnswer', () => {
       'bands a card by its mastery before the answer: GOOD at %i is %i days',
       (masteryScore, days) => {
         const next = applyAnswer(
-          progress({ lifecycleState: 'STABLE', masteryScore }),
+          progress({ lifecycleState: 'REINFORCING', masteryScore }),
           answer('GOOD'),
           [],
         );
@@ -329,12 +329,12 @@ describe('applyAnswer', () => {
       },
     );
 
-    it('schedules a card that graduates on the STABLE table', () => {
+    it('schedules a card that graduates on the REINFORCING table', () => {
       const next = applyAnswer(progress({ masteryScore: 4 }), answer('GOOD'), [
         answer('GOOD', { at: daysAgo(1), studySession: 'yesterday' }),
       ]);
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
       expect(intervalInDays(next)).toBeCloseTo(5);
     });
   });
@@ -342,12 +342,12 @@ describe('applyAnswer', () => {
   describe('RETIRED', () => {
     it("never retires a card, however well it's known", () => {
       const next = applyAnswer(
-        progress({ lifecycleState: 'STABLE', masteryScore: 10 }),
+        progress({ lifecycleState: 'REINFORCING', masteryScore: 10 }),
         answer('NAILED'),
         [answer('NAILED', { at: daysAgo(90), studySession: 'earlier' })],
       );
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
     });
 
     it.each(['MISSED', 'NAILED'] as const)(
@@ -365,10 +365,10 @@ describe('applyAnswer', () => {
   });
 
   describe('lateness bonus', () => {
-    /** A solid STABLE card last given 10 days, answered this late. */
+    /** A solid REINFORCING card last given 10 days, answered this late. */
     function solidCardDaysLate(daysLate: number) {
       return progress({
-        lifecycleState: 'STABLE',
+        lifecycleState: 'REINFORCING',
         masteryScore: 7,
         lastIntervalDays: 10,
         dueAt: daysAgo(daysLate),
@@ -422,7 +422,7 @@ describe('applyAnswer', () => {
     it('never gives more than 90 days', () => {
       const next = applyAnswer(
         progress({
-          lifecycleState: 'STABLE',
+          lifecycleState: 'REINFORCING',
           masteryScore: 10,
           lastIntervalDays: 60,
           dueAt: daysAgo(120),
@@ -441,7 +441,7 @@ describe('applyAnswer', () => {
         [answer('GOOD', { at: daysAgo(6), studySession: 'earlier' })],
       );
 
-      expect(next.lifecycleState).toBe('STABLE');
+      expect(next.lifecycleState).toBe('REINFORCING');
       expect(intervalInDays(next)).toBeCloseTo(5);
     });
 
@@ -481,7 +481,7 @@ describe('replayAnswers', () => {
     });
   });
 
-  it('keeps a card STABLE on its first miss, whatever it missed before it graduated', () => {
+  it('keeps a card REINFORCING on its first miss, whatever it missed before it graduated', () => {
     const replayed = replayAnswers([
       onDay(1, 'GOOD'),
       onDay(2, 'MISSED'),
@@ -489,7 +489,10 @@ describe('replayAnswers', () => {
       onDay(8, 'MISSED'),
     ]);
 
-    expect(replayed).toMatchObject({ lifecycleState: 'STABLE', lapseCount: 1 });
+    expect(replayed).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      lapseCount: 1,
+    });
   });
 
   it('needs 2 new successes to graduate again, not the ones from before it lapsed', () => {
@@ -506,7 +509,7 @@ describe('replayAnswers', () => {
     expect(
       replayAnswers([...lapsed, onDay(8, 'GOOD'), onDay(9, 'GOOD')])
         .lifecycleState,
-    ).toBe('STABLE');
+    ).toBe('REINFORCING');
   });
 });
 
@@ -518,7 +521,7 @@ describe('replayAnswers, with a card marked known', () => {
 
   it('replays the mark, with no answers since', () => {
     expect(replayAnswers([], at(1))).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 3,
       markedKnownAt: at(1),
     });
@@ -526,7 +529,7 @@ describe('replayAnswers, with a card marked known', () => {
 
   it('replays a miss at the review after the mark as a lapse', () => {
     expect(replayAnswers([onDay(6, 'MISSED')], at(1))).toMatchObject({
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       lapseCount: 1,
     });
   });
@@ -537,14 +540,17 @@ describe('replayAnswers, with a card marked known', () => {
       at(2),
     );
 
-    // Missed while LEARNING, marked known, then a first STABLE miss
-    expect(replayed).toMatchObject({ lifecycleState: 'STABLE', lapseCount: 1 });
+    // Missed while LEARNING, marked known, then a first REINFORCING miss
+    expect(replayed).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      lapseCount: 1,
+    });
   });
 });
 
 describe('markKnown', () => {
   it.each(['NEW', 'LEARNING'] as const)(
-    'makes a %s card STABLE as if it had just graduated, due 5 days on',
+    'makes a %s card REINFORCING as if it had just graduated, due 5 days on',
     (lifecycleState) => {
       const known = markKnown(
         progress({
@@ -557,7 +563,7 @@ describe('markKnown', () => {
       );
 
       expect(known).toEqual({
-        lifecycleState: 'STABLE',
+        lifecycleState: 'REINFORCING',
         lifecycleChangedAt: now,
         masteryScore: 3,
         dueAt: new Date('2026-10-27T12:00:00Z'),
@@ -576,7 +582,7 @@ describe('markKnown', () => {
     expect(known).toMatchObject({ masteryScore: 7, lastIntervalDays: 14 });
   });
 
-  it.each(['STABLE', 'RETIRED'] as const)(
+  it.each(['REINFORCING', 'RETIRED'] as const)(
     'leaves a %s card as it is',
     (lifecycleState) => {
       expect(markKnown(progress({ lifecycleState }), now)).toBeNull();
@@ -591,6 +597,6 @@ describe('markKnown', () => {
       answer('GOOD', { at: daysAgo(11), studySession: 'before' }),
     ]);
 
-    expect(next.lifecycleState).toBe('STABLE');
+    expect(next.lifecycleState).toBe('REINFORCING');
   });
 });

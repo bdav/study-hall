@@ -16,12 +16,12 @@ const RECENT_ANSWERS = 5;
 
 // The progress a learner sees, in plain words; never the mastery score
 const lifecycleLabels: Record<
-  'NEW' | 'LEARNING' | 'STABLE' | 'RETIRED',
+  'NEW' | 'LEARNING' | 'REINFORCING' | 'RETIRED',
   string
 > = {
   NEW: 'New',
   LEARNING: 'Still learning',
-  STABLE: 'Well learned',
+  REINFORCING: 'Reinforcing',
   RETIRED: 'Retired',
 };
 

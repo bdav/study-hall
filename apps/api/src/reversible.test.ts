@@ -78,7 +78,7 @@ async function learnForward(deckId: string) {
   await prisma.cardProgress.updateMany({
     where: { deckId, direction: 'FORWARD' },
     data: {
-      lifecycleState: 'STABLE',
+      lifecycleState: 'REINFORCING',
       masteryScore: 8,
       dueAt: new Date(Date.now() + 30 * DAY_MS),
     },
@@ -503,7 +503,7 @@ describe('Mark known in a Study Direction', () => {
     await createCaller().card.markKnown({ cardIds: [france.id] });
 
     expect((await progressOf(france.id, 'FORWARD')).lifecycleState).toBe(
-      'STABLE',
+      'REINFORCING',
     );
     expect((await progressOf(france.id, 'REVERSE')).lifecycleState).toBe('NEW');
   });
@@ -523,7 +523,7 @@ describe('Mark known in a Study Direction', () => {
     });
 
     expect((await progressOf(france.id, 'REVERSE')).lifecycleState).toBe(
-      'STABLE',
+      'REINFORCING',
     );
     expect((await progressOf(france.id, 'FORWARD')).lifecycleState).toBe('NEW');
     expect(both).toEqual({ markedCount: 2 });

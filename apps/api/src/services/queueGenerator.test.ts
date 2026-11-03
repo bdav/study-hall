@@ -9,8 +9,8 @@ function ids(prefix: string, n: number) {
 function candidates(counts: Partial<Record<keyof QueueCandidates, number>>) {
   return {
     dueLearning: ids('L', counts.dueLearning ?? 0),
-    dueStable: ids('S', counts.dueStable ?? 0),
-    weakStable: ids('W', counts.weakStable ?? 0),
+    dueReinforcing: ids('R', counts.dueReinforcing ?? 0),
+    weakReinforcing: ids('W', counts.weakReinforcing ?? 0),
     newCards: ids('N', counts.newCards ?? 0),
   };
 }
@@ -21,20 +21,20 @@ function composition(queue: string[]) {
     queue.filter((id) => id.startsWith(prefix)).length;
   return {
     dueLearning: count('L'),
-    dueStable: count('S'),
-    weakStable: count('W'),
+    dueReinforcing: count('R'),
+    weakReinforcing: count('W'),
     newCards: count('N'),
   };
 }
 
 // A Quick session's queue for seed 42, recorded once: a change to it is a
 // change to which cards a seed gives, or their order
-const GOLDEN = ['L2', 'L1', 'N1', 'S2', 'S3', 'N2', 'W1', 'S1'];
+const GOLDEN = ['L2', 'L1', 'N1', 'R2', 'R3', 'N2', 'W1', 'R1'];
 // Drill Weakest's and Cram's Quick queues for seed 42, recorded likewise
 // prettier-ignore
 const DRILL_GOLDEN = ['L3', 'L1', 'W3', 'W8', 'W7', 'W9', 'W1', 'L2', 'W4', 'W6', 'W2', 'W5'];
 // prettier-ignore
-const CRAM_GOLDEN = ['L3', 'S4', 'N1', 'L2', 'N2', 'L1', 'S3', 'N3', 'S2', 'N4', 'W1', 'S1'];
+const CRAM_GOLDEN = ['L3', 'R4', 'N1', 'L2', 'N2', 'L1', 'R3', 'N3', 'R2', 'N4', 'W1', 'R1'];
 
 describe('composeQueue', () => {
   it('gives an all-NEW deck a session of the minimum size, in deck order', () => {
@@ -54,8 +54,8 @@ describe('composeQueue', () => {
     const queue = composeQueue({
       candidates: candidates({
         dueLearning: 4,
-        weakStable: 8,
-        dueStable: 40,
+        weakReinforcing: 8,
+        dueReinforcing: 40,
         newCards: 40,
       }),
       sessionType: 'STANDARD',
@@ -63,11 +63,11 @@ describe('composeQueue', () => {
     });
 
     // NEW and weak at their 20% caps (5 of 25), every due LEARNING card,
-    // and due STABLE the rest, under its 60% cap
+    // and due REINFORCING the rest, under its 60% cap
     expect(composition(queue)).toEqual({
       dueLearning: 4,
-      weakStable: 5,
-      dueStable: 11,
+      weakReinforcing: 5,
+      dueReinforcing: 11,
       newCards: 5,
     });
   });
@@ -76,8 +76,8 @@ describe('composeQueue', () => {
     const queue = composeQueue({
       candidates: candidates({
         dueLearning: 4,
-        weakStable: 8,
-        dueStable: 40,
+        weakReinforcing: 8,
+        dueReinforcing: 40,
         newCards: 40,
       }),
       sessionType: 'STANDARD',
@@ -87,17 +87,17 @@ describe('composeQueue', () => {
     expect(queue.filter((id) => id.startsWith('W')).sort()).toEqual(
       ids('W', 5).sort(),
     );
-    expect(queue.filter((id) => id.startsWith('S')).sort()).toEqual(
-      ids('S', 11).sort(),
+    expect(queue.filter((id) => id.startsWith('R')).sort()).toEqual(
+      ids('R', 11).sort(),
     );
   });
 
-  it('gives NEW cards a tenth when shaky cards could fill half the session, due LEARNING up to half, past its share, leaving due STABLE some', () => {
+  it('gives NEW cards a tenth when shaky cards could fill half the session, due LEARNING up to half, past its share, leaving due REINFORCING some', () => {
     const queue = composeQueue({
       candidates: candidates({
         dueLearning: 20,
-        weakStable: 10,
-        dueStable: 40,
+        weakReinforcing: 10,
+        dueReinforcing: 40,
         newCards: 40,
       }),
       sessionType: 'STANDARD',
@@ -105,11 +105,11 @@ describe('composeQueue', () => {
     });
 
     // NEW 2 (a tenth of 25), weak 5 (its cap), due LEARNING 12 (half),
-    // due STABLE the rest
+    // due REINFORCING the rest
     expect(composition(queue)).toEqual({
       dueLearning: 12,
-      weakStable: 5,
-      dueStable: 6,
+      weakReinforcing: 5,
+      dueReinforcing: 6,
       newCards: 2,
     });
   });
@@ -125,7 +125,7 @@ describe('composeQueue', () => {
   });
 
   it('is no bigger for a due backlog, which decides only which cards come', () => {
-    const backlog = candidates({ dueStable: 1000 });
+    const backlog = candidates({ dueReinforcing: 1000 });
     const size = (sessionType: 'QUICK' | 'STANDARD' | 'DEEP') =>
       composeQueue({ candidates: backlog, sessionType, seed: 1 }).length;
 
@@ -138,7 +138,7 @@ describe('composeQueue', () => {
         sessionType: 'STANDARD',
         seed: 1,
       }).sort(),
-    ).toEqual(ids('S', 25).sort());
+    ).toEqual(ids('R', 25).sort());
   });
 
   it('lets due LEARNING past half when other buckets run short', () => {
@@ -153,33 +153,43 @@ describe('composeQueue', () => {
 
   it('lets reviews past their caps when other buckets run short', () => {
     const queue = composeQueue({
-      candidates: candidates({ dueStable: 100, newCards: 3 }),
+      candidates: candidates({ dueReinforcing: 100, newCards: 3 }),
       sessionType: 'STANDARD',
       seed: 1,
     });
 
-    expect(composition(queue)).toMatchObject({ dueStable: 22, newCards: 3 });
+    expect(composition(queue)).toMatchObject({
+      dueReinforcing: 22,
+      newCards: 3,
+    });
   });
 
   it('keeps NEW cards to their cap once the session reaches its minimum', () => {
     const queue = composeQueue({
-      candidates: candidates({ dueStable: 6, newCards: 100 }),
+      candidates: candidates({ dueReinforcing: 6, newCards: 100 }),
       sessionType: 'STANDARD',
       seed: 1,
     });
 
     // 5 NEW (20% of 25) and 6 reviews: 11, past the minimum of 10
-    expect(composition(queue)).toMatchObject({ dueStable: 6, newCards: 5 });
+    expect(composition(queue)).toMatchObject({
+      dueReinforcing: 6,
+      newCards: 5,
+    });
   });
 
   it('studies all of a sparse deck, and nothing of an empty one', () => {
     const sparse = composeQueue({
-      candidates: candidates({ dueLearning: 1, dueStable: 1, newCards: 1 }),
+      candidates: candidates({
+        dueLearning: 1,
+        dueReinforcing: 1,
+        newCards: 1,
+      }),
       sessionType: 'STANDARD',
       seed: 1,
     });
 
-    expect(sparse.sort()).toEqual(['L1', 'N1', 'S1']);
+    expect(sparse.sort()).toEqual(['L1', 'N1', 'R1']);
     expect(
       composeQueue({
         candidates: candidates({}),
@@ -191,7 +201,7 @@ describe('composeQueue', () => {
 
   it('spreads NEW cards evenly through the session, in deck order', () => {
     const queue = composeQueue({
-      candidates: candidates({ dueStable: 20, newCards: 5 }),
+      candidates: candidates({ dueReinforcing: 20, newCards: 5 }),
       sessionType: 'STANDARD',
       seed: 1,
     });
@@ -204,7 +214,7 @@ describe('composeQueue', () => {
   it('orders the same cards the same way for the same seed, and differently for another', () => {
     const queue = (seed: number) =>
       composeQueue({
-        candidates: candidates({ dueLearning: 5, dueStable: 20 }),
+        candidates: candidates({ dueLearning: 5, dueReinforcing: 20 }),
         sessionType: 'STANDARD',
         seed,
       });
@@ -219,8 +229,8 @@ describe('composeQueue', () => {
       composeQueue({
         candidates: candidates({
           dueLearning: 2,
-          weakStable: 1,
-          dueStable: 3,
+          weakReinforcing: 1,
+          dueReinforcing: 3,
           newCards: 2,
         }),
         sessionType: 'QUICK',
@@ -242,23 +252,47 @@ describe('composeQueue in Drill Weakest', () => {
   it('fills 80% with weak cards and the rest with due LEARNING, never NEW', () => {
     expect(
       composition(
-        drill({ weakStable: 40, dueLearning: 20, dueStable: 40, newCards: 40 }),
+        drill({
+          weakReinforcing: 40,
+          dueLearning: 20,
+          dueReinforcing: 40,
+          newCards: 40,
+        }),
       ),
-    ).toEqual({ weakStable: 20, dueLearning: 5, dueStable: 0, newCards: 0 });
+    ).toEqual({
+      weakReinforcing: 20,
+      dueLearning: 5,
+      dueReinforcing: 0,
+      newCards: 0,
+    });
   });
 
-  it('gives due LEARNING the room weak cards leave, and due STABLE only what overflows', () => {
+  it('gives due LEARNING the room weak cards leave, and due REINFORCING only what overflows', () => {
     expect(
-      composition(drill({ weakStable: 5, dueLearning: 20, dueStable: 40 })),
-    ).toEqual({ weakStable: 5, dueLearning: 20, dueStable: 0, newCards: 0 });
+      composition(
+        drill({ weakReinforcing: 5, dueLearning: 20, dueReinforcing: 40 }),
+      ),
+    ).toEqual({
+      weakReinforcing: 5,
+      dueLearning: 20,
+      dueReinforcing: 0,
+      newCards: 0,
+    });
     expect(
-      composition(drill({ weakStable: 5, dueLearning: 3, dueStable: 40 })),
-    ).toEqual({ weakStable: 5, dueLearning: 3, dueStable: 17, newCards: 0 });
+      composition(
+        drill({ weakReinforcing: 5, dueLearning: 3, dueReinforcing: 40 }),
+      ),
+    ).toEqual({
+      weakReinforcing: 5,
+      dueLearning: 3,
+      dueReinforcing: 17,
+      newCards: 0,
+    });
   });
 
   it('takes weak cards past 80% when nothing else is left', () => {
-    expect(composition(drill({ weakStable: 40 }))).toMatchObject({
-      weakStable: 25,
+    expect(composition(drill({ weakReinforcing: 40 }))).toMatchObject({
+      weakReinforcing: 25,
     });
   });
 
@@ -270,9 +304,9 @@ describe('composeQueue in Drill Weakest', () => {
     expect(
       composeQueue({
         candidates: candidates({
-          weakStable: 12,
+          weakReinforcing: 12,
           dueLearning: 4,
-          dueStable: 4,
+          dueReinforcing: 4,
           newCards: 4,
         }),
         sessionType: 'QUICK',
@@ -295,17 +329,27 @@ describe('composeQueue in Cram', () => {
   it('gives NEW cards 40%, weak cards a tenth, and due LEARNING up to half', () => {
     expect(
       composition(
-        cram({ dueLearning: 20, weakStable: 10, dueStable: 40, newCards: 40 }),
+        cram({
+          dueLearning: 20,
+          weakReinforcing: 10,
+          dueReinforcing: 40,
+          newCards: 40,
+        }),
       ),
-    ).toEqual({ newCards: 10, weakStable: 2, dueLearning: 12, dueStable: 1 });
+    ).toEqual({
+      newCards: 10,
+      weakReinforcing: 2,
+      dueLearning: 12,
+      dueReinforcing: 1,
+    });
   });
 
-  it("gives due STABLE the reviews' room when there is no LEARNING", () => {
-    expect(composition(cram({ dueStable: 40, newCards: 40 }))).toEqual({
+  it("gives due REINFORCING the reviews' room when there is no LEARNING", () => {
+    expect(composition(cram({ dueReinforcing: 40, newCards: 40 }))).toEqual({
       newCards: 10,
-      weakStable: 0,
+      weakReinforcing: 0,
       dueLearning: 0,
-      dueStable: 15,
+      dueReinforcing: 15,
     });
   });
 
@@ -318,8 +362,8 @@ describe('composeQueue in Cram', () => {
       composeQueue({
         candidates: candidates({
           dueLearning: 3,
-          weakStable: 2,
-          dueStable: 6,
+          weakReinforcing: 2,
+          dueReinforcing: 6,
           newCards: 8,
         }),
         sessionType: 'QUICK',

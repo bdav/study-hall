@@ -19,7 +19,7 @@ enum RecallGrade {
 enum CardLifecycleState {
   NEW
   LEARNING
-  STABLE
+  REINFORCING
   RETIRED
 }
 
@@ -268,7 +268,7 @@ model CardProgress {
   lastReviewedAt     DateTime?
   lastIntervalDays   Float?
   lapseCount         Int                @default(0)
-  // When the card last entered its lifecycle state, so LEARNING → STABLE
+  // When the card last entered its lifecycle state, so LEARNING → REINFORCING
   // counts only the successes since (#7); none from before it was recorded
   lifecycleChangedAt DateTime?
   // When the learner last marked the card known (ADR-0009), so replaying its

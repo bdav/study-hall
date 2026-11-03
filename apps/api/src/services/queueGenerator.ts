@@ -10,14 +10,14 @@ import { countsSinceReset } from './countedAttempts.js';
 
 /**
  * The cards a Study Session can draw from, by bucket, each in the order it
- * prefers them (`updated-plan.md` §13.3): due LEARNING and due STABLE most
- * overdue first, weak STABLE as §10 ranks them, and NEW in deck order (§14).
- * The buckets don't overlap: a due STABLE card that's weak is in weakStable.
+ * prefers them (`updated-plan.md` §13.3): due LEARNING and due REINFORCING most
+ * overdue first, weak Reinforcing as §10 ranks them, and NEW in deck order (§14).
+ * The buckets don't overlap: a due REINFORCING card that's weak is in weakReinforcing.
  */
 export type QueueCandidates = {
   dueLearning: string[];
-  dueStable: string[];
-  weakStable: string[];
+  dueReinforcing: string[];
+  weakReinforcing: string[];
   newCards: string[];
 };
 
@@ -32,16 +32,16 @@ export const SESSION_SIZES: Record<SessionType, { min: number; max: number }> =
 /**
  * The most of a Study mode session each bucket of reviews takes before
  * others run short (§13.3). Due LEARNING may go past its 20–30% target, as
- * early stabilization is fragile, but only to half, so it can't crowd out
- * due STABLE (§13.4).
+ * a card just learning is fragile, but only to half, so it can't crowd out
+ * due REINFORCING (§13.4).
  */
 const WEAK_CAP = 0.2;
 const LEARNING_CAP = 0.5;
-const DUE_STABLE_CAP = 0.6;
+const DUE_REINFORCING_CAP = 0.6;
 
 /**
  * NEW cards' share of a Study mode session (§14.1): up to a fifth
- * normally, a tenth when shaky cards (due LEARNING and weak STABLE) could
+ * normally, a tenth when shaky cards (due LEARNING and weak Reinforcing) could
  * fill half of it, and never none while there are any, a trickle of one at
  * least.
  */
@@ -59,16 +59,21 @@ const CRAM_NEW_SHARE = 0.4;
 const CRAM_WEAK_CAP = 0.1;
 
 /** How many cards of each bucket a session takes. */
-type Counts = { learning: number; weak: number; stable: number; new: number };
+type Counts = {
+  learning: number;
+  weak: number;
+  reinforcing: number;
+  new: number;
+};
 
 const total = (counts: Counts) =>
-  counts.learning + counts.weak + counts.stable + counts.new;
+  counts.learning + counts.weak + counts.reinforcing + counts.new;
 
 /** The bucket each count draws from. */
 const BUCKET_OF = {
   learning: 'dueLearning',
-  weak: 'weakStable',
-  stable: 'dueStable',
+  weak: 'weakReinforcing',
+  reinforcing: 'dueReinforcing',
   new: 'newCards',
 } as const satisfies Record<keyof Counts, keyof QueueCandidates>;
 
@@ -94,12 +99,12 @@ function fillRoom(
 }
 
 /**
- * The counts with due LEARNING and then due STABLE given what the session
+ * The counts with due LEARNING and then due REINFORCING given what the session
  * has room for, up to their caps.
  */
 function withReviewCaps(
   counts: Counts,
-  { dueLearning, dueStable }: QueueCandidates,
+  { dueLearning, dueReinforcing }: QueueCandidates,
   max: number,
 ) {
   const capped = { ...counts };
@@ -108,9 +113,9 @@ function withReviewCaps(
     Math.floor(max * LEARNING_CAP),
     max - total(capped),
   );
-  capped.stable = Math.min(
-    dueStable.length,
-    Math.floor(max * DUE_STABLE_CAP),
+  capped.reinforcing = Math.min(
+    dueReinforcing.length,
+    Math.floor(max * DUE_REINFORCING_CAP),
     max - total(capped),
   );
   return capped;
@@ -121,27 +126,27 @@ type Size = { min: number; max: number };
 
 /**
  * Study mode (§13.3): NEW and weak cards up to a fifth each, NEW a tenth
- * under pressure; due LEARNING up to half; due STABLE up to 60%. Reviews go
+ * under pressure; due LEARNING up to half; due REINFORCING up to 60%. Reviews go
  * past their caps when other buckets run short; NEW cards past theirs only
  * to reach the type's minimum, as for a deck of NEW cards.
  */
 function studyCounts(candidates: QueueCandidates, { min, max }: Size): Counts {
-  const { dueLearning, weakStable, newCards } = candidates;
-  const underPressure = dueLearning.length + weakStable.length >= max / 2;
+  const { dueLearning, weakReinforcing, newCards } = candidates;
+  const underPressure = dueLearning.length + weakReinforcing.length >= max / 2;
   const newShare = underPressure ? NEW_SHARE_UNDER_PRESSURE : NEW_SHARE;
   const counts = withReviewCaps(
     {
       new: Math.min(newCards.length, Math.max(1, Math.floor(max * newShare))),
-      weak: Math.min(weakStable.length, Math.floor(max * WEAK_CAP)),
+      weak: Math.min(weakReinforcing.length, Math.floor(max * WEAK_CAP)),
       learning: 0,
-      stable: 0,
+      reinforcing: 0,
     },
     candidates,
     max,
   );
   const filled = fillRoom(counts, candidates, max, [
     'learning',
-    'stable',
+    'reinforcing',
     'weak',
   ]);
   return fillRoom(filled, candidates, min, ['new']);
@@ -149,25 +154,25 @@ function studyCounts(candidates: QueueCandidates, { min, max }: Size): Counts {
 
 /**
  * Drill Weakest (§16.2): weak cards up to 80%, then due LEARNING, then due
- * STABLE only as overflow, and no NEW cards; weak cards past 80% when
+ * REINFORCING only as overflow, and no NEW cards; weak cards past 80% when
  * nothing else is left.
  */
 function drillCounts(candidates: QueueCandidates, { max }: Size): Counts {
   const counts = {
     weak: Math.min(
-      candidates.weakStable.length,
+      candidates.weakReinforcing.length,
       Math.floor(max * DRILL_WEAK_SHARE),
     ),
     learning: 0,
-    stable: 0,
+    reinforcing: 0,
     new: 0,
   };
-  return fillRoom(counts, candidates, max, ['learning', 'stable', 'weak']);
+  return fillRoom(counts, candidates, max, ['learning', 'reinforcing', 'weak']);
 }
 
 /**
  * Cram (§16.3): NEW cards 40% and weak cards a tenth, then due LEARNING up
- * to half and due STABLE up to 60%. Room left goes to reviews, then to NEW
+ * to half and due REINFORCING up to 60%. Room left goes to reviews, then to NEW
  * cards, so a deck with nothing to review is covered as fast as sessions
  * allow.
  */
@@ -179,18 +184,18 @@ function cramCounts(candidates: QueueCandidates, { max }: Size): Counts {
         Math.floor(max * CRAM_NEW_SHARE),
       ),
       weak: Math.min(
-        candidates.weakStable.length,
+        candidates.weakReinforcing.length,
         Math.floor(max * CRAM_WEAK_CAP),
       ),
       learning: 0,
-      stable: 0,
+      reinforcing: 0,
     },
     candidates,
     max,
   );
   return fillRoom(counts, candidates, max, [
     'learning',
-    'stable',
+    'reinforcing',
     'weak',
     'new',
   ]);
@@ -257,8 +262,8 @@ export function composeQueue({
   const reviews = shuffle(
     [
       ...candidates.dueLearning.slice(0, counts.learning),
-      ...candidates.weakStable.slice(0, counts.weak),
-      ...candidates.dueStable.slice(0, counts.stable),
+      ...candidates.weakReinforcing.slice(0, counts.weak),
+      ...candidates.dueReinforcing.slice(0, counts.reinforcing),
     ],
     seed,
   );
@@ -307,14 +312,14 @@ function mulberry32(seed: number) {
   };
 }
 
-/** A STABLE card with this mastery or less is weak (§10). */
+/** A REINFORCING card with this mastery or less is weak (§10). */
 const WEAK_MASTERY = 3;
 /** Or one missed this often in its last RECENT_ANSWERS answers. */
 const WEAK_MISSES = 2;
 const RECENT_ANSWERS = 5;
 
 /**
- * How many LEARNING and STABLE cards, soonest due first, are considered: a
+ * How many LEARNING and REINFORCING cards, soonest due first, are considered: a
  * bound on what a backlog makes each preview and start read (§13.1), and
  * well past what the biggest session takes.
  */
@@ -356,7 +361,7 @@ function isDue(
 }
 
 /**
- * Whether a STABLE card is weak (§10): mastery 3 or less, or 2 misses in
+ * Whether a REINFORCING card is weak (§10): mastery 3 or less, or 2 misses in
  * its last 5 answers. A card marked known since it was last answered isn't,
  * though marking it known sets its mastery to 3: the learner says they know
  * it, until an answer says otherwise (ADR-0009).
@@ -403,7 +408,7 @@ export async function findQueueCandidates(
         userId,
         deckId,
         direction,
-        lifecycleState: { in: ['LEARNING', 'STABLE'] },
+        lifecycleState: { in: ['LEARNING', 'REINFORCING'] },
         dueAt: { not: null },
       },
       orderBy: [{ dueAt: 'asc' }, { cardId: 'asc' }],
@@ -417,7 +422,7 @@ export async function findQueueCandidates(
             userId,
             deckId,
             direction,
-            lifecycleState: 'STABLE',
+            lifecycleState: 'REINFORCING',
             masteryScore: { lte: WEAK_MASTERY },
           },
           orderBy: [{ masteryScore: 'asc' }, { cardId: 'asc' }],
@@ -435,15 +440,15 @@ export async function findQueueCandidates(
       : [],
   ]);
 
-  const stable = new Map(
+  const reinforcing = new Map(
     [...inReview, ...lowMastery]
-      .filter((card) => card.lifecycleState === 'STABLE')
+      .filter((card) => card.lifecycleState === 'REINFORCING')
       .map((card) => [card.cardId, card]),
   );
   const misses = await recentMisses(prisma, userId, direction, [
-    ...stable.values(),
+    ...reinforcing.values(),
   ]);
-  const weak = [...stable.values()]
+  const weak = [...reinforcing.values()]
     .map((card) => ({ card, misses: misses.get(card.cardId) ?? 0 }))
     .filter(
       ({ card, misses }) =>
@@ -465,13 +470,14 @@ export async function findQueueCandidates(
       .filter((card) => card.lifecycleState === 'LEARNING')
       .slice(0, most)
       .map((card) => card.cardId),
-    dueStable: due
+    dueReinforcing: due
       .filter(
-        (card) => card.lifecycleState === 'STABLE' && !weakIds.has(card.cardId),
+        (card) =>
+          card.lifecycleState === 'REINFORCING' && !weakIds.has(card.cardId),
       )
       .slice(0, most)
       .map((card) => card.cardId),
-    weakStable: weak.slice(0, most),
+    weakReinforcing: weak.slice(0, most),
     newCards: newCards.map((card) => card.cardId),
   };
 }
