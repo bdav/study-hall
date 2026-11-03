@@ -1,4 +1,9 @@
 import '@testing-library/jest-dom';
+import { configure } from '@testing-library/react';
+
+// CI runners are slower than a laptop: give findBy and waitFor 3 seconds
+// rather than 1 before they fail
+configure({ asyncUtilTimeout: 3000 });
 
 // Radix UI's Select uses pointer capture and scrolling, which jsdom lacks
 Element.prototype.hasPointerCapture ??= () => false;
