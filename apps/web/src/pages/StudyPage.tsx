@@ -96,12 +96,20 @@ function isPageEnter(e: KeyboardEvent) {
 const flipButtonClasses =
   'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
 
+// The main text's class on both faces, which the card's anchor holds at
+// one height (#123); CardStack's anchor assumes its text-3xl. A long word
+// breaks rather than running past the card
+const cardTextClasses =
+  'text-center text-3xl font-bold uppercase tracking-wide text-white break-words';
+
 function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
   return (
     <>
-      <p className="text-center text-3xl font-bold uppercase tracking-wide text-white">
-        {text}
-      </p>
+      <div data-card-anchor className="relative w-full">
+        <p data-card-part="text" className={cardTextClasses}>
+          {text}
+        </p>
+      </div>
       {onFlip && (
         <button
           onClick={(e) => {
@@ -149,68 +157,91 @@ function CardBack({
     result.userAnswer !== null &&
     !editedAfterAnswer;
 
+  const hasNotes =
+    !!result.matchedVariant || result.accentMismatch || editedAfterAnswer;
+
   return (
-    <div className="text-center text-white" data-testid="correct-answer">
-      <p className="text-sm uppercase tracking-wide text-white/50">
-        {card.front}
-      </p>
-      <p className="mt-2 text-3xl font-bold uppercase tracking-wide text-white">
-        {card.canonicalAnswer}
-      </p>
+    <div className="w-full text-center text-white" data-testid="correct-answer">
+      {/* What was asked hangs above the answer, so it never moves it */}
+      <div data-card-anchor className="relative w-full">
+        <p
+          data-card-part="asked"
+          // Two lines at most, so a long front stays inside the card
+          title={card.front}
+          className="absolute inset-x-0 bottom-full mb-2 line-clamp-2 text-sm uppercase tracking-wide text-white/50"
+        >
+          {card.front}
+        </p>
+        <p data-card-part="text" className={cardTextClasses}>
+          {card.canonicalAnswer}
+        </p>
+      </div>
       <p
-        className={`mt-4 inline-block rounded-full px-4 py-1 text-lg font-semibold text-white ${recallGradeColors[result.recallGrade]}`}
+        data-card-part="grade"
+        className={`mt-3 inline-block rounded-full px-3 py-0.5 text-sm font-semibold text-white ${recallGradeColors[result.recallGrade]}`}
         data-testid="result"
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
-      {canAccept && (
-        <button
-          type="button"
-          disabled={isAcceptingAnswer}
-          onClick={(e) => {
-            e.stopPropagation();
-            onAcceptAnswer();
-          }}
-          className="mt-3 block w-full text-sm text-white/70 underline hover:text-white disabled:opacity-50"
+      {(canAccept || knownState || onMarkKnown) && (
+        <div
+          data-card-part="actions"
+          className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70"
         >
-          My answer was correct
-        </button>
+          {canAccept && (
+            <button
+              type="button"
+              disabled={isAcceptingAnswer}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAcceptAnswer();
+              }}
+              className="relative touch-target underline hover:text-white disabled:opacity-50"
+            >
+              My answer was correct
+            </button>
+          )}
+          {knownState ? (
+            <span>
+              {knownState === 'marked' ? 'Marked known' : 'Already known'}
+            </span>
+          ) : (
+            onMarkKnown && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkKnown();
+                }}
+                className="relative touch-target underline hover:text-white"
+              >
+                Mark known
+              </button>
+            )
+          )}
+        </div>
       )}
-      {knownState ? (
-        <p className="mt-3 text-sm text-white/70">
-          {knownState === 'marked' ? 'Marked known' : 'Already known'}
-        </p>
-      ) : (
-        onMarkKnown && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMarkKnown();
-            }}
-            className="mt-3 block w-full text-sm text-white/70 underline hover:text-white"
-          >
-            Mark known
-          </button>
-        )
-      )}
-      {result.matchedVariant && (
-        <p className="mt-2 text-sm text-white/70" data-testid="variant-note">
-          Matched the accepted variant “{result.matchedVariant}”.
-        </p>
-      )}
-      {result.accentMismatch && (
-        <p className="mt-2 text-sm text-white/70" data-testid="accent-note">
-          {result.matchedVariant
-            ? 'Check the accents in that variant.'
-            : 'Check the accents in the answer above.'}
-        </p>
-      )}
-      {editedAfterAnswer && (
-        <p className="mt-2 text-sm text-white/70">
-          Graded before you edited this card. It doesn't count toward the card's
-          progress.
-        </p>
+      {hasNotes && (
+        <div data-card-part="notes" className="text-sm text-white/70">
+          {result.matchedVariant && (
+            <p className="mt-2" data-testid="variant-note">
+              Matched the accepted variant “{result.matchedVariant}”.
+            </p>
+          )}
+          {result.accentMismatch && (
+            <p className="mt-2" data-testid="accent-note">
+              {result.matchedVariant
+                ? 'Check the accents in that variant.'
+                : 'Check the accents in the answer above.'}
+            </p>
+          )}
+          {editedAfterAnswer && (
+            <p className="mt-2">
+              Graded before you edited this card. It doesn't count toward the
+              card's progress.
+            </p>
+          )}
+        </div>
       )}
       {onFlip && (
         <button
@@ -728,6 +759,7 @@ export default function StudyPage() {
     knownState?: KnownState;
   }) => (
     <CardStack
+      anchored
       queueLength={queueLength}
       progress={cardProgress}
       isFlipped={result ? flipped : undefined}

@@ -3312,6 +3312,101 @@ describe('a reversible deck (#82)', () => {
   });
 });
 
+describe("the card's main text held in place (#123)", () => {
+  /** Answers card-1 ("What is 2+2?") with the grade given. */
+  async function answerGraded(grade: Record<string, unknown>) {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.submitAnswer.useMutation).mockReturnValue({
+      mutateAsync: vi.fn((args) =>
+        Promise.resolve({
+          id: 'attempt-1',
+          userAnswer: args.userAnswer,
+          ...grade,
+        }),
+      ),
+    } as unknown as ReturnType<typeof trpc.study.submitAnswer.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), 'four{Enter}');
+    await screen.findByTestId('result');
+    return user;
+  }
+
+  /**
+   * The text of each of the back's parts, in the order shown, a part of
+   * several things (the action row) giving each, side by side.
+   */
+  function backParts() {
+    const back = screen.getByTestId('correct-answer');
+    return [...back.querySelectorAll('[data-card-part]')].map((part) => {
+      const texts =
+        part.children.length > 1
+          ? [...part.children].map((child) => child.textContent)
+          : [part.textContent];
+      return `${part.getAttribute('data-card-part')}: ${texts.join(' | ')}`;
+    });
+  }
+
+  it("shows the back's parts in order, its actions on one row", async () => {
+    await answerGraded({ recallGrade: 'MISSED' });
+
+    expect(backParts()).toEqual([
+      'asked: What is 2+2?',
+      'text: 4',
+      'grade: Needs review',
+      'actions: My answer was correct | Mark known',
+    ]);
+  });
+
+  it('puts the notes after the actions', async () => {
+    await answerGraded({ recallGrade: 'GOOD', accentMismatch: true });
+
+    expect(backParts()).toEqual([
+      'asked: What is 2+2?',
+      'text: 4',
+      'grade: Good',
+      'actions: Mark known',
+      'notes: Check the accents in the answer above.',
+    ]);
+  });
+
+  it('shows what Mark known did in the action row', async () => {
+    const user = await answerGraded({ recallGrade: 'NAILED' });
+
+    await user.click(screen.getByRole('button', { name: 'Mark known' }));
+
+    expect(backParts()).toContain('actions: Marked known');
+  });
+
+  it('hangs what was asked from the answer, so it never pushes it down', async () => {
+    await answerGraded({ recallGrade: 'NAILED' });
+
+    const back = screen.getByTestId('correct-answer');
+    const asked = back.querySelector('[data-card-part="asked"]');
+    const text = back.querySelector('[data-card-part="text"]');
+    expect(asked?.parentElement).toHaveAttribute('data-card-anchor');
+    expect(text?.parentElement).toBe(asked?.parentElement);
+  });
+
+  it("anchors the front's text as the back's answer is", async () => {
+    setupMocksWithStartSession();
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+    // Once the title card has slid away
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-card-part="text"]')).toHaveLength(
+        1,
+      ),
+    );
+    const text = document.querySelector('[data-card-part="text"]');
+    expect(text).toHaveTextContent('What is 2+2?');
+    expect(text?.parentElement).toHaveAttribute('data-card-anchor');
+  });
+});
+
 describe('holding the card in one place (#122)', () => {
   /**
    * The study screen's card is drawn first in its stage, which every screen

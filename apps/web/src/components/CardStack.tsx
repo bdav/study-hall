@@ -8,6 +8,13 @@ interface CardStackProps {
   progress?: string;
   className?: string;
   onClick?: () => void;
+  /**
+   * Holds each face's main text at one height, its middle on the card's
+   * centre line, set from the card's width so it holds at every size, with
+   * what's shown with it flowing down below (#123). Otherwise a face
+   * centres what it holds.
+   */
+  anchored?: boolean;
 }
 
 export function CardStack({
@@ -18,8 +25,16 @@ export function CardStack({
   progress,
   className,
   onClick,
+  anchored = false,
 }: CardStackProps) {
   const hasFlip = backChildren !== undefined;
+  // A padding's percentage is of the card's width, and a third of the width
+  // is half the 3:2 card's height; less 1.125rem, half of text-3xl's 2.25rem
+  // line, so the main text's first line has its middle there. It assumes
+  // the main text is text-3xl (`cardTextClasses` in StudyPage)
+  const layout = anchored
+    ? 'justify-start pt-[calc(100%/3_-_1.125rem)]'
+    : 'justify-center';
 
   return (
     <div
@@ -57,7 +72,7 @@ export function CardStack({
         >
           {/* Front face */}
           <div
-            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center justify-center self-stretch rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
+            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
             style={{ backfaceVisibility: 'hidden' }}
             inert={isFlipped}
           >
@@ -70,7 +85,7 @@ export function CardStack({
           </div>
           {/* Back face */}
           <div
-            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center justify-center self-stretch rounded-xl border border-white/30 bg-white/15 p-8 backdrop-blur-sm ${className ?? ''}`}
+            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/15 p-8 backdrop-blur-sm ${className ?? ''}`}
             style={{
               backfaceVisibility: 'hidden',
               transform: 'rotateY(-180deg)',
@@ -87,7 +102,7 @@ export function CardStack({
         </div>
       ) : (
         <div
-          className={`relative flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
+          className={`relative flex aspect-3/2 w-full flex-col items-center ${layout} rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
         >
           {children}
           {progress && (
