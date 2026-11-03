@@ -192,6 +192,75 @@ describe('Card Standing', () => {
     ]);
   });
 
+  describe('the cards asked for', () => {
+    it('reads them alone, by the same rules as a deck', async () => {
+      const deck = await deckOf(3);
+      const [leftOut, missedCard, unanswered] = deck.cards;
+      await history(leftOut.id, [missed(daysAgo(1))]);
+      // Missed a day ago: LEARNING, due again 30 minutes later
+      await history(missedCard.id, [missed(daysAgo(1))]);
+
+      const { cards, counts } = await readCardStanding(prisma, {
+        userId,
+        cardIds: [missedCard.id, unanswered.id],
+        direction: 'FORWARD',
+        now,
+      });
+
+      expect(
+        cards.map(({ cardId, lifecycleState, isDue, dueAt }) => ({
+          cardId,
+          lifecycleState,
+          isDue,
+          dueAt,
+        })),
+      ).toEqual([
+        {
+          cardId: missedCard.id,
+          lifecycleState: 'LEARNING',
+          isDue: true,
+          dueAt: new Date(daysAgo(1).getTime() + hour / 2),
+        },
+        {
+          cardId: unanswered.id,
+          lifecycleState: 'NEW',
+          isDue: false,
+          dueAt: null,
+        },
+      ]);
+      // The card left out's miss isn't counted
+      expect(counts.answers.MISSED).toBe(1);
+    });
+
+    it("has no Reverse standing while their deck isn't reversible", async () => {
+      const [card] = (await deckOf(1)).cards;
+
+      const { cards } = await readCardStanding(prisma, {
+        userId,
+        cardIds: [card.id],
+        direction: 'REVERSE',
+        now,
+      });
+
+      expect(cards).toEqual([]);
+    });
+
+    it("reads only the learner's own cards", async () => {
+      const [card] = (await deckOf(1)).cards;
+      const someoneElse = await prisma.user.create({
+        data: { email: 'standing-other@example.com', passwordHash: 'x' },
+      });
+
+      const { cards } = await readCardStanding(prisma, {
+        userId: someoneElse.id,
+        cardIds: [card.id],
+        now,
+      });
+
+      expect(cards).toEqual([]);
+    });
+  });
+
   describe('Reverse', () => {
     it("has no standing while its deck isn't reversible", async () => {
       const deck = await deckOf(1);
@@ -232,6 +301,24 @@ describe('Card Standing', () => {
       expect(await due('CRAM')).toEqual([true, false]);
       expect(await due('STUDY')).toEqual([false, false]);
       expect(await due('DRILL_WEAKEST')).toEqual([false, false]);
+    });
+
+    it('gives each card in review its next due time in the Study Mode, and a NEW card none', async () => {
+      const deck = await deckOf(2);
+      const [inThreeDays] = deck.cards;
+      // A 4-day interval, 1 day gone: due in 3 days, halfway in 1
+      await history(inThreeDays.id, graduated(daysAgo(1)));
+      const dueAt = (studyMode: StudyMode) =>
+        byCard([deck.id], (card) => card.dueAt, { studyMode });
+
+      expect(Object.values(await dueAt('STUDY'))).toEqual([
+        new Date(now.getTime() + 3 * day),
+        null,
+      ]);
+      expect(Object.values(await dueAt('CRAM'))).toEqual([
+        new Date(now.getTime() + day),
+        null,
+      ]);
     });
 
     it('says when the next card not yet due comes due in the Study Mode, if any', async () => {

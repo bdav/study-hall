@@ -119,7 +119,7 @@ How well the scheduler takes a card to be known, in one of four bands: Fragile, 
 _Avoid_: Mastery score, level, strength
 
 **Card Standing**:
-Where one Study Direction of a card stands for the learner: its Lifecycle State, its Mastery Band, and whether it's due or Weak, as its schedule and Counted Answers show. Reverse has none while its deck isn't reversible.
+Where one Study Direction of a card stands for the learner: its Lifecycle State, its Mastery Band, whether it's due and when it next comes due, and whether it's Weak, as its schedule and Counted Answers show. Reverse has none while its deck isn't reversible.
 _Avoid_: Card status, card progress
 
 **Reversible Deck**:

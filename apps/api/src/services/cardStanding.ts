@@ -22,9 +22,9 @@ import {
 
 /**
  * Where one Study Direction of a learner's card stands (GLOSSARY.md, Card
- * Standing): its Lifecycle State, Mastery Band, whether it's Due and Weak,
- * and its recent misses. Its mastery score stays on the server, never shown
- * to the learner.
+ * Standing): its Lifecycle State, Mastery Band, whether it's Due and when,
+ * whether it's Weak, and its recent misses. Its mastery score stays on the
+ * server, never shown to the learner.
  */
 export type CardStanding = {
   cardId: string;
@@ -35,6 +35,11 @@ export type CardStanding = {
   /** Known already, so marking it known would leave it as it is (ADR-0009). */
   isKnown: boolean;
   isDue: boolean;
+  /**
+   * When it next comes due in the Study Mode (`dueFrom`); none for a card
+   * not in review.
+   */
+  dueAt: Date | null;
   isWeak: boolean;
   /** How many of its last 5 Counted Answers were missed. */
   recentMisses: number;
@@ -161,22 +166,27 @@ function isWeak(card: Progress, misses: number) {
 }
 
 /**
- * The standing of every card in a learner's decks, in one Study Direction
- * or, when none is given, both, for a Study Mode (Study unless given): the
- * decks in the order given, each in deck order, a card's Forward before its
- * Reverse.
+ * The cards whose standing is read: every card in a learner's decks, the
+ * decks in the order given, or just the cards given, without the rest of
+ * their decks.
+ */
+type CardsRead = { deckIds: string[] } | { cardIds: string[] };
+
+/**
+ * The standing of a learner's cards (`CardsRead`), in one Study Direction
+ * or, when none is given, both, for a Study Mode (Study unless given): each
+ * deck in deck order, a card's Forward before its Reverse.
  */
 export async function readCardStanding(
   prisma: PrismaClient,
   {
     userId,
-    deckIds,
     direction,
     studyMode = 'STUDY',
     now = new Date(),
-  }: {
+    ...read
+  }: CardsRead & {
     userId: string;
-    deckIds: string[];
     direction?: StudyDirection;
     studyMode?: StudyMode;
     now?: Date;
@@ -185,7 +195,9 @@ export async function readCardStanding(
   const progress = await prisma.cardProgress.findMany({
     where: {
       userId,
-      deckId: { in: deckIds },
+      ...('deckIds' in read
+        ? { deckId: { in: read.deckIds } }
+        : { cardId: { in: read.cardIds } }),
       ...(direction && { direction }),
       // Reverse has none while its deck isn't reversible (ADR-0011)
       OR: [{ direction: 'FORWARD' }, { card: { deck: { reversible: true } } }],
@@ -197,14 +209,16 @@ export async function readCardStanding(
     ],
     select: progressFields,
   });
-  // The decks in the order asked, each in deck order (a stable sort)
-  const deckPosition = new Map(deckIds.map((id, i) => [id, i]));
-  progress.sort(
-    (a, b) => deckPosition.get(a.deckId)! - deckPosition.get(b.deckId)!,
-  );
+  if ('deckIds' in read) {
+    // The decks in the order asked, each in deck order (a stable sort)
+    const deckPosition = new Map(read.deckIds.map((id, i) => [id, i]));
+    progress.sort(
+      (a, b) => deckPosition.get(a.deckId)! - deckPosition.get(b.deckId)!,
+    );
+  }
   const tallies = await countedAnswers(prisma, userId, progress);
 
-  const read = progress.map((card) => {
+  const standings = progress.map((card) => {
     const due = dueFrom(card, studyMode);
     const { recentMisses: cardMisses, byGrade } = tallies.get(key(card)) ?? {
       recentMisses: 0,
@@ -218,27 +232,23 @@ export async function readCardStanding(
       masteryBand: masteryBand(card.masteryScore),
       isKnown: isKnown(card.lifecycleState),
       isDue: due !== null && due <= now,
+      dueAt: due,
       isWeak: isWeak(card, cardMisses),
       recentMisses: cardMisses,
       countedAnswers: byGrade,
     };
-    return { standing, progress: card, due };
+    return { standing, progress: card };
   });
-  // When the next card not yet due comes due in the Study Mode
-  const nextDueAt = read.reduce<Date | null>(
-    (next, { due }) => (due && due > now && (!next || due < next) ? due : next),
-    null,
-  );
 
-  const cards = read.map(({ standing }) => standing);
+  const cards = standings.map(({ standing }) => standing);
   return {
     cards,
-    due: read
+    due: standings
       .filter(({ standing }) => standing.isDue)
       .sort((a, b) => byDueTime(a.progress, b.progress))
       .map(({ standing }) => standing),
     // Ranked by recent misses, then mastery, then how overdue (§10, §13)
-    weak: read
+    weak: standings
       .filter(({ standing }) => standing.isWeak)
       .sort(
         (a, b) =>
@@ -262,7 +272,12 @@ export async function readCardStanding(
       ),
       answers: addAnswers(cards.map((card) => card.countedAnswers)),
     },
-    nextDueAt,
+    // When the next card not yet due comes due in the Study Mode
+    nextDueAt: cards.reduce<Date | null>(
+      (next, { dueAt }) =>
+        dueAt && dueAt > now && (!next || dueAt < next) ? dueAt : next,
+      null,
+    ),
   };
 }
 

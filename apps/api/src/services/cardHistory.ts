@@ -5,7 +5,7 @@ import {
 } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { isCorrect } from './countedAttempts.js';
-import { isKnown } from './progressUpdater.js';
+import { readCardStanding } from './cardStanding.js';
 import {
   asksTheSame,
   parseVariantsByAnswer,
@@ -42,9 +42,9 @@ function summarizeAttempts(attempts: Attempt[]) {
  * (`restoredFromNumber`), and whether it can be restored (#54): an earlier
  * version that asks something the card doesn't now. An attempt's grade is
  * its final one, after "My answer was correct". The card's progress, in
- * the direction, is its lifecycle state, when it's next due and whether
- * it's known already (`isKnown`); the mastery score stays inside the
- * scheduler. Only the deck's owner sees it.
+ * the direction, is from its Card Standing: its lifecycle state, when it's
+ * next due and whether it's known already; the mastery score stays inside
+ * the scheduler. Only the deck's owner sees it.
  */
 export async function cardHistory(
   prisma: PrismaClient,
@@ -74,16 +74,15 @@ export async function cardHistory(
       front: true,
       canonicalAnswers: withCanonicalAnswers.canonicalAnswers,
       reverseVariants: withCanonicalAnswers.reverseVariants,
-      progress: {
-        where: { userId, direction },
-        select: { lifecycleState: true, dueAt: true },
-      },
     },
   });
   if (!card) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Card not found' });
   }
 
+  const [standing] = (
+    await readCardStanding(prisma, { userId, cardIds: [cardId], direction })
+  ).cards;
   const attempts = await prisma.cardAttempt.findMany({
     where: { cardId, direction, studySession: { userId } },
     orderBy: [{ createdAt: 'desc' }, { attemptNumber: 'desc' }],
@@ -106,11 +105,11 @@ export async function cardHistory(
       }));
 
   const unversioned = attemptsOf(null);
-  const [progress] = card.progress;
   return {
-    progress: progress && {
-      ...progress,
-      isKnown: isKnown(progress.lifecycleState),
+    progress: standing && {
+      lifecycleState: standing.lifecycleState,
+      dueAt: standing.dueAt,
+      isKnown: standing.isKnown,
     },
     versions: card.versions.map(
       ({ acceptedVariants, reverseVariants, ...version }, i) => {
