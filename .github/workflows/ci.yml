@@ -1,0 +1,76 @@
+# Typecheck, lint and both test suites on every push to main and every pull
+# request (#104). The repository is public: this workflow uses no secrets, and
+# never runs on pull_request_target, so a fork's pull request can't reach any.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The API tests make a Postgres schema per suite, as they do locally
+    # against Docker Compose's database; these credentials match it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flashcards
+          POSTGRES_PASSWORD: flashcards
+          POSTGRES_DB: flashcards
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flashcards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://flashcards:flashcards@localhost:5432/flashcards
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
+
+      # Caches the pnpm store, keyed on the lockfile.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate the Prisma client
+        id: generate
+        run: pnpm prisma generate
+
+      # Each check runs even when one before it fails, so a run reports them all.
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: pnpm typecheck
+
+      - name: Lint
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: pnpm lint
+
+      - name: Web tests
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: pnpm --filter web test run
+
+      - name: API tests
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: pnpm --filter api test

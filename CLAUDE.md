@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 8/33 planned issues**
+**Completed: 9/33 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -27,7 +27,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #84 Card-writing rule for reversible decks
    - [x] #96 Accept either front in Reverse when cards share an answer
 3. CI
-   - [ ] #104 Run typecheck, lint and both test suites on every push
+   - [x] #104 Run typecheck, lint and both test suites on every push
 4. Review and scheduling
    - [ ] #97 Rename the Stable lifecycle state to Reinforcing
    - [ ] #98 Card Standing: read every card's standing from one place
@@ -157,6 +157,7 @@ The v2 schema (`prisma/schema.prisma`, designed in `docs/architecture/archive/v2
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
 - **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith`, streamed replies with `streamReply` (pieces, optionally refused, failing after them or held open until `holdUntil` settles), failures with `failWith('timeout' | 'connection-error' | 'api-error')`, and inspect `requests` (structured calls) and `chatRequests` (streamed ones). Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`
 - **Test fixtures**: build decks with `createDeckWithCards` from `test-helpers.ts`, which creates cards the way the app does
+- **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: typecheck, lint, the web tests and the API tests, against a Postgres service in the job. Keep it free of secrets; the repository is public
 
 ## Planning Docs
 

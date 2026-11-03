@@ -157,6 +157,10 @@ pnpm --filter api test
 pnpm --filter web test
 ```
 
+### Continuous integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: it typechecks both apps, lints both apps, and runs the web tests and the API tests, the API tests against a Postgres service in the job with the same per-suite schemas as locally. A run fails if any of them fails. It needs no secrets.
+
 ## Deployment Notes
 
 - The app uses PostgreSQL in every environment. For production, set `DATABASE_URL` to the production database's connection string.
