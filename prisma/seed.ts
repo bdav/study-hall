@@ -30,11 +30,10 @@ async function createDeckWithCards(
   const deck = await prisma.deck.create({
     data: { id: deckId, name, description, userId },
   });
-  const createdCards = await createCards(prisma, {
-    deckId: deck.id,
-    userId,
-    cards,
-  });
+  // Each card with its progress, together
+  const createdCards = await prisma.$transaction((tx) =>
+    createCards(tx, { deckId: deck.id, userId, cards }),
+  );
 
   console.log(`Seeded deck: ${name} with ${createdCards.length} cards`);
   return { deck, cards: createdCards };

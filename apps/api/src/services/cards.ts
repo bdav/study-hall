@@ -1,7 +1,11 @@
 import { Prisma, type PrismaClient, type StudyDirection } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { markKnown, NEW_PROGRESS } from './progressUpdater.js';
+import {
+  recordMarkedKnown,
+  resetCardProgress,
+  startCardProgress,
+} from './cardStanding.js';
 import {
   gradeAnswer,
   matchAnswer,
@@ -174,9 +178,6 @@ export async function findCardsSharingAnswer(
   );
 }
 
-/** Every Study Direction, in each of which every card has progress. */
-export const STUDY_DIRECTIONS: StudyDirection[] = ['FORWARD', 'REVERSE'];
-
 /** A card to create: its front and its Canonical Answers, primary first. */
 export interface NewCard {
   front: string;
@@ -252,9 +253,9 @@ export interface CardSource {
 
 /**
  * Creates cards at the end of a deck, in the order given, each with its
- * Canonical Answers, the first primary, card progress in NEW state for the
- * deck owner in each Study Direction, studied in Reverse or not
- * (ADR-0011), and its first Card Version, starting with that progress.
+ * Canonical Answers, the first primary, its progress started for the deck
+ * owner through Card Standing (`startCardProgress`), and its first Card
+ * Version, starting with that progress.
  */
 export async function createCards(
   db: Db,
@@ -276,38 +277,35 @@ export async function createCards(
   const created = [];
   for (const [i, card] of cards.entries()) {
     const startedAt = new Date();
-    created.push(
-      await db.card.create({
-        data: {
-          deckId,
-          front: card.front,
-          position: firstPosition + i,
-          sourceLessonId: source?.lessonId,
-          sourceModel: source?.model,
-          sourcePromptVersion: source?.promptVersion,
-          canonicalAnswers: {
-            create: card.canonicalAnswers.map(answerData),
-          },
-          progress: {
-            create: STUDY_DIRECTIONS.map((direction) => ({
-              userId,
-              deckId,
-              direction,
-              resetAt: startedAt,
-            })),
-          },
-          versions: {
-            create: {
-              number: 1,
-              front: card.front,
-              canonicalAnswers: card.canonicalAnswers,
-              startedAt,
-            },
+    const newCard = await db.card.create({
+      data: {
+        deckId,
+        front: card.front,
+        position: firstPosition + i,
+        sourceLessonId: source?.lessonId,
+        sourceModel: source?.model,
+        sourcePromptVersion: source?.promptVersion,
+        canonicalAnswers: {
+          create: card.canonicalAnswers.map(answerData),
+        },
+        versions: {
+          create: {
+            number: 1,
+            front: card.front,
+            canonicalAnswers: card.canonicalAnswers,
+            startedAt,
           },
         },
-        include: withCanonicalAnswers,
-      }),
-    );
+      },
+      include: withCanonicalAnswers,
+    });
+    await startCardProgress(db, {
+      userId,
+      deckId,
+      cardId: newCard.id,
+      startedAt,
+    });
+    created.push(newCard);
   }
   return created;
 }
@@ -389,10 +387,7 @@ export async function editCard(
   const edited = await cardWithAnswers(db, cardId);
   if (frontChanged || answersChanged) {
     const resetAt = new Date();
-    await db.cardProgress.updateMany({
-      where: { cardId },
-      data: { ...NEW_PROGRESS, resetAt },
-    });
+    await resetCardProgress(db, { cardId, resetAt });
     // The version this edit ends keeps the variants it had (#51)
     const ending = await db.cardVersion.findFirstOrThrow({
       where: { cardId },
@@ -735,11 +730,11 @@ function cardWithAnswers(db: Db, cardId: string) {
 
 /**
  * Marks a learner's cards known (ADR-0009) in the given Study Directions
- * (ADR-0011), in one transaction: NEW and LEARNING progress takes
- * `markKnown`'s, and progress already REINFORCING or RETIRED is left as it is.
- * No attempt is recorded. The cards' items waiting in a Study Session under
- * way in one of those directions are skipped, as the study screen moves
- * past them. Returns how many directions of cards were marked.
+ * (ADR-0011), in one transaction, through Card Standing
+ * (`recordMarkedKnown`). No attempt is recorded. The cards' items waiting
+ * in a Study Session under way in one of those directions are skipped, as
+ * the study screen moves past them. Returns how many directions of cards
+ * were marked.
  */
 export async function markCardsKnown(
   prisma: PrismaClient,
@@ -751,16 +746,12 @@ export async function markCardsKnown(
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
-    const progresses = await tx.cardProgress.findMany({
-      where: { userId, cardId: { in: cardIds }, direction: { in: directions } },
+    const markedCount = await recordMarkedKnown(tx, {
+      userId,
+      cardIds,
+      directions,
+      at: now,
     });
-    let markedCount = 0;
-    for (const progress of progresses) {
-      const known = markKnown(progress, now);
-      if (!known) continue;
-      await tx.cardProgress.update({ where: { id: progress.id }, data: known });
-      markedCount++;
-    }
     await tx.studySessionItem.updateMany({
       where: {
         cardId: { in: cardIds },

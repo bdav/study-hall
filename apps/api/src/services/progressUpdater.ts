@@ -295,32 +295,56 @@ export const NEW_PROGRESS: ScheduledProgress = {
 };
 
 /**
+ * Something the learner does to a card's lifecycle that isn't an answer,
+ * and when: today, marking it known (ADR-0009). Replay applies each at its
+ * time, between the answers (`applyMark`), so a mark is never undone by
+ * rebuilding the card's progress; the next kind of mark joins here.
+ */
+export type LifecycleMark = { kind: 'MARKED_KNOWN'; at: Date };
+
+/** A card's progress once a lifecycle mark is applied to it. */
+function applyMark(
+  progress: ScheduledProgress,
+  mark: LifecycleMark,
+): ScheduledProgress {
+  switch (mark.kind) {
+    case 'MARKED_KNOWN':
+      // A card known already only records when it was marked
+      return (
+        markKnown(progress, mark.at) ?? { ...progress, markedKnownAt: mark.at }
+      );
+  }
+}
+
+/**
  * A card's progress rebuilt from its counted answers, oldest first,
  * starting from NEW (`updated-plan.md` §11.2): the progress `applyAnswer`
- * would have left had each been graded as it is now. A card marked known
- * since its last reset is marked again at that time, between the answers
- * given before and after it (ADR-0009).
+ * would have left had each been graded as it is now, with the learner's
+ * lifecycle marks since its last reset applied in time order between the
+ * answers given before and after each.
  */
 export function replayAnswers(
   answers: ScheduledAnswer[],
-  markedKnownAt: Date | null = null,
+  marks: LifecycleMark[] = [],
 ): ScheduledProgress {
-  const markIfDue = (progress: ScheduledProgress, before?: Date) =>
-    markedKnownAt &&
-    !progress.markedKnownAt &&
-    (!before || markedKnownAt <= before)
-      ? (markKnown(progress, markedKnownAt) ?? { ...progress, markedKnownAt })
-      : progress;
+  const pending = [...marks].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const marksUntil = (progress: ScheduledProgress, until?: Date) => {
+    let marked = progress;
+    while (pending.length > 0 && (!until || pending[0].at <= until)) {
+      marked = applyMark(marked, pending.shift()!);
+    }
+    return marked;
+  };
   const replayed = answers.reduce(
     (progress, answer, i) =>
       applyAnswer(
-        markIfDue(progress, answer.answeredAt),
+        marksUntil(progress, answer.answeredAt),
         answer,
         answers.slice(0, i),
       ),
     NEW_PROGRESS,
   );
-  return markIfDue(replayed);
+  return marksUntil(replayed);
 }
 
 function masteryChange(mastery: number, recallGrade: RecallGrade): number {

@@ -2,11 +2,22 @@ import {
   type CardLifecycleState,
   type Prisma,
   type PrismaClient,
+  type RecallGrade,
   type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
 import { countsSinceReset } from './countedAttempts.js';
-import { isKnown, masteryBand, type MasteryBand } from './progressUpdater.js';
+import {
+  applyAnswer,
+  isKnown,
+  type LifecycleMark,
+  markKnown,
+  masteryBand,
+  type MasteryBand,
+  NEW_PROGRESS,
+  replayAnswers,
+  type ScheduledAnswer,
+} from './progressUpdater.js';
 
 /**
  * Where one Study Direction of a learner's card stands (GLOSSARY.md, Card
@@ -258,3 +269,223 @@ async function recentMisses(
 
 /** The standing of a learner's cards, as `readCardStanding` reads it. */
 export type Standings = Awaited<ReturnType<typeof readCardStanding>>;
+
+/**
+ * The client or transaction card progress is changed through: the caller
+ * decides when a change happens and owns its transaction, and Card
+ * Standing how it changes, inside it.
+ */
+type Db = PrismaClient | Prisma.TransactionClient;
+
+/** One Study Direction of a learner's card, whose progress changes. */
+type CardInDirection = {
+  userId: string;
+  cardId: string;
+  direction: StudyDirection;
+};
+
+/** The key of a card's progress in one Study Direction. */
+const progressKey = ({ userId, cardId, direction }: CardInDirection) => ({
+  userId_cardId_direction: { userId, cardId, direction },
+});
+
+/** An answer to a card, as it was recorded. */
+export type RecordedAnswer = {
+  id: string;
+  cardId: string;
+  direction: StudyDirection;
+  recallGrade: RecallGrade;
+  createdAt: Date;
+  studySessionId: string;
+  isRetry: boolean;
+};
+
+/**
+ * A learner's Counted Answers to a card in a Study Direction, oldest
+ * first, as the scheduler takes them: those since its progress there last
+ * reset (`countsSinceReset`, as a query), Retries left out, and the one
+ * being applied, when given.
+ */
+async function findCountedAnswers(
+  db: Db,
+  {
+    resetAt,
+    exceptAttemptId,
+    ...card
+  }: CardInDirection & { resetAt: Date; exceptAttemptId?: string },
+): Promise<ScheduledAnswer[]> {
+  const attempts = await db.cardAttempt.findMany({
+    where: {
+      cardId: card.cardId,
+      direction: card.direction,
+      studySession: { userId: card.userId },
+      createdAt: { gte: resetAt },
+      isRetry: false,
+      ...(exceptAttemptId && { id: { not: exceptAttemptId } }),
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { recallGrade: true, createdAt: true, studySessionId: true },
+  });
+  return attempts.map(toScheduledAnswer);
+}
+
+function toScheduledAnswer(attempt: {
+  recallGrade: RecallGrade;
+  createdAt: Date;
+  studySessionId: string;
+}): ScheduledAnswer {
+  return {
+    recallGrade: attempt.recallGrade,
+    answeredAt: attempt.createdAt,
+    studySessionId: attempt.studySessionId,
+  };
+}
+
+/**
+ * Applies a learner's answer, just recorded, to its card's progress in the
+ * answer's Study Direction, given the Counted Answers before it (#7, #11).
+ * A Retry is recorded but changes nothing: the first answer already did.
+ */
+export async function applyCardAnswer(
+  db: Db,
+  { userId, attempt }: { userId: string; attempt: RecordedAnswer },
+) {
+  if (attempt.isRetry) return;
+  const card = { userId, cardId: attempt.cardId, direction: attempt.direction };
+  const progress = await db.cardProgress.findUniqueOrThrow({
+    where: progressKey(card),
+  });
+  const earlier = await findCountedAnswers(db, {
+    ...card,
+    resetAt: progress.resetAt,
+    exceptAttemptId: attempt.id,
+  });
+  await db.cardProgress.update({
+    where: progressKey(card),
+    data: applyAnswer(progress, toScheduledAnswer(attempt), earlier),
+  });
+}
+
+/**
+ * The learner's own lifecycle marks on a card's progress since its last
+ * reset, which replay applies between its answers: today, when they last
+ * marked it known (ADR-0009). The next mark, retirement (#86), joins here.
+ */
+function lifecycleMarks(progress: {
+  markedKnownAt: Date | null;
+}): LifecycleMark[] {
+  return progress.markedKnownAt
+    ? [{ kind: 'MARKED_KNOWN', at: progress.markedKnownAt }]
+    : [];
+}
+
+/**
+ * Rebuilds a card's progress in a Study Direction from its Counted
+ * Answers, as now graded, and the learner's lifecycle marks, in time
+ * order (`replayAnswers`): for when an answer is graded again ("My answer
+ * was correct").
+ */
+export async function replayCardAnswers(db: Db, card: CardInDirection) {
+  const progress = await db.cardProgress.findUniqueOrThrow({
+    where: progressKey(card),
+  });
+  await db.cardProgress.update({
+    where: progressKey(card),
+    data: replayAnswers(
+      await findCountedAnswers(db, { ...card, resetAt: progress.resetAt }),
+      lifecycleMarks(progress),
+    ),
+  });
+}
+
+/**
+ * Marks a learner's cards known at `at` (ADR-0009) in the given Study
+ * Directions (ADR-0011): NEW and LEARNING progress takes `markKnown`'s, and
+ * progress already known is left as it is. Returns how many directions of
+ * cards were marked.
+ */
+export async function recordMarkedKnown(
+  db: Db,
+  {
+    userId,
+    cardIds,
+    directions,
+    at,
+  }: {
+    userId: string;
+    cardIds: string[];
+    directions: StudyDirection[];
+    at: Date;
+  },
+) {
+  const progresses = await db.cardProgress.findMany({
+    where: { userId, cardId: { in: cardIds }, direction: { in: directions } },
+  });
+  let markedCount = 0;
+  for (const progress of progresses) {
+    const known = markKnown(progress, at);
+    if (!known) continue;
+    await db.cardProgress.update({ where: { id: progress.id }, data: known });
+    markedCount++;
+  }
+  return markedCount;
+}
+
+/** Every Study Direction, in each of which every card has progress. */
+export const STUDY_DIRECTIONS: StudyDirection[] = ['FORWARD', 'REVERSE'];
+
+/**
+ * Starts a new card's progress for its deck's owner: NEW in each Study
+ * Direction, studied in Reverse or not (ADR-0011), from `startedAt`, when
+ * its first Card Version starts.
+ */
+export function startCardProgress(
+  db: Db,
+  {
+    userId,
+    deckId,
+    cardId,
+    startedAt,
+  }: { userId: string; deckId: string; cardId: string; startedAt: Date },
+) {
+  return db.cardProgress.createMany({
+    data: STUDY_DIRECTIONS.map((direction) => ({
+      userId,
+      deckId,
+      cardId,
+      direction,
+      resetAt: startedAt,
+    })),
+  });
+}
+
+/**
+ * Resets a card's progress to NEW in every Study Direction from `resetAt`,
+ * when an edit changes what it asks (ADR-0004): its answers are kept, but
+ * only those since count.
+ */
+export function resetCardProgress(
+  db: Db,
+  { cardId, resetAt }: { cardId: string; resetAt: Date },
+) {
+  return db.cardProgress.updateMany({
+    where: { cardId },
+    data: { ...NEW_PROGRESS, resetAt },
+  });
+}
+
+/**
+ * Whether an answer to a card was given since its progress in that Study
+ * Direction last reset, so it counts (ADR-0004); one from before answered
+ * what was effectively a different card.
+ */
+export async function answeredSinceReset(
+  db: Db,
+  { answeredAt, ...card }: CardInDirection & { answeredAt: Date },
+) {
+  const { resetAt } = await db.cardProgress.findUniqueOrThrow({
+    where: progressKey(card),
+    select: { resetAt: true },
+  });
+  return countsSinceReset(answeredAt, resetAt);
+}

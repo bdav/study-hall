@@ -8,11 +8,13 @@ import {
   editCard,
   markCardsKnown,
   restoreCardVersion,
-  STUDY_DIRECTIONS,
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
-import { readCardStanding } from '../services/cardStanding.js';
+import {
+  readCardStanding,
+  STUDY_DIRECTIONS,
+} from '../services/cardStanding.js';
 import { assertCanChangeCards, findActiveDeck } from '../services/decks.js';
 import { studyDirection, studyDirections } from './inputs.js';
 

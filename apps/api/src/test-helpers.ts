@@ -17,11 +17,11 @@ import {
   withCanonicalAnswers,
   type NewCard,
 } from './services/cards.js';
-import { countsSinceReset } from './services/countedAttempts.js';
 import {
-  replayAnswers,
-  type ScheduledAnswer,
-} from './services/progressUpdater.js';
+  applyCardAnswer,
+  recordMarkedKnown,
+  resetCardProgress,
+} from './services/cardStanding.js';
 
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 config({ path: `${projectRoot}.env` });
@@ -150,11 +150,11 @@ export type HistoryAnswer = {
 /**
  * Gives a learner's card, in one Study Direction (Forward unless given),
  * a history of answers, each in a finished Study Session of its own unless
- * a Retry, and the progress the scheduler would have left from them: its
- * Counted Answers replayed (`replayAnswers`), since `resetAt` when the
- * card's progress last reset then, and the card marked known at
- * `markedKnownAt`, if given. Progress built this way always agrees with
- * the attempts, as studying would leave it.
+ * a Retry, its progress reset at `resetAt` and the card marked known at
+ * `markedKnownAt`, when given. Each is applied through Card Standing in
+ * time order, as studying would apply it, so its progress always agrees
+ * with its attempts. The card's progress starts over, in every direction,
+ * at its history's first event.
  */
 export async function recordCardHistory(
   prisma: PrismaClient,
@@ -164,7 +164,7 @@ export async function recordCardHistory(
     direction = 'FORWARD',
     answers,
     resetAt,
-    markedKnownAt = null,
+    markedKnownAt,
   }: {
     userId: string;
     cardId: string;
@@ -180,10 +180,47 @@ export async function recordCardHistory(
   });
   const cardVersionId = await currentVersionId(prisma, cardId);
 
-  const counted: ScheduledAnswer[] = [];
+  // At one moment, a reset comes first, then a mark, then an answer, as
+  // replay takes them
+  type Event =
+    | { kind: 'reset'; at: Date }
+    | { kind: 'markedKnown'; at: Date }
+    | { kind: 'answer'; at: Date; answer: HistoryAnswer };
+  const order = { reset: 0, markedKnown: 1, answer: 2 };
+  const events: Event[] = [
+    ...(resetAt ? [{ kind: 'reset' as const, at: resetAt }] : []),
+    ...(markedKnownAt
+      ? [{ kind: 'markedKnown' as const, at: markedKnownAt }]
+      : []),
+    ...answers.map((answer) => ({
+      kind: 'answer' as const,
+      at: answer.at,
+      answer,
+    })),
+  ].sort(
+    (a, b) => a.at.getTime() - b.at.getTime() || order[a.kind] - order[b.kind],
+  );
+  if (events.length > 0) {
+    await resetCardProgress(prisma, { cardId, resetAt: events[0].at });
+  }
+
   let session: { id: string } | null = null;
   let attemptNumber = 0;
-  for (const answer of answers) {
+  for (const event of events) {
+    if (event.kind === 'reset') {
+      await resetCardProgress(prisma, { cardId, resetAt: event.at });
+      continue;
+    }
+    if (event.kind === 'markedKnown') {
+      await recordMarkedKnown(prisma, {
+        userId,
+        cardIds: [cardId],
+        directions: [direction],
+        at: event.at,
+      });
+      continue;
+    }
+    const { answer } = event;
     if (!answer.retry || !session) {
       session = await prisma.studySession.create({
         data: {
@@ -199,7 +236,7 @@ export async function recordCardHistory(
       attemptNumber = 0;
     }
     attemptNumber++;
-    await prisma.cardAttempt.create({
+    const attempt = await prisma.cardAttempt.create({
       data: {
         studySessionId: session.id,
         cardId,
@@ -214,26 +251,8 @@ export async function recordCardHistory(
         createdAt: answer.at,
       },
     });
-    if (!answer.retry && (!resetAt || countsSinceReset(answer.at, resetAt))) {
-      counted.push({
-        recallGrade: answer.grade,
-        answeredAt: answer.at,
-        studySessionId: session.id,
-      });
-    }
+    await applyCardAnswer(prisma, { userId, attempt });
   }
-
-  // Without a reset, the progress started before its first answer
-  const startedAt = new Date(
-    Math.min(Date.now(), ...answers.map(({ at }) => at.getTime())),
-  );
-  return prisma.cardProgress.update({
-    where: { userId_cardId_direction: { userId, cardId, direction } },
-    data: {
-      ...replayAnswers(counted, markedKnownAt),
-      resetAt: resetAt ?? startedAt,
-    },
-  });
 }
 
 /**

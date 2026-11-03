@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { type RecallGrade } from '@prisma/client';
 import {
   applyAnswer,
+  type LifecycleMark,
   markKnown,
   replayAnswers,
   NEW_PROGRESS,
@@ -513,14 +514,18 @@ describe('replayAnswers', () => {
   });
 });
 
-describe('replayAnswers, with a card marked known', () => {
+describe("replayAnswers, with the learner's lifecycle marks", () => {
   const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
   function onDay(day: number, recallGrade: RecallGrade): ScheduledAnswer {
     return { recallGrade, answeredAt: at(day), studySessionId: `day-${day}` };
   }
+  const markedKnown = (day: number): LifecycleMark => ({
+    kind: 'MARKED_KNOWN',
+    at: at(day),
+  });
 
-  it('replays the mark, with no answers since', () => {
-    expect(replayAnswers([], at(1))).toMatchObject({
+  it('replays a card marked known, with no answers since', () => {
+    expect(replayAnswers([], [markedKnown(1)])).toMatchObject({
       lifecycleState: 'REINFORCING',
       masteryScore: 3,
       markedKnownAt: at(1),
@@ -528,21 +533,37 @@ describe('replayAnswers, with a card marked known', () => {
   });
 
   it('replays a miss at the review after the mark as a lapse', () => {
-    expect(replayAnswers([onDay(6, 'MISSED')], at(1))).toMatchObject({
-      lifecycleState: 'REINFORCING',
-      lapseCount: 1,
-    });
+    expect(replayAnswers([onDay(6, 'MISSED')], [markedKnown(1)])).toMatchObject(
+      {
+        lifecycleState: 'REINFORCING',
+        lapseCount: 1,
+      },
+    );
   });
 
   it('replays the mark between the answers given before and after it', () => {
     const replayed = replayAnswers(
       [onDay(1, 'MISSED'), onDay(8, 'MISSED')],
-      at(2),
+      [markedKnown(2)],
     );
 
     // Missed while LEARNING, marked known, then a first REINFORCING miss
     expect(replayed).toMatchObject({
       lifecycleState: 'REINFORCING',
+      lapseCount: 1,
+    });
+  });
+
+  it('applies the marks in time order, however they are given', () => {
+    const replayed = replayAnswers(
+      [onDay(1, 'MISSED'), onDay(8, 'MISSED')],
+      [markedKnown(5), markedKnown(2)],
+    );
+
+    // Known from day 2, so day 5's mark finds it known already
+    expect(replayed).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      markedKnownAt: at(5),
       lapseCount: 1,
     });
   });

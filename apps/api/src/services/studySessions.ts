@@ -1,7 +1,6 @@
 import {
   Prisma,
   type PrismaClient,
-  type RecallGrade,
   type SessionType,
   type StudyDirection,
   type StudyMode,
@@ -19,14 +18,13 @@ import {
   gradeDirectedAnswer,
   withCanonicalAnswers,
 } from './cards.js';
-import {
-  applyAnswer,
-  replayAnswers,
-  type ScheduledAnswer,
-} from './progressUpdater.js';
-import { countsSinceReset } from './countedAttempts.js';
 import { assertDeckActive, assertStudiesIn } from './decks.js';
-import { readCardStanding } from './cardStanding.js';
+import {
+  answeredSinceReset,
+  applyCardAnswer,
+  readCardStanding,
+  replayCardAnswers,
+} from './cardStanding.js';
 import {
   composeQueue,
   findQueueCandidates,
@@ -82,56 +80,6 @@ export function findResumableSession(
  * (`learning-model-and-scheduler.md` §10).
  */
 const MAX_RETRIES = 2;
-
-/**
- * A learner's counted answers to a card in a Study Direction, oldest
- * first: those since its progress in that direction last reset
- * (`countsSinceReset`, as a query), as the scheduler takes them, leaving
- * out the attempt being applied and retries, which never change the
- * card's progress.
- */
-async function findCountedAnswers(
-  tx: Prisma.TransactionClient,
-  {
-    userId,
-    cardId,
-    direction,
-    resetAt,
-    exceptAttemptId,
-  }: {
-    userId: string;
-    cardId: string;
-    direction: StudyDirection;
-    resetAt: Date;
-    exceptAttemptId?: string;
-  },
-): Promise<ScheduledAnswer[]> {
-  const attempts = await tx.cardAttempt.findMany({
-    where: {
-      cardId,
-      direction,
-      studySession: { userId },
-      createdAt: { gte: resetAt },
-      isRetry: false,
-      ...(exceptAttemptId && { id: { not: exceptAttemptId } }),
-    },
-    orderBy: { createdAt: 'asc' },
-    select: { recallGrade: true, createdAt: true, studySessionId: true },
-  });
-  return attempts.map(toScheduledAnswer);
-}
-
-function toScheduledAnswer(attempt: {
-  recallGrade: RecallGrade;
-  createdAt: Date;
-  studySessionId: string;
-}): ScheduledAnswer {
-  return {
-    recallGrade: attempt.recallGrade,
-    answeredAt: attempt.createdAt,
-    studySessionId: attempt.studySessionId,
-  };
-}
 
 /** A learner's cards in one deck. */
 type LearnerDeck = { userId: string; deckId: string };
@@ -417,10 +365,6 @@ export async function answerItem(
           { studySessionId: item.studySessionId, card: item.card, direction },
           userAnswer,
         );
-  const progressKey = {
-    userId_cardId_direction: { userId, cardId: item.cardId, direction },
-  };
-
   return prisma.$transaction(async (tx) => {
     // Answers in one session take turns, so they number their attempts and
     // queue their Retries one at a time
@@ -459,22 +403,7 @@ export async function answerItem(
       },
     });
 
-    if (!item.isRetry) {
-      const progress = await tx.cardProgress.findUniqueOrThrow({
-        where: progressKey,
-      });
-      const earlier = await findCountedAnswers(tx, {
-        userId,
-        cardId: item.cardId,
-        direction,
-        resetAt: progress.resetAt,
-        exceptAttemptId: attempt.id,
-      });
-      await tx.cardProgress.update({
-        where: progressKey,
-        data: applyAnswer(progress, toScheduledAnswer(attempt), earlier),
-      });
-    }
+    await applyCardAnswer(tx, { userId, attempt });
 
     const retryItem =
       recallGrade === 'MISSED' ? await queueRetry(tx, item) : null;
@@ -535,13 +464,15 @@ export async function acceptAnswer(
       message: 'Only a missed typed answer can be accepted',
     });
   }
-  const progressKey = {
-    userId_cardId_direction: { userId, cardId: attempt.cardId, direction },
-  };
-  const { resetAt, markedKnownAt } =
-    await prisma.cardProgress.findUniqueOrThrow({ where: progressKey });
   // It answered what was effectively a different card
-  if (!countsSinceReset(attempt.createdAt, resetAt)) {
+  if (
+    !(await answeredSinceReset(prisma, {
+      userId,
+      cardId: attempt.cardId,
+      direction,
+      answeredAt: attempt.createdAt,
+    }))
+  ) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: 'Answered before the card was edited',
@@ -616,17 +547,10 @@ export async function acceptAnswer(
       data: { status: 'SKIPPED' },
     });
 
-    await tx.cardProgress.update({
-      where: progressKey,
-      data: replayAnswers(
-        await findCountedAnswers(tx, {
-          userId,
-          cardId: attempt.cardId,
-          direction,
-          resetAt,
-        }),
-        markedKnownAt,
-      ),
+    await replayCardAnswers(tx, {
+      userId,
+      cardId: attempt.cardId,
+      direction,
     });
 
     return { ...grading, card };

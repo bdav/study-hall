@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   type PrismaClient,
   type RecallGrade,
+  type StudyDirection,
   type StudyMode,
 } from '@prisma/client';
 import {
@@ -11,8 +12,13 @@ import {
   type HistoryAnswer,
 } from './test-helpers.js';
 import {
+  applyCardAnswer,
   type CardStanding,
   readCardStanding,
+  recordMarkedKnown,
+  replayCardAnswers,
+  resetCardProgress,
+  startCardProgress,
 } from './services/cardStanding.js';
 
 let prisma: PrismaClient;
@@ -318,17 +324,27 @@ describe('Card Standing', () => {
     it('leaves out a card Marked Known since it was last answered, until answered again', async () => {
       const deck = await deckOf(2);
       const [markedSince, answeredSince] = deck.cards;
-      // Mastery 3 after its miss, a day ago
-      await history(markedSince.id, reinforcing('NAILED', 'MISSED'), {
-        markedKnownAt: daysAgo(0.5),
+      // Missed while LEARNING, then marked known: REINFORCING at mastery 3
+      await history(markedSince.id, [missed(daysAgo(3))], {
+        markedKnownAt: daysAgo(2),
       });
-      await history(answeredSince.id, reinforcing('NAILED', 'MISSED'), {
-        markedKnownAt: daysAgo(1.5),
-      });
+      // And then missed again: mastery 0
+      await history(
+        answeredSince.id,
+        [missed(daysAgo(3)), missed(daysAgo(1))],
+        {
+          markedKnownAt: daysAgo(2),
+        },
+      );
 
-      expect(await byCard([deck.id], ({ isWeak }) => isWeak)).toEqual({
-        [markedSince.id]: false,
-        [answeredSince.id]: true,
+      expect(
+        await byCard([deck.id], ({ lifecycleState, isWeak }) => ({
+          lifecycleState,
+          isWeak,
+        })),
+      ).toEqual({
+        [markedSince.id]: { lifecycleState: 'REINFORCING', isWeak: false },
+        [answeredSince.id]: { lifecycleState: 'REINFORCING', isWeak: true },
       });
     });
 
@@ -419,5 +435,261 @@ describe('Card Standing', () => {
         },
       });
     });
+  });
+});
+
+describe('changing card progress through Card Standing', () => {
+  // Cards are created now, so their answers come after, on the real clock
+  const minutesFromNow = (minutes: number) =>
+    new Date(Date.now() + minutes * 60 * 1000);
+  /** An attempt at a card, recorded in a finished Study Session. */
+  async function attempt(
+    deckId: string,
+    cardId: string,
+    grade: RecallGrade,
+    at: Date,
+    {
+      isRetry = false,
+      studySessionId,
+      direction = 'FORWARD',
+    }: {
+      isRetry?: boolean;
+      studySessionId?: string;
+      direction?: StudyDirection;
+    } = {},
+  ) {
+    const sessionId =
+      studySessionId ??
+      (
+        await prisma.studySession.create({
+          data: {
+            userId,
+            deckId,
+            sessionType: 'STANDARD',
+            status: 'COMPLETED',
+            startedAt: at,
+            endedAt: at,
+          },
+        })
+      ).id;
+    return prisma.cardAttempt.create({
+      data: {
+        studySessionId: sessionId,
+        cardId,
+        direction,
+        recallGrade: grade,
+        attemptNumber: isRetry ? 2 : 1,
+        isRetry,
+        createdAt: at,
+      },
+    });
+  }
+
+  /** A card's standing an hour from now, without its ids, to compare. */
+  async function standingOf(deckId: string, cardId: string) {
+    const { cards } = await standing([deckId], { now: minutesFromNow(60) });
+    const card = cards.find((card) => card.cardId === cardId)!;
+    return {
+      direction: card.direction,
+      lifecycleState: card.lifecycleState,
+      masteryBand: card.masteryBand,
+      isKnown: card.isKnown,
+      isDue: card.isDue,
+      isWeak: card.isWeak,
+      recentMisses: card.recentMisses,
+    };
+  }
+
+  it('applies an answer, and records a Retry without changing anything', async () => {
+    const deck = await deckOf(1);
+    const [card] = deck.cards;
+    const first = await attempt(deck.id, card.id, 'MISSED', minutesFromNow(1));
+
+    await applyCardAnswer(prisma, { userId, attempt: first });
+    const afterAnswer = await standingOf(deck.id, card.id);
+    const retry = await attempt(deck.id, card.id, 'NAILED', minutesFromNow(2), {
+      isRetry: true,
+      studySessionId: first.studySessionId,
+    });
+    await applyCardAnswer(prisma, { userId, attempt: retry });
+
+    // Missed: LEARNING, due 30 minutes later
+    expect(afterAnswer).toMatchObject({
+      lifecycleState: 'LEARNING',
+      isDue: true,
+      recentMisses: 1,
+    });
+    expect(await standingOf(deck.id, card.id)).toEqual(afterAnswer);
+  });
+
+  /** Answers a card in a session of its own, applying the answer. */
+  async function answered(
+    deckId: string,
+    cardId: string,
+    grade: RecallGrade,
+    at: Date,
+  ) {
+    const recorded = await attempt(deckId, cardId, grade, at);
+    await applyCardAnswer(prisma, { userId, attempt: recorded });
+    return recorded;
+  }
+
+  const markedKnown = (cardIds: string[], at: Date) =>
+    recordMarkedKnown(prisma, {
+      userId,
+      cardIds,
+      directions: ['FORWARD'],
+      at,
+    });
+
+  it('marks NEW and LEARNING cards known, leaving known ones as they are', async () => {
+    const deck = await deckOf(3);
+    const [unanswered, learning, graduated] = deck.cards;
+    await answered(deck.id, learning.id, 'MISSED', minutesFromNow(1));
+    await answered(deck.id, graduated.id, 'NAILED', minutesFromNow(1));
+    await answered(deck.id, graduated.id, 'NAILED', minutesFromNow(2));
+
+    const marked = await markedKnown(
+      deck.cards.map(({ id }) => id),
+      minutesFromNow(3),
+    );
+
+    expect(marked).toBe(2);
+    for (const card of [unanswered, learning]) {
+      // Mastery raised to 3, due 5 days on
+      expect(await standingOf(deck.id, card.id)).toMatchObject({
+        lifecycleState: 'REINFORCING',
+        masteryBand: 'developing',
+        isKnown: true,
+        isDue: false,
+      });
+    }
+  });
+
+  it('replays a re-graded answer, keeping a Marked Known before or after it', async () => {
+    const deck = await deckOf(4);
+    const [beforeMark, asIfBefore, afterMark, asIfAfter] = deck.cards;
+    // Each answered, marked known, then answered again
+    const history = async (
+      cardId: string,
+      grades: [RecallGrade, RecallGrade],
+    ) => {
+      const first = await answered(
+        deck.id,
+        cardId,
+        grades[0],
+        minutesFromNow(1),
+      );
+      await markedKnown([cardId], minutesFromNow(2));
+      const second = await answered(
+        deck.id,
+        cardId,
+        grades[1],
+        minutesFromNow(3),
+      );
+      return [first, second];
+    };
+    const [missedBefore] = await history(beforeMark.id, ['MISSED', 'MISSED']);
+    await history(asIfBefore.id, ['NAILED', 'MISSED']);
+    const [, missedAfter] = await history(afterMark.id, ['MISSED', 'MISSED']);
+    await history(asIfAfter.id, ['MISSED', 'NAILED']);
+
+    for (const missed of [missedBefore, missedAfter]) {
+      await prisma.cardAttempt.update({
+        where: { id: missed.id },
+        data: { recallGrade: 'NAILED' },
+      });
+      await replayCardAnswers(prisma, {
+        userId,
+        cardId: missed.cardId,
+        direction: 'FORWARD',
+      });
+    }
+
+    expect(await standingOf(deck.id, beforeMark.id)).toEqual(
+      await standingOf(deck.id, asIfBefore.id),
+    );
+    expect(await standingOf(deck.id, afterMark.id)).toEqual(
+      await standingOf(deck.id, asIfAfter.id),
+    );
+    // Still known from the mark
+    expect(await standingOf(deck.id, beforeMark.id)).toMatchObject({
+      lifecycleState: 'REINFORCING',
+    });
+  });
+
+  it('starts a new card NEW in each Study Direction', async () => {
+    const deck = await deckOf(0);
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+    const card = await prisma.card.create({
+      data: { deckId: deck.id, front: 'Card 1', position: 0 },
+    });
+
+    await startCardProgress(prisma, {
+      userId,
+      deckId: deck.id,
+      cardId: card.id,
+      startedAt: new Date(),
+    });
+
+    expect(
+      (await standing([deck.id])).cards.map(
+        ({ direction, lifecycleState }) => ({
+          direction,
+          lifecycleState,
+        }),
+      ),
+    ).toEqual([
+      { direction: 'FORWARD', lifecycleState: 'NEW' },
+      { direction: 'REVERSE', lifecycleState: 'NEW' },
+    ]);
+  });
+
+  it('resets a card to NEW in every Study Direction, so only answers since count', async () => {
+    const deck = await deckOf(1);
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+    const [card] = deck.cards;
+    for (const direction of ['FORWARD', 'REVERSE'] as const) {
+      const missed = await attempt(
+        deck.id,
+        card.id,
+        'MISSED',
+        minutesFromNow(1),
+        {
+          direction,
+        },
+      );
+      await applyCardAnswer(prisma, { userId, attempt: missed });
+    }
+    const byDirection = async () =>
+      (await standing([deck.id], { now: minutesFromNow(60) })).cards.map(
+        ({ direction, lifecycleState, recentMisses }) => ({
+          direction,
+          lifecycleState,
+          recentMisses,
+        }),
+      );
+
+    await resetCardProgress(prisma, {
+      cardId: card.id,
+      resetAt: minutesFromNow(2),
+    });
+    const afterReset = await byDirection();
+    await answered(deck.id, card.id, 'NAILED', minutesFromNow(3));
+
+    expect(afterReset).toEqual([
+      { direction: 'FORWARD', lifecycleState: 'NEW', recentMisses: 0 },
+      { direction: 'REVERSE', lifecycleState: 'NEW', recentMisses: 0 },
+    ]);
+    expect(await byDirection()).toEqual([
+      { direction: 'FORWARD', lifecycleState: 'LEARNING', recentMisses: 0 },
+      { direction: 'REVERSE', lifecycleState: 'NEW', recentMisses: 0 },
+    ]);
   });
 });
