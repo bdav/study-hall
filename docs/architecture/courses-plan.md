@@ -117,6 +117,7 @@ Rules:
 ### Experience
 
 - **Navigation:** Courses and Flashcards are peer top-level areas, with Courses as the default landing page. Inside a course, its deck appears as **Review** (cards due, start a study session), reusing the v2 study flow, so the learner never has to go through the Decks area. Course decks are also listed in Flashcards, labelled with their course. Structure the routes so a later "Today" view can sit above both areas.
+  > **Decided (2026-11-03):** Home at `/` becomes the landing page, showing Today above both areas (#92).
 - **Course creation:**
   - A **Setup Interview** comes first: the learner says in their own words what they want to learn and why, and one Sonnet-class call per round drafts the Course Setup and asks only what that leaves open, two to four questions a round (single or multiple choice, each with "Something else…" for the learner's own words, free text, a date, or a placement checklist of what they can already do, starting unticked), each but the checklist with a suggested answer already chosen, for at most three rounds. The page holds the interview and sends it with each round; the server keeps none of it. The interview ending, at ready or after three rounds, opens the course form filled in from the latest draft; there's no leaving partway. Skip, from the opening box, opens it empty. The interview's transcript is kept with the course for tuning the interview, and generation never reads it.
   - A structured form, the **Course Setup**: a title (the topic when left blank), topic, goal or target level, prior knowledge, what the learner can already do (a list, left out of the syllabus), time per week and session length (chosen from chips, stored as minutes), an optional deadline, preferred depth, what to focus on and skip, materials they're following, and free-text notes. Syllabus and lesson generation size each lesson to one session. With a deadline, the syllabus is given a **lesson budget** as a target: weeks until the deadline × minutes per week ÷ session minutes; without one, the model chooses the number of lessons.
@@ -294,7 +295,7 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 
 ## Deferred
 
-> **Parked (2026-11-01):** The per-deck accent-sensitive setting, multiple choice and other exercise types, units, voice and pronunciation practice, lesson modes, and open-ended LLM-graded recall cards are now parked, each with its reason, in **29c. Parked** in `updated-plan.md`. The Today dashboard with cross-deck review is design issue #92.
+> **Parked (2026-11-01):** The per-deck accent-sensitive setting, multiple choice and other exercise types, units, voice and pronunciation practice, lesson modes, and open-ended LLM-graded recall cards are now parked, each with its reason, in **29c. Parked** in `updated-plan.md`. The Today view with review across decks was designed in #92 (2026-11-03): Home at `/` shows Today, its Review across decks (ADR-0013) and the next lesson of each course.
 
 - Concept model and mastery tracking per concept or lesson; weak-spot detection
 - Cross-lesson tutor context (from distilled learner state)
@@ -305,6 +306,5 @@ Tests: TDD for each exercise type's deterministic path, accent mismatch, and the
 - A per-deck accent-sensitive grading setting
 - Multiple choice exercises and other exercise types
 - Units, or other grouping above lessons
-- A unified Today dashboard and cross-course review
 - Voice and pronunciation practice
 - Tutor-driven or learner-directed lesson modes (e.g. "quiz me on this lesson")

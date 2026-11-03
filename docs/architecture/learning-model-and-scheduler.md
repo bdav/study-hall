@@ -1519,4 +1519,6 @@ Future planning agents should focus on:
 9. Analytics/event model
 10. Home/dashboard UX
 
+> **Decided (2026-11-03):** Home shows Today, and Today's Review is one Study Session across decks, pooled by urgency (#92, `docs/adr/0013-todays-review-is-one-study-session-across-decks.md`).
+
 Avoid reopening scheduler philosophy unless identifying a concrete implementation contradiction.

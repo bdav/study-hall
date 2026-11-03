@@ -12,6 +12,16 @@ _Avoid_: Data, material
 Everything that records what the learner did or how well they know something: attempts, card progress, tutor threads.
 _Avoid_: Progress data, history
 
+## Today
+
+**Today**:
+What the learner has to do now: the reviews due across their decks, and the next lesson of each course. It holds things to start, never stats.
+_Avoid_: Dashboard, home (the page it's on)
+
+**Today's Review**:
+A Study Session across the decks the learner has ticked in Today, its queue pooled from them all by urgency, with new cards taken from each deck in turn. It asks each card in at most one Study Direction, and each deck's rules, such as its Shared Answers and Cram date, stay its own.
+_Avoid_: Cross-deck session, mixed session, all-decks session
+
 ## Flashcards and review
 
 **Deck**:
@@ -67,7 +77,7 @@ An answer that matches a correct answer except for accent marks. It is accepted,
 _Avoid_: Typo, near miss
 
 **Study Session**:
-A finite, time-budgeted run through cards from one deck.
+A finite, time-budgeted run through cards from one deck or from several.
 _Avoid_: Session (ambiguous with login sessions), review session
 
 **Study Mode**:

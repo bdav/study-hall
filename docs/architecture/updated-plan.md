@@ -918,6 +918,8 @@ exactly one deck at a time
 
 Cross-deck scheduling is deferred.
 
+> **Decided (2026-11-03):** Today's Review, started from Today on the Home page at `/`, is one Study Session across the decks the learner ticks there, its queue pooled by urgency (#92, `docs/adr/0013-todays-review-is-one-study-session-across-decks.md`). A deck's own study page still runs a session on that deck alone.
+
 Avoid hard assumptions that make future multi-deck sessions impossible.
 
 ⸻
@@ -2098,7 +2100,7 @@ These were planned or proposed and are deliberately not being built, each for th
 - Playwright end-to-end tests (`archive/implementation-plan.md`, testing): router and component tests cover behavior today; revisit with Go live.
 - Redis and background jobs (§4.5–4.6): ruled out for v2, and Retries are stored rows (#11).
 
-Not parked: cross-deck Study Sessions (§12.2). A Today dashboard with cross-deck review is design issue #92.
+Not parked: cross-deck Study Sessions (§12.2) and a Today view, designed in #92 (ADR-0013), their tickets in Today's section of the Implementation Order.
 
 ⸻
 
