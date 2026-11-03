@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 18/45 planned issues**
+**Completed: 19/45 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -38,7 +38,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #112 Card Standing: read card history's standing from it
    - [x] #92 Design: a Today view (a grilling with the maintainer; stop and ask)
    - [x] #102 Design: the Study Session as a state machine (a grilling with the maintainer; stop and ask)
-   - [ ] #120 Study Session machine: move the session and its navigation into a pure reducer
+   - [x] #120 Study Session machine: move the session and its navigation into a pure reducer
    - [ ] #121 Study Session machine: bring the page's state in and render from one view
    - [ ] #86 Suggest retiring mastered cards, and unretire them
    - [ ] #87 Cram toward a target date
