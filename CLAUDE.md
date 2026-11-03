@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 15/36 planned issues**
+**Completed: 15/37 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -47,6 +47,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [ ] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
    - #61's and #103's tickets join here
+   - [ ] #113 Steady every page that refetches in place
    - [ ] #109 Set up production (the maintainer's dashboard steps; stop and ask)
 6. Today: tickets join here once #92's design has them
 7. Courses
@@ -122,6 +123,10 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 ## Lint Rules to Know
 
 - **`react-hooks/set-state-in-effect`**: The ESLint config disallows calling `setState` synchronously inside `useEffect`. Instead of using an effect to reset/sync state, prefer deriving the value, computing it inline, or resetting state inside the event handler/callback that triggers the change.
+
+## Web Rules to Know
+
+- **Steady pages**: when a query's input changes while its page stays (a picker, filter or tab on the page), keep what the page shows until the new data loads: pass `placeholderData: keepPreviousData`, and while `isPlaceholderData` show the kept content dimmed with `aria-busy`. A page's loading skeleton is for its first load only. `DeckStatsPage` is the example; #113 gives this a shared helper.
 
 ## TDD Workflow
 
