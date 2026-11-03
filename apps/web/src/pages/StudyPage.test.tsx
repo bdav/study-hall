@@ -3312,6 +3312,98 @@ describe('a reversible deck (#82)', () => {
   });
 });
 
+describe('holding the card in one place (#122)', () => {
+  /**
+   * The study screen's card is drawn first in its stage, which every screen
+   * shares, so nothing shown with it sits above it and moves it.
+   */
+  function expectCardFirst(text: string | RegExp) {
+    const stages = document.querySelectorAll('[data-study-stage]');
+    expect(stages).toHaveLength(1);
+    expect(stages[0].firstElementChild).toHaveTextContent(text);
+    // Centred, what's below the card would move it up and down
+    expect(stages[0]).not.toHaveClass('justify-center');
+  }
+
+  async function start() {
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    return user;
+  }
+
+  it('draws the title card first, the options after it', () => {
+    setupMocksWithStartSession();
+    renderStudyPage();
+
+    expectCardFirst('Test Deck');
+  });
+
+  it('draws the title card first, Resume and Abandon after it', () => {
+    setupMocksWithStartSession();
+    mockActiveSession({ ...mockSession, items: mockSession.items });
+    renderStudyPage();
+
+    expect(screen.getByText('Resume session?')).toBeInTheDocument();
+    expectCardFirst('Test Deck');
+  });
+
+  it('draws the card in play first, and an error after it', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.dontKnow.useMutation).mockReturnValue({
+      mutateAsync: vi.fn(() => Promise.reject(new Error('network'))),
+    } as unknown as ReturnType<typeof trpc.study.dontKnow.useMutation>);
+    const user = await start();
+
+    await user.click(screen.getByRole('button', { name: /i don't know/i }));
+
+    const error = await screen.findByText(/failed to submit answer/i);
+    expectCardFirst('What is 2+2?');
+    const card =
+      document.querySelector('[data-study-stage]')?.firstElementChild;
+    expect(
+      card &&
+        card.compareDocumentPosition(error) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('draws a graded card first, its answer and history after it', async () => {
+    setupMocksWithStartSession();
+    mockCardHistory();
+    const user = await start();
+
+    await user.type(screen.getByRole('textbox'), '4{Enter}');
+    await screen.findByTestId('result');
+
+    expectCardFirst('What is 2+2?');
+  });
+
+  it('draws the summary first', async () => {
+    setupMocksWithStartSession();
+    const user = await start();
+
+    await user.click(screen.getByRole('button', { name: /finish session/i }));
+
+    await screen.findByRole('heading', { name: /session complete/i });
+    expectCardFirst(/session complete/i);
+  });
+
+  it('draws the card saying nothing is due first', async () => {
+    setupMocksWithStartSession();
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+      ((opts?: { onSuccess?: (data: null) => void }) =>
+        ({
+          mutate: vi.fn(() => opts?.onSuccess?.(null)),
+        }) as unknown as ReturnType<
+          typeof trpc.study.startSession.useMutation
+        >) as unknown as typeof trpc.study.startSession.useMutation,
+    );
+    await start();
+
+    expectCardFirst(/nothing is due right now/i);
+  });
+});
+
 describe('starting another session (#93)', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());

@@ -78,8 +78,11 @@ export function StudySkeleton() {
         <Skeleton className="h-8 w-48" />
         <Skeleton className="mt-2 h-10 w-64" />
       </div>
-      <div className="flex flex-1 items-center justify-center">
-        <Skeleton className="h-64 w-full max-w-md rounded-xl" />
+      {/* Where the study card will sit, at the top of its column (#122) */}
+      <div className="mt-6 flex w-full flex-1 flex-col items-center">
+        <div className="w-full max-w-md pt-3">
+          <Skeleton className="aspect-3/2 w-full rounded-xl" />
+        </div>
       </div>
     </CenteredPage>
   );

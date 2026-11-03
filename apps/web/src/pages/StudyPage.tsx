@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
@@ -327,6 +334,22 @@ function AnswerNotes({
   );
 }
 
+/**
+ * Where the study screen's card sits: at the top of its column, at the same
+ * height on every screen, whatever is shown with it below, so nothing shown
+ * moves it (#122).
+ */
+function StudyStage({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-study-stage
+      className="mt-6 flex w-full flex-1 flex-col items-center"
+    >
+      {children}
+    </div>
+  );
+}
+
 const failureMessages: Record<Failure, string> = {
   start: 'Failed to start study session. Please try again.',
   answer: 'Failed to submit answer. Please try again.',
@@ -609,7 +632,7 @@ export default function StudyPage() {
           activeTab="study"
           course={deck.course}
         />
-        <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
+        <StudyStage>
           <div className="w-full max-w-md pt-3">
             <div className="flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 text-center backdrop-blur-sm">
               <p className="text-white/60">
@@ -617,7 +640,7 @@ export default function StudyPage() {
               </p>
             </div>
           </div>
-        </div>
+        </StudyStage>
       </CenteredPage>
     );
   }
@@ -631,7 +654,7 @@ export default function StudyPage() {
           activeTab="study"
           course={deck.course}
         />
-        <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
+        <StudyStage>
           <div
             className="relative w-full max-w-md pt-3"
             onTouchStart={swipe.onTouchStart}
@@ -678,7 +701,7 @@ export default function StudyPage() {
               Start another session
             </button>
           </div>
-        </div>
+        </StudyStage>
       </CenteredPage>
     );
   }
@@ -794,9 +817,7 @@ export default function StudyPage() {
         course={deck.course}
       />
 
-      {error && <p className="mb-4 text-destructive">{error}</p>}
-
-      <div className="mt-6 flex w-full flex-1 flex-col items-center justify-center">
+      <StudyStage>
         <div
           className="relative w-full max-w-md"
           onTouchStart={swipe.onTouchStart}
@@ -907,6 +928,10 @@ export default function StudyPage() {
         </div>
 
         <div className="mt-6 w-full max-w-md">
+          {error && (
+            <p className="mb-4 text-center text-destructive">{error}</p>
+          )}
+
           {isAnswering && (
             <form
               className="relative w-full"
@@ -1087,7 +1112,7 @@ export default function StudyPage() {
             </div>
           )}
         </div>
-      </div>
+      </StudyStage>
     </CenteredPage>
   );
 }
