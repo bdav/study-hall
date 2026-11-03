@@ -79,7 +79,7 @@ export function StudySkeleton() {
         <Skeleton className="mt-2 h-10 w-64" />
       </div>
       {/* Where the study card will sit, at the top of its column (#122) */}
-      <div className="mt-6 flex w-full flex-1 flex-col items-center">
+      <div className="mt-6 flex w-full flex-1 flex-col items-center md:pt-[min(10vh,7rem)]">
         <div className="w-full max-w-md pt-3">
           <Skeleton className="aspect-3/2 w-full rounded-xl" />
         </div>

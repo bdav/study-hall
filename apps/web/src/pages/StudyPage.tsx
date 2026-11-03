@@ -337,13 +337,14 @@ function AnswerNotes({
 /**
  * Where the study screen's card sits: at the top of its column, at the same
  * height on every screen, whatever is shown with it below, so nothing shown
- * moves it (#122).
+ * moves it (#122). From md up it sits a tenth of the window's height lower,
+ * at most 7rem, so it isn't crowded against the header.
  */
 function StudyStage({ children }: { children: ReactNode }) {
   return (
     <div
       data-study-stage
-      className="mt-6 flex w-full flex-1 flex-col items-center"
+      className="mt-6 flex w-full flex-1 flex-col items-center md:pt-[min(10vh,7rem)]"
     >
       {children}
     </div>
