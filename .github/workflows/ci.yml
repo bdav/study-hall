@@ -17,7 +17,9 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest, so a newer Ubuntu arrives in a commit CI
+    # checks, not silently when GitHub moves ubuntu-latest (#111).
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     # The API tests make a Postgres schema per suite, as they do locally
