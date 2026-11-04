@@ -23,6 +23,8 @@ export type QueueCandidates = {
   newCards: string[];
   // Retired cards, for Review retired alone (#86), in deck order
   retired: string[];
+  // How many NEW cards a day reach the Cram Date, in Cram with one (#87)
+  newPerDay?: number | null;
 };
 
 /** Each session type's bounds on its size in cards (§12.1). */
@@ -183,21 +185,25 @@ function drillCounts(candidates: QueueCandidates, { max }: Size): Counts {
 }
 
 /**
- * Cram (§16.3): NEW cards 40% and weak cards a tenth, then due LEARNING up
- * to half and due REINFORCING up to 60%. Room left goes to reviews, then to NEW
- * cards, so a deck with nothing to review is covered as fast as sessions
- * allow.
+ * Cram (§16.3): NEW cards 40%, or as many as the Cram Date needs a day
+ * (#87), up to the whole session, and weak cards a tenth of it or the room
+ * left, then due LEARNING up to half and due REINFORCING up to 60%. Room left
+ * goes to reviews, then to NEW cards, so a deck with nothing to review is
+ * covered as fast as sessions allow.
  */
 function cramCounts(candidates: QueueCandidates, { max }: Size): Counts {
+  const newCount = Math.min(
+    candidates.newCards.length,
+    max,
+    Math.max(Math.floor(max * CRAM_NEW_SHARE), candidates.newPerDay ?? 0),
+  );
   const counts = withReviewCaps(
     {
-      new: Math.min(
-        candidates.newCards.length,
-        Math.floor(max * CRAM_NEW_SHARE),
-      ),
+      new: newCount,
       weak: Math.min(
         candidates.weakReinforcing.length,
         Math.floor(max * CRAM_WEAK_CAP),
+        max - newCount,
       ),
       learning: 0,
       reinforcing: 0,
@@ -361,7 +367,7 @@ const MOST = Math.max(...Object.values(SESSION_SIZES).map(({ max }) => max));
  * cards.
  */
 export function queueCandidates(
-  { cards, due, weak }: Standings,
+  { cards, due, weak, newPerDay }: Standings,
   studyMode: StudyMode,
 ): QueueCandidates {
   const { weakBeforeDue, takesNew, takesRetired } = MODE_RULES[studyMode];
@@ -386,6 +392,7 @@ export function queueCandidates(
           .filter((card) => card.lifecycleState === 'RETIRED')
           .map(({ cardId }) => cardId)
       : [],
+    newPerDay,
   };
 }
 

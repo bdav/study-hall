@@ -7,6 +7,7 @@ import {
   type StudyMode,
 } from '@prisma/client';
 import { countsSinceReset, isCorrect } from './countedAttempts.js';
+import { cramDueAt, newPerDayByDates, readCramDates } from './cramDate.js';
 import {
   applyAnswer,
   isKnown,
@@ -105,8 +106,6 @@ function countBy<T extends string>(keys: readonly T[], values: T[]) {
 
 const LIFECYCLE_STATES = Object.values(CardLifecycleState);
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** A REINFORCING card with this mastery or less is Weak (§10). */
 const WEAK_MASTERY = 3;
 /** Or one missed this often in its last RECENT_ANSWERS Counted Answers. */
@@ -134,19 +133,20 @@ type Progress = Prisma.CardProgressGetPayload<{
 
 /**
  * When a card in review comes due for a session in a Study Mode: at its due
- * time, or, in Cram, once half its interval has passed (§16.3: the earlier
- * of its due time and Cram's). Null for a card not in review.
+ * time, or sooner in Cram, paced by its deck's Cram Date when it has one
+ * (`cramDueAt`). Null for a card not in review.
  */
 function dueFrom(
   { lifecycleState, dueAt, lastIntervalDays }: Progress,
   studyMode: StudyMode,
+  cramDate: Date | null,
 ) {
   if (lifecycleState !== 'LEARNING' && lifecycleState !== 'REINFORCING') {
     return null;
   }
   if (!dueAt) return null;
-  if (studyMode !== 'CRAM' || lastIntervalDays === null) return dueAt;
-  return new Date(dueAt.getTime() - (lastIntervalDays * DAY_MS) / 2);
+  if (studyMode !== 'CRAM') return dueAt;
+  return cramDueAt({ dueAt, lastIntervalDays }, cramDate);
 }
 
 /**
@@ -226,9 +226,18 @@ export async function readCardStanding(
     );
   }
   const tallies = await countedAnswers(prisma, userId, progress);
+  // Only Cram reads a deck's Cram Date (#87)
+  const cramDates =
+    studyMode === 'CRAM'
+      ? await readCramDates(
+          prisma,
+          [...new Set(progress.map(({ deckId }) => deckId))],
+          now,
+        )
+      : new Map<string, Date>();
 
   const standings = progress.map((card) => {
-    const due = dueFrom(card, studyMode);
+    const due = dueFrom(card, studyMode, cramDates.get(card.deckId) ?? null);
     const {
       recentMisses: cardMisses,
       byGrade,
@@ -292,6 +301,12 @@ export async function readCardStanding(
       (next, { dueAt }) =>
         dueAt && dueAt > now && (!next || dueAt < next) ? dueAt : next,
       null,
+    ),
+    // How many NEW cards a day reach the decks' Cram Dates; none without one
+    newPerDay: newPerDayByDates(
+      cramDates,
+      cards.filter((card) => card.lifecycleState === 'NEW'),
+      now,
     ),
   };
 }

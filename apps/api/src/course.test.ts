@@ -1927,6 +1927,63 @@ describe('deadline and pacing', () => {
     expect(ai.requests[0].prompt).toContain('Deadline: 2026-11-30');
   });
 
+  describe("the Course Deck's Cram Date (#87)", () => {
+    const deadline = '2099-06-01';
+
+    async function cramUntilOf(courseId: string) {
+      const { cramUntil } = await prisma.deck.findUniqueOrThrow({
+        where: { courseId },
+      });
+      return cramUntil;
+    }
+
+    it("starts at the course's deadline", async () => {
+      const caller = createCaller();
+      const { id } = await createCourseWith({ deadline }, caller);
+
+      await caller.course.acceptProposal({ courseId: id });
+
+      expect(await cramUntilOf(id)).toEqual(new Date(deadline));
+    });
+
+    it('starts with none when the course has no deadline', async () => {
+      const caller = createCaller();
+      const { id } = await createCourseWith({ deadline: null }, caller);
+
+      await caller.course.acceptProposal({ courseId: id });
+
+      expect(await cramUntilOf(id)).toBeNull();
+    });
+
+    it('stays cleared once the learner clears it', async () => {
+      const caller = createCaller();
+      const { id } = await createCourseWith({ deadline }, caller);
+      await caller.course.acceptProposal({ courseId: id });
+      const deck = await prisma.deck.findUniqueOrThrow({
+        where: { courseId: id },
+      });
+
+      await caller.deck.update({ id: deck.id, cramUntil: null });
+
+      expect((await caller.deck.getById({ id: deck.id })).cramUntil).toBeNull();
+    });
+
+    it('starts at the deadline on a new deck for a restored course', async () => {
+      const caller = createCaller();
+      const { id } = await createCourseWith({ deadline }, caller);
+      await caller.course.acceptProposal({ courseId: id });
+      await prisma.deck.delete({ where: { courseId: id } });
+      await prisma.course.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
+
+      await caller.course.restore({ courseId: id });
+
+      expect(await cramUntilOf(id)).toEqual(new Date(deadline));
+    });
+  });
+
   it('says there is no deadline when none is given', async () => {
     await createCourseWith({});
 

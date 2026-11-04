@@ -82,7 +82,7 @@ function isInDialog(target: EventTarget | null) {
 /**
  * Whether a key is the page's Enter shortcut: not in a dialog or the
  * card's editor, nor on a button or link, which Enter activates instead
- * (#81).
+ * (#81), nor in the Cram Date, where it would start a session mid-date.
  */
 function isPageEnter(e: KeyboardEvent) {
   return (
@@ -90,7 +90,7 @@ function isPageEnter(e: KeyboardEvent) {
     !isInDialog(e.target) &&
     !(
       e.target instanceof Element &&
-      e.target.closest('button, a[href], [role="button"]')
+      e.target.closest('button, a[href], [role="button"], input[type="date"]')
     )
   );
 }
@@ -648,8 +648,15 @@ export default function StudyPage() {
     chosenMode === 'REVIEW_RETIRED' && deck && !offersReviewRetired
       ? 'STUDY'
       : chosenMode;
-  const { view, act, preview, resumable, isAcceptingAnswer, isUnretiring } =
-    useStudySession(deckId, { sessionType, studyMode, direction });
+  const {
+    view,
+    act,
+    preview,
+    resumable,
+    isAcceptingAnswer,
+    isUnretiring,
+    cramDateFailed,
+  } = useStudySession(deckId, { sessionType, studyMode, direction });
   const { screen } = view;
   const cardScreen = screen.kind === 'card' ? screen : null;
   const isAtTitle = screen.kind === 'title';
@@ -1374,6 +1381,12 @@ export default function StudyPage() {
               studyMode={studyMode}
               onStudyMode={setStudyMode}
               offersReviewRetired={offersReviewRetired}
+              cramDate={{
+                value: deck.cramUntil?.slice(0, 10) ?? null,
+                pace: preview?.cramPace ?? null,
+                hasFailed: cramDateFailed,
+                onChange: act.setCramDate,
+              }}
               direction={
                 labels && {
                   value: direction,

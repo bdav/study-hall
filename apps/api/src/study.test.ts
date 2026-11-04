@@ -199,6 +199,7 @@ describe('studyRouter', () => {
         dueCount: 1,
         newCount: 1,
         nextDueAt: later,
+        cramPace: null,
       });
     });
 
@@ -235,6 +236,7 @@ describe('studyRouter', () => {
         dueCount: 0,
         newCount: 0,
         nextDueAt: soon,
+        cramPace: null,
       });
     });
 
@@ -267,12 +269,140 @@ describe('studyRouter', () => {
         newCount: 0,
         // Halfway through its interval
         nextDueAt: new Date(earlyAt.getTime() + 2 * day),
+        cramPace: null,
       });
       expect(await caller.study.queuePreview({ deckId: deck.id })).toEqual({
         sessionSize: 0,
         dueCount: 0,
         newCount: 0,
         nextDueAt: new Date(halfwayAt.getTime() + 4 * day),
+        cramPace: null,
+      });
+    });
+
+    describe('with a Cram Date (#87)', () => {
+      const day = 24 * 60 * 60 * 1000;
+      const inDays = (n: number) =>
+        new Date(new Date(Date.now() + n * day).toISOString().slice(0, 10));
+      const daysAgo = (n: number) => new Date(Date.now() - n * day);
+      const cramming = { studyMode: 'CRAM' } as const;
+
+      /** A deck with one card in review, on a 4-day interval. */
+      async function reviewedDeck(cramUntil: Date | null, reviewedAt: Date) {
+        const deck = await deckWith(capitals.slice(0, 1));
+        await prisma.deck.update({
+          where: { id: deck.id },
+          data: { cramUntil },
+        });
+        await recordCardHistory(prisma, {
+          userId,
+          cardId: deck.cards[0].id,
+          answers: [
+            { grade: 'NAILED', at: new Date(reviewedAt.getTime() - day) },
+            { grade: 'NAILED', at: reviewedAt },
+          ],
+        });
+        return deck;
+      }
+
+      // Today's date ends within a day, so a card reviewed 1.5 days ago is
+      // past half the days left then, if not halfway through its interval
+      const pacedIn = () => reviewedDeck(inDays(0), daysAgo(1.5));
+
+      it("counts a card due by the date's pacing, and the queue Cram builds agrees", async () => {
+        const deck = await pacedIn();
+        const caller = createCaller();
+
+        const preview = await caller.study.queuePreview({
+          deckId: deck.id,
+          ...cramming,
+        });
+        const session = await caller.study.startSession({
+          deckId: deck.id,
+          ...cramming,
+        });
+
+        expect(preview).toMatchObject({ sessionSize: 1, dueCount: 1 });
+        expect(session?.items.map(({ cardId }) => cardId)).toEqual([
+          deck.cards[0].id,
+        ]);
+      });
+
+      it('leaves Study and Drill Weakest as they are', async () => {
+        const deck = await pacedIn();
+
+        for (const studyMode of ['STUDY', 'DRILL_WEAKEST'] as const) {
+          expect(
+            await createCaller().study.queuePreview({
+              deckId: deck.id,
+              studyMode,
+            }),
+          ).toMatchObject({ sessionSize: 0, dueCount: 0, cramPace: null });
+        }
+      });
+
+      it('schedules an answer as ever', async () => {
+        // Both past half their interval, so both in Cram's queue
+        const dated = await reviewedDeck(inDays(0), daysAgo(2.5));
+        const undated = await reviewedDeck(null, daysAgo(2.5));
+        const caller = createCaller();
+        const progressAfterAnswering = async (deckId: string) => {
+          const session = await caller.study.startSession({
+            deckId,
+            ...cramming,
+          });
+          await caller.study.submitAnswer({
+            itemId: session!.items[0].id,
+            userAnswer: 'Paris',
+          });
+          return prisma.cardProgress.findFirstOrThrow({
+            where: { userId, deckId },
+            select: {
+              lifecycleState: true,
+              masteryScore: true,
+              lastIntervalDays: true,
+            },
+          });
+        };
+
+        expect(await progressAfterAnswering(dated.id)).toEqual(
+          await progressAfterAnswering(undated.id),
+        );
+      });
+
+      it('paces by every NEW card in the deck, and says how many this session takes', async () => {
+        const deck = await deckWith(
+          Array.from({ length: 60 }, (_, i) => ({
+            front: `Card ${i}`,
+            canonicalAnswers: [`A${i}`],
+          })),
+        );
+        await prisma.deck.update({
+          where: { id: deck.id },
+          // 10 days, today and the date included
+          data: { cramUntil: inDays(9) },
+        });
+
+        expect(
+          (
+            await createCaller().study.queuePreview({
+              deckId: deck.id,
+              sessionType: 'QUICK',
+              ...cramming,
+            })
+          ).cramPace,
+        ).toEqual({ newPerDay: 6, inSession: 12 });
+      });
+
+      it("counts as it does without one once it's passed", async () => {
+        const deck = await reviewedDeck(inDays(-1), daysAgo(1.5));
+
+        expect(
+          await createCaller().study.queuePreview({
+            deckId: deck.id,
+            ...cramming,
+          }),
+        ).toMatchObject({ dueCount: 0, cramPace: null });
       });
     });
 

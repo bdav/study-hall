@@ -1,5 +1,8 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
+import { countOf } from '@/lib/format';
+import { glassInputClassName } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import {
   SESSION_TYPES,
@@ -14,12 +17,29 @@ const DIRECTION_DETAILS: Record<StudyDirection, string> = {
   REVERSE: 'Each card shows its answer; type the front',
 };
 
+// A date in the UTC day it's stored for, as the API reads it
+const cramDateFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
+/** The Cram Date, its pace for NEW cards and how to change it (#87). */
+type CramDateField = {
+  /** The deck's date, "2027-06-01", if it has one. */
+  value: string | null;
+  /** How many NEW cards a day reach it, and how many a session takes. */
+  pace: { newPerDay: number; inSession: number } | null;
+  hasFailed: boolean;
+  onChange: (value: string | null) => void;
+};
+
 /**
  * How to study, before a Study Session starts: its length, Quick, Standard
  * or Deep, and beside it its mode, Study, Drill weakest or Cram (#8, #9),
- * and, on a Reversible Deck, its Study Direction by the deck's Direction
- * Labels (ADR-0011), as a segmented control: a way round, not a mix or a
- * size like the others.
+ * with Cram's date (#87), and, on a Reversible Deck, its Study Direction by
+ * the deck's Direction Labels (ADR-0011), as a segmented control: a way
+ * round, not a mix or a size like the others.
  */
 export function SessionPicker({
   sessionType,
@@ -27,6 +47,7 @@ export function SessionPicker({
   studyMode,
   onStudyMode,
   offersReviewRetired = false,
+  cramDate,
   direction,
 }: {
   sessionType: SessionType;
@@ -35,6 +56,7 @@ export function SessionPicker({
   onStudyMode: (value: StudyMode) => void;
   /** Review retired, offered only on a deck with retired cards (#86). */
   offersReviewRetired?: boolean;
+  cramDate: CramDateField;
   /** On a Reversible Deck, the direction chosen and the deck's labels. */
   direction?: {
     value: StudyDirection;
@@ -58,7 +80,74 @@ export function SessionPicker({
         value={studyMode}
         onChange={onStudyMode}
       />
+      {studyMode === 'CRAM' && <CramDateRow {...cramDate} />}
       {direction && <DirectionRow {...direction} />}
+    </div>
+  );
+}
+
+/** What the Cram Date asks of NEW cards; none with none left to see. */
+function paceMessage(
+  value: string,
+  { newPerDay, inSession }: NonNullable<CramDateField['pace']>,
+) {
+  if (newPerDay === 0) return null;
+  const date = cramDateFormat.format(new Date(value));
+  const pace = `${countOf(newPerDay, 'new card')} a day to see them all by ${date}`;
+  return inSession < newPerDay
+    ? `${pace}; this session takes ${inSession}`
+    : pace;
+}
+
+/**
+ * The Cram Date, saved as soon as it's a whole date from today on: a date
+ * field gives a part-typed year, or nothing, along the way, which stays in
+ * the field until it's left.
+ */
+function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
+  const id = useId();
+  const [typed, setTyped] = useState<string | null>(null);
+  // Today in UTC, when the API takes a date to have passed
+  const today = new Date().toISOString().slice(0, 10);
+  const message = value && pace && paceMessage(value, pace);
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-1 block text-xs uppercase tracking-wide text-white/50"
+      >
+        Cram until
+      </label>
+      <div className="flex items-center gap-3">
+        <Input
+          id={id}
+          type="date"
+          min={today}
+          value={typed ?? value ?? ''}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            if (e.target.value >= today) onChange(e.target.value);
+          }}
+          onBlur={() => setTyped(null)}
+          className={`max-w-48 [color-scheme:dark] ${glassInputClassName}`}
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+          >
+            Clear date
+          </button>
+        )}
+      </div>
+      {hasFailed ? (
+        <p role="alert" className="mt-1 text-xs text-white/70">
+          Couldn't save the date. Please try again.
+        </p>
+      ) : (
+        message && <p className="mt-1 text-xs text-white/50">{message}</p>
+      )}
     </div>
   );
 }

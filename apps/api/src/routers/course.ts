@@ -350,7 +350,7 @@ export const courseRouter = router({
     .mutation(async ({ ctx, input }) => {
       const proposal = await ctx.prisma.syllabusProposal.findFirst({
         where: { courseId: input.courseId, course: { userId: ctx.userId } },
-        include: { course: { select: { title: true } } },
+        include: { course: { select: { title: true, deadline: true } } },
       });
 
       if (!proposal) {
@@ -396,6 +396,7 @@ export const courseRouter = router({
             userId: ctx.userId,
             courseId: input.courseId,
             name: proposal.course.title,
+            cramUntil: proposal.course.deadline,
           },
         });
       });
@@ -1131,6 +1132,7 @@ export const courseRouter = router({
             userId: ctx.userId,
             courseId: course.id,
             name: course.title,
+            cramUntil: course.deadline,
           },
         });
       });

@@ -303,6 +303,110 @@ describe('Card Standing', () => {
       expect(await due('DRILL_WEAKEST')).toEqual([false, false]);
     });
 
+    describe('with a Cram Date (#87)', () => {
+      const untilInTwoDays = new Date('2026-11-04');
+
+      /**
+       * A deck with a Cram Date and three cards: two on 4-day intervals,
+       * reviewed a day ago and 6 hours ago, and one NEW.
+       */
+      async function pacedDeck(cramUntil: Date) {
+        const deck = await deckOf(3);
+        const [early, soon] = deck.cards;
+        await prisma.deck.update({
+          where: { id: deck.id },
+          data: { cramUntil },
+        });
+        await history(early.id, graduated(daysAgo(1)));
+        await history(soon.id, graduated(new Date(now.getTime() - 6 * hour)));
+        return deck;
+      }
+
+      it('reads a card as due and when, by half the days left when reviewed', async () => {
+        // Ends 60 hours from now. Reviewed 24 hours ago: 84 left then, so
+        // 42 after it, 18 from now. Half its 4-day interval is 48 after it,
+        // so the date comes first
+        const deck = await pacedDeck(untilInTwoDays);
+
+        const { cards, counts, nextDueAt } = await standing([deck.id], {
+          studyMode: 'CRAM',
+        });
+
+        expect(cards.map(({ dueAt }) => dueAt)).toEqual([
+          new Date(now.getTime() + 18 * hour),
+          new Date(now.getTime() + 27 * hour),
+          null,
+        ]);
+        expect(counts.due).toBe(0);
+        expect(nextDueAt).toEqual(new Date(now.getTime() + 18 * hour));
+      });
+
+      it('reads a card due once that much has passed', async () => {
+        const deck = await pacedDeck(untilInTwoDays);
+
+        const { cards, counts } = await standing([deck.id], {
+          studyMode: 'CRAM',
+          now: new Date(now.getTime() + 18 * hour),
+        });
+
+        expect(cards.map(({ isDue }) => isDue)).toEqual([true, false, false]);
+        expect(counts.due).toBe(1);
+      });
+
+      it("isn't read by any other Study Mode", async () => {
+        const deck = await pacedDeck(untilInTwoDays);
+        const dueAt = (studyMode: StudyMode, at: Date) =>
+          standing([deck.id], { studyMode, now: at }).then(({ cards }) =>
+            cards.map(({ dueAt }) => dueAt),
+          );
+
+        expect(await dueAt('DRILL_WEAKEST', now)).toEqual(
+          await dueAt('STUDY', now),
+        );
+        expect((await standing([deck.id])).newPerDay).toBeNull();
+      });
+
+      it('says how many NEW cards a day reach the date, in Cram', async () => {
+        const deck = await deckOf(9);
+        await prisma.deck.update({
+          where: { id: deck.id },
+          data: { cramUntil: untilInTwoDays },
+        });
+
+        const { newPerDay } = await standing([deck.id], { studyMode: 'CRAM' });
+
+        expect(newPerDay).toBe(3);
+      });
+
+      it('reads a date that has passed as none', async () => {
+        const deck = await pacedDeck(new Date('2026-11-01'));
+        const dated = await standing([deck.id], { studyMode: 'CRAM' });
+
+        await prisma.deck.update({
+          where: { id: deck.id },
+          data: { cramUntil: null },
+        });
+        const undated = await standing([deck.id], { studyMode: 'CRAM' });
+
+        expect(dated).toEqual(undated);
+        expect(dated.newPerDay).toBeNull();
+      });
+
+      it('paces each deck by its own date', async () => {
+        const dated = await pacedDeck(untilInTwoDays);
+        const undated = await deckOf(1);
+        await history(undated.cards[0].id, graduated(daysAgo(1)));
+
+        const { cards } = await standing([dated.id, undated.id], {
+          studyMode: 'CRAM',
+        });
+
+        expect(cards[0].dueAt).toEqual(new Date(now.getTime() + 18 * hour));
+        // Half its 4-day interval, 1 day of it gone
+        expect(cards[3].dueAt).toEqual(new Date(now.getTime() + day));
+      });
+    });
+
     it('gives each card in review its next due time in the Study Mode, and a NEW card none', async () => {
       const deck = await deckOf(2);
       const [inThreeDays] = deck.cards;

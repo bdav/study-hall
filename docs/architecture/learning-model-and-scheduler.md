@@ -1181,7 +1181,7 @@ Cram behavior is:
 - deck-scoped
 - target-date-driven
 
-> **As built (2026-11-01):** Cram (#9) is a Study Mode chosen per session, with no target date: a card in review counts as due once half its interval has passed, and NEW cards take 40% of the session. Date-driven pacing (a cram target date) is #87.
+> **As built (2026-11-04):** Cram (#9) is a Study Mode chosen per session: a card in review counts as due once half its interval has passed, and NEW cards take 40% of the session. A deck may have a Cram Date (#87, `Deck.cramUntil`): `cramPacingDueAt` is then halfway from the start of the card's interval to the end of the date, so it's fixed when the card is reviewed rather than moving as the date nears, and effectiveDueAt the earlier of that and half its interval. NEW cards' share grows to what reaches the date at one session a day. Past the date, Cram counts as it does without one, which is how cram ends: Study and Drill Weakest never read it.
 
 When cram ends:
 

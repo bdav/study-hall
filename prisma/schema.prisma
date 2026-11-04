@@ -144,6 +144,9 @@ model Deck {
   // replace; one the learner typed is theirs, and never replaced
   forwardLabelSuggested Boolean        @default(false)
   reverseLabelSuggested Boolean        @default(false)
+  // The Cram Date, a day Cram paces the deck toward (#87); a Course Deck's
+  // starts at its course's deadline. Past it, it counts as none
+  cramUntil             DateTime?      @db.Date
   // Archived decks leave Flashcards and keep everything (ADR-0003, #77)
   archivedAt            DateTime?
   createdAt             DateTime       @default(now())

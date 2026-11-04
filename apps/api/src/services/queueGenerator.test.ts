@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cramDueAt, cramNewPerDay } from './cramDate.js';
 import { composeQueue, type QueueCandidates } from './queueGenerator.js';
 
 /** Card ids "<prefix>1" to "<prefix>n", in priority order. */
@@ -6,7 +7,9 @@ function ids(prefix: string, n: number) {
   return Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`);
 }
 
-function candidates(counts: Partial<Record<keyof QueueCandidates, number>>) {
+type Bucket = Exclude<keyof QueueCandidates, 'newPerDay'>;
+
+function candidates(counts: Partial<Record<Bucket, number>>) {
   return {
     dueLearning: ids('L', counts.dueLearning ?? 0),
     dueReinforcing: ids('R', counts.dueReinforcing ?? 0),
@@ -396,5 +399,142 @@ describe('composeQueue in Cram', () => {
         seed: 42,
       }),
     ).toEqual(CRAM_GOLDEN);
+  });
+});
+
+describe('Cram toward a date (#87)', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = new Date('2026-11-02T12:00:00.000Z');
+  const near = new Date('2026-11-03');
+  const far = new Date('2026-12-14');
+
+  describe('pacing', () => {
+    // Reviewed some days ago, each on an 8-day interval
+    const reviewedDaysAgo = [1, 2, 3, 4, 5, 6];
+    const cards = reviewedDaysAgo.map((days, i) => ({
+      id: `R${i + 1}`,
+      dueAt: new Date(now.getTime() + (8 - days) * day),
+      lastIntervalDays: 8,
+    }));
+    const quickQueue = (cramDate: Date | null) =>
+      composeQueue({
+        candidates: {
+          ...candidates({}),
+          dueReinforcing: cards
+            .filter((card) => cramDueAt(card, cramDate) <= now)
+            .map(({ id }) => id),
+        },
+        sessionType: 'QUICK',
+        studyMode: 'CRAM',
+        seed: 42,
+      });
+
+    it('gives this queue with no date, those past half their interval', () => {
+      expect(quickQueue(null)).toEqual(['R6', 'R4', 'R5']);
+    });
+
+    it('gives this queue with a far date, which half their interval decides', () => {
+      expect(quickQueue(far)).toEqual(['R6', 'R4', 'R5']);
+    });
+
+    it('gives this queue with a near date, which pulls in cards reviewed longer ago than half the days left', () => {
+      // 1.5 days left now: reviewed 2 days ago, 3.5 were left, half of
+      // them gone; reviewed 1 day ago, 2.5 were left, and only 1 gone
+      expect(quickQueue(near)).toEqual(['R2', 'R6', 'R4', 'R3', 'R5']);
+    });
+
+    it('never counts a card due later than half its interval', () => {
+      const card = {
+        dueAt: new Date(now.getTime() + 2 * day),
+        lastIntervalDays: 4,
+      };
+
+      expect(cramDueAt(card, far)).toEqual(cramDueAt(card, null));
+      expect(cramDueAt(card, null)).toEqual(now);
+    });
+
+    it('counts a card with no interval due at its due time, whatever the date', () => {
+      const card = { dueAt: now, lastIntervalDays: null };
+
+      expect(cramDueAt(card, near)).toEqual(now);
+    });
+
+    it("counts a card reviewed on the date's own day due again later that day", () => {
+      const noon = new Date('2026-11-03T12:00:00.000Z');
+      const card = {
+        dueAt: new Date(noon.getTime() + 4 * day),
+        lastIntervalDays: 4,
+      };
+
+      expect(cramDueAt(card, near)).toEqual(
+        new Date('2026-11-03T18:00:00.000Z'),
+      );
+    });
+  });
+
+  describe('the new-card share', () => {
+    const cram = (
+      counts: Parameters<typeof candidates>[0],
+      newPerDay: number | null,
+      sessionType: 'QUICK' | 'STANDARD' = 'STANDARD',
+    ) =>
+      composition(
+        composeQueue({
+          candidates: { ...candidates(counts), newPerDay },
+          sessionType,
+          studyMode: 'CRAM',
+          seed: 1,
+        }),
+      );
+    const backlog = { dueReinforcing: 40, weakReinforcing: 5, newCards: 40 };
+
+    it('counts how many NEW cards a day reach the date, today and the date included', () => {
+      expect(cramNewPerDay(86, far, now)).toBe(2);
+      // 43 days: the 29 left in November, this one with them, and 14
+      expect(cramNewPerDay(129, far, now)).toBe(3);
+      expect(cramNewPerDay(130, far, now)).toBe(4);
+      expect(cramNewPerDay(3, near, now)).toBe(2);
+      expect(cramNewPerDay(3, new Date('2026-11-02'), now)).toBe(3);
+      expect(cramNewPerDay(0, far, now)).toBe(0);
+    });
+
+    it('grows to the pace the date needs', () => {
+      expect(cram(backlog, 15).newCards).toBe(15);
+    });
+
+    it("stays at Cram's 40% when the date needs fewer", () => {
+      expect(cram(backlog, 3).newCards).toBe(10);
+    });
+
+    it('stays within the session, whatever the date needs', () => {
+      expect(cram(backlog, 60)).toEqual({
+        newCards: 25,
+        weakReinforcing: 0,
+        dueLearning: 0,
+        dueReinforcing: 0,
+      });
+      expect(cram(backlog, 60, 'QUICK').newCards).toBe(12);
+    });
+
+    it('leaves reviews the room the NEW cards leave', () => {
+      expect(cram(backlog, 20)).toEqual({
+        newCards: 20,
+        weakReinforcing: 2,
+        dueLearning: 0,
+        dueReinforcing: 3,
+      });
+    });
+
+    it('leaves other modes as they are', () => {
+      const study = (newPerDay: number | null) =>
+        composeQueue({
+          candidates: { ...candidates(backlog), newPerDay },
+          sessionType: 'STANDARD',
+          studyMode: 'STUDY',
+          seed: 1,
+        });
+
+      expect(study(20)).toEqual(study(null));
+    });
   });
 });

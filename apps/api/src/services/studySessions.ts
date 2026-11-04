@@ -110,17 +110,29 @@ export async function previewQueue(
     direction,
     studyMode,
   });
+  const candidates = queueCandidates(standings, studyMode);
+  const queue = composeQueue({
+    candidates,
+    sessionType,
+    studyMode,
+    seed: 0,
+  });
   return {
     // Its order varies with the seed, never its size
-    sessionSize: composeQueue({
-      candidates: queueCandidates(standings, studyMode),
-      sessionType,
-      studyMode,
-      seed: 0,
-    }).length,
+    sessionSize: queue.length,
     dueCount: standings.counts.due,
     newCount: standings.counts.lifecycle.NEW,
     nextDueAt: standings.nextDueAt,
+    // How the Cram date paces NEW cards, and how many of them a session
+    // takes, which may be fewer than the date needs (#87)
+    cramPace:
+      standings.newPerDay === null
+        ? null
+        : {
+            newPerDay: standings.newPerDay,
+            inSession: queue.filter((id) => candidates.newCards.includes(id))
+              .length,
+          },
   };
 }
 

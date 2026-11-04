@@ -119,6 +119,14 @@ export function useStudySession(
       send({ type: 'failed', of: 'start' });
     },
   });
+  // The Cram Date, kept on the deck, which the title card then counts by
+  // (#87)
+  const setCramDate = trpc.deck.update.useMutation({
+    onSuccess: () => {
+      utils.deck.getById.invalidate({ id: deckId });
+      utils.study.queuePreview.invalidate({ deckId });
+    },
+  });
   const submitAnswer = trpc.study.submitAnswer.useMutation();
   const dontKnow = trpc.study.dontKnow.useMutation();
   const finishSession = trpc.study.finishSession.useMutation();
@@ -294,7 +302,12 @@ export function useStudySession(
     resumable,
     isAcceptingAnswer: acceptAnswer.isPending,
     isUnretiring: unretireCards.isPending,
+    cramDateFailed: setCramDate.isError,
     act: {
+      /** Sets the deck's Cram Date, or clears it with none. */
+      setCramDate: (cramUntil: string | null) => {
+        if (deckId) setCramDate.mutate({ id: deckId, cramUntil });
+      },
       /** Next: starts a session from the title card, or moves on. */
       next: () => {
         if (deckId) send({ type: 'next' });

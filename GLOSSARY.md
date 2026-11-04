@@ -19,7 +19,7 @@ What the learner has to do now: the reviews due across their decks, and the next
 _Avoid_: Dashboard, home (the page it's on)
 
 **Today's Review**:
-A Study Session across the decks the learner has ticked in Today, its queue pooled from them all by urgency, with new cards taken from each deck in turn. It asks each card in at most one Study Direction, and each deck's rules, such as its Shared Answers and Cram date, stay its own.
+A Study Session across the decks the learner has ticked in Today, its queue pooled from them all by urgency, with new cards taken from each deck in turn. It asks each card in at most one Study Direction, and each deck's rules, such as its Shared Answers and Cram Date, stay its own.
 _Avoid_: Cross-deck session, mixed session, all-decks session
 
 ## Flashcards and review
@@ -84,6 +84,10 @@ _Avoid_: Session (ambiguous with login sessions), review session
 How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; Cram, more new cards and reviews before they're due; or Review Retired, retired cards alone. Every mode but Review Retired schedules answers the same way; Review Retired records them but schedules nothing.
 _Avoid_: Session type (that's its length: Quick, Standard or Deep)
 
+**Cram Date**:
+The day a learner is cramming a deck toward, kept on the deck: Cram brings reviews round sooner and introduces more new cards so all of them are seen by it. It affects nothing but which cards Cram offers, and counts as none once it has passed.
+_Avoid_: Deadline (that's the course's, where a Course Deck's Cram Date starts), target date
+
 **Retry**:
 A missed card brought back at the end of the same Study Session for practice, at most twice. Its answer is recorded, but never changes when the card is next reviewed: the first answer already did. It isn't a Counted Answer.
 _Avoid_: Relearn, repeat, reappearance
@@ -117,7 +121,7 @@ An answer the scheduler takes into account: given since the card's progress in t
 _Avoid_: Valid attempt, scored answer
 
 **Due**:
-A card in review is due when its next review time has come. Cram counts a card due sooner, so it comes round more often before the learner needs it.
+A card in review is due when its next review time has come. Cram counts a card due sooner, and sooner still as a Cram Date nears, so it comes round more often before the learner needs it.
 _Avoid_: Scheduled, overdue (that's how late a due card is)
 
 **Weak**:

@@ -1287,9 +1287,7 @@ Cram is:
 
 Attempts still update ordinary scheduler state.
 
-As built (#9, `queueGenerator.ts`): with date-driven pacing deferred, Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40% and weak Reinforcing a tenth, due LEARNING up to half and due REINFORCING up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak Reinforcing cards up to 80% whether due or not, then due LEARNING, then due REINFORCING as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
-
-> **Deferred (2026-11-01):** "Target-date-driven" above describes date-driven pacing, which isn't built: a cram target date is #87. Until then Cram counts a card in review as due once half its interval has passed (#9).
+As built (#9, #87, `queueGenerator.ts`, `cramDate.ts`): Cram's pacing due time is halfway through a card's interval (`dueAt` less half of `lastIntervalDays`), or, with a Cram Date, halfway from the start of that interval to the end of the date if that's sooner, so effectiveDueAt is the earlier of that and its due time. Cram gives NEW cards 40%, or what reaches the Cram Date at one session a day if that's more, and weak Reinforcing a tenth, due LEARNING up to half and due REINFORCING up to 60%, then room left to reviews and finally to NEW cards, so a deck with nothing to review is covered as fast as sessions allow. Drill Weakest takes weak Reinforcing cards up to 80% whether due or not, then due LEARNING, then due REINFORCING as overflow, and no NEW cards; weak cards fill past 80% when nothing else is left. In every mode a card marked known since it was last answered isn't weak (ADR-0009).
 
 Example shift:
 
@@ -1750,7 +1748,7 @@ Deck/Card APIs
 
 Cram APIs
 
-> **As built (2026-11-01):** Cram is a Study Mode chosen when a session starts (#9), so it needs no APIs of its own. Configuring a cram target date is #87.
+> **As built (2026-11-04):** Cram is a Study Mode chosen when a session starts (#9), so it needs no APIs of its own. A deck's Cram Date is set and cleared through `deck.update` (#87).
 
 - configure cram target date
 - start cram session
@@ -2021,7 +2019,7 @@ hosted LLM fallback). Thresholds, models, and caching details remain open.
 
 E. API Contract
 
-> **Resolved (2026-11-01):** Settled by the tRPC routers as built, which `CLAUDE.md`'s tRPC API table lists. Cram target-date APIs are deferred (see §24).
+> **Resolved (2026-11-01):** Settled by the tRPC routers as built, which `CLAUDE.md`'s tRPC API table lists. A deck's Cram Date is set through `deck.update` (#87).
 
 Need tRPC router redesign for:
 

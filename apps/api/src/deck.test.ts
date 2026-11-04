@@ -304,6 +304,80 @@ describe('deckRouter', () => {
     });
   });
 
+  describe('the Cram Date (#87)', () => {
+    const iso = (date: Date) => date.toISOString().slice(0, 10);
+    const inDays = (n: number) =>
+      iso(new Date(Date.now() + n * 24 * 60 * 60 * 1000));
+    const startOf = (date: string) => new Date(date);
+
+    it('sets a date, kept on the deck, and clears it', async () => {
+      const deck = await prisma.deck.create({ data: { name: 'D', userId } });
+      const caller = createCaller();
+      const read = async () =>
+        (await caller.deck.getById({ id: deck.id })).cramUntil;
+      expect(await read()).toBeNull();
+
+      await caller.deck.update({ id: deck.id, cramUntil: inDays(30) });
+      expect(await read()).toEqual(startOf(inDays(30)));
+
+      await caller.deck.update({ id: deck.id, cramUntil: null });
+      expect(await read()).toBeNull();
+    });
+
+    it('leaves the date alone when updating something else', async () => {
+      const deck = await prisma.deck.create({ data: { name: 'D', userId } });
+      const caller = createCaller();
+      await caller.deck.update({ id: deck.id, cramUntil: inDays(30) });
+
+      await caller.deck.update({ id: deck.id, name: 'Renamed' });
+
+      expect((await caller.deck.getById({ id: deck.id })).cramUntil).toEqual(
+        startOf(inDays(30)),
+      );
+    });
+
+    it('takes today, but not a date already past', async () => {
+      const deck = await prisma.deck.create({ data: { name: 'D', userId } });
+      const caller = createCaller();
+
+      await caller.deck.update({ id: deck.id, cramUntil: inDays(0) });
+
+      await expect(
+        caller.deck.update({ id: deck.id, cramUntil: inDays(-1) }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it("reads as none once it's passed", async () => {
+      const deck = await prisma.deck.create({
+        data: { name: 'D', userId, cramUntil: startOf(inDays(-1)) },
+      });
+
+      expect(
+        (await createCaller().deck.getById({ id: deck.id })).cramUntil,
+      ).toBeNull();
+    });
+
+    it("refuses another user's deck, and an archived one", async () => {
+      const deck = await prisma.deck.create({ data: { name: 'D', userId } });
+      const archived = await prisma.deck.create({
+        data: { name: 'A', userId, archivedAt: new Date() },
+      });
+
+      await expect(
+        createCaller(otherUserId).deck.update({
+          id: deck.id,
+          cramUntil: inDays(30),
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(
+        createCaller().deck.update({
+          id: archived.id,
+          cramUntil: inDays(30),
+        }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+  });
+
   describe('delete', () => {
     it('deletes a deck', async () => {
       const deck = await prisma.deck.create({

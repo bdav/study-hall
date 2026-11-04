@@ -54,6 +54,7 @@ vi.mock('@/lib/trpc', () => ({
         useQuery: vi.fn(),
       },
       restore: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+      update: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     study: {
       startSession: { useMutation: vi.fn() },
@@ -366,6 +367,7 @@ type QueuePreview = {
   dueCount: number;
   newCount: number;
   nextDueAt: string | null;
+  cramPace?: { newPerDay: number; inSession: number } | null;
 };
 
 /** What a session started now would hold; both cards, NEW, by default. */
@@ -375,6 +377,7 @@ function mockQueuePreview(
     dueCount: 0,
     newCount: 2,
     nextDueAt: null,
+    cramPace: null,
   },
 ) {
   vi.mocked(trpc.study.queuePreview.useQuery).mockReturnValue({
@@ -2777,6 +2780,181 @@ describe('StudyPage', () => {
         sessionType: 'STANDARD',
         studyMode: 'DRILL_WEAKEST',
         direction: 'FORWARD',
+      });
+    });
+
+    describe('the Cram Date (#87)', () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const update = vi.fn();
+      const cramDate = () => screen.getByLabelText('Cram until');
+
+      /** The title card of a deck with this Cram Date, Cram chosen. */
+      async function renderCram(
+        cramUntil: string | null = null,
+        cramPace: QueuePreview['cramPace'] = null,
+      ) {
+        update.mockReset();
+        setupMocksWithStartSession();
+        mockQueuePreview({
+          sessionSize: 12,
+          dueCount: 0,
+          newCount: 40,
+          nextDueAt: null,
+          cramPace,
+        });
+        vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+          data: { ...mockDeck, cramUntil },
+          isLoading: false,
+          isError: false,
+        } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+        vi.mocked(trpc.deck.update.useMutation).mockImplementation(((opts?: {
+          onSuccess?: () => void;
+        }) => ({
+          mutate: (input: unknown) => {
+            update(input);
+            opts?.onSuccess?.();
+          },
+          isError: false,
+        })) as unknown as typeof trpc.deck.update.useMutation);
+        const user = userEvent.setup();
+        renderStudyPage();
+        await user.click(modes().getByRole('button', { name: /cram/i }));
+        return user;
+      }
+
+      it('offers the date only when Cram is chosen', async () => {
+        const user = await renderCram();
+
+        expect(cramDate()).toHaveValue('');
+        await user.click(modes().getByRole('button', { name: /^study/i }));
+
+        expect(screen.queryByLabelText('Cram until')).not.toBeInTheDocument();
+      });
+
+      it("shows the deck's date, from today on", async () => {
+        await renderCram('2099-12-14T00:00:00.000Z');
+
+        expect(cramDate()).toHaveValue('2099-12-14');
+        expect(cramDate()).toHaveAttribute('min', today);
+      });
+
+      it('saves a date on the deck, and counts the title card again', async () => {
+        await renderCram();
+
+        fireEvent.change(cramDate(), { target: { value: '2099-12-14' } });
+
+        expect(update).toHaveBeenCalledWith({
+          id: 'deck-1',
+          cramUntil: '2099-12-14',
+        });
+        expect(mockInvalidateDeck).toHaveBeenCalled();
+        expect(mockInvalidateQueuePreview).toHaveBeenCalled();
+      });
+
+      it('saves nothing for a date not yet whole, or already past', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z');
+
+        // As a year being typed reads
+        fireEvent.change(cramDate(), { target: { value: '0002-12-14' } });
+        fireEvent.change(cramDate(), { target: { value: '' } });
+
+        expect(update).not.toHaveBeenCalled();
+      });
+
+      it('goes back to the date on leaving a date not yet whole', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z');
+
+        fireEvent.change(cramDate(), { target: { value: '' } });
+        expect(cramDate()).toHaveValue('');
+        fireEvent.blur(cramDate());
+
+        expect(cramDate()).toHaveValue('2099-12-14');
+      });
+
+      it('says so when the date fails to save, in place of the pace', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z', {
+          newPerDay: 12,
+          inSession: 12,
+        });
+        vi.mocked(trpc.deck.update.useMutation).mockReturnValue({
+          mutate: update,
+          isError: true,
+        } as unknown as ReturnType<typeof trpc.deck.update.useMutation>);
+
+        await userEvent.click(
+          modes().getByRole('button', { name: /drill weakest/i }),
+        );
+        await userEvent.click(modes().getByRole('button', { name: /cram/i }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          "Couldn't save the date. Please try again.",
+        );
+        expect(screen.queryByText(/new cards? a day/)).not.toBeInTheDocument();
+      });
+
+      it('clears the date', async () => {
+        const user = await renderCram('2099-12-14T00:00:00.000Z');
+
+        await user.click(screen.getByRole('button', { name: 'Clear date' }));
+
+        expect(update).toHaveBeenCalledWith({
+          id: 'deck-1',
+          cramUntil: null,
+        });
+      });
+
+      it('has nothing to clear without a date', async () => {
+        await renderCram();
+
+        expect(
+          screen.queryByRole('button', { name: 'Clear date' }),
+        ).not.toBeInTheDocument();
+      });
+
+      it('says how many new cards a day see them all by the date', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z', {
+          newPerDay: 12,
+          inSession: 12,
+        });
+
+        expect(
+          screen.getByText('12 new cards a day to see them all by 14 Dec'),
+        ).toBeInTheDocument();
+      });
+
+      it('says when the session holds fewer than the date needs', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z', {
+          newPerDay: 20,
+          inSession: 12,
+        });
+
+        expect(
+          screen.getByText(
+            '20 new cards a day to see them all by 14 Dec; this session takes 12',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it('says nothing of pace with no new cards left', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z', {
+          newPerDay: 0,
+          inSession: 0,
+        });
+
+        expect(screen.queryByText(/new cards? a day/)).not.toBeInTheDocument();
+      });
+
+      it("doesn't start a session on Enter in the date", async () => {
+        const start = vi.fn();
+        const user = await renderCram();
+        vi.mocked(trpc.study.startSession.useMutation).mockReturnValue({
+          mutate: start,
+        } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
+
+        cramDate().focus();
+        await user.keyboard('{Enter}');
+
+        expect(start).not.toHaveBeenCalled();
       });
     });
 

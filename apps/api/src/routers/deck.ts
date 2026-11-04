@@ -54,6 +54,7 @@ import {
   findActiveDeck,
   findOwnedDeck,
 } from '../services/decks.js';
+import { liveCramDate } from '../services/cramDate.js';
 
 const text = z.string().trim().min(1);
 const proposalSource = z.string().min(1).max(100);
@@ -68,6 +69,17 @@ const generationInstruction = z
   .trim()
   .min(1)
   .max(MAX_GENERATION_INSTRUCTION_LENGTH);
+
+/**
+ * A Cram Date (#87): a date with no time ("2027-06-01"), stored as the
+ * start of its day in UTC, and today at the earliest.
+ */
+const cramDate = z.iso
+  .date()
+  .transform((date) => new Date(date))
+  .refine((date) => liveCramDate(date, new Date()), {
+    message: 'Choose a date from today on',
+  });
 
 /** A Direction Label, blank for none, when Forward or Reverse stands in. */
 const directionLabel = z
@@ -152,7 +164,11 @@ export const deckRouter = router({
         deckId: deck.id,
       });
 
-      return { ...deck, retiredCount };
+      return {
+        ...deck,
+        cramUntil: liveCramDate(deck.cramUntil, new Date()),
+        retiredCount,
+      };
     }),
 
   /** The learner's decks in Flashcards: those not archived. */
@@ -254,6 +270,7 @@ export const deckRouter = router({
         reversible: z.boolean().optional(),
         forwardLabel: directionLabel,
         reverseLabel: directionLabel,
+        cramUntil: cramDate.nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -275,6 +292,7 @@ export const deckRouter = router({
             name: input.name,
             description: input.description,
             reversible: input.reversible,
+            cramUntil: input.cramUntil,
             // A label the learner sets is theirs, which suggestions leave
             // alone (#83)
             ...(input.forwardLabel !== undefined && {
