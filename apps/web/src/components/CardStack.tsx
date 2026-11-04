@@ -28,12 +28,14 @@ export function CardStack({
   anchored = false,
 }: CardStackProps) {
   const hasFlip = backChildren !== undefined;
-  // A padding's percentage is of the card's width, and a third of the width
-  // is half the 3:2 card's height; less 1.125rem, half of text-3xl's 2.25rem
-  // line, so the main text's first line has its middle there. It assumes
-  // the main text is text-3xl (`cardTextClasses` in StudyPage)
+  // A padding's percentage is of the card's width, and two-sevenths of the
+  // width is three-sevenths (about 43%) of the 3:2 card's height: a little
+  // above the middle, so the back's answer, with its grade and actions
+  // below it, sits balanced on the card. Less 1.125rem, half of text-3xl's
+  // 2.25rem line, so the main text's first line has its middle there. It
+  // assumes the main text is text-3xl (`cardTextClasses` in StudyPage)
   const layout = anchored
-    ? 'justify-start pt-[calc(100%/3_-_1.125rem)]'
+    ? 'justify-start pt-[calc(200%/7_-_1.125rem)]'
     : 'justify-center';
 
   return (
@@ -72,6 +74,7 @@ export function CardStack({
         >
           {/* Front face */}
           <div
+            data-card-face
             className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
             style={{ backfaceVisibility: 'hidden' }}
             inert={isFlipped}
@@ -85,6 +88,7 @@ export function CardStack({
           </div>
           {/* Back face */}
           <div
+            data-card-face
             className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/15 p-8 backdrop-blur-sm ${className ?? ''}`}
             style={{
               backfaceVisibility: 'hidden',
@@ -102,6 +106,7 @@ export function CardStack({
         </div>
       ) : (
         <div
+          data-card-face
           className={`relative flex aspect-3/2 w-full flex-col items-center ${layout} rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
         >
           {children}

@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -55,6 +56,7 @@ import {
   type StudyDirection,
 } from '@/lib/directions';
 import { recallGradeColors, recallGradeLabels } from '@/lib/recallGrades';
+import { anchorLift } from '@/lib/cardAnchor';
 import { type Failure, type KnownState } from '@/lib/studySession';
 
 const answerInputClasses =
@@ -102,14 +104,75 @@ const flipButtonClasses =
 const cardTextClasses =
   'text-center text-3xl font-bold uppercase tracking-wide text-white break-words';
 
+// The space kept clear above the main text, and above what was asked when
+// it hangs there, so neither crowds the card's top edge or its buttons
+const CARD_TOP_CLEARANCE = 28;
+const ASKED_GAP = 8;
+
+/**
+ * A face's main text on the card's anchor line (#123): its middle, not just
+ * its first line, so text of several lines grows up and down evenly, as
+ * far as the room above it allows, beyond which the card grows downward.
+ * On the back, what was asked hangs just above it, taking no space.
+ */
+function CardAnchor({ asked, text }: { asked?: string; text: string }) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const askedRef = useRef<HTMLParagraphElement>(null);
+
+  // Measured, as only the rendered text knows how many lines it takes
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const textEl = textRef.current;
+    const face = anchor?.closest('[data-card-face]');
+    if (!anchor || !textEl || !face) return;
+    function place() {
+      if (!anchor || !textEl || !face) return;
+      const above = askedRef.current
+        ? askedRef.current.offsetHeight + ASKED_GAP
+        : 0;
+      const lift = anchorLift({
+        textHeight: textEl.offsetHeight,
+        lineHeight: parseFloat(getComputedStyle(textEl).lineHeight),
+        room:
+          parseFloat(getComputedStyle(face).paddingTop) -
+          above -
+          CARD_TOP_CLEARANCE,
+      });
+      anchor.style.marginTop = `${-lift}px`;
+    }
+    place();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(place);
+    observer.observe(textEl);
+    observer.observe(face);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={anchorRef} data-card-anchor className="relative w-full">
+      {asked !== undefined && (
+        <p
+          ref={askedRef}
+          data-card-part="asked"
+          // Two lines at most, so a long front stays inside the card
+          title={asked}
+          className="absolute inset-x-0 bottom-full mb-2 line-clamp-2 text-sm uppercase tracking-wide text-white/50"
+        >
+          {asked}
+        </p>
+      )}
+      <p ref={textRef} data-card-part="text" className={cardTextClasses}>
+        {text}
+      </p>
+    </div>
+  );
+}
+
 function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
   return (
     <>
-      <div data-card-anchor className="relative w-full">
-        <p data-card-part="text" className={cardTextClasses}>
-          {text}
-        </p>
-      </div>
+      <CardAnchor text={text} />
       {onFlip && (
         <button
           onClick={(e) => {
@@ -163,19 +226,7 @@ function CardBack({
   return (
     <div className="w-full text-center text-white" data-testid="correct-answer">
       {/* What was asked hangs above the answer, so it never moves it */}
-      <div data-card-anchor className="relative w-full">
-        <p
-          data-card-part="asked"
-          // Two lines at most, so a long front stays inside the card
-          title={card.front}
-          className="absolute inset-x-0 bottom-full mb-2 line-clamp-2 text-sm uppercase tracking-wide text-white/50"
-        >
-          {card.front}
-        </p>
-        <p data-card-part="text" className={cardTextClasses}>
-          {card.canonicalAnswer}
-        </p>
-      </div>
+      <CardAnchor asked={card.front} text={card.canonicalAnswer} />
       <p
         data-card-part="grade"
         className={`mt-3 inline-block rounded-full px-3 py-0.5 text-sm font-semibold text-white ${recallGradeColors[result.recallGrade]}`}
