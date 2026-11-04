@@ -12,7 +12,7 @@ import {
   type StudyMode,
 } from '@/lib/sessionChoices';
 
-/** What the Study Direction chosen asks for, behind its info button. */
+/** What the Study Direction chosen asks for, below the choice. */
 const DIRECTION_DETAILS: Record<StudyDirection, string> = {
   FORWARD: 'Each card shows its front; type the answer',
   REVERSE: 'Each card shows its answer; type the front',
@@ -170,7 +170,8 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
 
 /**
  * The Study Direction under its label, as a segmented control the width of
- * the rows above, with what the one chosen asks for behind an info button.
+ * the rows above, with a line saying what the one chosen asks for, in
+ * view as it changes with the choice.
  */
 function DirectionRow({
   value,
@@ -184,15 +185,12 @@ function DirectionRow({
   const labelId = useId();
   return (
     <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <p
-          id={labelId}
-          className="text-xs uppercase tracking-wide text-white/50"
-        >
-          Direction
-        </p>
-        <InfoTip label="About Direction">{DIRECTION_DETAILS[value]}</InfoTip>
-      </div>
+      <p
+        id={labelId}
+        className="mb-1 text-xs uppercase tracking-wide text-white/50"
+      >
+        Direction
+      </p>
       <SegmentedControl
         labelledBy={labelId}
         options={STUDY_DIRECTIONS.map((direction) => ({
@@ -203,6 +201,7 @@ function DirectionRow({
         onChange={onChange}
         className="flex w-full"
       />
+      <p className="mt-1 text-xs text-white/50">{DIRECTION_DETAILS[value]}</p>
     </div>
   );
 }

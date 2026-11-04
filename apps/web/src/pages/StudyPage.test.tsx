@@ -3371,17 +3371,24 @@ describe('a reversible deck (#82)', () => {
   const directions = () =>
     within(screen.getByRole('group', { name: 'Direction' }));
 
-  it('says what the direction chosen asks for behind an info button', async () => {
+  it('says below the toggle what the direction chosen asks for', async () => {
     setupReversible();
     const user = userEvent.setup();
     renderStudyPage();
-    expect(screen.queryByText(/type the answer/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Each card shows its front; type the answer'),
+    ).toBeInTheDocument();
 
-    await user.hover(screen.getByRole('button', { name: 'About Direction' }));
-
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Each card shows its front; type the answer',
+    await user.click(
+      directions().getByRole('button', { name: /questions from answers/i }),
     );
+
+    expect(
+      screen.getByText('Each card shows its answer; type the front'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'About Direction' }),
+    ).not.toBeInTheDocument();
   });
 
   it('offers the direction beside length and mode, by its Direction Labels, Forward to start', () => {
