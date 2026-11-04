@@ -3350,6 +3350,10 @@ describe("the card's main text held in place (#123)", () => {
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), 'four{Enter}');
     await screen.findByTestId('result');
+    // Once the card has slid in, so a click on its buttons isn't lost
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+    );
     return user;
   }
 
@@ -3454,6 +3458,11 @@ describe('retiring a card from the study screen (#86)', () => {
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), '4{Enter}');
     await screen.findByTestId('result');
+    // Once the card has slid in: it's drawn again as the slide ends, so a
+    // click on the sliding card's button can be lost
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+    );
     return user;
   }
 
