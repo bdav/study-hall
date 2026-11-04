@@ -2831,6 +2831,26 @@ describe('StudyPage', () => {
         expect(screen.queryByLabelText('Cram until')).not.toBeInTheDocument();
       });
 
+      it('says what a date would do before one is set', async () => {
+        await renderCram();
+
+        expect(
+          screen.getByText(
+            'Optional: the day you need to know this deck by. Cram paces reviews and new cards toward it.',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it('says what the date is doing once set', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z');
+
+        expect(
+          screen.getByText(
+            'Reviews come back sooner as 14 Dec nears, and new cards are paced to reach it. Only Cram uses this date.',
+          ),
+        ).toBeInTheDocument();
+      });
+
       it("shows the deck's date, from today on", async () => {
         await renderCram('2099-12-14T00:00:00.000Z');
 
@@ -2901,6 +2921,16 @@ describe('StudyPage', () => {
           id: 'deck-1',
           cramUntil: null,
         });
+      });
+
+      it('drops a date being typed when cleared, with focus still in the field', async () => {
+        await renderCram('2099-12-14T00:00:00.000Z');
+
+        fireEvent.change(cramDate(), { target: { value: '2099-12-15' } });
+        // No blur, as a tap on a touch screen may not move focus
+        fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
+
+        expect(cramDate()).toHaveValue('2099-12-14');
       });
 
       it('has nothing to clear without a date', async () => {

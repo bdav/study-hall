@@ -86,6 +86,15 @@ export function SessionPicker({
   );
 }
 
+/** What a Cram Date does: what it would do, or what it's doing. */
+function cramDateDetail(value: string | null) {
+  if (!value) {
+    return 'Optional: the day you need to know this deck by. Cram paces reviews and new cards toward it.';
+  }
+  const date = cramDateFormat.format(new Date(value));
+  return `Reviews come back sooner as ${date} nears, and new cards are paced to reach it. Only Cram uses this date.`;
+}
+
 /** What the Cram Date asks of NEW cards; none with none left to see. */
 function paceMessage(
   value: string,
@@ -134,13 +143,17 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
         {value && (
           <button
             type="button"
-            onClick={() => onChange(null)}
+            onClick={() => {
+              setTyped(null);
+              onChange(null);
+            }}
             className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
           >
             Clear date
           </button>
         )}
       </div>
+      <p className="mt-1 text-xs text-white/50">{cramDateDetail(value)}</p>
       {hasFailed ? (
         <p role="alert" className="mt-1 text-xs text-white/70">
           Couldn't save the date. Please try again.

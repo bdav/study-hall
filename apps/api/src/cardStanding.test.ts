@@ -322,10 +322,10 @@ describe('Card Standing', () => {
         return deck;
       }
 
-      it('reads a card as due and when, by half the days left when reviewed', async () => {
-        // Ends 60 hours from now. Reviewed 24 hours ago: 84 left then, so
-        // 42 after it, 18 from now. Half its 4-day interval is 48 after it,
-        // so the date comes first
+      it('reads a card as due and when, by half the days left', async () => {
+        // Ends 60 hours from now. Reviewed 24 hours ago: 4 hours from now,
+        // 28 since it and 56 left, half of them. Half its 4-day interval
+        // is 48 after it, so the date comes first
         const deck = await pacedDeck(untilInTwoDays);
 
         const { cards, counts, nextDueAt } = await standing([deck.id], {
@@ -333,12 +333,12 @@ describe('Card Standing', () => {
         });
 
         expect(cards.map(({ dueAt }) => dueAt)).toEqual([
-          new Date(now.getTime() + 18 * hour),
-          new Date(now.getTime() + 27 * hour),
+          new Date(now.getTime() + 4 * hour),
+          new Date(now.getTime() + 16 * hour),
           null,
         ]);
         expect(counts.due).toBe(0);
-        expect(nextDueAt).toEqual(new Date(now.getTime() + 18 * hour));
+        expect(nextDueAt).toEqual(new Date(now.getTime() + 4 * hour));
       });
 
       it('reads a card due once that much has passed', async () => {
@@ -346,7 +346,7 @@ describe('Card Standing', () => {
 
         const { cards, counts } = await standing([deck.id], {
           studyMode: 'CRAM',
-          now: new Date(now.getTime() + 18 * hour),
+          now: new Date(now.getTime() + 4 * hour),
         });
 
         expect(cards.map(({ isDue }) => isDue)).toEqual([true, false, false]);
@@ -401,7 +401,7 @@ describe('Card Standing', () => {
           studyMode: 'CRAM',
         });
 
-        expect(cards[0].dueAt).toEqual(new Date(now.getTime() + 18 * hour));
+        expect(cards[0].dueAt).toEqual(new Date(now.getTime() + 4 * hour));
         // Half its 4-day interval, 1 day of it gone
         expect(cards[3].dueAt).toEqual(new Date(now.getTime() + day));
       });

@@ -306,7 +306,7 @@ describe('studyRouter', () => {
       }
 
       // Today's date ends within a day, so a card reviewed 1.5 days ago is
-      // past half the days left then, if not halfway through its interval
+      // past half the days left, if not halfway through its interval
       const pacedIn = () => reviewedDeck(inDays(0), daysAgo(1.5));
 
       it("counts a card due by the date's pacing, and the queue Cram builds agrees", async () => {

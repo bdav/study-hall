@@ -19,10 +19,12 @@ export function liveCramDate(cramDate: Date | null, now: Date) {
 
 /**
  * When a card in review comes due in Cram (§17, the earlier of its due time
- * and Cram's): once half its interval has passed, or, with a Cram Date, half
- * the days left at the start of that interval, if that's sooner. So a card's
- * due time is fixed when it's reviewed, and it comes round about twice
- * before the date. A card with no interval comes due at its due time.
+ * and Cram's): once half its interval has passed, or, with a Cram Date, once
+ * the time since its interval began, its last review or mark known, reaches
+ * half the days left, if that's sooner. The days left shrink as that time
+ * grows, so they meet a third of the way from its start to the date's end: a
+ * fixed time, however late it's asked. A card with no interval comes due at
+ * its due time.
  */
 export function cramDueAt(
   { dueAt, lastIntervalDays }: { dueAt: Date; lastIntervalDays: number | null },
@@ -34,7 +36,7 @@ export function cramDueAt(
   if (!cramDate) return new Date(halfInterval);
   const start = dueAt.getTime() - interval;
   return new Date(
-    Math.min(halfInterval, start + (endOf(cramDate) - start) / 2),
+    Math.min(halfInterval, start + (endOf(cramDate) - start) / 3),
   );
 }
 

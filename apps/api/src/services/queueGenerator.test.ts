@@ -410,7 +410,7 @@ describe('Cram toward a date (#87)', () => {
 
   describe('pacing', () => {
     // Reviewed some days ago, each on an 8-day interval
-    const reviewedDaysAgo = [1, 2, 3, 4, 5, 6];
+    const reviewedDaysAgo = [0.5, 1, 3, 4, 5, 6];
     const cards = reviewedDaysAgo.map((days, i) => ({
       id: `R${i + 1}`,
       dueAt: new Date(now.getTime() + (8 - days) * day),
@@ -438,8 +438,8 @@ describe('Cram toward a date (#87)', () => {
     });
 
     it('gives this queue with a near date, which pulls in cards reviewed longer ago than half the days left', () => {
-      // 1.5 days left now: reviewed 2 days ago, 3.5 were left, half of
-      // them gone; reviewed 1 day ago, 2.5 were left, and only 1 gone
+      // 1.5 days left, half of them 0.75: all but the card reviewed 0.5
+      // days ago have gone that long
       expect(quickQueue(near)).toEqual(['R2', 'R6', 'R4', 'R3', 'R5']);
     });
 
@@ -459,6 +459,20 @@ describe('Cram toward a date (#87)', () => {
       expect(cramDueAt(card, near)).toEqual(now);
     });
 
+    it('counts a card due once the time since its review reaches half the days left from then', () => {
+      // Reviewed at the start: 30 days to the end of the date, due after
+      // 10, when 20 are left and half of them have gone by
+      const reviewed = new Date('2026-11-14T00:00:00.000Z');
+      const card = {
+        dueAt: new Date(reviewed.getTime() + 60 * day),
+        lastIntervalDays: 60,
+      };
+
+      expect(cramDueAt(card, new Date('2026-12-13'))).toEqual(
+        new Date(reviewed.getTime() + 10 * day),
+      );
+    });
+
     it("counts a card reviewed on the date's own day due again later that day", () => {
       const noon = new Date('2026-11-03T12:00:00.000Z');
       const card = {
@@ -467,7 +481,7 @@ describe('Cram toward a date (#87)', () => {
       };
 
       expect(cramDueAt(card, near)).toEqual(
-        new Date('2026-11-03T18:00:00.000Z'),
+        new Date('2026-11-03T16:00:00.000Z'),
       );
     });
   });
