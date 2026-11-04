@@ -3452,19 +3452,50 @@ describe('retiring a card from the study screen (#86)', () => {
     return user;
   }
 
-  it('offers to retire a card the app suggests retiring, after a confirmation', async () => {
+  it('asks in place before retiring a card the app suggests retiring', async () => {
     const user = await answerCardOne(true);
 
     await user.click(screen.getByRole('button', { name: 'Retire this card?' }));
-    const dialog = screen.getByRole('alertdialog');
+    expect(
+      screen.getByText("It won't come up again until you unretire it."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(mockRetire).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Retire' }));
+    await user.click(screen.getByRole('button', { name: 'Retire' }));
 
     expect(mockRetire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
     expect(await screen.findByText('Retired')).toBeInTheDocument();
+  });
+
+  it('keeps the card, asking nothing more, on Keep', async () => {
+    const user = await answerCardOne(true);
+
+    await user.click(screen.getByRole('button', { name: 'Retire this card?' }));
+    await user.click(screen.getByRole('button', { name: 'Keep' }));
+
+    expect(mockRetire).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole('button', { name: 'Retire this card?' }),
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Retire this card?' }),
+    ).toBeInTheDocument();
+  });
+
+  it('undoes retiring, unretiring the card', async () => {
+    const unretire = vi.fn().mockResolvedValue({ unretiredCount: 1 });
+    vi.mocked(trpc.card.unretire.useMutation).mockReturnValue({
+      mutateAsync: unretire,
+      isPending: false,
+    } as unknown as ReturnType<typeof trpc.card.unretire.useMutation>);
+    const user = await answerCardOne(true);
+    await user.click(screen.getByRole('button', { name: 'Retire this card?' }));
+    await user.click(screen.getByRole('button', { name: 'Retire' }));
+    await screen.findByText('Retired');
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(unretire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    await waitFor(() =>
+      expect(screen.queryByText('Retired')).not.toBeInTheDocument(),
+    );
   });
 
   it("doesn't offer it on a card that can't retire", async () => {

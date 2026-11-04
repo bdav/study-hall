@@ -968,6 +968,55 @@ describe('the Study Session machine', () => {
       expect(another.retired).toEqual({});
     });
 
+    it('asks in place before retiring, until kept or the card moves on', () => {
+      const asking = run([{ type: 'back' }, { type: 'askRetire' }], atB);
+      expect(
+        studyView(asking.state, { resumable: false }).screen,
+      ).toMatchObject({
+        confirmingRetire: true,
+      });
+      expect(asking.commands).toEqual([]);
+
+      const kept = run([{ type: 'keep' }], asking.state).state;
+      expect(studyView(kept, { resumable: false }).screen).toMatchObject({
+        confirmingRetire: false,
+      });
+
+      const movedOn = run([{ type: 'next' }], asking.state).state;
+      expect(movedOn.confirmingRetire).toBeNull();
+    });
+
+    it('stops asking once retired', () => {
+      const { state } = run(
+        [{ type: 'back' }, { type: 'askRetire' }, { type: 'retire' }],
+        atB,
+      );
+
+      expect(state.confirmingRetire).toBeNull();
+    });
+
+    it('undoes retiring, asking the server to unretire it', () => {
+      const retired = run(
+        [
+          { type: 'back' },
+          { type: 'retire' },
+          { type: 'retired', cardId: 'a' },
+        ],
+        atB,
+      ).state;
+
+      const undoing = run([{ type: 'undoRetire' }], retired);
+      expect(undoing.commands).toEqual([{ type: 'undoRetire', cardId: 'a' }]);
+
+      const { state } = run(
+        [{ type: 'retireUndone', cardId: 'a' }],
+        undoing.state,
+      );
+      expect(studyView(state, { resumable: false }).screen).toMatchObject({
+        retired: false,
+      });
+    });
+
     it('records a failure to retire', () => {
       const { state } = run(
         [

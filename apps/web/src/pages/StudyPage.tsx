@@ -21,7 +21,6 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { CardStack } from '@/components/CardStack';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
 import { useStudySession } from '@/hooks/useStudySession';
@@ -200,8 +199,7 @@ function CardBack({
   isAcceptingAnswer = false,
   onMarkKnown,
   knownState,
-  onRetire,
-  retired = false,
+  retiring,
 }: {
   card: CardSnapshot['card'];
   result: NonNullable<CardSnapshot['result']>;
@@ -215,10 +213,8 @@ function CardBack({
   onMarkKnown?: () => void;
   /** Once marked known: whether that changed it, or it was known already. */
   knownState?: KnownState;
-  /** Retires the card, which the app suggests (#86), once confirmed. */
-  onRetire?: () => void;
-  /** Retired from here this session. */
-  retired?: boolean;
+  /** "Retire this card?", which the app suggests (#86), and where it's at. */
+  retiring?: RetireOffer;
 }) {
   // A typed answer graded MISSED, still graded against the card as it is
   const canAccept =
@@ -241,64 +237,110 @@ function CardBack({
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
-      {(canAccept || knownState || onMarkKnown || onRetire || retired) && (
+      {retiring?.stage === 'confirming' ? (
+        // The question takes the action row's place, below the answer
         <div
           data-card-part="actions"
-          className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70"
+          className="mt-3 flex flex-col items-center gap-2 text-sm text-white/70"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') retiring.keep();
+          }}
         >
-          {canAccept && (
-            <button
+          <p>It won't come up again until you unretire it.</p>
+          <div className="flex gap-2">
+            <Button
               type="button"
-              disabled={isAcceptingAnswer}
+              size="sm"
+              // Enter now retires it
+              autoFocus
               onClick={(e) => {
                 e.stopPropagation();
-                onAcceptAnswer();
+                retiring.confirm();
               }}
-              className="relative touch-target underline hover:text-white disabled:opacity-50"
+              className="bg-white/20 text-white hover:bg-white/30"
             >
-              My answer was correct
-            </button>
-          )}
-          {retired ? (
-            <span>Retired</span>
-          ) : (
-            onRetire && (
-              <ConfirmDialog
-                title="Retire this card?"
-                description="You've mastered it. It won't come up in Study, Drill weakest or Cram until you unretire it from the Cards tab, and it keeps its history."
-                confirmLabel="Retire"
-                onConfirm={onRetire}
-                trigger={
-                  <button
-                    type="button"
-                    onClick={(e) => e.stopPropagation()}
-                    className="relative touch-target underline hover:text-white"
-                  >
-                    Retire this card?
-                  </button>
-                }
-              />
-            )
-          )}
-          {knownState ? (
-            <span>
-              {knownState === 'marked' ? 'Marked known' : 'Already known'}
-            </span>
-          ) : (
-            onMarkKnown && (
+              Retire
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                retiring.keep();
+              }}
+              className="text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              Keep
+            </Button>
+          </div>
+        </div>
+      ) : (
+        (canAccept || knownState || onMarkKnown || retiring) && (
+          <div
+            data-card-part="actions"
+            className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70"
+          >
+            {canAccept && (
+              <button
+                type="button"
+                disabled={isAcceptingAnswer}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAcceptAnswer();
+                }}
+                className="relative touch-target underline hover:text-white disabled:opacity-50"
+              >
+                My answer was correct
+              </button>
+            )}
+            {retiring?.stage === 'retired' && (
+              <>
+                <span>Retired</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    retiring.undo();
+                  }}
+                  className="relative touch-target underline hover:text-white"
+                >
+                  Undo
+                </button>
+              </>
+            )}
+            {retiring?.stage === 'offered' && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onMarkKnown();
+                  retiring.ask();
                 }}
                 className="relative touch-target underline hover:text-white"
               >
-                Mark known
+                Retire this card?
               </button>
-            )
-          )}
-        </div>
+            )}
+            {knownState ? (
+              <span>
+                {knownState === 'marked' ? 'Marked known' : 'Already known'}
+              </span>
+            ) : (
+              onMarkKnown && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkKnown();
+                  }}
+                  className="relative touch-target underline hover:text-white"
+                >
+                  Mark known
+                </button>
+              )
+            )}
+          </div>
+        )
       )}
       {hasNotes && (
         <div data-card-part="notes" className="text-sm text-white/70">
@@ -338,6 +380,18 @@ function CardBack({
     </div>
   );
 }
+
+/**
+ * "Retire this card?" on a card the app suggests retiring (#86): offered,
+ * asking in place, or retired, with Undo.
+ */
+type RetireOffer = {
+  stage: 'offered' | 'confirming' | 'retired';
+  ask: () => void;
+  confirm: () => void;
+  keep: () => void;
+  undo: () => void;
+};
 
 function cardCount(count: number) {
   return `${count} ${count === 1 ? 'card' : 'cards'}`;
@@ -695,6 +749,36 @@ export default function StudyPage() {
       : undefined;
   const isChoosingAnswer = !!cardScreen?.choosingAnswer;
 
+  // "Retire this card?", suggested by the app, the card's history says, and
+  // confirmed in place (#86); once retired, Undo unretires it
+  const retireOffer: RetireOffer | undefined =
+    cardScreen &&
+    (cardScreen.retired ||
+      cardScreen.confirmingRetire ||
+      displayProgress?.canRetire)
+      ? {
+          stage: cardScreen.retired
+            ? 'retired'
+            : cardScreen.confirmingRetire
+              ? 'confirming'
+              : 'offered',
+          ask: act.askRetire,
+          confirm: () => {
+            act.retire();
+            // The question goes once answered
+            focusNavigation();
+          },
+          keep: () => {
+            act.keep();
+            focusNavigation();
+          },
+          undo: () => {
+            act.undoRetire();
+            focusNavigation();
+          },
+        }
+      : undefined;
+
   // Next and Previous, as buttons and as swipes across the card. A session
   // that's complete has only Previous
   const { canStart, canGoForward } = view;
@@ -915,16 +999,14 @@ export default function StudyPage() {
     onAcceptAnswer,
     onMarkKnown,
     knownState,
-    onRetire,
-    retired,
+    retiring,
   }: CardSnapshot & {
     onFlip?: () => void;
     editedAfterAnswer?: boolean;
     onAcceptAnswer?: () => void;
     onMarkKnown?: () => void;
     knownState?: KnownState;
-    onRetire?: () => void;
-    retired?: boolean;
+    retiring?: RetireOffer;
   }) => (
     <CardStack
       anchored
@@ -942,8 +1024,7 @@ export default function StudyPage() {
             isAcceptingAnswer={isAcceptingAnswer}
             onMarkKnown={onMarkKnown}
             knownState={knownState}
-            onRetire={onRetire}
-            retired={retired}
+            retiring={retiring}
           />
         ) : undefined
       }
@@ -1008,16 +1089,7 @@ export default function StudyPage() {
             }
           : undefined,
         knownState: cardScreen?.known,
-        // Suggested by the app, the card's history says (#86)
-        onRetire:
-          displayProgress?.canRetire && !cardScreen?.retired
-            ? () => {
-                act.retire();
-                // Its button goes once it's retired
-                focusNavigation();
-              }
-            : undefined,
-        retired: cardScreen?.retired,
+        retiring: retireOffer,
       })
     );
 

@@ -90,6 +90,8 @@ export type StudySessionState = {
   known: Record<string, KnownState>;
   // Cards retired from the study screen in this session (#86)
   retired: Record<string, true>;
+  // The card on screen whose "Retire this card?" is asking, in place
+  confirmingRetire: string | null;
   // Cards unretired from a Review retired session's summary (#86)
   unretired: string[];
   // The answer being typed to the card in play
@@ -151,9 +153,15 @@ export type StudySessionEvent =
   // skipped with it
   | { type: 'markKnown' }
   | { type: 'markedKnown'; cardId: string; changed: boolean }
+  // "Retire this card?" asks in place, until confirmed or kept (#86)
+  | { type: 'askRetire' }
+  | { type: 'keep' }
   // Retires the card on screen (#86), its Retry, if any, skipped with it
   | { type: 'retire' }
   | { type: 'retired'; cardId: string }
+  // Unretires the card retired from here, due again at once
+  | { type: 'undoRetire' }
+  | { type: 'retireUndone'; cardId: string }
   // From a Review retired session's summary, the missed cards chosen
   | { type: 'unretire'; cardIds: string[] }
   | { type: 'unretired'; cardIds: string[] }
@@ -177,6 +185,7 @@ export type StudySessionCommand =
   | { type: 'abandon'; sessionId: string }
   | { type: 'markKnown'; cardId: string; direction: StudyDirection }
   | { type: 'retire'; cardId: string }
+  | { type: 'undoRetire'; cardId: string }
   | { type: 'unretire'; cardIds: string[] };
 
 export const initialState: StudySessionState = {
@@ -187,6 +196,7 @@ export const initialState: StudySessionState = {
   choosingAnswerFor: null,
   known: {},
   retired: {},
+  confirmingRetire: null,
   unretired: [],
   answerInput: '',
   refusal: null,
@@ -432,8 +442,11 @@ export function transition(
     event.type === 'next' ||
     event.type === 'back' ||
     screenKey(next.state) !== screenKey(state);
-  if (next.state.editing && leaves) {
-    return { ...next, state: { ...next.state, editing: null } };
+  if (leaves && (next.state.editing || next.state.confirmingRetire)) {
+    return {
+      ...next,
+      state: { ...next.state, editing: null, confirmingRetire: null },
+    };
   }
   return next;
 }
@@ -627,6 +640,28 @@ function step(
         ],
       };
     }
+    case 'askRetire': {
+      const onScreen = itemOnScreen(state);
+      if (!onScreen) return noCommands(state);
+      return noCommands({ ...state, confirmingRetire: onScreen.card.id });
+    }
+    case 'keep':
+      return noCommands({ ...state, confirmingRetire: null });
+    case 'undoRetire': {
+      const onScreen = itemOnScreen(state);
+      if (!onScreen || !state.retired[onScreen.card.id]) {
+        return noCommands(state);
+      }
+      return {
+        state: { ...state, failure: null },
+        commands: [{ type: 'undoRetire', cardId: onScreen.card.id }],
+      };
+    }
+    case 'retireUndone': {
+      const retired = { ...state.retired };
+      delete retired[event.cardId];
+      return noCommands({ ...state, retired });
+    }
     case 'retire': {
       const onScreen = itemOnScreen(state);
       if (!onScreen) return noCommands(state);
@@ -634,7 +669,7 @@ function step(
       // Dropped at once, before the learner can move on
       const dropped = dropCard(state, card.id, { keepAnswered: true });
       return {
-        state: { ...dropped.state, failure: null },
+        state: { ...dropped.state, failure: null, confirmingRetire: null },
         commands: [{ type: 'retire', cardId: card.id }, ...dropped.commands],
       };
     }
@@ -748,8 +783,10 @@ export type CardScreen = {
   asksWhichAnswer: boolean;
   choosingAnswer: boolean;
   known: KnownState | undefined;
-  // Whether it was retired from here this session (#86)
+  // Whether it was retired from here this session (#86), and whether
+  // "Retire this card?" is asking, in place
   retired: boolean;
+  confirmingRetire: boolean;
   // Whether the card comes back later in the session, as a Retry
   retryWaiting: boolean;
   // Why the answer just typed wasn't graded, while it waits for another
@@ -852,6 +889,7 @@ function screenOf(state: StudySessionState): StudyScreen {
       !!item.answer && state.choosingAnswerFor === item.answer.attemptId,
     known: state.known[item.card.id],
     retired: !!state.retired[item.card.id],
+    confirmingRetire: state.confirmingRetire === item.card.id,
     retryWaiting: items.some(
       (other, i) =>
         i >= answered && other.isRetry && other.card.id === item.card.id,

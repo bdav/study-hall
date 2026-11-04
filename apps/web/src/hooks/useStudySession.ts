@@ -240,6 +240,17 @@ export function useStudySession(
         // The deck's retired count, which offers Review retired, has grown
         utils.deck.getById.invalidate({ id: deckId });
         return;
+      case 'undoRetire':
+        try {
+          await unretireCards.mutateAsync({ cardIds: [command.cardId] });
+        } catch {
+          await send({ type: 'failed', of: 'unretire' });
+          return;
+        }
+        await send({ type: 'retireUndone', cardId: command.cardId });
+        utils.card.history.invalidate({ cardId: command.cardId });
+        utils.deck.getById.invalidate({ id: deckId });
+        return;
       case 'unretire':
         try {
           await unretireCards.mutateAsync({ cardIds: command.cardIds });
@@ -301,8 +312,13 @@ export function useStudySession(
       cancelChoosing: () => send({ type: 'cancelChoosing' }),
       /** Marks the card on screen known, its Retry skipped with it. */
       markKnown: () => send({ type: 'markKnown' }),
+      /** "Retire this card?" asks in place, until confirmed or kept (#86). */
+      askRetire: () => send({ type: 'askRetire' }),
+      keep: () => send({ type: 'keep' }),
       /** Retires the card on screen (#86), its Retry skipped with it. */
       retire: () => send({ type: 'retire' }),
+      /** Unretires the card retired from here, due again at once. */
+      undoRetire: () => send({ type: 'undoRetire' }),
       /** From a Review retired session's summary, the missed cards chosen. */
       unretire: (cardIds: string[]) => send({ type: 'unretire', cardIds }),
       edit: (onBack = false) => send({ type: 'edit', onBack }),
