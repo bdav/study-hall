@@ -44,6 +44,7 @@ vi.mock('@/lib/trpc', () => ({
       delete: { useMutation: vi.fn() },
       markKnown: { useMutation: vi.fn() },
       retire: { useMutation: vi.fn() },
+      unretire: { useMutation: vi.fn() },
       restoreVersion: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
     },
@@ -564,6 +565,13 @@ function mockActiveSession(session: unknown = null) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
+  // Retiring and unretiring, which tests that use them mock themselves
+  for (const procedure of [trpc.card.retire, trpc.card.unretire]) {
+    vi.mocked(procedure.useMutation).mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    } as never);
+  }
   mockAcceptAnswerMutation();
   mockQueuePreview();
   mockCardHistory();
@@ -3465,6 +3473,91 @@ describe('retiring a card from the study screen (#86)', () => {
     expect(
       screen.queryByRole('button', { name: 'Retire this card?' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('reviewing retired cards (#86)', () => {
+  const modeRow = () =>
+    within(screen.getByRole('group', { name: 'Study mode' }));
+  const withRetired = (retiredCount: number) =>
+    vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
+      data: { ...mockDeck, retiredCount },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof trpc.deck.getById.useQuery>);
+
+  it('offers Review retired only on a deck with retired cards', () => {
+    setupMocksWithStartSession();
+    const { unmount } = renderStudyPage();
+    expect(
+      modeRow().queryByRole('button', { name: /review retired/i }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    withRetired(2);
+    renderStudyPage();
+    expect(
+      modeRow().getByRole('button', { name: /review retired/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('starts a session reviewing the retired cards when chosen', async () => {
+    const start = vi.fn();
+    setupMocksWithStartSession();
+    withRetired(2);
+    vi.mocked(trpc.study.startSession.useMutation).mockReturnValue({
+      mutate: start,
+    } as unknown as ReturnType<typeof trpc.study.startSession.useMutation>);
+    const user = userEvent.setup();
+    renderStudyPage();
+
+    await user.click(
+      modeRow().getByRole('button', { name: /review retired/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ studyMode: 'REVIEW_RETIRED' }),
+    );
+  });
+
+  it('offers to unretire the cards missed, ticked to start', async () => {
+    const unretire = vi.fn().mockResolvedValue({ unretiredCount: 1 });
+    setupMocksWithStartSession();
+    withRetired(2);
+    vi.mocked(trpc.card.unretire.useMutation).mockReturnValue({
+      mutateAsync: unretire,
+      isPending: false,
+    } as unknown as ReturnType<typeof trpc.card.unretire.useMutation>);
+    vi.mocked(trpc.study.startSession.useMutation).mockImplementation(((opts?: {
+      onSuccess?: (data: typeof mockSession) => void;
+    }) => ({
+      mutate: vi.fn(() =>
+        opts?.onSuccess?.({ ...mockSession, studyMode: 'REVIEW_RETIRED' }),
+      ),
+    })) as unknown as typeof trpc.study.startSession.useMutation);
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+    // card-1 missed, card-2 answered right
+    await user.click(screen.getByRole('button', { name: /i don't know/i }));
+    await screen.findByTestId('result');
+    await user.click(screen.getByRole('button', { name: /finish session/i }));
+    await screen.findByRole('heading', { name: /session complete/i });
+
+    const missed = screen.getByRole('group', {
+      name: 'Unretire missed cards?',
+    });
+    expect(
+      within(missed).getByRole('checkbox', { name: 'What is 2+2?' }),
+    ).toBeChecked();
+    await user.click(
+      within(missed).getByRole('button', { name: 'Unretire 1 card' }),
+    );
+
+    expect(unretire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    expect(await screen.findByText('Unretired 1 card')).toBeInTheDocument();
   });
 });
 

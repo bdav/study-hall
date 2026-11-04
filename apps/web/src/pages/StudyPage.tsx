@@ -10,7 +10,7 @@ import {
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
-import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { cardsCount, toFlashcard, type Flashcard } from '@/lib/cards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -461,12 +461,83 @@ function StudyStage({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * After a Review retired session (#86), the cards missed at first, each
+ * ticked to start, and Unretire for those still ticked: back to review,
+ * due straight away. Once done, how many were unretired.
+ */
+function UnretireMissed({
+  cards,
+  unretired,
+  isPending,
+  onUnretire,
+}: {
+  cards: Flashcard[];
+  unretired: string[];
+  isPending: boolean;
+  onUnretire: (cardIds: string[]) => void;
+}) {
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
+  const headingId = useId();
+  if (unretired.length > 0) {
+    return (
+      <p className="mt-4 text-sm text-white/70">
+        Unretired {cardsCount(unretired.length)}
+      </p>
+    );
+  }
+  const chosen = cards.filter((card) => !unticked.has(card.id));
+  return (
+    <div
+      role="group"
+      aria-labelledby={headingId}
+      className="mt-4 w-full max-w-md text-sm text-white/80"
+    >
+      <p id={headingId} className="text-center font-medium text-white">
+        Unretire missed cards?
+      </p>
+      <ul className="mt-2 flex flex-col gap-1">
+        {cards.map((card) => (
+          <li key={card.id}>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                className="size-4 accent-white"
+                checked={!unticked.has(card.id)}
+                onChange={(e) => {
+                  const next = new Set(unticked);
+                  if (e.target.checked) next.delete(card.id);
+                  else next.add(card.id);
+                  setUnticked(next);
+                }}
+              />
+              {card.front}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 text-center">
+        <Button
+          type="button"
+          size="sm"
+          disabled={chosen.length === 0 || isPending}
+          onClick={() => onUnretire(chosen.map((card) => card.id))}
+          className="bg-white/20 text-white hover:bg-white/30"
+        >
+          Unretire {cardsCount(chosen.length)}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const failureMessages: Record<Failure, string> = {
   start: 'Failed to start study session. Please try again.',
   answer: 'Failed to submit answer. Please try again.',
   finish: 'Failed to finish study session. Please try again.',
   accept: "Couldn't accept your answer. Please try again.",
   retire: "Couldn't retire the card. Please try again.",
+  unretire: "Couldn't unretire the cards. Please try again.",
 };
 
 export default function StudyPage() {
@@ -479,7 +550,7 @@ export default function StudyPage() {
   // How to study: Quick, Standard or Deep (#8), Standard each time the page
   // opens, and Study, Drill Weakest or Cram (#9), remembered by the browser
   const [sessionType, setSessionType] = useState<SessionType>('STANDARD');
-  const [studyMode, setStudyMode] = useStoredChoice(
+  const [chosenMode, setStudyMode] = useStoredChoice(
     'study-hall:study-mode',
     STUDY_MODES.map((mode) => mode.value),
     'STUDY',
@@ -501,10 +572,15 @@ export default function StudyPage() {
   const direction = isReversible ? chosenDirection : 'FORWARD';
   const cards = useMemo(() => deck?.cards.map(toFlashcard) ?? [], [deck]);
 
-  const { view, act, preview, resumable, isAcceptingAnswer } = useStudySession(
-    deckId,
-    { sessionType, studyMode, direction },
-  );
+  // Review retired only on a deck with retired cards, Study otherwise, as
+  // the mode remembered may have been chosen on another deck (#86)
+  const offersReviewRetired = (deck?.retiredCount ?? 0) > 0;
+  const studyMode =
+    chosenMode === 'REVIEW_RETIRED' && deck && !offersReviewRetired
+      ? 'STUDY'
+      : chosenMode;
+  const { view, act, preview, resumable, isAcceptingAnswer, isUnretiring } =
+    useStudySession(deckId, { sessionType, studyMode, direction });
   const { screen } = view;
   const cardScreen = screen.kind === 'card' ? screen : null;
   const isAtTitle = screen.kind === 'title';
@@ -803,6 +879,14 @@ export default function StudyPage() {
               </Button>
             </div>
           </div>
+          {screen.missedRetired.length > 0 && (
+            <UnretireMissed
+              cards={screen.missedRetired}
+              unretired={screen.unretired}
+              isPending={isUnretiring}
+              onUnretire={act.unretire}
+            />
+          )}
           <div className="mt-6">
             <button
               id={startAnotherId}
@@ -1201,6 +1285,7 @@ export default function StudyPage() {
               onSessionType={setSessionType}
               studyMode={studyMode}
               onStudyMode={setStudyMode}
+              offersReviewRetired={offersReviewRetired}
               direction={
                 labels && {
                   value: direction,

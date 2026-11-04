@@ -373,3 +373,88 @@ describe('card.unretire', () => {
     ).rejects.toThrow(/not found/i);
   });
 });
+
+describe('a Review retired session', () => {
+  /** France and Japan mastered and retired; Brazil still NEW. */
+  async function retiredDeck() {
+    const deck = await createDeckWithCards(prisma, {
+      userId,
+      cards: [
+        { front: 'Capital of France', canonicalAnswers: ['Paris'] },
+        { front: 'Capital of Japan', canonicalAnswers: ['Tokyo'] },
+        { front: 'Capital of Brazil', canonicalAnswers: ['Brasília'] },
+      ],
+    });
+    const [france, japan] = deck.cards;
+    await master(france.id);
+    await master(japan.id);
+    await createCaller().card.retire({ cardIds: [france.id, japan.id] });
+    return deck;
+  }
+
+  const reviewRetired = (deckId: string) => ({
+    deckId,
+    sessionType: 'QUICK' as const,
+    studyMode: 'REVIEW_RETIRED' as const,
+    direction: 'FORWARD' as const,
+  });
+
+  it('says how many cards are retired, and quizzes only them', async () => {
+    const deck = await retiredDeck();
+    const [france, japan] = deck.cards;
+
+    const { retiredCount } = await createCaller().deck.getById({
+      id: deck.id,
+    });
+    const preview = await createCaller().study.queuePreview(
+      reviewRetired(deck.id),
+    );
+    const session = await createCaller().study.startSession(
+      reviewRetired(deck.id),
+    );
+
+    expect(retiredCount).toBe(2);
+    expect(preview).toMatchObject({ sessionSize: 2 });
+    expect(session?.studyMode).toBe('REVIEW_RETIRED');
+    expect(session?.items.map((item) => item.cardId).sort()).toEqual(
+      [france.id, japan.id].sort(),
+    );
+  });
+
+  it("records its answers without changing the cards' schedule or counts", async () => {
+    const deck = await retiredDeck();
+    const [france] = deck.cards;
+    const before = await progressOf(france.id);
+    const statsBefore = await createCaller().stats.deckStats({
+      deckId: deck.id,
+      direction: 'FORWARD',
+    });
+    const session = await createCaller().study.startSession(
+      reviewRetired(deck.id),
+    );
+    const item = session!.items.find((i) => i.cardId === france.id)!;
+
+    const answer = await createCaller().study.dontKnow({ itemId: item.id });
+
+    expect(answer.recallGrade).toBe('MISSED');
+    const after = await progressOf(france.id);
+    expect(after).toEqual(before);
+    const statsAfter = await createCaller().stats.deckStats({
+      deckId: deck.id,
+      direction: 'FORWARD',
+    });
+    expect(statsAfter.answers).toEqual(statsBefore.answers);
+    // Missed, so it comes back at the end of the session
+    expect(answer.retryItem).not.toBeNull();
+  });
+
+  it('starts nothing on a deck with no retired cards', async () => {
+    const deck = await capitalsDeck();
+
+    const session = await createCaller().study.startSession(
+      reviewRetired(deck.id),
+    );
+
+    expect(session).toBeNull();
+  });
+});

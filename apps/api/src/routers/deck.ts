@@ -143,7 +143,19 @@ export const deckRouter = router({
         });
       }
 
-      return deck;
+      // How many of its cards are retired, every way it's studied, as
+      // they retire together, so Review retired is offered only on a deck
+      // with some (#86)
+      const retiredCount = await ctx.prisma.cardProgress.count({
+        where: {
+          userId: ctx.userId,
+          deckId: deck.id,
+          direction: 'FORWARD',
+          lifecycleState: 'RETIRED',
+        },
+      });
+
+      return { ...deck, retiredCount };
     }),
 
   /** The learner's decks in Flashcards: those not archived. */

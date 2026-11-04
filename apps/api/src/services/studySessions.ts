@@ -332,6 +332,7 @@ export async function answerItem(
         select: {
           status: true,
           direction: true,
+          studyMode: true,
           deck: { select: { archivedAt: true, reversible: true } },
         },
       },
@@ -404,7 +405,10 @@ export async function answerItem(
       },
     });
 
-    await applyCardAnswer(tx, { userId, attempt });
+    // A retired card reviewed is quizzed, never scheduled (#86)
+    if (item.studySession.studyMode !== 'REVIEW_RETIRED') {
+      await applyCardAnswer(tx, { userId, attempt });
+    }
 
     const retryItem =
       recallGrade === 'MISSED' ? await queueRetry(tx, item) : null;

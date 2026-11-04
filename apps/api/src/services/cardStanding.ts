@@ -321,7 +321,8 @@ const key = ({
 
 /**
  * Each card's Counted Answers in each Study Direction, answers since its
- * progress there last reset (ADR-0004), Retries left out: how many of its
+ * progress there last reset (ADR-0004), Retries and answers reviewing a
+ * retired card (#86) left out: how many of its
  * last RECENT_ANSWERS were missed, and how many had each Recall Grade. A
  * NEW card has none: it has had no answer since.
  */
@@ -336,7 +337,7 @@ async function countedAnswers(
   const attempts = await prisma.cardAttempt.findMany({
     where: {
       cardId: { in: [...new Set(cards.map((card) => card.cardId))] },
-      studySession: { userId },
+      studySession: { userId, studyMode: { not: 'REVIEW_RETIRED' } },
       isRetry: false,
     },
     orderBy: { createdAt: 'desc' },
@@ -436,8 +437,8 @@ export type RecordedAnswer = {
 /**
  * A learner's Counted Answers to a card in a Study Direction, oldest
  * first, as the scheduler takes them: those since its progress there last
- * reset (`countsSinceReset`, as a query), Retries left out, and the one
- * being applied, when given.
+ * reset (`countsSinceReset`, as a query), Retries and answers reviewing a
+ * retired card (#86) left out, and the one being applied, when given.
  */
 async function findCountedAnswers(
   db: Db,
@@ -451,7 +452,10 @@ async function findCountedAnswers(
     where: {
       cardId: card.cardId,
       direction: card.direction,
-      studySession: { userId: card.userId },
+      studySession: {
+        userId: card.userId,
+        studyMode: { not: 'REVIEW_RETIRED' },
+      },
       createdAt: { gte: resetAt },
       isRetry: false,
       ...(exceptAttemptId && { id: { not: exceptAttemptId } }),

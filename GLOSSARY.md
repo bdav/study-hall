@@ -81,7 +81,7 @@ A finite, time-budgeted run through cards from one deck or from several.
 _Avoid_: Session (ambiguous with login sessions), review session
 
 **Study Mode**:
-How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; or Cram, more new cards and reviews before they're due. Every mode schedules answers the same way.
+How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; Cram, more new cards and reviews before they're due; or Review Retired, retired cards alone, on a deck with some. Every mode but Review Retired schedules answers the same way; Review Retired records them but schedules nothing.
 _Avoid_: Session type (that's its length: Quick, Standard or Deep)
 
 **Retry**:
@@ -113,7 +113,7 @@ Something the learner does to one Study Direction of a card's lifecycle that isn
 _Avoid_: Lifecycle event, override, manual transition
 
 **Counted Answer**:
-An answer the scheduler takes into account: given since the card's progress in that Study Direction last reset, and not a Retry. Other answers are kept as history but count toward nothing, in scheduling or stats.
+An answer the scheduler takes into account: given since the card's progress in that Study Direction last reset, not a Retry, and not given in Review Retired. Other answers are kept as history but count toward nothing, in scheduling or stats.
 _Avoid_: Valid attempt, scored answer
 
 **Due**:

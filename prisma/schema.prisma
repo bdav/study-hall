@@ -52,6 +52,8 @@ enum StudyMode {
   STUDY
   DRILL_WEAKEST
   CRAM
+  // Retired cards quizzed, their answers recorded but never scheduled (#86)
+  REVIEW_RETIRED
 }
 
 enum GradingMethod {

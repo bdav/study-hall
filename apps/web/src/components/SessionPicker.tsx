@@ -26,12 +26,15 @@ export function SessionPicker({
   onSessionType,
   studyMode,
   onStudyMode,
+  offersReviewRetired = false,
   direction,
 }: {
   sessionType: SessionType;
   onSessionType: (value: SessionType) => void;
   studyMode: StudyMode;
   onStudyMode: (value: StudyMode) => void;
+  /** Review retired, offered only on a deck with retired cards (#86). */
+  offersReviewRetired?: boolean;
   /** On a Reversible Deck, the direction chosen and the deck's labels. */
   direction?: {
     value: StudyDirection;
@@ -49,7 +52,9 @@ export function SessionPicker({
       />
       <ChoiceRow
         label="Study mode"
-        options={STUDY_MODES}
+        options={STUDY_MODES.filter(
+          (mode) => offersReviewRetired || mode.value !== 'REVIEW_RETIRED',
+        )}
         value={studyMode}
         onChange={onStudyMode}
       />

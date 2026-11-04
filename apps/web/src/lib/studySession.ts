@@ -66,7 +66,13 @@ type View =
 export type KnownState = 'marked' | 'already';
 
 /** A server call that failed, leaving the session where it was. */
-export type Failure = 'start' | 'answer' | 'finish' | 'accept' | 'retire';
+export type Failure =
+  | 'start'
+  | 'answer'
+  | 'finish'
+  | 'accept'
+  | 'retire'
+  | 'unretire';
 
 export type StudySessionState = {
   session: Session;
@@ -84,6 +90,8 @@ export type StudySessionState = {
   known: Record<string, KnownState>;
   // Cards retired from the study screen in this session (#86)
   retired: Record<string, true>;
+  // Cards unretired from a Review retired session's summary (#86)
+  unretired: string[];
   // The answer being typed to the card in play
   answerInput: string;
   // Why the answer just typed to an item wasn't graded, the card staying in
@@ -146,6 +154,9 @@ export type StudySessionEvent =
   // Retires the card on screen (#86), its Retry, if any, skipped with it
   | { type: 'retire' }
   | { type: 'retired'; cardId: string }
+  // From a Review retired session's summary, the missed cards chosen
+  | { type: 'unretire'; cardIds: string[] }
+  | { type: 'unretired'; cardIds: string[] }
   // The answer accepted, graded again, its card with the new variant
   | { type: 'accepted'; attemptId: string; grade: Grade; card: Flashcard }
   // A card deleted from its deck, dropped from the session and its summary
@@ -165,7 +176,8 @@ export type StudySessionCommand =
   | { type: 'finish'; sessionId: string }
   | { type: 'abandon'; sessionId: string }
   | { type: 'markKnown'; cardId: string; direction: StudyDirection }
-  | { type: 'retire'; cardId: string };
+  | { type: 'retire'; cardId: string }
+  | { type: 'unretire'; cardIds: string[] };
 
 export const initialState: StudySessionState = {
   session: { status: 'not-started' },
@@ -175,6 +187,7 @@ export const initialState: StudySessionState = {
   choosingAnswerFor: null,
   known: {},
   retired: {},
+  unretired: [],
   answerInput: '',
   refusal: null,
   failure: null,
@@ -625,6 +638,17 @@ function step(
         commands: [{ type: 'retire', cardId: card.id }, ...dropped.commands],
       };
     }
+    case 'unretire':
+      if (event.cardIds.length === 0) return noCommands(state);
+      return {
+        state: { ...state, failure: null },
+        commands: [{ type: 'unretire', cardIds: event.cardIds }],
+      };
+    case 'unretired':
+      return noCommands({
+        ...state,
+        unretired: [...state.unretired, ...event.cardIds],
+      });
     case 'retired':
       return noCommands({
         ...state,
@@ -743,6 +767,10 @@ export type StudyScreen =
       answered: number;
       size: number;
       grades: { grade: RecallGrade; count: number }[];
+      // After Review retired, the cards missed at first, to unretire, and
+      // those unretired since (#86)
+      missedRetired: Flashcard[];
+      unretired: string[];
     }
   // No card left to show while the session finishes
   | { kind: 'empty' };
@@ -788,6 +816,15 @@ function screenOf(state: StudySessionState): StudyScreen {
           count: firstAnswers.filter((a) => a.recallGrade === grade).length,
         }))
         .filter(({ count }) => count > 0),
+      missedRetired:
+        session.studyMode === 'REVIEW_RETIRED'
+          ? items.flatMap((item) =>
+              item.answer?.recallGrade === 'MISSED' && !item.isRetry
+                ? [item.card]
+                : [],
+            )
+          : [],
+      unretired: state.unretired,
     };
   }
   const item = itemOnScreen(state);

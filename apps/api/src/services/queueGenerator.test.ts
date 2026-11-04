@@ -12,6 +12,7 @@ function candidates(counts: Partial<Record<keyof QueueCandidates, number>>) {
     dueReinforcing: ids('R', counts.dueReinforcing ?? 0),
     weakReinforcing: ids('W', counts.weakReinforcing ?? 0),
     newCards: ids('N', counts.newCards ?? 0),
+    retired: ids('T', counts.retired ?? 0),
   };
 }
 
@@ -37,6 +38,30 @@ const DRILL_GOLDEN = ['L3', 'L1', 'W3', 'W8', 'W7', 'W9', 'W1', 'L2', 'W4', 'W6'
 const CRAM_GOLDEN = ['L3', 'R4', 'N1', 'L2', 'N2', 'L1', 'R3', 'N3', 'R2', 'N4', 'W1', 'R1'];
 
 describe('composeQueue', () => {
+  describe('Review retired (#86)', () => {
+    const review = (retired: number, seed = 42) =>
+      composeQueue({
+        candidates: candidates({ retired, dueLearning: 5, newCards: 5 }),
+        sessionType: 'QUICK',
+        studyMode: 'REVIEW_RETIRED',
+        seed,
+      });
+
+    it('quizzes only retired cards, a random sample when there are more than fit', () => {
+      const queue = review(30);
+
+      expect(queue).toHaveLength(12);
+      expect(queue.every((id) => id.startsWith('T'))).toBe(true);
+      expect(queue).toEqual(review(30));
+      // Not simply the first in deck order
+      expect(queue).not.toEqual(ids('T', 12));
+    });
+
+    it('quizzes every retired card when they all fit', () => {
+      expect([...review(3)].sort()).toEqual(ids('T', 3));
+    });
+  });
+
   it('gives an all-NEW deck a session of the minimum size, in deck order', () => {
     const queue = (sessionType: 'QUICK' | 'STANDARD' | 'DEEP') =>
       composeQueue({

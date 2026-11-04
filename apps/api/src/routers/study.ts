@@ -25,7 +25,9 @@ import { studyDirection } from './inputs.js';
  */
 const sessionChoiceInput = {
   sessionType: z.enum(['QUICK', 'STANDARD', 'DEEP']).default('STANDARD'),
-  studyMode: z.enum(['STUDY', 'DRILL_WEAKEST', 'CRAM']).default('STUDY'),
+  studyMode: z
+    .enum(['STUDY', 'DRILL_WEAKEST', 'CRAM', 'REVIEW_RETIRED'])
+    .default('STUDY'),
   direction: studyDirection,
 };
 

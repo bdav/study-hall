@@ -982,6 +982,64 @@ describe('the Study Session machine', () => {
     });
   });
 
+  describe('a Review retired session (#86)', () => {
+    const reviewing = (...items: SessionItem[]): StudySessionEvent[] => [
+      { type: 'start' },
+      {
+        type: 'started',
+        session: { id: 'session-1', items, studyMode: 'REVIEW_RETIRED' },
+      },
+    ];
+    // a missed then got right as a Retry, b nailed, c missed twice
+    const reviewed = run([
+      ...reviewing(item('a'), item('b'), item('c')),
+      graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+      { type: 'next' },
+      graded('item-b', { recallGrade: 'NAILED' }),
+      { type: 'next' },
+      graded('item-c', { recallGrade: 'MISSED' }, 'r2'),
+      { type: 'next' },
+      graded('r1', { recallGrade: 'NAILED' }),
+      { type: 'next' },
+      { type: 'finish' },
+      { type: 'finished' },
+    ]).state;
+
+    it('sums up with the cards missed at first, to unretire', () => {
+      expect(studyView(reviewed, { resumable: false }).screen).toMatchObject({
+        kind: 'summary',
+        missedRetired: [card('a'), card('c')],
+        unretired: [],
+      });
+    });
+
+    it('unretires the missed cards chosen, saying so once done', () => {
+      const asked = run([{ type: 'unretire', cardIds: ['c'] }], reviewed);
+      expect(asked.commands).toEqual([{ type: 'unretire', cardIds: ['c'] }]);
+
+      const { state } = run(
+        [{ type: 'unretired', cardIds: ['c'] }],
+        asked.state,
+      );
+      expect(studyView(state, { resumable: false }).screen).toMatchObject({
+        unretired: ['c'],
+      });
+    });
+
+    it('offers nothing to unretire after an ordinary session', () => {
+      const { state } = run([
+        ...started(item('a')),
+        graded('item-a', { recallGrade: 'MISSED' }),
+        { type: 'next' },
+        { type: 'finished' },
+      ]);
+
+      expect(studyView(state, { resumable: false }).screen).toMatchObject({
+        missedRetired: [],
+      });
+    });
+  });
+
   describe('edit mode', () => {
     // a answered, b in play
     const atB = run([
@@ -1222,6 +1280,8 @@ describe('the Study Session machine', () => {
           { grade: 'NAILED', count: 1 },
           { grade: 'MISSED', count: 1 },
         ],
+        missedRetired: [],
+        unretired: [],
       });
     });
 
@@ -1240,6 +1300,8 @@ describe('the Study Session machine', () => {
         answered: 1,
         size: 1,
         grades: [{ grade: 'MISSED', count: 1 }],
+        missedRetired: [],
+        unretired: [],
       });
     });
 

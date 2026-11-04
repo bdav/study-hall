@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "StudyMode" ADD VALUE 'REVIEW_RETIRED';

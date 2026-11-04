@@ -26,6 +26,12 @@ export const STUDY_MODES = [
     detail: 'Shaky cards, no new',
   },
   { value: 'CRAM', label: 'Cram', detail: 'More new, reviews early' },
+  // Offered only on a deck with retired cards (#86)
+  {
+    value: 'REVIEW_RETIRED',
+    label: 'Review retired',
+    detail: 'Mastered, unscheduled',
+  },
 ] as const;
 
 export type StudyMode = (typeof STUDY_MODES)[number]['value'];

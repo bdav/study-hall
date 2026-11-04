@@ -21,6 +21,8 @@ export type QueueCandidates = {
   dueReinforcing: string[];
   weakReinforcing: string[];
   newCards: string[];
+  // Retired cards, for Review retired alone (#86), in deck order
+  retired: string[];
 };
 
 /** Each session type's bounds on its size in cards (§12.1). */
@@ -66,10 +68,15 @@ type Counts = {
   weak: number;
   reinforcing: number;
   new: number;
+  retired: number;
 };
 
 const total = (counts: Counts) =>
-  counts.learning + counts.weak + counts.reinforcing + counts.new;
+  counts.learning +
+  counts.weak +
+  counts.reinforcing +
+  counts.new +
+  counts.retired;
 
 /** The bucket each count draws from. */
 const BUCKET_OF = {
@@ -77,6 +84,7 @@ const BUCKET_OF = {
   weak: 'weakReinforcing',
   reinforcing: 'dueReinforcing',
   new: 'newCards',
+  retired: 'retired',
 } as const satisfies Record<keyof Counts, keyof QueueCandidates>;
 
 /**
@@ -142,6 +150,7 @@ function studyCounts(candidates: QueueCandidates, { min, max }: Size): Counts {
       weak: Math.min(weakReinforcing.length, Math.floor(max * WEAK_CAP)),
       learning: 0,
       reinforcing: 0,
+      retired: 0,
     },
     candidates,
     max,
@@ -168,6 +177,7 @@ function drillCounts(candidates: QueueCandidates, { max }: Size): Counts {
     learning: 0,
     reinforcing: 0,
     new: 0,
+    retired: 0,
   };
   return fillRoom(counts, candidates, max, ['learning', 'reinforcing', 'weak']);
 }
@@ -191,6 +201,7 @@ function cramCounts(candidates: QueueCandidates, { max }: Size): Counts {
       ),
       learning: 0,
       reinforcing: 0,
+      retired: 0,
     },
     candidates,
     max,
@@ -201,6 +212,23 @@ function cramCounts(candidates: QueueCandidates, { max }: Size): Counts {
     'weak',
     'new',
   ]);
+}
+
+/**
+ * Review retired (#86): the retired cards alone, as many as the session
+ * holds, a random sample of them when there are more (`composeQueue`).
+ */
+function reviewRetiredCounts(
+  candidates: QueueCandidates,
+  { max }: Size,
+): Counts {
+  return {
+    learning: 0,
+    weak: 0,
+    reinforcing: 0,
+    new: 0,
+    retired: Math.min(candidates.retired.length, max),
+  };
 }
 
 /**
@@ -215,22 +243,32 @@ const MODE_RULES: Record<
     counts: (candidates: QueueCandidates, size: Size) => Counts;
     weakBeforeDue: boolean;
     takesNew: boolean;
+    takesRetired: boolean;
   }
 > = {
   STUDY: {
     counts: studyCounts,
     weakBeforeDue: false,
     takesNew: true,
+    takesRetired: false,
   },
   DRILL_WEAKEST: {
     counts: drillCounts,
     weakBeforeDue: true,
     takesNew: false,
+    takesRetired: false,
   },
   CRAM: {
     counts: cramCounts,
     weakBeforeDue: false,
     takesNew: true,
+    takesRetired: false,
+  },
+  REVIEW_RETIRED: {
+    counts: reviewRetiredCounts,
+    weakBeforeDue: false,
+    takesNew: false,
+    takesRetired: true,
   },
 };
 
@@ -262,6 +300,8 @@ export function composeQueue({
       ...candidates.dueLearning.slice(0, counts.learning),
       ...candidates.weakReinforcing.slice(0, counts.weak),
       ...candidates.dueReinforcing.slice(0, counts.reinforcing),
+      // A random sample of them, not the first in deck order
+      ...shuffle(candidates.retired, seed).slice(0, counts.retired),
     ],
     seed,
   );
@@ -324,7 +364,7 @@ export function queueCandidates(
   { cards, due, weak }: Standings,
   studyMode: StudyMode,
 ): QueueCandidates {
-  const { weakBeforeDue, takesNew } = MODE_RULES[studyMode];
+  const { weakBeforeDue, takesNew, takesRetired } = MODE_RULES[studyMode];
   const ids = (standings: CardStanding[]) =>
     standings.slice(0, MOST).map(({ cardId }) => cardId);
   return {
@@ -339,6 +379,12 @@ export function queueCandidates(
     ),
     newCards: takesNew
       ? ids(cards.filter((card) => card.lifecycleState === 'NEW'))
+      : [],
+    // Every one, so a sample can come from any of them
+    retired: takesRetired
+      ? cards
+          .filter((card) => card.lifecycleState === 'RETIRED')
+          .map(({ cardId }) => cardId)
       : [],
   };
 }
