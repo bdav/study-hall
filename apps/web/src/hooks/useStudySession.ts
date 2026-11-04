@@ -141,6 +141,7 @@ export function useStudySession(
 
   const retireCard = trpc.card.retire.useMutation();
   const unretireCards = trpc.card.unretire.useMutation();
+  const undoRetire = trpc.card.undoRetire.useMutation();
 
   /** Moves the machine on, making the server calls it asks for. */
   async function send(event: StudySessionEvent) {
@@ -242,7 +243,8 @@ export function useStudySession(
         return;
       case 'undoRetire':
         try {
-          await unretireCards.mutateAsync({ cardIds: [command.cardId] });
+          // As if it was never retired, so it can be retired again
+          await undoRetire.mutateAsync({ cardIds: [command.cardId] });
         } catch {
           await send({ type: 'failed', of: 'unretire' });
           return;
@@ -317,7 +319,7 @@ export function useStudySession(
       keep: () => send({ type: 'keep' }),
       /** Retires the card on screen (#86), its Retry skipped with it. */
       retire: () => send({ type: 'retire' }),
-      /** Unretires the card retired from here, due again at once. */
+      /** Takes back retiring the card from here, as if it never happened. */
       undoRetire: () => send({ type: 'undoRetire' }),
       /** From a Review retired session's summary, the missed cards chosen. */
       unretire: (cardIds: string[]) => send({ type: 'unretire', cardIds }),

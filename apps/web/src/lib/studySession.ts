@@ -159,7 +159,7 @@ export type StudySessionEvent =
   // Retires the card on screen (#86), its Retry, if any, skipped with it
   | { type: 'retire' }
   | { type: 'retired'; cardId: string }
-  // Unretires the card retired from here, due again at once
+  // Takes back retiring the card from here, as if it never happened
   | { type: 'undoRetire' }
   | { type: 'retireUndone'; cardId: string }
   // From a Review retired session's summary, the missed cards chosen

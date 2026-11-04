@@ -649,6 +649,34 @@ export async function recordUnretired(
   return unretired.size;
 }
 
+/**
+ * Takes back the learner's retiring of cards (#86), as if it never
+ * happened: each retired direction's retire mark is cleared and its
+ * progress rebuilt from its Counted Answers and the learner's other marks
+ * (`replayCardAnswers`), so it's as it stood before, and can retire again.
+ * Progress not retired is left as it is. Returns how many cards it undid.
+ */
+export async function recordRetireUndone(
+  db: Db,
+  { userId, cardIds }: { userId: string; cardIds: string[] },
+) {
+  const undone = new Set<string>();
+  for (const progress of await studiedProgress(db, userId, cardIds)) {
+    if (progress.lifecycleState !== 'RETIRED') continue;
+    await db.cardProgress.update({
+      where: { id: progress.id },
+      data: { retiredAt: null },
+    });
+    await replayCardAnswers(db, {
+      userId,
+      cardId: progress.cardId,
+      direction: progress.direction,
+    });
+    undone.add(progress.cardId);
+  }
+  return undone.size;
+}
+
 /** Every Study Direction, in each of which every card has progress. */
 export const STUDY_DIRECTIONS: StudyDirection[] = ['FORWARD', 'REVERSE'];
 

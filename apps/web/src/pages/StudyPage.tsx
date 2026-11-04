@@ -416,6 +416,7 @@ function TitleCardDetails({
   preview,
   resumable,
   studyMode,
+  retiredCount,
 }: {
   deckSize: number;
   sessionSize: number | null;
@@ -431,6 +432,8 @@ function TitleCardDetails({
   } | null;
   /** Drill Weakest has nothing to drill, rather than nothing due (#9). */
   studyMode: StudyMode;
+  /** The deck's retired cards, which Review retired quizzes, due or not (#86). */
+  retiredCount: number;
 }) {
   const className = 'mt-4 text-sm text-white/50';
   const isDrill = studyMode === 'DRILL_WEAKEST';
@@ -446,6 +449,18 @@ function TitleCardDetails({
           {resumable.directionLabel && ` · ${resumable.directionLabel}`}
         </p>
       </>
+    );
+  }
+  if (studyMode === 'REVIEW_RETIRED') {
+    // The retired cards, due or not: all of them, or a session's sample
+    const size = preview?.sessionSize ?? retiredCount;
+    const retired = retiredCount === 1 ? 'retired card' : 'retired cards';
+    return (
+      <p className={className}>
+        {size < retiredCount
+          ? `${size} of ${retiredCount} ${retired}`
+          : `${retiredCount} ${retired}`}
+      </p>
     );
   }
   if (!preview) return <p className={className}>{deckSize} in deck</p>;
@@ -660,6 +675,7 @@ export default function StudyPage() {
           : null
       }
       studyMode={studyMode}
+      retiredCount={deck?.retiredCount ?? 0}
     />
   );
 

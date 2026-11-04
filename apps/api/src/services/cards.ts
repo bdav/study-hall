@@ -6,6 +6,7 @@ import {
   readCardStanding,
   recordMarkedKnown,
   recordRetired,
+  recordRetireUndone,
   recordUnretired,
   resetCardProgress,
   startCardProgress,
@@ -779,6 +780,21 @@ export async function unretireCards(
     recordUnretired(tx, { userId, cardIds, at: new Date() }),
   );
   return { unretiredCount };
+}
+
+/**
+ * Takes back retiring a learner's cards (#86), through Card Standing
+ * (`recordRetireUndone`): each is as it stood before it was retired.
+ * Returns how many cards it undid.
+ */
+export async function undoRetireCards(
+  prisma: PrismaClient,
+  { userId, cardIds }: { userId: string; cardIds: string[] },
+) {
+  const undoneCount = await prisma.$transaction((tx) =>
+    recordRetireUndone(tx, { userId, cardIds }),
+  );
+  return { undoneCount };
 }
 
 /**

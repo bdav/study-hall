@@ -45,6 +45,7 @@ vi.mock('@/lib/trpc', () => ({
       markKnown: { useMutation: vi.fn() },
       retire: { useMutation: vi.fn() },
       unretire: { useMutation: vi.fn() },
+      undoRetire: { useMutation: vi.fn() },
       restoreVersion: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
     },
@@ -566,7 +567,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCardMutations();
   // Retiring and unretiring, which tests that use them mock themselves
-  for (const procedure of [trpc.card.retire, trpc.card.unretire]) {
+  for (const procedure of [
+    trpc.card.retire,
+    trpc.card.unretire,
+    trpc.card.undoRetire,
+  ]) {
     vi.mocked(procedure.useMutation).mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -3479,12 +3484,12 @@ describe('retiring a card from the study screen (#86)', () => {
     ).toBeInTheDocument();
   });
 
-  it('undoes retiring, unretiring the card', async () => {
-    const unretire = vi.fn().mockResolvedValue({ unretiredCount: 1 });
-    vi.mocked(trpc.card.unretire.useMutation).mockReturnValue({
-      mutateAsync: unretire,
+  it('undoes retiring, offering it again', async () => {
+    const undoRetire = vi.fn().mockResolvedValue({ undoneCount: 1 });
+    vi.mocked(trpc.card.undoRetire.useMutation).mockReturnValue({
+      mutateAsync: undoRetire,
       isPending: false,
-    } as unknown as ReturnType<typeof trpc.card.unretire.useMutation>);
+    } as unknown as ReturnType<typeof trpc.card.undoRetire.useMutation>);
     const user = await answerCardOne(true);
     await user.click(screen.getByRole('button', { name: 'Retire this card?' }));
     await user.click(screen.getByRole('button', { name: 'Retire' }));
@@ -3492,10 +3497,13 @@ describe('retiring a card from the study screen (#86)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Undo' }));
 
-    expect(unretire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    expect(undoRetire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
     await waitFor(() =>
       expect(screen.queryByText('Retired')).not.toBeInTheDocument(),
     );
+    expect(
+      screen.getByRole('button', { name: 'Retire this card?' }),
+    ).toBeInTheDocument();
   });
 
   it("doesn't offer it on a card that can't retire", async () => {
@@ -3530,6 +3538,32 @@ describe('reviewing retired cards (#86)', () => {
     expect(
       modeRow().getByRole('button', { name: /review retired/i }),
     ).toBeInTheDocument();
+  });
+
+  it('counts the retired cards on the title card, not those due', async () => {
+    setupMocksWithStartSession();
+    withRetired(2);
+    const user = userEvent.setup();
+    const { unmount } = renderStudyPage();
+
+    await user.click(
+      modeRow().getByRole('button', { name: /review retired/i }),
+    );
+
+    expect(screen.getByText('2 retired cards')).toBeInTheDocument();
+    expect(screen.queryByText(/in deck/)).not.toBeInTheDocument();
+    unmount();
+
+    // A sample of them, when there are more than a session holds
+    withRetired(30);
+    mockQueuePreview({
+      sessionSize: 12,
+      dueCount: 0,
+      newCount: 0,
+      nextDueAt: null,
+    });
+    renderStudyPage();
+    expect(screen.getByText('12 of 30 retired cards')).toBeInTheDocument();
   });
 
   it('starts a session reviewing the retired cards when chosen', async () => {

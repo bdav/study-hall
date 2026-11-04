@@ -464,6 +464,53 @@ describe('card.unretire', () => {
   });
 });
 
+describe('card.undoRetire', () => {
+  it('takes back retiring, as if it never happened, still able to retire', async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    await master(france.id);
+    const before = await progressOf(france.id);
+    await createCaller().card.retire({ cardIds: [france.id] });
+
+    const result = await createCaller().card.undoRetire({
+      cardIds: [france.id],
+    });
+
+    expect(result).toEqual({ undoneCount: 1 });
+    const after = await progressOf(france.id);
+    expect(after).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      masteryScore: before.masteryScore,
+      dueAt: before.dueAt,
+      retiredAt: null,
+      unretiredAt: null,
+    });
+    expect(await listed(deck.id)).toContainEqual({
+      front: 'Capital of France',
+      retired: false,
+      retirable: true,
+    });
+  });
+
+  it('leaves a card not retired as it is', async () => {
+    const deck = await capitalsDeck();
+
+    const result = await createCaller().card.undoRetire({
+      cardIds: [deck.cards[0].id],
+    });
+
+    expect(result).toEqual({ undoneCount: 0 });
+  });
+
+  it("refuses when a card isn't the learner's", async () => {
+    const deck = await capitalsDeck(otherUserId);
+
+    await expect(
+      createCaller().card.undoRetire({ cardIds: [deck.cards[0].id] }),
+    ).rejects.toThrow(/not found/i);
+  });
+});
+
 describe('a Review retired session', () => {
   /** France and Japan mastered and retired; Brazil still NEW. */
   async function retiredDeck() {

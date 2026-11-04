@@ -9,6 +9,7 @@ import {
   markCardsKnown,
   restoreCardVersion,
   retireCards,
+  undoRetireCards,
   unretireCards,
   withCanonicalAnswers,
 } from '../services/cards.js';
@@ -173,6 +174,20 @@ export const cardRouter = router({
         cardIds: input.cardIds,
       });
       return unretireCards(ctx.prisma, { userId: ctx.userId, ...input });
+    }),
+
+  /**
+   * Takes back retiring cards (#86), as if it never happened: as they stood
+   * before, still able to retire. The study screen's Undo.
+   */
+  undoRetire: protectedProcedure
+    .input(z.object({ cardIds }))
+    .mutation(async ({ ctx, input }) => {
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
+      return undoRetireCards(ctx.prisma, { userId: ctx.userId, ...input });
     }),
 
   /** Deletes several cards, as `delete` deletes one. */
