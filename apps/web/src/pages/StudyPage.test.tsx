@@ -12,6 +12,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import StudyPage from './StudyPage';
 import { TRPCClientError } from '@trpc/client';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { trpc } from '@/lib/trpc';
 import { expectPencilOnHoverAndFocus } from '@/test-helpers/editPencil';
 
@@ -138,6 +139,7 @@ function renderStudyPage(deckId = 'deck-1') {
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
+    { wrapper: TooltipProvider },
   );
 }
 
@@ -2831,24 +2833,46 @@ describe('StudyPage', () => {
         expect(screen.queryByLabelText('Cram until')).not.toBeInTheDocument();
       });
 
-      it('says what a date would do before one is set', async () => {
+      const aboutDate = () =>
+        screen.getByRole('button', { name: 'About Cram until' });
+
+      it('keeps what a date does behind an info button', async () => {
         await renderCram();
 
+        expect(aboutDate()).toBeInTheDocument();
         expect(
-          screen.getByText(
-            'Optional: the day you need to know this deck by. Cram paces reviews and new cards toward it.',
-          ),
-        ).toBeInTheDocument();
+          screen.queryByText(/Cram paces reviews/),
+        ).not.toBeInTheDocument();
+      });
+
+      it('says what a date would do on hovering the info button', async () => {
+        const user = await renderCram();
+
+        await user.hover(aboutDate());
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(
+          'Optional: the day you need to know this deck by. Cram paces reviews and new cards toward it.',
+        );
       });
 
       it('says what the date is doing once set', async () => {
-        await renderCram('2099-12-14T00:00:00.000Z');
+        const user = await renderCram('2099-12-14T00:00:00.000Z');
 
-        expect(
-          screen.getByText(
-            'Reviews come back sooner as 14 Dec nears, and new cards are paced to reach it. Only Cram uses this date.',
-          ),
-        ).toBeInTheDocument();
+        await user.hover(aboutDate());
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(
+          'Reviews come back sooner as 14 Dec nears, and new cards are paced to reach it. Only Cram uses this date.',
+        );
+      });
+
+      it('opens on a tap too, which has no hover', async () => {
+        await renderCram();
+
+        fireEvent.click(aboutDate());
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(
+          'Optional: the day you need to know this deck by.',
+        );
       });
 
       it("shows the deck's date, from today on", async () => {
@@ -3346,6 +3370,19 @@ describe('a reversible deck (#82)', () => {
 
   const directions = () =>
     within(screen.getByRole('group', { name: 'Direction' }));
+
+  it('says what the direction chosen asks for behind an info button', async () => {
+    setupReversible();
+    const user = userEvent.setup();
+    renderStudyPage();
+    expect(screen.queryByText(/type the answer/)).not.toBeInTheDocument();
+
+    await user.hover(screen.getByRole('button', { name: 'About Direction' }));
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Each card shows its front; type the answer',
+    );
+  });
 
   it('offers the direction beside length and mode, by its Direction Labels, Forward to start', () => {
     setupReversible();

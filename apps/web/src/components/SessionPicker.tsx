@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
 import { countOf } from '@/lib/format';
 import { glassInputClassName } from '@/lib/utils';
+import { InfoTip } from '@/components/InfoTip';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import {
@@ -11,7 +12,7 @@ import {
   type StudyMode,
 } from '@/lib/sessionChoices';
 
-/** What the Study Direction chosen asks for, below the choice. */
+/** What the Study Direction chosen asks for, behind its info button. */
 const DIRECTION_DETAILS: Record<StudyDirection, string> = {
   FORWARD: 'Each card shows its front; type the answer',
   REVERSE: 'Each card shows its answer; type the front',
@@ -65,7 +66,7 @@ export function SessionPicker({
   };
 }) {
   return (
-    <div className="mx-auto mt-6 flex w-full max-w-md flex-col gap-3">
+    <div className="mx-auto mt-6 flex w-full max-w-md flex-col gap-5">
       <ChoiceRow
         label="Session length"
         options={SESSION_TYPES}
@@ -121,12 +122,15 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
   const message = value && pace && paceMessage(value, pace);
   return (
     <div>
-      <label
-        htmlFor={id}
-        className="mb-1 block text-xs uppercase tracking-wide text-white/50"
-      >
-        Cram until
-      </label>
+      <div className="mb-1 flex items-center gap-1.5">
+        <label
+          htmlFor={id}
+          className="text-xs uppercase tracking-wide text-white/50"
+        >
+          Cram until
+        </label>
+        <InfoTip label="About Cram until">{cramDateDetail(value)}</InfoTip>
+      </div>
       <div className="flex items-center gap-3">
         <Input
           id={id}
@@ -153,7 +157,6 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
           </button>
         )}
       </div>
-      <p className="mt-1 text-xs text-white/50">{cramDateDetail(value)}</p>
       {hasFailed ? (
         <p role="alert" className="mt-1 text-xs text-white/70">
           Couldn't save the date. Please try again.
@@ -167,7 +170,7 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
 
 /**
  * The Study Direction under its label, as a segmented control the width of
- * the rows above, with a line saying what the one chosen asks for.
+ * the rows above, with what the one chosen asks for behind an info button.
  */
 function DirectionRow({
   value,
@@ -181,12 +184,15 @@ function DirectionRow({
   const labelId = useId();
   return (
     <div>
-      <p
-        id={labelId}
-        className="mb-1 text-xs uppercase tracking-wide text-white/50"
-      >
-        Direction
-      </p>
+      <div className="mb-1 flex items-center gap-1.5">
+        <p
+          id={labelId}
+          className="text-xs uppercase tracking-wide text-white/50"
+        >
+          Direction
+        </p>
+        <InfoTip label="About Direction">{DIRECTION_DETAILS[value]}</InfoTip>
+      </div>
       <SegmentedControl
         labelledBy={labelId}
         options={STUDY_DIRECTIONS.map((direction) => ({
@@ -197,7 +203,6 @@ function DirectionRow({
         onChange={onChange}
         className="flex w-full"
       />
-      <p className="mt-1 text-xs text-white/50">{DIRECTION_DETAILS[value]}</p>
     </div>
   );
 }
