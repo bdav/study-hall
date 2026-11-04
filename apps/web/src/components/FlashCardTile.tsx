@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ArchiveRestore,
   BadgeCheck,
   History,
   Pencil,
@@ -13,8 +14,8 @@ import { type AcceptedVariant } from '@/lib/cards';
 import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
 
 /**
- * A tile's History, Mark known and Delete actions: shown on hovering the
- * tile, or faintly on touch screens, which have no hover.
+ * A tile's Unretire, History, Mark known and Delete actions: shown on
+ * hovering the tile, or faintly on touch screens, which have no hover.
  */
 const tileActionClassName =
   'relative touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60 pointer-coarse:text-white/40';
@@ -30,6 +31,10 @@ interface FlashCardTileProps {
   onMarkKnown?: () => void;
   /** Opens the card's version history (#54). */
   onShowHistory: () => void;
+  /** Retired, out of review until unretired (#86). */
+  retired?: boolean;
+  /** Unretires the card, offered on a retired one. */
+  onUnretire?: () => void;
   /**
    * While the Cards tab is selecting cards: the tile's buttons are hidden,
    * its rows keeping their height so the text doesn't move.
@@ -113,6 +118,8 @@ export function FlashCardTile({
   onDelete,
   onMarkKnown,
   onShowHistory,
+  retired = false,
+  onUnretire,
   isSelecting = false,
   isSaving,
   variants,
@@ -262,8 +269,25 @@ export function FlashCardTile({
             showPencil={!isSelecting}
           />
           <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+            {retired && (
+              <span className="mr-auto self-center pl-1 text-xs text-white/50">
+                Retired
+              </span>
+            )}
             {!isSelecting && (
               <>
+                {onUnretire && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnretire();
+                    }}
+                    className={tileActionClassName}
+                    title="Unretire"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -354,8 +378,25 @@ export function FlashCardTile({
             showPencil={!isSelecting}
           />
           <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+            {retired && (
+              <span className="mr-auto self-center pl-1 text-xs text-white/50">
+                Retired
+              </span>
+            )}
             {!isSelecting && (
               <>
+                {onUnretire && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnretire();
+                    }}
+                    className={tileActionClassName}
+                    title="Unretire"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

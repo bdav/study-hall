@@ -55,6 +55,8 @@ vi.mock('@/lib/trpc', () => ({
       delete: { useMutation: vi.fn() },
       deleteMany: { useMutation: vi.fn() },
       markKnown: { useMutation: vi.fn() },
+      retire: { useMutation: vi.fn() },
+      unretire: { useMutation: vi.fn() },
       importCards: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
       restoreVersion: { useMutation: vi.fn() },
@@ -80,6 +82,8 @@ const mockCards = [
     updatedAt: '2026-03-01T00:00:00.000Z',
     reverseVariants: [] as { id: string; text: string }[],
     knownDirections: [] as ('FORWARD' | 'REVERSE')[],
+    retired: false,
+    retirable: false,
   },
   {
     id: 'card-2',
@@ -98,6 +102,8 @@ const mockCards = [
     updatedAt: '2026-03-01T00:00:00.000Z',
     reverseVariants: [] as { id: string; text: string }[],
     knownDirections: [] as ('FORWARD' | 'REVERSE')[],
+    retired: false,
+    retirable: false,
   },
 ];
 
@@ -223,6 +229,14 @@ function setupMocks(overrides?: {
   vi.mocked(trpc.card.markKnown.useMutation).mockReturnValue({
     ...defaultMutationReturn,
   } as unknown as ReturnType<typeof trpc.card.markKnown.useMutation>);
+
+  vi.mocked(trpc.card.retire.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.retire.useMutation>);
+
+  vi.mocked(trpc.card.unretire.useMutation).mockReturnValue({
+    ...defaultMutationReturn,
+  } as unknown as ReturnType<typeof trpc.card.unretire.useMutation>);
 
   vi.mocked(trpc.card.restoreVersion.useMutation).mockReturnValue({
     ...defaultMutationReturn,
@@ -1226,6 +1240,8 @@ describe('DeckCardsPage', () => {
       updatedAt: '2026-03-01T00:00:00.000Z',
       reverseVariants: [],
       knownDirections: [],
+      retired: false,
+      retirable: false,
     };
 
     function mockUpdate() {
@@ -1809,6 +1825,66 @@ describe('DeckCardsPage', () => {
       ).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Select cards' }));
       expect(screen.getByText('0 selected')).toBeInTheDocument();
+    });
+  });
+
+  describe('retiring mastered cards (#86)', () => {
+    function mockMutation(
+      procedure: typeof trpc.card.retire | typeof trpc.card.unretire,
+    ) {
+      const mutate = vi.fn();
+      vi.mocked(procedure.useMutation).mockReturnValue({
+        ...defaultMutationReturn,
+        mutate,
+      } as never);
+      return mutate;
+    }
+
+    const mastered = mockCards.map((card) => ({ ...card, retirable: true }));
+
+    it('says how many cards can retire, and retires them after a confirmation that says how many', async () => {
+      setupMocks({ cards: mastered });
+      const retire = mockMutation(trpc.card.retire);
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      await user.click(
+        screen.getByRole('button', { name: 'Retire 2 mastered cards' }),
+      );
+
+      const dialog = screen.getByRole('alertdialog');
+      expect(within(dialog).getByText('Retire 2 cards?')).toBeInTheDocument();
+      expect(retire).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole('button', { name: 'Retire' }));
+
+      expect(retire).toHaveBeenCalledWith({ cardIds: ['card-1', 'card-2'] });
+    });
+
+    it('offers no retiring when no card can retire', () => {
+      setupMocks();
+      renderDeckCardsPage();
+
+      expect(
+        screen.queryByRole('button', { name: /mastered card/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says Retired on a retired card's tile, and unretires it from there", async () => {
+      setupMocks({
+        cards: [
+          { ...mockCards[0], retired: true, knownDirections: ['FORWARD'] },
+          mockCards[1],
+        ],
+      });
+      const unretire = mockMutation(trpc.card.unretire);
+      const user = userEvent.setup();
+      renderDeckCardsPage();
+
+      // On each face of the retired card, and no other
+      expect(screen.getAllByText('Retired')).toHaveLength(2);
+      await user.click(screen.getAllByTitle('Unretire')[0]);
+
+      expect(unretire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
     });
   });
 

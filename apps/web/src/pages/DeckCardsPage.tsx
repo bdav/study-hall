@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Archive,
+  ArchiveX,
   SquareCheck,
   Upload,
   X,
@@ -15,6 +16,7 @@ import {
 import { trpc } from '@/lib/trpc';
 import {
   answersWithPrimary,
+  cardsCount,
   markedKnownMessage,
   toFlashcard,
   type Flashcard,
@@ -273,6 +275,27 @@ export default function DeckCardsPage() {
     },
   });
 
+  // Mastered cards retired together, and one unretired from its tile (#86)
+  const retireCards = trpc.card.retire.useMutation({
+    onSuccess: ({ retiredCount }) => {
+      invalidateCards();
+      toast.success(`Retired ${cardsCount(retiredCount)}`);
+    },
+    onError: () => {
+      toast.error("Couldn't retire the cards");
+    },
+  });
+
+  const unretireCard = trpc.card.unretire.useMutation({
+    onSuccess: () => {
+      invalidateCards();
+      toast.success('Unretired: it comes back for review now');
+    },
+    onError: () => {
+      toast.error("Couldn't unretire the card");
+    },
+  });
+
   const archiveDeck = trpc.deck.archive.useMutation({
     onSuccess: () => {
       utils.deck.list.invalidate();
@@ -328,6 +351,14 @@ export default function DeckCardsPage() {
   const cards = (cardsQuery.data ?? []).map(toFlashcard);
   const directions = directionsOf(deck);
   const labels = directionLabels(deck);
+  // The cards the app suggests retiring, mastered every way the deck is
+  // studied (#86)
+  const retirableIds = (cardsQuery.data ?? [])
+    .filter((c) => c.retirable)
+    .map((c) => c.id);
+  const retiredIds = new Set(
+    (cardsQuery.data ?? []).filter((c) => c.retired).map((c) => c.id),
+  );
   // Cards known already every way the deck is studied, which Mark known
   // would leave as they are
   const knownCardIds = new Set(
@@ -436,6 +467,21 @@ export default function DeckCardsPage() {
                 <SquareCheck className="h-4 w-4 mr-1" />
                 Select
               </button>
+            )}
+            {retirableIds.length > 0 && (
+              <ConfirmDialog
+                title={`Retire ${cardsCount(retirableIds.length)}?`}
+                description="You've mastered them. Retired cards stop coming up in Study, Drill weakest and Cram, and keep their history. Unretire one from its tile at any time."
+                confirmLabel="Retire"
+                onConfirm={() => retireCards.mutate({ cardIds: retirableIds })}
+                trigger={
+                  <button className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
+                    <ArchiveX className="h-4 w-4 mr-1" />
+                    Retire {retirableIds.length} mastered{' '}
+                    {retirableIds.length === 1 ? 'card' : 'cards'}
+                  </button>
+                }
+              />
             )}
             {canUseAI && cards.length > 0 && (
               <>
@@ -761,6 +807,12 @@ export default function DeckCardsPage() {
                           : () => markKnown.mutate({ cardIds: [card.id] })
                     }
                     onShowHistory={() => setHistoryCardId(card.id)}
+                    retired={retiredIds.has(card.id)}
+                    onUnretire={
+                      retiredIds.has(card.id)
+                        ? () => unretireCard.mutate({ cardIds: [card.id] })
+                        : undefined
+                    }
                     isSelecting={selection !== null}
                     isSaving={
                       updateCard.isPending &&
