@@ -22,7 +22,6 @@ import {
   recordMarkedKnown,
   resetCardProgress,
 } from './services/cardStanding.js';
-import { NEW_PROGRESS } from './services/progressUpdater.js';
 
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 config({ path: `${projectRoot}.env` });
@@ -206,9 +205,10 @@ export async function recordCardHistory(
   // Its history in this direction starts at its first event; another
   // direction's is left as it is
   if (events.length > 0) {
-    await prisma.cardProgress.update({
-      where: { userId_cardId_direction: { userId, cardId, direction } },
-      data: { ...NEW_PROGRESS, resetAt: events[0].at },
+    await resetCardProgress(prisma, {
+      cardId,
+      direction,
+      resetAt: events[0].at,
     });
   }
 

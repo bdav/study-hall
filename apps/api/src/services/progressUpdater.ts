@@ -320,21 +320,23 @@ const RETIRE_MIN_INTERVAL_DAYS = 60;
 /**
  * Whether the app suggests retiring a card (#86, GLOSSARY.md, Retired): it's
  * Reinforcing, with mastery 9 or more, its latest Counted Answer Nailed and
- * its last interval 60 days or more. Retiring is the learner's choice, never
- * the scheduler's.
+ * its last interval 60 days or more. Once unretired, only a Nailed answer
+ * given since counts, so the learner reviews it again first. Retiring is the
+ * learner's choice, never the scheduler's.
  */
 export function isRetirable(
   progress: Pick<
     ScheduledProgress,
-    'lifecycleState' | 'masteryScore' | 'lastIntervalDays'
+    'lifecycleState' | 'masteryScore' | 'lastIntervalDays' | 'unretiredAt'
   >,
-  latestGrade: RecallGrade | null,
+  latest: Pick<ScheduledAnswer, 'recallGrade' | 'answeredAt'> | null,
 ) {
   return (
     progress.lifecycleState === 'REINFORCING' &&
     progress.masteryScore >= RETIRE_MIN_MASTERY &&
     (progress.lastIntervalDays ?? 0) >= RETIRE_MIN_INTERVAL_DAYS &&
-    latestGrade === 'NAILED'
+    latest?.recallGrade === 'NAILED' &&
+    (!progress.unretiredAt || latest.answeredAt > progress.unretiredAt)
   );
 }
 

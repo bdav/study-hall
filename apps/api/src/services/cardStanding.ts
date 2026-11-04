@@ -123,6 +123,7 @@ const progressFields = {
   lastIntervalDays: true,
   lastReviewedAt: true,
   markedKnownAt: true,
+  unretiredAt: true,
   resetAt: true,
 } as const;
 
@@ -231,11 +232,11 @@ export async function readCardStanding(
     const {
       recentMisses: cardMisses,
       byGrade,
-      latestGrade,
+      latest,
     } = tallies.get(key(card)) ?? {
       recentMisses: 0,
       byGrade: noAnswers(),
-      latestGrade: null,
+      latest: null,
     };
     const standing: CardStanding = {
       cardId: card.cardId,
@@ -247,7 +248,7 @@ export async function readCardStanding(
       isDue: due !== null && due <= now,
       dueAt: due,
       isWeak: isWeak(card, cardMisses),
-      isRetirable: isRetirable(card, latestGrade),
+      isRetirable: isRetirable(card, latest),
       recentMisses: cardMisses,
       countedAnswers: byGrade,
     };
@@ -355,7 +356,7 @@ async function countedAnswers(
       answers: number;
       recentMisses: number;
       byGrade: AnswersByGrade;
-      latestGrade: RecallGrade | null;
+      latest: { recallGrade: RecallGrade; answeredAt: Date } | null;
     }
   >();
   // Newest first, so each card's first RECENT_ANSWERS are its last
@@ -367,7 +368,10 @@ async function countedAnswers(
       recentMisses: 0,
       byGrade: noAnswers(),
       // Newest first, so the first is the latest
-      latestGrade: attempt.recallGrade,
+      latest: {
+        recallGrade: attempt.recallGrade,
+        answeredAt: attempt.createdAt,
+      },
     };
     if (card.answers < RECENT_ANSWERS && attempt.recallGrade === 'MISSED') {
       card.recentMisses++;
@@ -385,7 +389,8 @@ export type Standings = Awaited<ReturnType<typeof readCardStanding>>;
 /**
  * Where each card stands on retiring, across every Study Direction its deck
  * is studied in, as both directions retire together (#86): whether it's
- * retired in all of them, and whether the app suggests retiring it, which it
+ * retired, as it is in any of them (a deck made reversible since it retired
+ * studies Reverse afresh), and whether the app suggests retiring it, which it
  * does only once every one of them is retirable. Given standings read in
  * both directions.
  */
@@ -393,15 +398,28 @@ export function cardRetirement(standings: CardStanding[]) {
   const cards = new Map<string, { retired: boolean; retirable: boolean }>();
   for (const standing of standings) {
     const card = cards.get(standing.cardId) ?? {
-      retired: true,
+      retired: false,
       retirable: true,
     };
     cards.set(standing.cardId, {
-      retired: card.retired && standing.lifecycleState === 'RETIRED',
+      retired: card.retired || standing.lifecycleState === 'RETIRED',
       retirable: card.retirable && standing.isRetirable,
     });
   }
   return cards;
+}
+
+/**
+ * How many of a learner's cards in a deck are retired (#86): Forward always
+ * retires with the card, so it's counted there.
+ */
+export function countRetiredCards(
+  prisma: PrismaClient,
+  { userId, deckId }: { userId: string; deckId: string },
+) {
+  return prisma.cardProgress.count({
+    where: { userId, deckId, direction: 'FORWARD', lifecycleState: 'RETIRED' },
+  });
 }
 
 /**
@@ -517,8 +535,9 @@ function lifecycleMarks(progress: {
   if (progress.markedKnownAt) {
     marks.push({ kind: 'MARKED_KNOWN', at: progress.markedKnownAt });
   }
-  if (progress.retiredAt)
+  if (progress.retiredAt) {
     marks.push({ kind: 'RETIRED', at: progress.retiredAt });
+  }
   if (progress.unretiredAt) {
     marks.push({ kind: 'UNRETIRED', at: progress.unretiredAt });
   }
@@ -661,14 +680,19 @@ export function startCardProgress(
 /**
  * Resets a card's progress to NEW in every Study Direction from `resetAt`,
  * when an edit changes what it asks (ADR-0004): its answers are kept, but
- * only those since count.
+ * only those since count. One direction alone when given, as a history
+ * recorded for one direction starts it.
  */
 export function resetCardProgress(
   db: Db,
-  { cardId, resetAt }: { cardId: string; resetAt: Date },
+  {
+    cardId,
+    direction,
+    resetAt,
+  }: { cardId: string; direction?: StudyDirection; resetAt: Date },
 ) {
   return db.cardProgress.updateMany({
-    where: { cardId },
+    where: { cardId, ...(direction && { direction }) },
     data: { ...NEW_PROGRESS, resetAt },
   });
 }

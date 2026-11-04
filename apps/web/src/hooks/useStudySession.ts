@@ -237,6 +237,8 @@ export function useStudySession(
         }
         await send({ type: 'retired', cardId: command.cardId });
         utils.card.history.invalidate({ cardId: command.cardId });
+        // The deck's retired count, which offers Review retired, has grown
+        utils.deck.getById.invalidate({ id: deckId });
         return;
       case 'unretire':
         try {

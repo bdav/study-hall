@@ -81,7 +81,7 @@ A finite, time-budgeted run through cards from one deck or from several.
 _Avoid_: Session (ambiguous with login sessions), review session
 
 **Study Mode**:
-How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; Cram, more new cards and reviews before they're due; or Review Retired, retired cards alone, on a deck with some. Every mode but Review Retired schedules answers the same way; Review Retired records them but schedules nothing.
+How a Study Session mixes its cards: Study, balanced; Drill Weakest, mostly weak cards and no new ones; Cram, more new cards and reviews before they're due; or Review Retired, retired cards alone. Every mode but Review Retired schedules answers the same way; Review Retired records them but schedules nothing.
 _Avoid_: Session type (that's its length: Quick, Standard or Deep)
 
 **Retry**:
@@ -105,7 +105,7 @@ A card that has graduated from Learning and comes back at growing intervals to s
 _Avoid_: Stable, mastered, known
 
 **Retired**:
-A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept. A card retires in every Study Direction its deck is studied in at once, and is suggested only once it's mastered in each.
+A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept. It retires in every Study Direction its deck is studied in at once.
 _Avoid_: Suspended, archived, deleted
 
 **Lifecycle Mark**:

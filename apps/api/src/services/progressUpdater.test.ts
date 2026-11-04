@@ -635,8 +635,21 @@ describe('isRetirable', () => {
     lastIntervalDays: 60,
   });
 
+  const nailedNow = { recallGrade: 'NAILED' as const, answeredAt: now };
+
   it('suggests retiring a mastered card whose latest answer was Nailed', () => {
-    expect(isRetirable(mastered, 'NAILED')).toBe(true);
+    expect(isRetirable(mastered, nailedNow)).toBe(true);
+  });
+
+  it("doesn't suggest it again once unretired, until it's Nailed since", () => {
+    const unretired = { ...mastered, unretiredAt: daysAgo(1) };
+    const nailedBefore = {
+      recallGrade: 'NAILED' as const,
+      answeredAt: daysAgo(2),
+    };
+
+    expect(isRetirable(unretired, nailedBefore)).toBe(false);
+    expect(isRetirable(unretired, nailedNow)).toBe(true);
   });
 
   it.each([
@@ -652,7 +665,12 @@ describe('isRetirable', () => {
     ['a latest answer only Good', {}, 'GOOD'],
     ['no answers', {}, null],
   ] as const)("doesn't suggest it with %s", (_, overrides, latest) => {
-    expect(isRetirable({ ...mastered, ...overrides }, latest)).toBe(false);
+    expect(
+      isRetirable(
+        { ...mastered, ...overrides },
+        latest && { recallGrade: latest, answeredAt: now },
+      ),
+    ).toBe(false);
   });
 });
 

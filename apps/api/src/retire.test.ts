@@ -148,6 +148,57 @@ describe('which cards can retire', () => {
   });
 });
 
+describe('which cards can retire, once unretired', () => {
+  it("doesn't suggest retiring an unretired card again until it's Nailed since", async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    await master(france.id);
+    await createCaller().card.retire({ cardIds: [france.id] });
+    await createCaller().card.unretire({ cardIds: [france.id] });
+
+    expect(await listed(deck.id)).toContainEqual({
+      front: 'Capital of France',
+      retired: false,
+      retirable: false,
+    });
+  });
+
+  it('says a card is retired, to unretire, when its deck is made reversible after', async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    await master(france.id);
+    await createCaller().card.retire({ cardIds: [france.id] });
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { reversible: true },
+    });
+
+    expect(await listed(deck.id)).toContainEqual({
+      front: 'Capital of France',
+      retired: true,
+      retirable: false,
+    });
+    await createCaller().card.unretire({ cardIds: [france.id] });
+    expect((await progressOf(france.id)).lifecycleState).toBe('REINFORCING');
+  });
+
+  it("doesn't suggest retiring a card whose latest answer was only Good", async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    await recordCardHistory(prisma, {
+      userId,
+      cardId: france.id,
+      answers: [...masteredAnswers(), { at: daysAgo(1), grade: 'GOOD' }],
+    });
+
+    expect(await listed(deck.id)).toContainEqual({
+      front: 'Capital of France',
+      retired: false,
+      retirable: false,
+    });
+  });
+});
+
 describe('card.retire', () => {
   it('retires a mastered card, keeping its mastery and answers', async () => {
     const deck = await capitalsDeck();
@@ -287,6 +338,33 @@ describe('card.retire', () => {
     });
   });
 
+  it('skips its items waiting in a Study Session under way', async () => {
+    const deck = await capitalsDeck();
+    const [france] = deck.cards;
+    await master(france.id);
+    await prisma.cardProgress.update({
+      where: {
+        userId_cardId_direction: {
+          userId,
+          cardId: france.id,
+          direction: 'FORWARD',
+        },
+      },
+      data: { dueAt: daysAgo(1) },
+    });
+    const session = await createCaller().study.startSession({
+      deckId: deck.id,
+    });
+    expect(session?.items.map((item) => item.cardId)).toContain(france.id);
+
+    await createCaller().card.retire({ cardIds: [france.id] });
+
+    const items = await prisma.studySessionItem.findMany({
+      where: { studySessionId: session!.id, cardId: france.id },
+    });
+    expect(items.map((item) => item.status)).toEqual(['SKIPPED']);
+  });
+
   it("refuses, changing nothing, when a card isn't the learner's", async () => {
     const deck = await capitalsDeck(otherUserId);
 
@@ -363,6 +441,18 @@ describe('card.unretire', () => {
 
     expect(result).toEqual({ unretiredCount: 0 });
     expect((await progressOf(deck.cards[0].id)).lifecycleState).toBe('NEW');
+  });
+
+  it('refuses on an archived deck', async () => {
+    const deck = await capitalsDeck();
+    await prisma.deck.update({
+      where: { id: deck.id },
+      data: { archivedAt: new Date() },
+    });
+
+    await expect(
+      createCaller().card.unretire({ cardIds: [deck.cards[0].id] }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
   it("refuses when a card isn't the learner's", async () => {

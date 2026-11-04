@@ -33,6 +33,7 @@ import {
   accuracy,
   addAnswers,
   answerCount,
+  countRetiredCards,
   readCardStanding,
 } from '../services/cardStanding.js';
 import { matchAnswer } from '../services/answerGrader.js';
@@ -146,13 +147,9 @@ export const deckRouter = router({
       // How many of its cards are retired, every way it's studied, as
       // they retire together, so Review retired is offered only on a deck
       // with some (#86)
-      const retiredCount = await ctx.prisma.cardProgress.count({
-        where: {
-          userId: ctx.userId,
-          deckId: deck.id,
-          direction: 'FORWARD',
-          lifecycleState: 'RETIRED',
-        },
+      const retiredCount = await countRetiredCards(ctx.prisma, {
+        userId: ctx.userId,
+        deckId: deck.id,
       });
 
       return { ...deck, retiredCount };
