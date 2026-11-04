@@ -928,6 +928,60 @@ describe('the Study Session machine', () => {
     });
   });
 
+  describe('retiring a card (#86)', () => {
+    // a missed, its Retry waiting, b in play
+    const atB = run([
+      ...started(item('a'), item('b')),
+      graded('item-a', { recallGrade: 'MISSED' }, 'r1'),
+      { type: 'next' },
+    ]).state;
+
+    it('drops its waiting Retry and asks the server to retire it', () => {
+      const { state, commands } = run(
+        [{ type: 'back' }, { type: 'retire' }],
+        atB,
+      );
+
+      expect(state.session).toMatchObject({
+        items: [{ itemId: 'item-a' }, { itemId: 'item-b' }],
+      });
+      expect(commands).toEqual([{ type: 'retire', cardId: 'a' }]);
+    });
+
+    it('says the card is retired once it is, until another session', () => {
+      const retired = run(
+        [
+          { type: 'back' },
+          { type: 'retire' },
+          { type: 'retired', cardId: 'a' },
+        ],
+        atB,
+      ).state;
+      expect(studyView(retired, { resumable: false }).screen).toMatchObject({
+        retired: true,
+      });
+
+      const another = run(
+        [{ type: 'finish' }, { type: 'finished' }, { type: 'startAnother' }],
+        retired,
+      ).state;
+      expect(another.retired).toEqual({});
+    });
+
+    it('records a failure to retire', () => {
+      const { state } = run(
+        [
+          { type: 'back' },
+          { type: 'retire' },
+          { type: 'failed', of: 'retire' },
+        ],
+        atB,
+      );
+
+      expect(state.failure).toBe('retire');
+    });
+  });
+
   describe('edit mode', () => {
     // a answered, b in play
     const atB = run([

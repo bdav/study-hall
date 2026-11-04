@@ -43,6 +43,7 @@ vi.mock('@/lib/trpc', () => ({
       update: { useMutation: vi.fn() },
       delete: { useMutation: vi.fn() },
       markKnown: { useMutation: vi.fn() },
+      retire: { useMutation: vi.fn() },
       restoreVersion: { useMutation: vi.fn() },
       history: { useQuery: vi.fn() },
     },
@@ -411,6 +412,7 @@ type CardHistory = {
     lifecycleState: string;
     dueAt: string | null;
     isKnown: boolean;
+    canRetire?: boolean;
   } | null;
   versions: {
     id: string;
@@ -3409,6 +3411,60 @@ describe("the card's main text held in place (#123)", () => {
     const text = document.querySelector('[data-card-part="text"]');
     expect(text).toHaveTextContent('What is 2+2?');
     expect(text?.parentElement).toHaveAttribute('data-card-anchor');
+  });
+});
+
+describe('retiring a card from the study screen (#86)', () => {
+  const mockRetire = vi.fn();
+
+  beforeEach(() => {
+    vi.mocked(trpc.card.retire.useMutation).mockReturnValue({
+      mutateAsync: mockRetire.mockResolvedValue({ retiredCount: 1 }),
+      isPending: false,
+    } as unknown as ReturnType<typeof trpc.card.retire.useMutation>);
+  });
+
+  /** Answers card-1, which the app suggests retiring when `canRetire`. */
+  async function answerCardOne(canRetire: boolean) {
+    setupMocksWithStartSession();
+    mockCardHistory((cardId) => ({
+      ...historyOfCardOne(),
+      progress: {
+        lifecycleState: 'REINFORCING',
+        isKnown: true,
+        dueAt: null,
+        canRetire: cardId === 'card-1' && canRetire,
+      },
+    }));
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await user.type(screen.getByRole('textbox'), '4{Enter}');
+    await screen.findByTestId('result');
+    return user;
+  }
+
+  it('offers to retire a card the app suggests retiring, after a confirmation', async () => {
+    const user = await answerCardOne(true);
+
+    await user.click(screen.getByRole('button', { name: 'Retire this card?' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(mockRetire).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Retire' }));
+
+    expect(mockRetire).toHaveBeenCalledWith({ cardIds: ['card-1'] });
+    expect(await screen.findByText('Retired')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retire this card?' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("doesn't offer it on a card that can't retire", async () => {
+    await answerCardOne(false);
+
+    expect(
+      screen.queryByRole('button', { name: 'Retire this card?' }),
+    ).not.toBeInTheDocument();
   });
 });
 

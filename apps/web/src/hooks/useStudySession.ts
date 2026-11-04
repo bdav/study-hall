@@ -139,6 +139,8 @@ export function useStudySession(
     },
   });
 
+  const retireCard = trpc.card.retire.useMutation();
+
   /** Moves the machine on, making the server calls it asks for. */
   async function send(event: StudySessionEvent) {
     const { state, commands } = transition(latest.current, event);
@@ -225,6 +227,16 @@ export function useStudySession(
       case 'abandon':
         abandonSession.mutate({ id: command.sessionId });
         return;
+      case 'retire':
+        try {
+          await retireCard.mutateAsync({ cardIds: [command.cardId] });
+        } catch {
+          await send({ type: 'failed', of: 'retire' });
+          return;
+        }
+        await send({ type: 'retired', cardId: command.cardId });
+        utils.card.history.invalidate({ cardId: command.cardId });
+        return;
       case 'markKnown':
         markKnown.mutate({
           cardIds: [command.cardId],
@@ -273,6 +285,8 @@ export function useStudySession(
       cancelChoosing: () => send({ type: 'cancelChoosing' }),
       /** Marks the card on screen known, its Retry skipped with it. */
       markKnown: () => send({ type: 'markKnown' }),
+      /** Retires the card on screen (#86), its Retry skipped with it. */
+      retire: () => send({ type: 'retire' }),
       edit: (onBack = false) => send({ type: 'edit', onBack }),
       stopEditing: () => send({ type: 'stopEditing' }),
       /** Ends the session; unanswered cards are skipped. */

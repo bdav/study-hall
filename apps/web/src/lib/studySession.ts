@@ -66,7 +66,7 @@ type View =
 export type KnownState = 'marked' | 'already';
 
 /** A server call that failed, leaving the session where it was. */
-export type Failure = 'start' | 'answer' | 'finish' | 'accept';
+export type Failure = 'start' | 'answer' | 'finish' | 'accept' | 'retire';
 
 export type StudySessionState = {
   session: Session;
@@ -82,6 +82,8 @@ export type StudySessionState = {
   // Cards marked known in this session, and whether that changed them or
   // they were known already (ADR-0009)
   known: Record<string, KnownState>;
+  // Cards retired from the study screen in this session (#86)
+  retired: Record<string, true>;
   // The answer being typed to the card in play
   answerInput: string;
   // Why the answer just typed to an item wasn't graded, the card staying in
@@ -141,6 +143,9 @@ export type StudySessionEvent =
   // skipped with it
   | { type: 'markKnown' }
   | { type: 'markedKnown'; cardId: string; changed: boolean }
+  // Retires the card on screen (#86), its Retry, if any, skipped with it
+  | { type: 'retire' }
+  | { type: 'retired'; cardId: string }
   // The answer accepted, graded again, its card with the new variant
   | { type: 'accepted'; attemptId: string; grade: Grade; card: Flashcard }
   // A card deleted from its deck, dropped from the session and its summary
@@ -159,7 +164,8 @@ export type StudySessionCommand =
   | { type: 'accept'; attemptId: string; canonicalAnswerId?: string }
   | { type: 'finish'; sessionId: string }
   | { type: 'abandon'; sessionId: string }
-  | { type: 'markKnown'; cardId: string; direction: StudyDirection };
+  | { type: 'markKnown'; cardId: string; direction: StudyDirection }
+  | { type: 'retire'; cardId: string };
 
 export const initialState: StudySessionState = {
   session: { status: 'not-started' },
@@ -168,6 +174,7 @@ export const initialState: StudySessionState = {
   editing: null,
   choosingAnswerFor: null,
   known: {},
+  retired: {},
   answerInput: '',
   refusal: null,
   failure: null,
@@ -607,6 +614,22 @@ function step(
         ],
       };
     }
+    case 'retire': {
+      const onScreen = itemOnScreen(state);
+      if (!onScreen) return noCommands(state);
+      const { card } = onScreen;
+      // Dropped at once, before the learner can move on
+      const dropped = dropCard(state, card.id, { keepAnswered: true });
+      return {
+        state: { ...dropped.state, failure: null },
+        commands: [{ type: 'retire', cardId: card.id }, ...dropped.commands],
+      };
+    }
+    case 'retired':
+      return noCommands({
+        ...state,
+        retired: { ...state.retired, [event.cardId]: true },
+      });
     case 'markedKnown':
       return noCommands({
         ...state,
@@ -701,6 +724,8 @@ export type CardScreen = {
   asksWhichAnswer: boolean;
   choosingAnswer: boolean;
   known: KnownState | undefined;
+  // Whether it was retired from here this session (#86)
+  retired: boolean;
   // Whether the card comes back later in the session, as a Retry
   retryWaiting: boolean;
   // Why the answer just typed wasn't graded, while it waits for another
@@ -789,6 +814,7 @@ function screenOf(state: StudySessionState): StudyScreen {
     choosingAnswer:
       !!item.answer && state.choosingAnswerFor === item.answer.attemptId,
     known: state.known[item.card.id],
+    retired: !!state.retired[item.card.id],
     retryWaiting: items.some(
       (other, i) =>
         i >= answered && other.isRetry && other.card.id === item.card.id,

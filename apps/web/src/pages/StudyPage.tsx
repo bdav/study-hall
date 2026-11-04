@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { CardStack } from '@/components/CardStack';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CenteredPage } from '@/components/CenteredPage';
 import { StudySkeleton } from '@/components/PageSkeleton';
 import { useStudySession } from '@/hooks/useStudySession';
@@ -199,6 +200,8 @@ function CardBack({
   isAcceptingAnswer = false,
   onMarkKnown,
   knownState,
+  onRetire,
+  retired = false,
 }: {
   card: CardSnapshot['card'];
   result: NonNullable<CardSnapshot['result']>;
@@ -212,6 +215,10 @@ function CardBack({
   onMarkKnown?: () => void;
   /** Once marked known: whether that changed it, or it was known already. */
   knownState?: KnownState;
+  /** Retires the card, which the app suggests (#86), once confirmed. */
+  onRetire?: () => void;
+  /** Retired from here this session. */
+  retired?: boolean;
 }) {
   // A typed answer graded MISSED, still graded against the card as it is
   const canAccept =
@@ -234,7 +241,7 @@ function CardBack({
       >
         {recallGradeLabels[result.recallGrade]}
       </p>
-      {(canAccept || knownState || onMarkKnown) && (
+      {(canAccept || knownState || onMarkKnown || onRetire || retired) && (
         <div
           data-card-part="actions"
           className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70"
@@ -251,6 +258,27 @@ function CardBack({
             >
               My answer was correct
             </button>
+          )}
+          {retired ? (
+            <span>Retired</span>
+          ) : (
+            onRetire && (
+              <ConfirmDialog
+                title="Retire this card?"
+                description="You've mastered it. It won't come up in Study, Drill weakest or Cram until you unretire it from the Cards tab, and it keeps its history."
+                confirmLabel="Retire"
+                onConfirm={onRetire}
+                trigger={
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="relative touch-target underline hover:text-white"
+                  >
+                    Retire this card?
+                  </button>
+                }
+              />
+            )
           )}
           {knownState ? (
             <span>
@@ -438,6 +466,7 @@ const failureMessages: Record<Failure, string> = {
   answer: 'Failed to submit answer. Please try again.',
   finish: 'Failed to finish study session. Please try again.',
   accept: "Couldn't accept your answer. Please try again.",
+  retire: "Couldn't retire the card. Please try again.",
 };
 
 export default function StudyPage() {
@@ -802,12 +831,16 @@ export default function StudyPage() {
     onAcceptAnswer,
     onMarkKnown,
     knownState,
+    onRetire,
+    retired,
   }: CardSnapshot & {
     onFlip?: () => void;
     editedAfterAnswer?: boolean;
     onAcceptAnswer?: () => void;
     onMarkKnown?: () => void;
     knownState?: KnownState;
+    onRetire?: () => void;
+    retired?: boolean;
   }) => (
     <CardStack
       anchored
@@ -825,6 +858,8 @@ export default function StudyPage() {
             isAcceptingAnswer={isAcceptingAnswer}
             onMarkKnown={onMarkKnown}
             knownState={knownState}
+            onRetire={onRetire}
+            retired={retired}
           />
         ) : undefined
       }
@@ -889,6 +924,16 @@ export default function StudyPage() {
             }
           : undefined,
         knownState: cardScreen?.known,
+        // Suggested by the app, the card's history says (#86)
+        onRetire:
+          displayProgress?.canRetire && !cardScreen?.retired
+            ? () => {
+                act.retire();
+                // Its button goes once it's retired
+                focusNavigation();
+              }
+            : undefined,
+        retired: cardScreen?.retired,
       })
     );
 
