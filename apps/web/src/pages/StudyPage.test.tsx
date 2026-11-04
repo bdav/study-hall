@@ -2629,6 +2629,11 @@ describe('StudyPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('result')).toBeInTheDocument();
       });
+      // Once the card has slid in: it's drawn again as the slide ends, so a
+      // click on the sliding card's button can be lost
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
 
       // Initially showing back (result) — flip to front should show the question
       await user.click(screen.getByRole('button', { name: /flip to front/i }));
