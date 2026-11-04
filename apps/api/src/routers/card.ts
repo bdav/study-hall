@@ -8,10 +8,13 @@ import {
   editCard,
   markCardsKnown,
   restoreCardVersion,
+  retireCards,
+  unretireCards,
   withCanonicalAnswers,
 } from '../services/cards.js';
 import { cardHistory } from '../services/cardHistory.js';
 import {
+  cardRetirement,
   readCardStanding,
   STUDY_DIRECTIONS,
 } from '../services/cardStanding.js';
@@ -147,6 +150,31 @@ export const cardRouter = router({
       return markCardsKnown(ctx.prisma, { userId: ctx.userId, ...input });
     }),
 
+  /**
+   * Retires the given cards the app suggests retiring (#86), in every Study
+   * Direction their decks are studied in, leaving the rest as they are.
+   */
+  retire: protectedProcedure
+    .input(z.object({ cardIds }))
+    .mutation(async ({ ctx, input }) => {
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
+      return retireCards(ctx.prisma, { userId: ctx.userId, ...input });
+    }),
+
+  /** Returns retired cards to Reinforcing, due straight away (#86). */
+  unretire: protectedProcedure
+    .input(z.object({ cardIds }))
+    .mutation(async ({ ctx, input }) => {
+      await assertCanChangeCards(ctx.prisma, {
+        userId: ctx.userId,
+        cardIds: input.cardIds,
+      });
+      return unretireCards(ctx.prisma, { userId: ctx.userId, ...input });
+    }),
+
   /** Deletes several cards, as `delete` deletes one. */
   deleteMany: protectedProcedure
     .input(z.object({ cardIds }))
@@ -212,11 +240,16 @@ export const cardRouter = router({
         if (!isKnown) continue;
         known.set(cardId, (known.get(cardId) ?? new Set()).add(direction));
       }
+      // Whether each is retired, and whether the app suggests retiring it,
+      // every way the deck is studied (#86)
+      const retirement = cardRetirement(standings.cards);
       return cards.map((card) => ({
         ...card,
         knownDirections: STUDY_DIRECTIONS.filter((direction) =>
           known.get(card.id)?.has(direction),
         ),
+        retired: retirement.get(card.id)?.retired ?? false,
+        retirable: retirement.get(card.id)?.retirable ?? false,
       }));
     }),
 

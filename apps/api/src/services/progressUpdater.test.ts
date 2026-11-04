@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { type RecallGrade } from '@prisma/client';
 import {
   applyAnswer,
+  isRetirable,
   type LifecycleMark,
   markKnown,
   replayAnswers,
+  retire,
+  unretire,
   NEW_PROGRESS,
   type ScheduledAnswer,
   type ScheduledProgress,
@@ -593,6 +596,8 @@ describe('markKnown', () => {
         lastReviewedAt: daysAgo(3),
         lapseCount: 2,
         markedKnownAt: now,
+        retiredAt: null,
+        unretiredAt: null,
       });
     },
   );
@@ -619,5 +624,120 @@ describe('markKnown', () => {
     ]);
 
     expect(next.lifecycleState).toBe('REINFORCING');
+  });
+});
+
+describe('isRetirable', () => {
+  // Mastered, last scheduled 60 days out by a Nailed answer
+  const mastered = progress({
+    lifecycleState: 'REINFORCING',
+    masteryScore: 9,
+    lastIntervalDays: 60,
+  });
+
+  it('suggests retiring a mastered card whose latest answer was Nailed', () => {
+    expect(isRetirable(mastered, 'NAILED')).toBe(true);
+  });
+
+  it.each([
+    ['mastery under 9', { masteryScore: 8 }, 'NAILED'],
+    ['a last interval under 60 days', { lastIntervalDays: 59.9 }, 'NAILED'],
+    ['no interval yet', { lastIntervalDays: null }, 'NAILED'],
+    ['a Learning card', { lifecycleState: 'LEARNING' as const }, 'NAILED'],
+    [
+      'a card retired already',
+      { lifecycleState: 'RETIRED' as const },
+      'NAILED',
+    ],
+    ['a latest answer only Good', {}, 'GOOD'],
+    ['no answers', {}, null],
+  ] as const)("doesn't suggest it with %s", (_, overrides, latest) => {
+    expect(isRetirable({ ...mastered, ...overrides }, latest)).toBe(false);
+  });
+});
+
+describe('retire and unretire', () => {
+  const reinforcing = progress({
+    lifecycleState: 'REINFORCING',
+    masteryScore: 10,
+    dueAt: daysAgo(-90),
+    lastReviewedAt: daysAgo(1),
+    lastIntervalDays: 90,
+    lapseCount: 2,
+    lifecycleChangedAt: daysAgo(200),
+  });
+
+  it('retires a card, keeping its mastery and history', () => {
+    expect(retire(reinforcing, now)).toEqual({
+      ...reinforcing,
+      lifecycleState: 'RETIRED',
+      lifecycleChangedAt: now,
+      retiredAt: now,
+    });
+  });
+
+  it('unretires a card back to Reinforcing, due straight away', () => {
+    const later = new Date(now.getTime() + 10 * DAY_IN_MS);
+    expect(unretire(retire(reinforcing, now)!, later)).toEqual({
+      ...reinforcing,
+      lifecycleState: 'REINFORCING',
+      lifecycleChangedAt: later,
+      dueAt: later,
+      retiredAt: now,
+      unretiredAt: later,
+    });
+  });
+
+  it('leaves a card not retired as it is when unretired', () => {
+    expect(unretire(reinforcing, now)).toBeNull();
+  });
+
+  it('starts a reset card with neither mark', () => {
+    expect(NEW_PROGRESS).toMatchObject({ retiredAt: null, unretiredAt: null });
+  });
+});
+
+describe('replayAnswers, with retiring and unretiring', () => {
+  const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
+  const onDay = (day: number, recallGrade: RecallGrade): ScheduledAnswer => ({
+    recallGrade,
+    answeredAt: at(day),
+    studySessionId: `day-${day}`,
+  });
+  const mark = (kind: LifecycleMark['kind'], day: number): LifecycleMark => ({
+    kind,
+    at: at(day),
+  });
+  // Learning, then graduated on day 3
+  const answers = [onDay(1, 'GOOD'), onDay(3, 'NAILED')];
+
+  it('keeps a card retired when an earlier answer is graded again', () => {
+    expect(replayAnswers(answers, [mark('RETIRED', 5)])).toMatchObject({
+      lifecycleState: 'RETIRED',
+      retiredAt: at(5),
+    });
+  });
+
+  it('keeps a card unretired, due from when it was unretired', () => {
+    expect(
+      replayAnswers(answers, [mark('UNRETIRED', 9), mark('RETIRED', 5)]),
+    ).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      dueAt: at(9),
+      retiredAt: at(5),
+      unretiredAt: at(9),
+    });
+  });
+
+  it('applies answers given after unretiring as any answer', () => {
+    const replayed = replayAnswers(
+      [...answers, onDay(10, 'MISSED')],
+      [mark('RETIRED', 5), mark('UNRETIRED', 9)],
+    );
+
+    expect(replayed).toMatchObject({
+      lifecycleState: 'REINFORCING',
+      lapseCount: 1,
+    });
   });
 });

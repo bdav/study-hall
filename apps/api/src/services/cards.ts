@@ -2,7 +2,11 @@ import { Prisma, type PrismaClient, type StudyDirection } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
+  cardRetirement,
+  readCardStanding,
   recordMarkedKnown,
+  recordRetired,
+  recordUnretired,
   resetCardProgress,
   startCardProgress,
 } from './cardStanding.js';
@@ -726,6 +730,55 @@ function cardWithAnswers(db: Db, cardId: string) {
     where: { id: cardId },
     include: withCanonicalAnswers,
   });
+}
+
+/**
+ * Retires those of a learner's cards that the app suggests retiring (#86),
+ * in every Study Direction their decks are studied in, in one transaction,
+ * through Card Standing (`recordRetired`); the others are left as they are.
+ * Their items waiting in a Study Session under way are skipped, as the
+ * study screen moves past them. Returns how many cards were retired.
+ */
+export async function retireCards(
+  prisma: PrismaClient,
+  { userId, cardIds }: { userId: string; cardIds: string[] },
+) {
+  const now = new Date();
+  const { cards } = await readCardStanding(prisma, { userId, cardIds });
+  const retirable = [...cardRetirement(cards)]
+    .filter(([, card]) => card.retirable)
+    .map(([cardId]) => cardId);
+  return prisma.$transaction(async (tx) => {
+    const retiredCount = await recordRetired(tx, {
+      userId,
+      cardIds: retirable,
+      at: now,
+    });
+    await tx.studySessionItem.updateMany({
+      where: {
+        cardId: { in: retirable },
+        status: 'PENDING',
+        studySession: { userId, status: 'ACTIVE' },
+      },
+      data: { status: 'SKIPPED' },
+    });
+    return { retiredCount };
+  });
+}
+
+/**
+ * Unretires a learner's retired cards (#86), through Card Standing
+ * (`recordUnretired`): back to Reinforcing, due straight away. Returns how
+ * many cards were unretired.
+ */
+export async function unretireCards(
+  prisma: PrismaClient,
+  { userId, cardIds }: { userId: string; cardIds: string[] },
+) {
+  const unretiredCount = await prisma.$transaction((tx) =>
+    recordUnretired(tx, { userId, cardIds, at: new Date() }),
+  );
+  return { unretiredCount };
 }
 
 /**

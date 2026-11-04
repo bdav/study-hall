@@ -5,7 +5,7 @@ import {
 } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { isCorrect } from './countedAttempts.js';
-import { readCardStanding } from './cardStanding.js';
+import { cardRetirement, readCardStanding } from './cardStanding.js';
 import {
   asksTheSame,
   parseVariantsByAnswer,
@@ -80,9 +80,13 @@ export async function cardHistory(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Card not found' });
   }
 
-  const [standing] = (
-    await readCardStanding(prisma, { userId, cardIds: [cardId], direction })
-  ).cards;
+  // Both directions, as retiring takes them together (#86)
+  const { cards: standings } = await readCardStanding(prisma, {
+    userId,
+    cardIds: [cardId],
+  });
+  const standing = standings.find((card) => card.direction === direction);
+  const retirement = cardRetirement(standings).get(cardId);
   const attempts = await prisma.cardAttempt.findMany({
     where: { cardId, direction, studySession: { userId } },
     orderBy: [{ createdAt: 'desc' }, { attemptNumber: 'desc' }],
@@ -110,6 +114,8 @@ export async function cardHistory(
       lifecycleState: standing.lifecycleState,
       dueAt: standing.dueAt,
       isKnown: standing.isKnown,
+      // Whether the app suggests retiring the card, every way it's studied
+      canRetire: retirement?.retirable ?? false,
     },
     versions: card.versions.map(
       ({ acceptedVariants, reverseVariants, ...version }, i) => {

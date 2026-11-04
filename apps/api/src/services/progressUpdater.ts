@@ -19,6 +19,9 @@ export type ScheduledProgress = {
   lifecycleChangedAt: Date | null;
   // When the learner last marked the card known, for replays (ADR-0009)
   markedKnownAt: Date | null;
+  // When the learner last retired and unretired it, for replays (#86)
+  retiredAt: Date | null;
+  unretiredAt: Date | null;
 };
 
 /** One finalized answer to a card, as the scheduler needs it. */
@@ -174,7 +177,8 @@ function nextLifecycle(
         ? { lifecycleState: 'LEARNING', lifecycleChangedAt: now }
         : unchanged;
     default:
-      // RETIRED cards stay so: retiring, and unretiring, are for later
+      // A RETIRED card stays so, however it's answered: only the learner
+      // unretires it (#86)
       return unchanged;
   }
 }
@@ -201,6 +205,8 @@ export function applyAnswer(
     dueAt: new Date(now.getTime() + intervalDays * DAY_IN_MS),
     lastReviewedAt: now,
     markedKnownAt: progress.markedKnownAt,
+    retiredAt: progress.retiredAt,
+    unretiredAt: progress.unretiredAt,
     lastIntervalDays: intervalDays,
     ...lifecycle,
     lapseCount:
@@ -288,6 +294,8 @@ export function markKnown(
     lastReviewedAt: progress.lastReviewedAt,
     lapseCount: progress.lapseCount,
     markedKnownAt: now,
+    retiredAt: progress.retiredAt,
+    unretiredAt: progress.unretiredAt,
   };
 }
 
@@ -301,16 +309,81 @@ export const NEW_PROGRESS: ScheduledProgress = {
   lapseCount: 0,
   lifecycleChangedAt: null,
   markedKnownAt: null,
+  retiredAt: null,
+  unretiredAt: null,
 };
+
+/** The least mastery, and last interval, of a card suggested for retiring. */
+const RETIRE_MIN_MASTERY = 9;
+const RETIRE_MIN_INTERVAL_DAYS = 60;
+
+/**
+ * Whether the app suggests retiring a card (#86, GLOSSARY.md, Retired): it's
+ * Reinforcing, with mastery 9 or more, its latest Counted Answer Nailed and
+ * its last interval 60 days or more. Retiring is the learner's choice, never
+ * the scheduler's.
+ */
+export function isRetirable(
+  progress: Pick<
+    ScheduledProgress,
+    'lifecycleState' | 'masteryScore' | 'lastIntervalDays'
+  >,
+  latestGrade: RecallGrade | null,
+) {
+  return (
+    progress.lifecycleState === 'REINFORCING' &&
+    progress.masteryScore >= RETIRE_MIN_MASTERY &&
+    (progress.lastIntervalDays ?? 0) >= RETIRE_MIN_INTERVAL_DAYS &&
+    latestGrade === 'NAILED'
+  );
+}
+
+/**
+ * A card's progress once the learner retires it (#86): out of review, its
+ * mastery, schedule and history kept, for when it's unretired.
+ */
+export function retire(
+  progress: ScheduledProgress,
+  now: Date,
+): ScheduledProgress {
+  return {
+    ...progress,
+    lifecycleState: 'RETIRED',
+    lifecycleChangedAt: now,
+    retiredAt: now,
+  };
+}
+
+/**
+ * A retired card's progress once the learner unretires it (#86): back to
+ * Reinforcing with its mastery, due for review straight away. Null for a
+ * card not retired, which is left as it is.
+ */
+export function unretire(
+  progress: ScheduledProgress,
+  now: Date,
+): ScheduledProgress | null {
+  if (progress.lifecycleState !== 'RETIRED') return null;
+  return {
+    ...progress,
+    lifecycleState: 'REINFORCING',
+    lifecycleChangedAt: now,
+    dueAt: now,
+    unretiredAt: now,
+  };
+}
 
 /**
  * A Lifecycle Mark: something the learner does to a card's lifecycle that
- * isn't an answer, and when. Today, marking it known (ADR-0009); retiring
- * and unretiring (#86) join here. Replay applies each at its time, between
- * the answers (`applyMark`), so a mark is never undone by rebuilding the
- * card's progress.
+ * isn't an answer, and when: marking it known (ADR-0009), retiring it and
+ * unretiring it (#86). Replay applies each at its time, between the answers
+ * (`applyMark`), so a mark is never undone by rebuilding the card's
+ * progress.
  */
-export type LifecycleMark = { kind: 'MARKED_KNOWN'; at: Date };
+export type LifecycleMark = {
+  kind: 'MARKED_KNOWN' | 'RETIRED' | 'UNRETIRED';
+  at: Date;
+};
 
 /** A card's progress once a lifecycle mark is applied to it. */
 function applyMark(
@@ -322,6 +395,12 @@ function applyMark(
       // A card known already only records when it was marked
       return (
         markKnown(progress, mark.at) ?? { ...progress, markedKnownAt: mark.at }
+      );
+    case 'RETIRED':
+      return retire(progress, mark.at);
+    case 'UNRETIRED':
+      return (
+        unretire(progress, mark.at) ?? { ...progress, unretiredAt: mark.at }
       );
   }
 }

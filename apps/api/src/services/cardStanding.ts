@@ -10,6 +10,7 @@ import { countsSinceReset, isCorrect } from './countedAttempts.js';
 import {
   applyAnswer,
   isKnown,
+  isRetirable,
   type LifecycleMark,
   markKnown,
   MASTERY_BANDS,
@@ -17,7 +18,9 @@ import {
   type MasteryBand,
   NEW_PROGRESS,
   replayAnswers,
+  retire,
   type ScheduledAnswer,
+  unretire,
 } from './progressUpdater.js';
 
 /**
@@ -41,6 +44,11 @@ export type CardStanding = {
    */
   dueAt: Date | null;
   isWeak: boolean;
+  /**
+   * Whether the app suggests retiring it in this direction (#86): mastered,
+   * its latest Counted Answer Nailed (`isRetirable`).
+   */
+  isRetirable: boolean;
   /** How many of its last 5 Counted Answers were missed. */
   recentMisses: number;
   /** Its Counted Answers, by Recall Grade. */
@@ -220,9 +228,14 @@ export async function readCardStanding(
 
   const standings = progress.map((card) => {
     const due = dueFrom(card, studyMode);
-    const { recentMisses: cardMisses, byGrade } = tallies.get(key(card)) ?? {
+    const {
+      recentMisses: cardMisses,
+      byGrade,
+      latestGrade,
+    } = tallies.get(key(card)) ?? {
       recentMisses: 0,
       byGrade: noAnswers(),
+      latestGrade: null,
     };
     const standing: CardStanding = {
       cardId: card.cardId,
@@ -234,6 +247,7 @@ export async function readCardStanding(
       isDue: due !== null && due <= now,
       dueAt: due,
       isWeak: isWeak(card, cardMisses),
+      isRetirable: isRetirable(card, latestGrade),
       recentMisses: cardMisses,
       countedAnswers: byGrade,
     };
@@ -336,7 +350,12 @@ async function countedAnswers(
   const resetAt = new Map(cards.map((card) => [key(card), card.resetAt]));
   const tallies = new Map<
     string,
-    { answers: number; recentMisses: number; byGrade: AnswersByGrade }
+    {
+      answers: number;
+      recentMisses: number;
+      byGrade: AnswersByGrade;
+      latestGrade: RecallGrade | null;
+    }
   >();
   // Newest first, so each card's first RECENT_ANSWERS are its last
   for (const attempt of attempts) {
@@ -346,6 +365,8 @@ async function countedAnswers(
       answers: 0,
       recentMisses: 0,
       byGrade: noAnswers(),
+      // Newest first, so the first is the latest
+      latestGrade: attempt.recallGrade,
     };
     if (card.answers < RECENT_ANSWERS && attempt.recallGrade === 'MISSED') {
       card.recentMisses++;
@@ -359,6 +380,28 @@ async function countedAnswers(
 
 /** The standing of a learner's cards, as `readCardStanding` reads it. */
 export type Standings = Awaited<ReturnType<typeof readCardStanding>>;
+
+/**
+ * Where each card stands on retiring, across every Study Direction its deck
+ * is studied in, as both directions retire together (#86): whether it's
+ * retired in all of them, and whether the app suggests retiring it, which it
+ * does only once every one of them is retirable. Given standings read in
+ * both directions.
+ */
+export function cardRetirement(standings: CardStanding[]) {
+  const cards = new Map<string, { retired: boolean; retirable: boolean }>();
+  for (const standing of standings) {
+    const card = cards.get(standing.cardId) ?? {
+      retired: true,
+      retirable: true,
+    };
+    cards.set(standing.cardId, {
+      retired: card.retired && standing.lifecycleState === 'RETIRED',
+      retirable: card.retirable && standing.isRetirable,
+    });
+  }
+  return cards;
+}
 
 /**
  * The client or transaction card progress is changed through: the caller
@@ -458,15 +501,24 @@ export async function applyCardAnswer(
 
 /**
  * The learner's Lifecycle Marks on a card's progress since its last reset,
- * which replay applies between its answers: today, when they last marked
- * it known (ADR-0009). Retiring and unretiring (#86) join here.
+ * which replay applies between its answers: when they last marked it known
+ * (ADR-0009), retired it and unretired it (#86).
  */
 function lifecycleMarks(progress: {
   markedKnownAt: Date | null;
+  retiredAt: Date | null;
+  unretiredAt: Date | null;
 }): LifecycleMark[] {
-  return progress.markedKnownAt
-    ? [{ kind: 'MARKED_KNOWN', at: progress.markedKnownAt }]
-    : [];
+  const marks: LifecycleMark[] = [];
+  if (progress.markedKnownAt) {
+    marks.push({ kind: 'MARKED_KNOWN', at: progress.markedKnownAt });
+  }
+  if (progress.retiredAt)
+    marks.push({ kind: 'RETIRED', at: progress.retiredAt });
+  if (progress.unretiredAt) {
+    marks.push({ kind: 'UNRETIRED', at: progress.unretiredAt });
+  }
+  return marks;
 }
 
 /**
@@ -519,6 +571,59 @@ export async function recordMarkedKnown(
     markedCount++;
   }
   return markedCount;
+}
+
+/**
+ * A learner's progress with cards in every Study Direction their decks are
+ * studied in: Forward, and Reverse on a Reversible Deck (ADR-0011).
+ */
+function studiedProgress(db: Db, userId: string, cardIds: string[]) {
+  return db.cardProgress.findMany({
+    where: {
+      userId,
+      cardId: { in: cardIds },
+      OR: [{ direction: 'FORWARD' }, { card: { deck: { reversible: true } } }],
+    },
+  });
+}
+
+/**
+ * Retires a learner's cards at `at` in every Study Direction their decks are
+ * studied in (#86), keeping their mastery, schedule and history. The caller
+ * decides which cards the learner has chosen to retire. Returns how many
+ * cards were retired.
+ */
+export async function recordRetired(
+  db: Db,
+  { userId, cardIds, at }: { userId: string; cardIds: string[]; at: Date },
+) {
+  const progresses = await studiedProgress(db, userId, cardIds);
+  for (const progress of progresses) {
+    await db.cardProgress.update({
+      where: { id: progress.id },
+      data: retire(progress, at),
+    });
+  }
+  return new Set(progresses.map((progress) => progress.cardId)).size;
+}
+
+/**
+ * Unretires a learner's cards at `at` (#86): each retired direction back to
+ * Reinforcing with its mastery, due straight away; progress not retired is
+ * left as it is. Returns how many cards were unretired.
+ */
+export async function recordUnretired(
+  db: Db,
+  { userId, cardIds, at }: { userId: string; cardIds: string[]; at: Date },
+) {
+  const unretired = new Set<string>();
+  for (const progress of await studiedProgress(db, userId, cardIds)) {
+    const next = unretire(progress, at);
+    if (!next) continue;
+    await db.cardProgress.update({ where: { id: progress.id }, data: next });
+    unretired.add(progress.cardId);
+  }
+  return unretired.size;
 }
 
 /** Every Study Direction, in each of which every card has progress. */

@@ -105,7 +105,7 @@ A card that has graduated from Learning and comes back at growing intervals to s
 _Avoid_: Stable, mastered, known
 
 **Retired**:
-A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept.
+A card taken out of normal review because the learner has mastered it: suggested by the app, confirmed by the learner, and undone at any time, with its mastery and history kept. A card retires in every Study Direction its deck is studied in at once, and is suggested only once it's mastered in each.
 _Avoid_: Suspended, archived, deleted
 
 **Lifecycle Mark**:

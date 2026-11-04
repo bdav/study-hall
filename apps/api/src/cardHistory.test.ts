@@ -422,6 +422,7 @@ describe('card.history', () => {
       lifecycleState: 'LEARNING',
       dueAt: expect.any(Date),
       isKnown: false,
+      canRetire: false,
     });
   });
 

@@ -274,6 +274,10 @@ model CardProgress {
   // When the learner last marked the card known (ADR-0009), so replaying its
   // answers keeps the mark; none once its progress resets
   markedKnownAt      DateTime?
+  // When the learner last retired and unretired the card (#86), so replaying
+  // its answers keeps them; none once its progress resets
+  retiredAt          DateTime?
+  unretiredAt        DateTime?
   // When this progress last started over from NEW: its creation or a card
   // edit reset (ADR-0004). Only attempts since then count toward stats.
   resetAt            DateTime           @default(now())
