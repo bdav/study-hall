@@ -1201,6 +1201,11 @@ describe('StudyPage', () => {
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
       await screen.findByTestId('result');
+      // Once the card has slid in: it's drawn again as the slide ends, so a
+      // click on the sliding card's button can be lost
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       return user;
     }
 
@@ -2198,6 +2203,11 @@ describe('StudyPage', () => {
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
       await screen.findByTestId('result');
+      // Once the card has slid in: it's drawn again as the slide ends, so a
+      // click on the sliding card's button can be lost
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
+      );
       return user;
     }
 
@@ -2415,9 +2425,6 @@ describe('StudyPage', () => {
 
     it('refreshes once an edit to the card is saved', async () => {
       const user = await answerFirstCard();
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-      );
 
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
       await user.click(screen.getByRole('button', { name: 'Flip to front' }));
