@@ -1403,6 +1403,8 @@ If AI fails:
 
 ## 17.7 Cost Controls
 
+> **Decided (2026-11-05, spec #91):** The cap's check stays as it is, read before each call and recorded after, so concurrent calls can overshoot it by a few calls' cost. That's accepted, bounded by the production Anthropic workspace's own spend limit. Each learner gets their own monthly cap in #130, in place of one cap across everyone, and the workspace's limit becomes the ceiling on the total.
+
 Use:
 
 operational budget plus graceful fallback plus concrete per-user quotas
@@ -2067,7 +2069,9 @@ choose between:
 
 J. Hosting Readiness
 
-Open, and only relevant if the app is ever hosted. Before a public deployment:
+> **Decided (2026-11-02, spec #91):** Both apps go on subdomains of one domain, so the login cookie needs no change. Login, signup and every request are rate limited in memory (#107), expired sessions are cleared at login (#106), and the seed refuses production (#105). `docs/runbook.md` has how it all runs.
+
+What was asked of a public deployment:
 
 - Cookies across domains: on default Vercel and Railway domains the web app
   and API are different sites, so the SameSite=Lax session cookie is never

@@ -28,13 +28,14 @@ afterAll(async () => {
 });
 
 /** Create an unauthenticated caller (no session). */
-function createPublicCaller() {
+function createPublicCaller(clientIp?: string) {
   const cookies: Record<string, string> = {};
   return {
     caller: appRouter.createCaller({
       prisma,
       userId: null,
       sessionToken: null,
+      clientIp,
       ai: createFakeAiProvider(),
       setCookie: (name: string, value: string) => {
         cookies[name] = value;
@@ -349,6 +350,190 @@ describe('auth router', () => {
           password: 'wrongpassword',
         }),
       ).rejects.toThrow(/invalid email or password/i);
+    });
+  });
+
+  describe('limits on attempts', () => {
+    const TOO_MANY = 'Too many attempts. Please wait 15 minutes and try again.';
+
+    async function failLogins(
+      count: number,
+      attempt: (i: number) => { email: string; clientIp?: string },
+    ) {
+      for (let i = 0; i < count; i++) {
+        const { email, clientIp } = attempt(i);
+        await expect(
+          createPublicCaller(clientIp).caller.auth.login({
+            email,
+            password: 'wrongpassword',
+          }),
+        ).rejects.toThrow('Invalid email or password');
+      }
+    }
+
+    async function createLearner(email: string) {
+      await prisma.user.create({
+        data: { email, passwordHash: await hashPassword('mypassword') },
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('refuses an email past 10 logins, even with the right password', async () => {
+      await createLearner('limited@example.com');
+      await failLogins(10, () => ({ email: 'limited@example.com' }));
+
+      await expect(
+        createPublicCaller().caller.auth.login({
+          email: 'limited@example.com',
+          password: 'mypassword',
+        }),
+      ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS', message: TOO_MANY });
+    });
+
+    it('allows the 10th login for an email', async () => {
+      await createLearner('tenth@example.com');
+      await failLogins(9, () => ({ email: 'tenth@example.com' }));
+
+      await expect(
+        createPublicCaller().caller.auth.login({
+          email: 'tenth@example.com',
+          password: 'mypassword',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('counts an email whatever its case, from any address', async () => {
+      await failLogins(10, (i) => ({
+        email: i % 2 ? 'SPREAD@example.com' : 'spread@example.com',
+        clientIp: `192.0.2.${i}`,
+      }));
+
+      await expect(
+        createPublicCaller('192.0.2.200').caller.auth.login({
+          email: 'spread@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow(TOO_MANY);
+    });
+
+    it('refuses an address past 30 logins, across any emails', async () => {
+      const clientIp = '198.51.100.1';
+      await failLogins(30, (i) => ({
+        email: `guess-${i}@example.com`,
+        clientIp,
+      }));
+
+      await expect(
+        createPublicCaller(clientIp).caller.auth.login({
+          email: 'one-more-guess@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow(TOO_MANY);
+      await expect(
+        createPublicCaller('198.51.100.2').caller.auth.login({
+          email: 'one-more-guess@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow('Invalid email or password');
+    });
+
+    it("doesn't count refused addresses against an email", async () => {
+      const clientIp = '198.51.100.3';
+      await failLogins(30, (i) => ({
+        email: `noise-${i}@example.com`,
+        clientIp,
+      }));
+      await createLearner('bystander@example.com');
+      for (let i = 0; i < 10; i++) {
+        await expect(
+          createPublicCaller(clientIp).caller.auth.login({
+            email: 'bystander@example.com',
+            password: 'wrongpassword',
+          }),
+        ).rejects.toThrow(TOO_MANY);
+      }
+
+      await expect(
+        createPublicCaller('198.51.100.4').caller.auth.login({
+          email: 'bystander@example.com',
+          password: 'mypassword',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('lets logins back in 15 minutes later', async () => {
+      vi.useFakeTimers({
+        toFake: ['Date'],
+        now: new Date('2026-11-05T12:00:00Z'),
+      });
+      await failLogins(10, () => ({ email: 'patient@example.com' }));
+
+      vi.setSystemTime(new Date('2026-11-05T12:15:00Z'));
+
+      await expect(
+        createPublicCaller().caller.auth.login({
+          email: 'patient@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow('Invalid email or password');
+    });
+
+    describe('signing up', () => {
+      async function refusedSignups(count: number, clientIp: string) {
+        for (let i = 0; i < count; i++) {
+          await expect(
+            createPublicCaller(clientIp).caller.auth.signup({
+              email: `uninvited-${i}@example.com`,
+              password: 'password123',
+            }),
+          ).rejects.toThrow('Signup is by invitation only.');
+        }
+      }
+
+      beforeEach(() => {
+        vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'Patient.Signup@example.com');
+      });
+
+      it('refuses an address past 10 signups, even for an invited email', async () => {
+        await refusedSignups(10, '203.0.113.10');
+
+        await expect(
+          createPublicCaller('203.0.113.10').caller.auth.signup({
+            email: 'patient.signup@example.com',
+            password: 'password123',
+          }),
+        ).rejects.toMatchObject({
+          code: 'TOO_MANY_REQUESTS',
+          message: TOO_MANY,
+        });
+      });
+
+      it('allows another address, and the same one 15 minutes later', async () => {
+        vi.useFakeTimers({
+          toFake: ['Date'],
+          now: new Date('2026-11-05T12:00:00Z'),
+        });
+        await refusedSignups(10, '203.0.113.11');
+
+        await expect(
+          createPublicCaller('203.0.113.12').caller.auth.signup({
+            email: 'uninvited@example.com',
+            password: 'password123',
+          }),
+        ).rejects.toThrow('Signup is by invitation only.');
+
+        vi.setSystemTime(new Date('2026-11-05T12:15:00Z'));
+
+        await expect(
+          createPublicCaller('203.0.113.11').caller.auth.signup({
+            email: 'uninvited@example.com',
+            password: 'password123',
+          }),
+        ).rejects.toThrow('Signup is by invitation only.');
+      });
     });
   });
 

@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 28/54 planned issues**
+**Completed: 29/54 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -49,7 +49,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #105 Make the API ready to run in production
    - [x] #106 Invite-only signup, and expired sessions cleared at login
    - [x] #129 Lowercase emails at signup and login
-   - [ ] #107 Rate limits on login, signup and every request
+   - [x] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
    - [ ] #124 Size every shared control for touch from one named size
    - [ ] #125 Bring every hand-built control up to the touch size
@@ -174,6 +174,8 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 - **`studySessions.ts`**: Study Session lifecycle: builds the queue (`queueGenerator.ts`), applies each answer in one transaction (attempt, item, progress) and finishes sessions.
 - **`lib/studySession.ts`** (web): the study screen's Study Session as a pure state machine (#102): `transition(state, event)` gives the next state and the server calls to make (commands), and `studyView` what's on screen. Its state keeps where the session is apart from what's in view (title card, an answered item, the item in play, summary), its items one list, each with its own answer, deck and Study Direction, and edit mode, choosing an answer and cards marked known. `useStudySession` makes its commands through tRPC and returns `view` and `act`; StudyPage renders from `view` and keeps only the options, the slide animation, focus, Enter's glow and swiping. Transitions are tested in `studySession.test.ts`, rendering in `StudyPage.test.tsx`.
 
+- **`rateLimit.ts`**: `createRateLimiter`, fixed windows counted in memory, for the limit on every request (`app.ts`) and on logging in and signing up (`routers/auth.ts`), #107; and `clientIpOf`, the client's address: `X-Real-IP` in production, as Railway documents it, never `X-Forwarded-For`, and the connection's elsewhere.
+
 - **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `generateStreamed` does the same for a reply streamed by the provider's `streamChat` (the tutor's), yielding its text as it arrives and storing it through `onComplete` once complete; it runs to the end even if the caller stops reading, and only the AI's failures become `BAD_GATEWAY`. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rates), pricing uncached input, 5-minute and 1-hour cache writes, cache reads and output each at the model's rate (#31); the provider reports cache writes by lifetime, counting any it can't attribute as 1-hour, and `AiUsage` stores them (`cacheWrite5mTokens`, `cacheWrite1hTokens`, `cacheReadTokens`). Haiku 5.5's long-prompt rate applies when a call's prompt, cached tokens included, is over 100K tokens, as Anthropic bills it. `spend.ts` also defines the AI month (UTC); the spending cap (`aiSpendStatus`) and the usage report (`usageReport.ts`) both price and group calls with it, and the report's input tokens count every input token, cached or not.
 
 ### Data Model
@@ -184,6 +186,7 @@ The v2 schema (`prisma/schema.prisma`, designed in `docs/architecture/archive/v2
 
 - **API tests** use isolated per-suite Postgres schemas via `apps/api/src/test-helpers.ts`: each test suite gets its own schema, Prisma client and tRPC caller. Docker Postgres must be running.
 - **Code that connects by `DATABASE_URL` alone**, like the seed, can't be held in a schema, as Prisma writes to `public` unless its adapter is told otherwise. Test it in a throwaway database from `createTestDatabase`, never against the dev database
+- **The app over HTTP**: `createApp()` gives a test its own count of requests, but the limits on logging in and signing up are shared, so give each test its own addresses; listen once and send through that server, as supertest given the app starts a server per request. `public` has no tables on CI, so these tests can't reach the database
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
 - **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith`, streamed replies with `streamReply` (pieces, optionally refused, failing after them or held open until `holdUntil` settles), failures with `failWith('timeout' | 'connection-error' | 'api-error')`, and inspect `requests` (structured calls) and `chatRequests` (streamed ones). Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`

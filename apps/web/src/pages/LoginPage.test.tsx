@@ -35,7 +35,10 @@ function renderLoginPage() {
   );
 }
 
-function setupMocks(overrides?: { isPending?: boolean }) {
+function setupMocks(overrides?: {
+  isPending?: boolean;
+  error?: { message: string };
+}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
     data: { user: null },
     isLoading: false,
@@ -44,8 +47,8 @@ function setupMocks(overrides?: { isPending?: boolean }) {
   vi.mocked(trpc.auth.login.useMutation).mockReturnValue({
     mutate: vi.fn(),
     isPending: overrides?.isPending ?? false,
-    isError: false,
-    error: null,
+    isError: overrides?.error !== undefined,
+    error: overrides?.error ?? null,
   } as unknown as ReturnType<typeof trpc.auth.login.useMutation>);
 }
 
@@ -133,20 +136,27 @@ describe('LoginPage', () => {
   });
 
   it('displays error message when login fails', () => {
-    vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
-      data: { user: null },
-      isLoading: false,
-    } as unknown as ReturnType<typeof trpc.auth.me.useQuery>);
-    vi.mocked(trpc.auth.login.useMutation).mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      isError: true,
-      error: { message: 'Invalid credentials' },
-    } as unknown as ReturnType<typeof trpc.auth.login.useMutation>);
+    setupMocks({ error: { message: 'Invalid credentials' } });
 
     renderLoginPage();
 
     expect(screen.getByText(/invalid credentials/i)).toBeInTheDocument();
+  });
+
+  it('says to wait after too many attempts', () => {
+    setupMocks({
+      error: {
+        message: 'Too many attempts. Please wait 15 minutes and try again.',
+      },
+    });
+
+    renderLoginPage();
+
+    expect(
+      screen.getByText(
+        'Too many attempts. Please wait 15 minutes and try again.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('disables the submit button while login is pending', () => {

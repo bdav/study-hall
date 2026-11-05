@@ -65,6 +65,32 @@ An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWE
 
 In dev, signing up needs the same variable in `.env`, listing the email you sign up with, and an API restarted since you added it. The seed's account, `dev@example.com`, needs nothing: it's created directly and logs in as usual.
 
+## Limits
+
+| What          | Limit                                             | Past it                                    |
+| ------------- | ------------------------------------------------- | ------------------------------------------ |
+| Logging in    | 10 per email and 30 per address, every 15 minutes | Told to wait, even with the right password |
+| Signing up    | 10 per address, every 15 minutes                  | Told to wait                               |
+| Every request | 300 a minute per address                          | HTTP 429                                   |
+
+Limits are counted in memory, in the one API process, so restarting it clears them all. That's also the fix if someone is locked out and can't wait. Anyone can use up an email's 10 logins by guessing, which locks that person out too, for as long as the guessing goes on. That's accepted for an invite-only app: it's what stops the guessing.
+
+Two gaps are accepted. One HTTP request counts once, however many calls it batches: anyone without an account can only reach cheap calls, and logging in and signing up count each call. And an address is matched whole, so a client with a block of IPv6 addresses could spread its attempts across them, though the limit per email still holds.
+
+The address is `X-Real-IP`, which Railway documents as the client's remote IP. `X-Forwarded-For` is left alone: Railway doesn't document it, and a client can write to it. Railway doesn't document whether a client's own `X-Real-IP` is replaced either, so check on the live API after the first deploy, from a connection with no signups in the last 15 minutes:
+
+```sh
+for i in $(seq 1 11); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.study.beaudavenport.com/trpc/auth.signup \
+    -H 'content-type: application/json' -H "X-Real-IP: 203.0.113.$i" \
+    -d '{"email":"nobody@example.com","password":"password123"}'
+done
+```
+
+Ten `403`s and then a `429` means the forged addresses were ignored. Eleven `403`s means a client can pick its own address, so the limits per address can be dodged, though the limit per email still holds.
+
+Then run one more signup right away from another network, such as a phone's hotspot. A `403` means addresses are counted apart. A `429` means every client shares one address, so one person could lock out everyone: `X-Real-IP` isn't reaching the API, or `NODE_ENV` isn't `production`. Fix either failure before relying on the limits.
+
 ## Resetting a forgotten password
 
 There's no password reset in the app and no email sending, so it's done by hand.

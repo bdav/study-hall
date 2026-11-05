@@ -2,12 +2,15 @@ import { type PrismaClient } from '@prisma/client';
 import { prisma } from './db.js';
 import { type AiProvider } from './ai/provider.js';
 import { createAnthropicProvider } from './ai/anthropicProvider.js';
+import { clientIpOf, type ClientRequest } from './rateLimit.js';
 
 export type Context = {
   prisma: PrismaClient;
   userId: string | null;
   /** The current session token, if authenticated. Used for single-session logout. */
   sessionToken: string | null;
+  /** The client's address. Only available in HTTP context. */
+  clientIp?: string;
   /** Every model call goes through this. Tests supply a fake. */
   ai: AiProvider;
   /** Set a cookie on the response. Only available in HTTP context (not in test callers). */
@@ -37,7 +40,7 @@ export async function createContext({
   req,
   res,
 }: {
-  req: { cookies?: Record<string, string> };
+  req: ClientRequest & { cookies?: Record<string, string> };
   res: {
     cookie: (name: string, value: string, options: CookieOptions) => void;
     clearCookie: (name: string, options: CookieOptions) => void;
@@ -60,6 +63,7 @@ export async function createContext({
     prisma,
     userId,
     sessionToken: token ?? null,
+    clientIp: clientIpOf(req),
     ai,
     setCookie: (name, value, options) => res.cookie(name, value, options),
     clearCookie: (name, options) => res.clearCookie(name, options),

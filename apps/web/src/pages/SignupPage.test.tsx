@@ -183,6 +183,22 @@ describe('SignupPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('says to wait after too many attempts', () => {
+    setupMocks({
+      error: {
+        message: 'Too many attempts. Please wait 15 minutes and try again.',
+      },
+    });
+
+    renderSignupPage();
+
+    expect(
+      screen.getByText(
+        'Too many attempts. Please wait 15 minutes and try again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('disables the submit button while signup is pending', () => {
     setupMocks({ isPending: true });
     renderSignupPage();

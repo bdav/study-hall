@@ -6,6 +6,7 @@ import { canSignUp } from '../auth/allowlist.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { SESSION_DURATION_MS } from '../context.js';
 import { canUseAI } from '../ai/access.js';
+import { createRateLimiter } from '../rateLimit.js';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -15,6 +16,29 @@ const COOKIE_OPTIONS = {
   /** Cookie max-age in milliseconds. Express converts to seconds for Set-Cookie. */
   maxAge: SESSION_DURATION_MS,
 };
+
+const ATTEMPTS_WINDOW_MS = 15 * 60 * 1000;
+const allowLoginFromIp = createRateLimiter({
+  limit: 30,
+  windowMs: ATTEMPTS_WINDOW_MS,
+});
+const allowLoginForEmail = createRateLimiter({
+  limit: 10,
+  windowMs: ATTEMPTS_WINDOW_MS,
+});
+const allowSignupFromIp = createRateLimiter({
+  limit: 10,
+  windowMs: ATTEMPTS_WINDOW_MS,
+});
+
+function assertWithinLimit(allowed: boolean) {
+  if (!allowed) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Too many attempts. Please wait 15 minutes and try again.',
+    });
+  }
+}
 
 /** Generate a cryptographically secure session token. */
 function generateSessionToken(): string {
@@ -30,7 +54,9 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Before anything else, so an uninvited email can't learn who has an account
+      if (ctx.clientIp) assertWithinLimit(allowSignupFromIp(ctx.clientIp));
+
+      // Before the lookup, so an uninvited email can't learn who has an account
       if (!canSignUp(input.email)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -82,6 +108,12 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Every attempt counts, before its password is checked, so guesses sent
+      // all at once can't get through. The address comes first, so what it's
+      // refused for can't lock an email out as well
+      if (ctx.clientIp) assertWithinLimit(allowLoginFromIp(ctx.clientIp));
+      assertWithinLimit(allowLoginForEmail(input.email));
+
       const user = await ctx.prisma.user.findUnique({
         where: { email: input.email },
       });
