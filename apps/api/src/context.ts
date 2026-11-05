@@ -54,7 +54,6 @@ export async function createContext({
     if (session && session.expiresAt > new Date()) {
       userId = session.userId;
     }
-    // TODO: Add periodic cleanup job for expired sessions (they accumulate in DB)
   }
 
   return {

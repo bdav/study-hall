@@ -2052,7 +2052,7 @@ contribution scope is accepted variant suggestions only).
 
 I. Signup / Access Control
 
-Open. Need decide: open signup, invite-only, or allowlist for portfolio app.
+> **Decided (2026-11-02, spec #91):** Invite-only. Signup accepts only emails on a signup allowlist (`SIGNUP_ALLOWED_EMAILS`), kept apart from the AI allowlist. Passwords stay, with no reset and no email sending: a forgotten one is reset by hand (`docs/runbook.md`). The choice below stands for if that stops being enough.
 
 The current email/password auth (bcrypt, DB-backed sessions, HttpOnly
 SameSite=Lax cookie) is sound for local use. If other people ever sign up,

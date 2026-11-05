@@ -70,14 +70,15 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 
 ## Environment Variables
 
-| Variable             | Default             | Description                                                                                  |
-| -------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`       | —                   | Postgres connection string (set in `.env`)                                                   |
-| `PORT`               | `3001`              | Port the API listens on                                                                      |
-| `CORS_ORIGIN`        | `localhost:*` (dev) | Allowed CORS origin for the API                                                              |
-| `ANTHROPIC_API_KEY`  | —                   | Anthropic API key for course features (AI calls only)                                        |
-| `AI_ALLOWED_EMAILS`  | — (nobody)          | Comma-separated emails allowed to use AI features such as courses                            |
-| `AI_MONTHLY_CAP_USD` | — (AI paused)       | Monthly AI spending cap in US dollars, across all users; AI features pause once it's reached |
+| Variable                | Default             | Description                                                                                  |
+| ----------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | —                   | Postgres connection string (set in `.env`)                                                   |
+| `PORT`                  | `3001`              | Port the API listens on                                                                      |
+| `CORS_ORIGIN`           | `localhost:*` (dev) | Allowed CORS origin for the API                                                              |
+| `ANTHROPIC_API_KEY`     | —                   | Anthropic API key for course features (AI calls only)                                        |
+| `SIGNUP_ALLOWED_EMAILS` | — (nobody)          | Comma-separated emails allowed to make an account; the seed's login doesn't need it          |
+| `AI_ALLOWED_EMAILS`     | — (nobody)          | Comma-separated emails allowed to use AI features such as courses                            |
+| `AI_MONTHLY_CAP_USD`    | — (AI paused)       | Monthly AI spending cap in US dollars, across all users; AI features pause once it's reached |
 
 Create a `.env` file in the project root:
 
@@ -142,7 +143,7 @@ What does HTTP stand for,HyperText Transfer Protocol
 
 ## Features
 
-- **Auth:** Email/password signup and login with cookie-based sessions
+- **Auth:** Invite-only email/password signup and login with cookie-based sessions
 - **Decks:** Create, rename, and delete flashcard decks
 - **Cards:** Add cards one at a time or bulk import via CSV; edit and delete cards
 - **Study:** Finite study sessions of due and new cards. Type your answer (or choose "I don't know"); answers are graded with normalized string matching that ignores case, punctuation and extra whitespace (but not the spaces between words). An answer wrong only in its accents is accepted as Good with the accented form shown. Each card is rescheduled after every answer

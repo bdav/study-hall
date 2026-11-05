@@ -35,7 +35,10 @@ function renderSignupPage() {
   );
 }
 
-function setupMocks(overrides?: { isPending?: boolean }) {
+function setupMocks(overrides?: {
+  isPending?: boolean;
+  error?: { message: string };
+}) {
   vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
     data: { user: null },
     isLoading: false,
@@ -44,8 +47,8 @@ function setupMocks(overrides?: { isPending?: boolean }) {
   vi.mocked(trpc.auth.signup.useMutation).mockReturnValue({
     mutate: vi.fn(),
     isPending: overrides?.isPending ?? false,
-    isError: false,
-    error: null,
+    isError: overrides?.error !== undefined,
+    error: overrides?.error ?? null,
   } as unknown as ReturnType<typeof trpc.auth.signup.useMutation>);
 }
 
@@ -163,20 +166,21 @@ describe('SignupPage', () => {
   });
 
   it('displays error message when signup fails', () => {
-    vi.mocked(trpc.auth.me.useQuery).mockReturnValue({
-      data: { user: null },
-      isLoading: false,
-    } as unknown as ReturnType<typeof trpc.auth.me.useQuery>);
-    vi.mocked(trpc.auth.signup.useMutation).mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      isError: true,
-      error: { message: 'Email already in use' },
-    } as unknown as ReturnType<typeof trpc.auth.signup.useMutation>);
+    setupMocks({ error: { message: 'Email already in use' } });
 
     renderSignupPage();
 
     expect(screen.getByText(/email already in use/i)).toBeInTheDocument();
+  });
+
+  it('says signup is by invitation when the email is refused', () => {
+    setupMocks({ error: { message: 'Signup is by invitation only.' } });
+
+    renderSignupPage();
+
+    expect(
+      screen.getByText('Signup is by invitation only.'),
+    ).toBeInTheDocument();
   });
 
   it('disables the submit button while signup is pending', () => {

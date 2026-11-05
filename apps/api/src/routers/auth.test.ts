@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  beforeEach,
+  afterAll,
+  afterEach,
+  vi,
+} from 'vitest';
 import { createTestPrisma } from '../test-helpers.js';
 import { appRouter } from './index.js';
 import { createFakeAiProvider } from '../ai/fakeProvider.js';
@@ -65,7 +74,111 @@ function createAuthenticatedCaller(
 }
 
 describe('auth router', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe('signup', () => {
+    beforeEach(() => {
+      vi.stubEnv(
+        'SIGNUP_ALLOWED_EMAILS',
+        'test@example.com,duplicate@example.com',
+      );
+    });
+
+    it('refuses an email off the signup allowlist, creating nothing', async () => {
+      const { caller, cookies } = createPublicCaller();
+
+      await expect(
+        caller.auth.signup({
+          email: 'stranger@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'Signup is by invitation only.',
+      });
+
+      expect(
+        await prisma.user.count({ where: { email: 'stranger@example.com' } }),
+      ).toBe(0);
+      expect(cookies.session_token).toBeUndefined();
+    });
+
+    it('refuses everyone while the signup allowlist is unset', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', undefined);
+      const { caller } = createPublicCaller();
+
+      await expect(
+        caller.auth.signup({
+          email: 'test@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow('Signup is by invitation only.');
+    });
+
+    it('matches the signup allowlist ignoring case and whitespace', async () => {
+      vi.stubEnv(
+        'SIGNUP_ALLOWED_EMAILS',
+        ' first@example.com ,  Mixed.Case@Example.com,,',
+      );
+      const { caller } = createPublicCaller();
+
+      await expect(
+        caller.auth.signup({
+          email: 'first@example.com',
+          password: 'password123',
+        }),
+      ).resolves.toBeDefined();
+      await expect(
+        caller.auth.signup({
+          email: 'mixed.CASE@example.com',
+          password: 'password123',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it("doesn't say whether a refused email has an account", async () => {
+      await prisma.user.create({
+        data: { email: 'existing@example.com', passwordHash: 'hash' },
+      });
+      const { caller } = createPublicCaller();
+
+      await expect(
+        caller.auth.signup({
+          email: 'existing@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow('Signup is by invitation only.');
+    });
+
+    it('never treats the AI allowlist as an invitation', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', undefined);
+      vi.stubEnv('AI_ALLOWED_EMAILS', 'ai-only@example.com');
+      const { caller } = createPublicCaller();
+
+      await expect(
+        caller.auth.signup({
+          email: 'ai-only@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow('Signup is by invitation only.');
+    });
+
+    it('never gives an invited email AI access', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'invited@example.com');
+      vi.stubEnv('AI_ALLOWED_EMAILS', undefined);
+      const { caller } = createPublicCaller();
+
+      const { user } = await caller.auth.signup({
+        email: 'invited@example.com',
+        password: 'password123',
+      });
+
+      const me = await createAuthenticatedCaller(user.id).caller.auth.me();
+      expect(me.user?.canUseAI).toBe(false);
+    });
+
     it('creates a user and returns user data', async () => {
       const { caller, cookies } = createPublicCaller();
       const result = await caller.auth.signup({
@@ -170,6 +283,71 @@ describe('auth router', () => {
     });
   });
 
+  describe('expired login sessions', () => {
+    const inOneHour = () => new Date(Date.now() + 60 * 60 * 1000);
+    const anHourAgo = () => new Date(Date.now() - 60 * 60 * 1000);
+
+    async function createUserWithPassword(email: string) {
+      return prisma.user.create({
+        data: { email, passwordHash: await hashPassword('mypassword') },
+      });
+    }
+
+    async function tokensLeft(tokens: string[]) {
+      const sessions = await prisma.session.findMany({
+        where: { token: { in: tokens } },
+      });
+      return sessions.map((session) => session.token).sort();
+    }
+
+    it('are cleared by a login, whoever they belong to, leaving unexpired ones', async () => {
+      const learner = await createUserWithPassword('cleanup@example.com');
+      const other = await createUserWithPassword('cleanup-other@example.com');
+      await prisma.session.createMany({
+        data: [
+          { token: 'own-expired', userId: learner.id, expiresAt: anHourAgo() },
+          { token: 'own-live', userId: learner.id, expiresAt: inOneHour() },
+          { token: 'other-expired', userId: other.id, expiresAt: anHourAgo() },
+          { token: 'other-live', userId: other.id, expiresAt: inOneHour() },
+        ],
+      });
+
+      await createPublicCaller().caller.auth.login({
+        email: 'cleanup@example.com',
+        password: 'mypassword',
+      });
+
+      expect(
+        await tokensLeft([
+          'own-expired',
+          'own-live',
+          'other-expired',
+          'other-live',
+        ]),
+      ).toEqual(['other-live', 'own-live']);
+    });
+
+    it('stay when a login fails', async () => {
+      const learner = await createUserWithPassword('failed-login@example.com');
+      await prisma.session.create({
+        data: {
+          token: 'still-expired',
+          userId: learner.id,
+          expiresAt: anHourAgo(),
+        },
+      });
+
+      await expect(
+        createPublicCaller().caller.auth.login({
+          email: 'failed-login@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow();
+
+      expect(await tokensLeft(['still-expired'])).toEqual(['still-expired']);
+    });
+  });
+
   describe('me', () => {
     it('returns current user when authenticated', async () => {
       const hash = await hashPassword('testpass');
@@ -197,6 +375,10 @@ describe('auth router', () => {
   });
 
   describe('logout', () => {
+    beforeEach(() => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'logout@example.com');
+    });
+
     it('clears the session cookie and deletes only the current session', async () => {
       // Signup to create a session
       const { caller: signupCaller, cookies } = createPublicCaller();

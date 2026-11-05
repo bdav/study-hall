@@ -20,15 +20,16 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 
 **API, on Railway**
 
-| Variable             | What it does                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`       | The Postgres connection string. Also needed to run `prisma generate`, which doesn't connect                        |
-| `NODE_ENV`           | `production`. Marks the login cookie `Secure`, makes the seed refuse to run, and skips dev dependencies on install |
-| `PORT`               | The port to listen on, set by Railway. 3001 when unset                                                             |
-| `CORS_ORIGIN`        | The web app's address, `https://study.beaudavenport.com`. Unset, only localhost is allowed                         |
-| `ANTHROPIC_API_KEY`  | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it             |
-| `AI_ALLOWED_EMAILS`  | Comma-separated emails that may use AI. Unset, nobody can                                                          |
-| `AI_MONTHLY_CAP_USD` | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                        |
+| Variable                | What it does                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`          | The Postgres connection string. Also needed to run `prisma generate`, which doesn't connect                        |
+| `NODE_ENV`              | `production`. Marks the login cookie `Secure`, makes the seed refuse to run, and skips dev dependencies on install |
+| `PORT`                  | The port to listen on, set by Railway. 3001 when unset                                                             |
+| `CORS_ORIGIN`           | The web app's address, `https://study.beaudavenport.com`. Unset, only localhost is allowed                         |
+| `ANTHROPIC_API_KEY`     | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it             |
+| `SIGNUP_ALLOWED_EMAILS` | Comma-separated emails that may make an account. Unset, nobody can. Never grants AI                                |
+| `AI_ALLOWED_EMAILS`     | Comma-separated emails that may use AI. Unset, nobody can. Never grants signup                                     |
+| `AI_MONTHLY_CAP_USD`    | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                        |
 
 **Web app, on Vercel**
 
@@ -55,6 +56,14 @@ DATABASE_URL=postgresql://unused pnpm prisma generate && pnpm --filter web build
 Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite in Vercel's config.
 
 Applied migrations are never edited or deleted, and `migrate dev` never runs in production. The seed refuses to run there: it would create an account with a known password.
+
+## Inviting someone
+
+Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no code change. The API reads it from its environment, so the invitation counts once the API has restarted with the new value. Then they sign up at `study.beaudavenport.com` with that email; anyone else is told signup is by invitation. The allowlist ignores case, but accounts don't: they log in with the email exactly as they signed up with it, so ask them to type it as you listed it.
+
+An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well. Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
+
+In dev, signing up needs the same variable in `.env`, listing the email you sign up with, and an API restarted since you added it. The seed's account, `dev@example.com`, needs nothing: it's created directly and logs in as usual.
 
 ## Resetting a forgotten password
 

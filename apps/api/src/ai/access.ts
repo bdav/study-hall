@@ -1,4 +1,5 @@
 import { type PrismaClient } from '@prisma/client';
+import { isOnAllowlist } from '../auth/allowlist.js';
 
 /**
  * The single check for whether a user may use AI-backed features. v1 reads
@@ -6,12 +7,7 @@ import { type PrismaClient } from '@prisma/client';
  * else reads the allowlist.
  */
 export function canUseAI(user: { email: string }): boolean {
-  const allowed = (process.env.AI_ALLOWED_EMAILS ?? '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-
-  return allowed.includes(user.email.toLowerCase());
+  return isOnAllowlist(process.env.AI_ALLOWED_EMAILS, user.email);
 }
 
 /** Whether a signed-in user, looked up by id, passes `canUseAI`. */

@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 26/52 planned issues**
+**Completed: 27/52 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -47,7 +47,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
 5. Go live (spec #91)
    - [x] Triage #61 touch-sized controls (with #32's named tokens) and #103 (with the maintainer; stop and ask)
    - [x] #105 Make the API ready to run in production
-   - [ ] #106 Invite-only signup, and expired sessions cleared at login
+   - [x] #106 Invite-only signup, and expired sessions cleared at login
    - [ ] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
    - [ ] #124 Size every shared control for touch from one named size
@@ -122,6 +122,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 - `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
 - `PORT` — the port the API listens on; unset means 3001
 - `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it. Set it in `.env`, or as a 1Password secret reference in `.env.1password` for `pnpm dev:op`
+- `SIGNUP_ALLOWED_EMAILS` — comma-separated allowlist read only by `canSignUp` (`apps/api/src/auth/allowlist.ts`); unset means nobody can sign up, and the seed's `dev@example.com` doesn't need it
 - `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
 - `AI_MONTHLY_CAP_USD` — monthly AI spending cap in US dollars, across all users (`apps/api/src/ai/spend.ts`); unset or invalid means AI is paused
 

@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { publicProcedure, router } from './trpc.js';
+import { canSignUp } from '../auth/allowlist.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { SESSION_DURATION_MS } from '../context.js';
 import { canUseAI } from '../ai/access.js';
@@ -29,6 +30,14 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Before anything else, so an uninvited email can't learn who has an account
+      if (!canSignUp(input.email)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Signup is by invitation only.',
+        });
+      }
+
       const existing = await ctx.prisma.user.findUnique({
         where: { email: input.email },
       });
@@ -92,6 +101,11 @@ export const authRouter = router({
           message: 'Invalid email or password',
         });
       }
+
+      // Nothing else deletes expired login sessions, so every login clears them
+      await ctx.prisma.session.deleteMany({
+        where: { expiresAt: { lte: new Date() } },
+      });
 
       const token = generateSessionToken();
       await ctx.prisma.session.create({
