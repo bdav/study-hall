@@ -105,6 +105,34 @@ describe('auth router', () => {
       expect(cookies.session_token).toBeUndefined();
     });
 
+    it('stores an email in lowercase, however it was typed', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'Stored.Lower@Example.com');
+      const { caller } = createPublicCaller();
+
+      const { user } = await caller.auth.signup({
+        email: 'STORED.lower@example.COM',
+        password: 'password123',
+      });
+
+      expect(user.email).toBe('stored.lower@example.com');
+    });
+
+    it('treats an email in another case as the same account', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'ONE.account@Example.com');
+      const { caller } = createPublicCaller();
+      await caller.auth.signup({
+        email: 'One.Account@example.com',
+        password: 'password123',
+      });
+
+      await expect(
+        caller.auth.signup({
+          email: 'one.account@example.com',
+          password: 'password456',
+        }),
+      ).rejects.toThrow(/already exists/i);
+    });
+
     it('refuses everyone while the signup allowlist is unset', async () => {
       vi.stubEnv('SIGNUP_ALLOWED_EMAILS', undefined);
       const { caller } = createPublicCaller();
@@ -234,6 +262,47 @@ describe('auth router', () => {
   });
 
   describe('login', () => {
+    it('finds an account whatever the case of the email', async () => {
+      vi.stubEnv('SIGNUP_ALLOWED_EMAILS', 'Any.CASE@Example.com');
+      const { caller, cookies } = createPublicCaller();
+      await caller.auth.signup({
+        email: 'Any.Case@example.com',
+        password: 'password123',
+      });
+      delete cookies.session_token;
+
+      const { user } = await caller.auth.login({
+        email: 'ANY.CASE@EXAMPLE.COM',
+        password: 'password123',
+      });
+
+      expect(user.email).toBe('any.case@example.com');
+      expect(cookies.session_token).toBeDefined();
+    });
+
+    it('gives the same message for a wrong password as an unknown email, in any case', async () => {
+      await prisma.user.create({
+        data: {
+          email: 'same.message@example.com',
+          passwordHash: await hashPassword('mypassword'),
+        },
+      });
+      const { caller } = createPublicCaller();
+
+      await expect(
+        caller.auth.login({
+          email: 'SAME.MESSAGE@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow('Invalid email or password');
+      await expect(
+        caller.auth.login({
+          email: 'NOBODY@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow('Invalid email or password');
+    });
+
     it('logs in with correct credentials and sets session cookie', async () => {
       const hash = await hashPassword('mypassword');
       const user = await prisma.user.create({

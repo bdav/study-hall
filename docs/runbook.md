@@ -59,7 +59,7 @@ Applied migrations are never edited or deleted, and `migrate dev` never runs in 
 
 ## Inviting someone
 
-Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no code change. The API reads it from its environment, so the invitation counts once the API has restarted with the new value. Then they sign up at `study.beaudavenport.com` with that email; anyone else is told signup is by invitation. The allowlist ignores case, but accounts don't: they log in with the email exactly as they signed up with it, so ask them to type it as you listed it.
+Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no code change. The API reads it from its environment, so the invitation counts once the API has restarted with the new value. Then they sign up at `study.beaudavenport.com` with that email; anyone else is told signup is by invitation.
 
 An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well. Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
 
@@ -84,7 +84,7 @@ There's no password reset in the app and no email sending, so it's done by hand.
 
 2. Connect to the production database with `railway connect postgres`, which needs the Railway CLI, linked to the project, and `psql` on your laptop.
 
-3. Set the hash, single quotes around it, and clear that user's login sessions, which logs them out on every device. Use the email exactly as they signed up with it.
+3. Set the hash, single quotes around it, and clear that user's login sessions, which logs them out on every device. The email is stored in lowercase, so write it that way.
 
    ```sql
    UPDATE "User" SET "passwordHash" = '<the hash>', "updatedAt" = now() WHERE email = '<their email>';

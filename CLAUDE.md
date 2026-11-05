@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 27/54 planned issues**
+**Completed: 28/54 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -48,7 +48,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] Triage #61 touch-sized controls (with #32's named tokens) and #103 (with the maintainer; stop and ask)
    - [x] #105 Make the API ready to run in production
    - [x] #106 Invite-only signup, and expired sessions cleared at login
-   - [ ] #129 Lowercase emails at signup and login
+   - [x] #129 Lowercase emails at signup and login
    - [ ] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
    - [ ] #124 Size every shared control for touch from one named size
