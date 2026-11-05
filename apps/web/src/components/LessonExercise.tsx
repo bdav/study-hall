@@ -313,8 +313,9 @@ export function LessonExercise({
                 onChange={(e) => setAnswer(e.target.value)}
                 // A blank in the sentence, underlined as a flashcard's answer
                 // is, so it doesn't look like another button beside Check.
-                // On the text's baseline, as a written blank is
-                className="mx-1 inline-block h-auto w-40 rounded-none border-0 border-b-2 border-white/40 bg-transparent px-1 py-0 text-center align-baseline text-base leading-normal text-white shadow-none placeholder-white/40 focus-visible:border-white focus-visible:ring-0 md:text-base"
+                // On the text's baseline, as a written blank is, so it stays
+                // a line's height on touch screens too
+                className="mx-1 inline-block h-auto w-40 pointer-coarse:min-h-0! rounded-none border-0 border-b-2 border-white/40 bg-transparent px-1 py-0 text-center align-baseline text-base leading-normal text-white shadow-none placeholder-white/40 focus-visible:border-white focus-visible:ring-0 md:text-base"
               />
               {exercise.prompt.slice(gap.index + gap[0].length)}
             </p>

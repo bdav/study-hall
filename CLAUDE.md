@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 30/54 planned issues**
+**Completed: 31/54 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -51,7 +51,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #129 Lowercase emails at signup and login
    - [x] #107 Rate limits on login, signup and every request
    - [x] #108 Request logs and error reports
-   - [ ] #124 Size every shared control for touch from one named size
+   - [x] #124 Size every shared control for touch from one named size
    - [ ] #125 Bring every hand-built control up to the touch size
    - [ ] #126 Have a card save say whether it reset progress
    - [ ] #127 Pin the web's duplicate-answer check to matchAnswer
@@ -147,6 +147,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 
 ## Web Rules to Know
 
+- **Touch size**: on a touch screen a control is at least the touch size, 40px, `--spacing-touch` in `index.css`, the only place it's set. `Button`, `Input`, the select and menu items, `SegmentedControl` and `Switch` apply it. Any other control with a visible box uses `pointer-coarse:min-h-touch` (and `pointer-coarse:min-w-touch` if it's icon-only), and a bare icon or text link `touch-target`, so a mouse sees no change.
 - **Steady pages**: when a query's input changes while its page stays (a picker, filter or tab on the page), keep what the page shows until the new data loads: pass `placeholderData: keepPreviousData`, and while `isPlaceholderData` show the kept content dimmed with `aria-busy`. A page's loading skeleton is for its first load only. `DeckStatsPage` is the example; #113 gives this a shared helper.
 
 ## TDD Workflow

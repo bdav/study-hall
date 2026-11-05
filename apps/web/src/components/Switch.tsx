@@ -21,7 +21,7 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm text-white/80 hover:text-white ${className}`}
+      className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm text-white/80 hover:text-white pointer-coarse:min-h-touch ${className}`}
     >
       <span
         aria-hidden

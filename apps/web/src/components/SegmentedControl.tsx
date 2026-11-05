@@ -35,7 +35,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             aria-pressed={pressed}
             onClick={() => onChange(option.value)}
-            className={`flex-1 cursor-pointer rounded-md px-3 py-1 ${
+            className={`flex-1 cursor-pointer rounded-md px-3 py-1 pointer-coarse:min-h-touch ${
               pressed
                 ? 'bg-white/20 text-white'
                 : 'text-white/70 hover:text-white'

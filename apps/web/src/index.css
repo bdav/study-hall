@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+/*
+ * The least height of a control on a touch screen, and width of an icon-only
+ * one, through `pointer-coarse:min-h-touch` and `min-w-touch`, and the size of
+ * `touch-target`'s tap area. Static, as `touch-target` reads the variable.
+ */
+@theme static {
+  --spacing-touch: 2.5rem;
+}
+
 @theme inline {
   --color-soft-foreground: oklch(0.45 0 0);
   --color-soft-muted-foreground: oklch(0.75 0.12 250);
@@ -44,8 +53,8 @@
 }
 
 /*
- * On touch screens, a small control's tap area grows to at least 40px,
- * centred on it, without changing how it looks. The control must be
+ * On touch screens, a small control's tap area grows to at least the touch
+ * size, centred on it, without changing how it looks. The control must be
  * positioned, such as with `relative`.
  */
 @utility touch-target {
@@ -55,8 +64,8 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      width: max(100%, 40px);
-      height: max(100%, 40px);
+      width: max(100%, var(--spacing-touch));
+      height: max(100%, var(--spacing-touch));
       transform: translate(-50%, -50%);
     }
   }
