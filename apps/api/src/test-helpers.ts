@@ -23,24 +23,32 @@ import {
   resetCardProgress,
 } from './services/cardStanding.js';
 
-const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
+export const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 config({ path: `${projectRoot}.env` });
+
+function uniqueTestName() {
+  return `test_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+}
+
+function applyMigrations(databaseUrl: string) {
+  execSync(`pnpm prisma migrate deploy`, {
+    cwd: projectRoot,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: 'pipe',
+  });
+}
 
 /**
  * Creates an isolated test database using a unique Postgres schema.
  * Each test suite gets its own schema that is dropped on teardown.
  */
 export function createTestPrisma() {
-  const schemaName = `test_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+  const schemaName = uniqueTestName();
   const baseUrl = process.env.DATABASE_URL!;
   const testUrl = `${baseUrl}?schema=${schemaName}`;
 
   // Create the schema and apply migrations
-  execSync(`pnpm prisma migrate deploy`, {
-    cwd: projectRoot,
-    env: { ...process.env, DATABASE_URL: testUrl },
-    stdio: 'pipe',
-  });
+  applyMigrations(testUrl);
 
   const adapter = new PrismaPg(
     { connectionString: baseUrl },
@@ -55,6 +63,39 @@ export function createTestPrisma() {
         `DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`,
       );
       await prisma.$disconnect();
+    },
+  };
+}
+
+/**
+ * Creates a whole throwaway database, migrated, for code that connects by
+ * `DATABASE_URL` alone, like the seed: a schema in the URL wouldn't hold it,
+ * as Prisma writes to `public` unless the adapter is told otherwise.
+ */
+export async function createTestDatabase() {
+  const name = uniqueTestName();
+  const baseUrl = process.env.DATABASE_URL!;
+  const url = new URL(baseUrl);
+  url.pathname = `/${name}`;
+
+  const admin = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: baseUrl }),
+  });
+  await admin.$executeRawUnsafe(`CREATE DATABASE "${name}"`);
+
+  applyMigrations(url.href);
+
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: url.href }),
+  });
+
+  return {
+    prisma,
+    url: url.href,
+    async cleanup() {
+      await prisma.$disconnect();
+      await admin.$executeRawUnsafe(`DROP DATABASE "${name}" WITH (FORCE)`);
+      await admin.$disconnect();
     },
   };
 }

@@ -10,6 +10,7 @@
     "dev:api": "pnpm --filter api dev",
     "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:op": "concurrently \"op run --env-file=.env.1password -- pnpm dev:api\" \"pnpm dev:web\"",
+    "start": "pnpm --filter api start",
     "judge-eval": "pnpm --filter api judge-eval",
     "judge-eval:op": "op run --env-file=.env.1password -- pnpm --filter api judge-eval",
     "lint": "pnpm --filter web lint && pnpm --filter api lint",
@@ -18,9 +19,10 @@
     "format:check": "prettier --check .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "keywords": [],
   "author": "",
@@ -30,7 +32,8 @@
     "@prisma/client": "^7.5.0",
     "dotenv": "^17.3.1",
     "pg": "^8.20.0",
-    "prisma": "^7.5.0"
+    "prisma": "^7.5.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -43,7 +46,6 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.3.3",
     "prettier": "^3.8.1",
-    "tsx": "^4.21.0",
     "typescript-eslint": "^8.56.1"
   },
   "lint-staged": {

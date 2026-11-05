@@ -10,6 +10,13 @@ import {
 
 type AttemptInput = Prisma.CardAttemptCreateManyInput;
 
+if (process.env.NODE_ENV === 'production') {
+  console.error(
+    'Refusing to seed: NODE_ENV is production, and the seed creates an account with a known password.',
+  );
+  process.exit(1);
+}
+
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 

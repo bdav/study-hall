@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Hall, a learning app: flashcard decks with spaced repetition, and AI-assisted courses whose lessons feed the same review. A pnpm monorepo with a React frontend (`apps/web`) and Express/tRPC backend (`apps/api`), using Prisma with PostgreSQL (Docker Compose for local dev). The project follows a TDD-oriented development approach.
 
-What the app does, area by area, is in `docs/features.md`; the plans and decisions behind it are in `docs/architecture/` and `docs/adr/`.
+What the app does, area by area, is in `docs/features.md`; the plans and decisions behind it are in `docs/architecture/` and `docs/adr/`; how production runs is in `docs/runbook.md`.
 
 ## Implementation Order
 
-**Completed: 25/52 planned issues**
+**Completed: 26/52 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -46,7 +46,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #87 Cram toward a target date
 5. Go live (spec #91)
    - [x] Triage #61 touch-sized controls (with #32's named tokens) and #103 (with the maintainer; stop and ask)
-   - [ ] #105 Make the API ready to run in production
+   - [x] #105 Make the API ready to run in production
    - [ ] #106 Invite-only signup, and expired sessions cleared at login
    - [ ] #107 Rate limits on login, signup and every request
    - [ ] #108 Request logs and error reports
@@ -94,6 +94,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 - `pnpm dev:op` — same, but the API runs under `op run` with secrets from the gitignored `.env.1password` (optional; see README)
 - `pnpm dev:api` — start API server only
 - `pnpm dev:web` — start web dev server only
+- `pnpm start` — start the API as production does, on `PORT` or 3001, with `tsx` and no file watching
 
 ### Testing
 
@@ -112,12 +113,14 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 
 - `docker compose up -d` — start local Postgres (required for `pnpm dev` and API tests)
 - `pnpm prisma migrate dev` — run migrations
-- `pnpm db:seed` — seed the dev database (log in as `dev@example.com` / `password`)
+- `pnpm db:deploy` — apply pending migrations with `prisma migrate deploy`, as production does before each deploy
+- `pnpm db:seed` — seed the dev database (log in as `dev@example.com` / `password`); refuses when `NODE_ENV` is `production`
 - `pnpm prisma generate` — regenerate Prisma client
 
 ### Environment Variables
 
 - `DATABASE_URL` — Postgres connection string for the Docker Compose database, defined in `.env`
+- `PORT` — the port the API listens on; unset means 3001
 - `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it. Set it in `.env`, or as a 1Password secret reference in `.env.1password` for `pnpm dev:op`
 - `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
 - `AI_MONTHLY_CAP_USD` — monthly AI spending cap in US dollars, across all users (`apps/api/src/ai/spend.ts`); unset or invalid means AI is paused
@@ -126,7 +129,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 
 **Frontend** (`apps/web/src/`): Vite + React 19 + TypeScript. Uses React Router for routing (`router.tsx`), TanStack Query for server state (`providers.tsx`), Tailwind CSS + shadcn/ui for styling. Path alias `@/*` maps to `src/*`.
 
-**Backend** (`apps/api/src/`): Express 5 + tRPC + Zod validation. Entry point is `server.ts` (port 3001). Prisma client initialized in `db.ts` using the `@prisma/adapter-pg` driver adapter. All tRPC procedure inputs must be validated with Zod schemas.
+**Backend** (`apps/api/src/`): Express 5 + tRPC + Zod validation. Entry point is `server.ts` (`PORT`, or 3001). Prisma client initialized in `db.ts` using the `@prisma/adapter-pg` driver adapter. All tRPC procedure inputs must be validated with Zod schemas.
 
 **Database**: PostgreSQL via Prisma ORM, run locally with Docker Compose. Schema in `prisma/schema.prisma`, config in `prisma.config.ts`.
 
@@ -177,6 +180,7 @@ The v2 schema (`prisma/schema.prisma`, designed in `docs/architecture/archive/v2
 ### Testing Patterns
 
 - **API tests** use isolated per-suite Postgres schemas via `apps/api/src/test-helpers.ts`: each test suite gets its own schema, Prisma client and tRPC caller. Docker Postgres must be running.
+- **Code that connects by `DATABASE_URL` alone**, like the seed, can't be held in a schema, as Prisma writes to `public` unless its adapter is told otherwise. Test it in a throwaway database from `createTestDatabase`, never against the dev database
 - **Web tests** use Vitest + React Testing Library with mocked tRPC hooks
 - **Seed data** is idempotent (`deleteMany` before re-seeding)
 - **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith`, streamed replies with `streamReply` (pieces, optionally refused, failing after them or held open until `holdUntil` settles), failures with `failWith('timeout' | 'connection-error' | 'api-error')`, and inspect `requests` (structured calls) and `chatRequests` (streamed ones). Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`

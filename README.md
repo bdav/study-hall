@@ -53,6 +53,7 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | `pnpm dev:op`                  | `pnpm dev` with secrets from 1Password |
 | `pnpm dev:api`                 | Start API server only (port 3001)      |
 | `pnpm dev:web`                 | Start web dev server only (port 5173)  |
+| `pnpm start`                   | Start the API without watching files   |
 | `pnpm --filter api test`       | Run API tests                          |
 | `pnpm --filter web test`       | Run web tests                          |
 | `pnpm --filter web test:watch` | Run web tests in watch mode            |
@@ -64,6 +65,7 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | `pnpm format:check`            | Check formatting                       |
 | `pnpm prisma migrate dev`      | Run database migrations                |
 | `pnpm prisma generate`         | Regenerate Prisma client               |
+| `pnpm db:deploy`               | Apply pending migrations (production)  |
 | `pnpm db:seed`                 | Seed database with demo data           |
 
 ## Environment Variables
@@ -71,6 +73,7 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | Variable             | Default             | Description                                                                                  |
 | -------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`       | —                   | Postgres connection string (set in `.env`)                                                   |
+| `PORT`               | `3001`              | Port the API listens on                                                                      |
 | `CORS_ORIGIN`        | `localhost:*` (dev) | Allowed CORS origin for the API                                                              |
 | `ANTHROPIC_API_KEY`  | —                   | Anthropic API key for course features (AI calls only)                                        |
 | `AI_ALLOWED_EMAILS`  | — (nobody)          | Comma-separated emails allowed to use AI features such as courses                            |
@@ -161,8 +164,6 @@ pnpm --filter web test
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: it typechecks both apps, lints both apps, and runs the web tests and the API tests, the API tests against a Postgres service in the job with the same per-suite schemas as locally. A run fails if any of them fails. It needs no secrets.
 
-## Deployment Notes
+## Deployment
 
-- The app uses PostgreSQL in every environment. For production, set `DATABASE_URL` to the production database's connection string.
-- The API serves tRPC over HTTP. A `/health` endpoint is available for health checks.
-- CORS is configured to allow any localhost port in development. Set `CORS_ORIGIN` for production.
+How production runs, every environment variable, how a deploy goes and how to reset a password are in [`docs/runbook.md`](docs/runbook.md).
