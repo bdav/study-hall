@@ -126,6 +126,19 @@ const mockSession = {
   })),
 };
 
+/**
+ * The graded card's result, once the card has slid in: it's drawn again as
+ * the slide ends, so a click on the sliding card's buttons can be lost. The
+ * cards either side of a slide both show theirs, so this waits for the slide
+ * first, by label, as polling for a role would slow every test using it.
+ */
+function findResult() {
+  return waitFor(() => {
+    expect(screen.getByLabelText('Edit card')).toBeEnabled();
+    return screen.getByTestId('result');
+  });
+}
+
 function renderStudyPage(deckId = 'deck-1') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -872,14 +885,14 @@ describe('StudyPage', () => {
       text: string,
     ) {
       await user.type(await screen.findByRole('textbox'), `${text}{Enter}`);
-      await screen.findByTestId('result');
+      await findResult();
     }
 
     async function dontKnow(user: ReturnType<typeof userEvent.setup>) {
       await user.click(
         await screen.findByRole('button', { name: /i don't know/i }),
       );
-      await screen.findByTestId('result');
+      await findResult();
     }
 
     it('comes back after the last card, counted as a Retry, not another card', async () => {
@@ -953,9 +966,7 @@ describe('StudyPage', () => {
 
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), '4{Enter}');
-    await waitFor(() => {
-      expect(screen.getByTestId('result')).toBeInTheDocument();
-    });
+    await findResult();
     await user.click(screen.getByRole('button', { name: /finish session/i }));
 
     await waitFor(() => {
@@ -1065,7 +1076,7 @@ describe('StudyPage', () => {
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), '4{Enter}');
 
-    await screen.findByTestId('result');
+    await findResult();
     expect(screen.queryByTestId('variant-note')).not.toBeInTheDocument();
   });
 
@@ -1088,9 +1099,7 @@ describe('StudyPage', () => {
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     for (const answer of ['4', 'Lyon']) {
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toBeInTheDocument();
-      });
+      await findResult();
       await user.click(screen.getByRole('button', { name: /next/i }));
     }
 
@@ -1200,12 +1209,7 @@ describe('StudyPage', () => {
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
-      await screen.findByTestId('result');
-      // Once the card has slid in: it's drawn again as the slide ends, so a
-      // click on the sliding card's button can be lost
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-      );
+      await findResult();
       return user;
     }
 
@@ -1246,7 +1250,7 @@ describe('StudyPage', () => {
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.click(screen.getByRole('button', { name: "I don't know" }));
-      await screen.findByTestId('result');
+      await findResult();
 
       expect(
         screen.queryByRole('button', myAnswerWasCorrect),
@@ -1263,9 +1267,6 @@ describe('StudyPage', () => {
 
     it('is not offered once the card was edited after the answer', async () => {
       const user = await answerFirstCard('four');
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-      );
       await user.click(screen.getByRole('button', { name: 'Edit card' }));
       await user.type(
         screen.getByRole('textbox', { name: 'Front' }),
@@ -1296,11 +1297,7 @@ describe('StudyPage', () => {
     async function answerWithVariants(answer: string) {
       const user = await startStudyingWithVariants();
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
-      await screen.findByTestId('result');
-      // Once the card has slid in, so it can be edited
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-      );
+      await findResult();
       return user;
     }
 
@@ -1487,7 +1484,7 @@ describe('StudyPage', () => {
 
       await user.type(screen.getByRole('textbox'), '4{Enter}');
 
-      await screen.findByTestId('result');
+      await findResult();
       expect(screen.queryByText(/matched/i)).not.toBeInTheDocument();
     });
 
@@ -1497,7 +1494,7 @@ describe('StudyPage', () => {
         matchedAnswer: null,
       });
       await user.type(screen.getByRole('textbox'), 'quattro{Enter}');
-      await screen.findByTestId('result');
+      await findResult();
 
       await user.click(
         screen.getByRole('button', { name: 'My answer was correct' }),
@@ -1520,7 +1517,7 @@ describe('StudyPage', () => {
         matchedAnswer: null,
       });
       await user.type(screen.getByRole('textbox'), 'quattro{Enter}');
-      await screen.findByTestId('result');
+      await findResult();
 
       await user.click(
         screen.getByRole('button', { name: 'My answer was correct' }),
@@ -1605,7 +1602,7 @@ describe('StudyPage', () => {
 
     async function answerCard(user: ReturnType<typeof userEvent.setup>) {
       await user.type(screen.getByRole('textbox', { name: '' }), '4{Enter}');
-      await screen.findByTestId('result');
+      await findResult();
     }
 
     it('offers no edit toggle before the session starts', () => {
@@ -1828,7 +1825,7 @@ describe('StudyPage', () => {
     it("adds and removes the answer's Accepted Variants, saved with Save, without saying the card was edited", async () => {
       const user = await startStudyingWithVariants();
       await user.type(screen.getByRole('textbox'), 'four{Enter}');
-      await screen.findByTestId('result');
+      await findResult();
 
       await startEditing(user);
       const variants = screen.getByRole('list', {
@@ -2202,12 +2199,7 @@ describe('StudyPage', () => {
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), `${answer}{Enter}`);
-      await screen.findByTestId('result');
-      // Once the card has slid in: it's drawn again as the slide ends, so a
-      // click on the sliding card's button can be lost
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-      );
+      await findResult();
       return user;
     }
 
@@ -2444,9 +2436,7 @@ describe('StudyPage', () => {
     ) {
       await user.type(screen.getByRole('textbox'), answer);
       await user.click(screen.getByRole('button', { name: /submit/i }));
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toBeInTheDocument();
-      });
+      await findResult();
     }
 
     async function advanceToNextCard(user: ReturnType<typeof userEvent.setup>) {
@@ -2522,9 +2512,7 @@ describe('StudyPage', () => {
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), '4');
       await user.click(screen.getByRole('button', { name: /submit/i }));
-      await waitFor(() =>
-        expect(screen.getByTestId('result')).toBeInTheDocument(),
-      );
+      await findResult();
     }
 
     it('starts the session with a swipe left on the title card', async () => {
@@ -2634,9 +2622,7 @@ describe('StudyPage', () => {
       await user.type(screen.getByRole('textbox'), '4');
       await user.click(screen.getByRole('button', { name: /submit/i }));
 
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toBeInTheDocument();
-      });
+      await findResult();
 
       // Flip button should now be visible on the back face
       expect(
@@ -2653,9 +2639,7 @@ describe('StudyPage', () => {
       await user.type(screen.getByRole('textbox'), '4');
       await user.click(screen.getByRole('button', { name: /submit/i }));
 
-      await waitFor(() => {
-        expect(screen.getByTestId('result')).toBeInTheDocument();
-      });
+      await findResult();
       // Once the card has slid in: it's drawn again as the slide ends, so a
       // click on the sliding card's button can be lost
       await waitFor(() =>
@@ -3144,9 +3128,7 @@ describe('StudyPage', () => {
       expect(screen.getByText('Capital of France?')).toBeInTheDocument();
       // The answer given before is there to look back on
       await user.click(screen.getByRole('button', { name: /previous/i }));
-      expect(await screen.findByTestId('result')).toHaveTextContent(
-        'Nailed it',
-      );
+      expect(await findResult()).toHaveTextContent('Nailed it');
     });
 
     it('abandons it on request, offering a new session instead', async () => {
@@ -3306,7 +3288,7 @@ describe('StudyPage', () => {
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       async function answerAndPressEnterOnNext(answer: string) {
         await user.type(await screen.findByRole('textbox'), `${answer}{Enter}`);
-        await screen.findByTestId('result');
+        await findResult();
         screen.getByRole('button', { name: 'Next' }).focus();
         await user.keyboard('{Enter}');
       }
@@ -3332,7 +3314,7 @@ describe('StudyPage', () => {
       renderStudyPage();
       await user.click(screen.getByRole('button', { name: /test deck/i }));
       await user.type(screen.getByRole('textbox'), 'four{Enter}');
-      await screen.findByTestId('result');
+      await findResult();
       screen.getByRole('button', { name: 'My answer was correct' }).focus();
 
       await user.keyboard('{Enter}');
@@ -3608,11 +3590,7 @@ describe("the card's main text held in place (#123)", () => {
     renderStudyPage();
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), 'four{Enter}');
-    await screen.findByTestId('result');
-    // Once the card has slid in, so a click on its buttons isn't lost
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-    );
+    await findResult();
     return user;
   }
 
@@ -3716,12 +3694,7 @@ describe('retiring a card from the study screen (#86)', () => {
     renderStudyPage();
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(screen.getByRole('textbox'), '4{Enter}');
-    await screen.findByTestId('result');
-    // Once the card has slid in: it's drawn again as the slide ends, so a
-    // click on the sliding card's button can be lost
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Edit card' })).toBeEnabled(),
-    );
+    await findResult();
     return user;
   }
 
@@ -3875,7 +3848,7 @@ describe('reviewing retired cards (#86)', () => {
 
     // card-1 missed, card-2 answered right
     await user.click(screen.getByRole('button', { name: /i don't know/i }));
-    await screen.findByTestId('result');
+    await findResult();
     await user.click(screen.getByRole('button', { name: /finish session/i }));
     await screen.findByRole('heading', { name: /session complete/i });
 
@@ -3955,7 +3928,7 @@ describe('holding the card in one place (#122)', () => {
     const user = await start();
 
     await user.type(screen.getByRole('textbox'), '4{Enter}');
-    await screen.findByTestId('result');
+    await findResult();
 
     expectCardFirst('What is 2+2?');
   });
@@ -4007,7 +3980,7 @@ describe('starting another session (#93)', () => {
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     for (const answer of ['4', 'Paris']) {
       await user.type(await screen.findByRole('textbox'), `${answer}{Enter}`);
-      await screen.findByTestId('result');
+      await findResult();
       await user.click(await screen.findByRole('button', { name: /next/i }));
     }
     await screen.findByRole('heading', { name: /session complete/i });
@@ -4127,7 +4100,7 @@ describe('the glow on what Enter will press (#94)', () => {
     renderStudyPage();
     await user.click(screen.getByRole('button', { name: /test deck/i }));
     await user.type(await screen.findByRole('textbox'), '4{Enter}');
-    await screen.findByTestId('result');
+    await findResult();
     return user;
   }
 
