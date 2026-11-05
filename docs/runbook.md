@@ -20,22 +20,24 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 
 **API, on Railway**
 
-| Variable                | What it does                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`          | The Postgres connection string. Also needed to run `prisma generate`, which doesn't connect                        |
-| `NODE_ENV`              | `production`. Marks the login cookie `Secure`, makes the seed refuse to run, and skips dev dependencies on install |
-| `PORT`                  | The port to listen on, set by Railway. 3001 when unset                                                             |
-| `CORS_ORIGIN`           | The web app's address, `https://study.beaudavenport.com`. Unset, only localhost is allowed                         |
-| `ANTHROPIC_API_KEY`     | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it             |
-| `SIGNUP_ALLOWED_EMAILS` | Comma-separated emails that may make an account. Unset, nobody can. Never grants AI                                |
-| `AI_ALLOWED_EMAILS`     | Comma-separated emails that may use AI. Unset, nobody can. Never grants signup                                     |
-| `AI_MONTHLY_CAP_USD`    | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                        |
+| Variable                | What it does                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`          | The Postgres connection string. Also needed to run `prisma generate`, which doesn't connect                                    |
+| `NODE_ENV`              | `production`. Marks the login cookie `Secure`, makes the seed refuse to run, and skips dev dependencies on install             |
+| `PORT`                  | The port to listen on, set by Railway. 3001 when unset                                                                         |
+| `CORS_ORIGIN`           | The web app's address, `https://study.beaudavenport.com`. Unset in production, no site can call the API; in dev, localhost can |
+| `ANTHROPIC_API_KEY`     | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it                         |
+| `SIGNUP_ALLOWED_EMAILS` | Comma-separated emails that may make an account. Unset, nobody can. Never grants AI                                            |
+| `AI_ALLOWED_EMAILS`     | Comma-separated emails that may use AI. Unset, nobody can. Never grants signup                                                 |
+| `AI_MONTHLY_CAP_USD`    | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                                    |
+| `SENTRY_DSN`            | Where the API reports server errors. Unset, it reports nothing                                                                 |
 
 **Web app, on Vercel**
 
-| Variable       | What it does                                                                                                                             |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_API_URL` | The API's tRPC address, `https://api.study.beaudavenport.com/trpc`, `/trpc` included. Read at build time, so changing it needs a rebuild |
+| Variable          | What it does                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_API_URL`    | The API's tRPC address, `https://api.study.beaudavenport.com/trpc`, `/trpc` included. Read at build time, so changing it needs a rebuild |
+| `VITE_SENTRY_DSN` | Where the web app reports crashes. Unset, it reports nothing. Read at build time, and public by design: a DSN can only send reports      |
 
 ## How a deploy runs
 
@@ -64,6 +66,21 @@ Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no 
 An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well. Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
 
 In dev, signing up needs the same variable in `.env`, listing the email you sign up with, and an API restarted since you added it. The seed's account, `dev@example.com`, needs nothing: it's created directly and logs in as usual.
+
+## Logs and error reports
+
+The API writes JSON lines to stdout, which Railway keeps. In dev they appear in the terminal running it.
+
+- **Every request** logs one line, once it's over: `method`, `route`, `userId` when logged in, `status` and `durationMs`. Expected refusals, such as a wrong password or a rate limit, show here with their status and go no further. A request refused by the limit on every request shows no user, as it's refused before anyone is looked up, and a tutor reply that fails part-way shows `200`, as its status has already gone.
+- **A server error** logs a second line, `"level":"error"`, with the tRPC `procedure`, its `code` and the `errorName`.
+
+Logs never hold a body, an answer, a password, a cookie, a token or a query string. `route` is the path alone, as a query string can hold a procedure's input. An error's message stays out too, as it can quote what caused it, as a body that won't parse does. The API answers those itself, so Express doesn't print them to stderr.
+
+Every server error is also reported to Sentry, with its message and stack, the procedure and the code, including a tutor reply that fails part-way. Nothing about the request goes with it: the integrations that would attach one are off. The message can still quote what caused it, so treat Sentry as private.
+
+The web app reports uncaught errors and React render errors to Sentry, including those an error screen catches, with the page's URL. It sends crashes alone: no breadcrumbs, as they'd keep the URLs fetched, which hold tRPC inputs, no console messages and no session pings.
+
+Both sides send nothing while their DSN is unset, so dev and tests never report. Two things aren't reported. A crash outside a request, such as one in the process itself, shows in Railway's logs as the API restarts. And when a tutor reply fails after the learner has left, nobody is reading it, so it goes unseen and that exchange is lost.
 
 ## Limits
 

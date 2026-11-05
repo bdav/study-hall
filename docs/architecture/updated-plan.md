@@ -2039,7 +2039,7 @@ Need decide DTO shapes and optimistic UI boundaries.
 
 F. Observability
 
-Deferred. Use Railway logs + Sentry initially. Analytics provider decision can wait.
+> **Decided (2026-11-02, spec #91):** Railway logs and Sentry now (#108, `docs/runbook.md`): a JSON line per request and server errors reported, on the API, and crashes reported from the web app. Product analytics and scheduler-decision logs wait until there's a question they'd answer.
 
 ⸻
 
@@ -2099,7 +2099,7 @@ These were planned or proposed and are deliberately not being built, each for th
 - Sessions sized by time (§12, `learning-model-and-scheduler.md` §14): card-count session types (#8) work.
 - A "no new cards" mode (§14.1): Drill Weakest (#9) already adds no new cards.
 - CSV alternate headers and a tags column (later nice-to-haves in `archive/implementation-plan.md`): cards have no tags.
-- Playwright end-to-end tests (`archive/implementation-plan.md`, testing): router and component tests cover behavior today; revisit with Go live.
+- Playwright end-to-end tests (`archive/implementation-plan.md`, testing): router and component tests cover behavior today. Looked at for Go live (spec #91) and still parked, to revisit when someone other than the maintainer depends on the app.
 - Redis and background jobs (§4.5–4.6): ruled out for v2, and Retries are stored rows (#11).
 
 Not parked: cross-deck Study Sessions (§12.2) and a Today view, designed in #92 (ADR-0013), their tickets in Today's section of the Implementation Order.
