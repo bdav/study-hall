@@ -306,17 +306,19 @@ export function LessonExercise({
           <div className="mt-1 flex items-end gap-3">
             <p className="min-w-0 leading-relaxed">
               {exercise.prompt.slice(0, gap.index)}
-              <Input
-                aria-label="Fill in the blank"
-                enterKeyHint="go"
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                // A blank in the sentence, underlined as a flashcard's answer
-                // is, so it doesn't look like another button beside Check.
-                // On the text's baseline, as a written blank is, so it stays
-                // a line's height on touch screens too
-                className="mx-1 inline-block h-auto w-40 pointer-coarse:min-h-0! rounded-none border-0 border-b-2 border-white/40 bg-transparent px-1 py-0 text-center align-baseline text-base leading-normal text-white shadow-none placeholder-white/40 focus-visible:border-white focus-visible:ring-0 md:text-base"
-              />
+              <label className="touch-target">
+                <Input
+                  aria-label="Fill in the blank"
+                  enterKeyHint="go"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  // A blank in the sentence, underlined as a flashcard's answer
+                  // is, so it doesn't look like another button beside Check.
+                  // On the text's baseline, as a written blank is, so it stays
+                  // a line's height on touch screens too
+                  className="relative z-1 mx-1 inline-block h-auto w-40 pointer-coarse:min-h-0! rounded-none border-0 border-b-2 border-white/40 bg-transparent px-1 py-0 text-center align-baseline text-base leading-normal text-white shadow-none placeholder-white/40 focus-visible:border-white focus-visible:ring-0 md:text-base"
+                />
+              </label>
               {exercise.prompt.slice(gap.index + gap[0].length)}
             </p>
             {/* On phones a return arrow, as a short answer's is, so the
@@ -361,7 +363,7 @@ export function LessonExercise({
                   if (canCheck) e.currentTarget.form?.requestSubmit();
                 }}
                 enterKeyHint="go"
-                className={`field-sizing-content min-w-0 flex-1 resize-none rounded-lg border px-2.5 py-1 text-base outline-none max-sm:pr-9 md:text-sm ${glassInputClassName}`}
+                className={`field-sizing-content min-w-0 flex-1 resize-none rounded-lg border px-2.5 py-1 pointer-coarse:min-h-touch text-base outline-none max-sm:pr-9 md:text-sm ${glassInputClassName}`}
               />
               {/* On phones, a return arrow in the field's corner, so the
                   answer has the width; from sm, the Check button beside it */}
@@ -403,7 +405,7 @@ export function LessonExercise({
             type="button"
             onClick={() => setRevealed(true)}
             disabled={revealed || showAnswerKey}
-            className="mt-3 text-sm text-white/60 underline underline-offset-2 hover:text-white disabled:opacity-50"
+            className="touch-target mt-3 text-sm text-white/60 underline underline-offset-2 hover:text-white disabled:opacity-50"
           >
             {revealed || showAnswerKey ? 'Loading answers…' : 'Show answers'}
           </button>

@@ -36,7 +36,7 @@ export function ArchivedDeckNotice({
         type="button"
         onClick={() => restore.mutate({ id: deckId })}
         disabled={restore.isPending}
-        className="rounded-lg bg-white/20 px-3 py-1.5 font-medium text-white hover:bg-white/30 disabled:opacity-50"
+        className="rounded-lg bg-white/20 px-3 py-1.5 font-medium text-white pointer-coarse:min-h-touch hover:bg-white/30 disabled:opacity-50"
       >
         Restore deck
       </button>

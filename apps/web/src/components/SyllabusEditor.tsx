@@ -61,7 +61,7 @@ function ArchivedLessons({
         aria-expanded={isOpen}
         aria-controls="archived-lessons"
         onClick={() => setIsOpen((open) => !open)}
-        className="flex items-center gap-1 text-sm text-white/60 hover:text-white"
+        className="touch-target flex items-center gap-1 text-sm text-white/60 hover:text-white"
       >
         <ChevronRight
           className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
@@ -83,7 +83,7 @@ function ArchivedLessons({
               aria-label={`Restore ${lesson.title}`}
               onClick={() => restore.mutate({ lessonId: lesson.id })}
               disabled={restore.isPending}
-              className="shrink-0 rounded-lg bg-white/15 px-3 py-1 text-sm text-white hover:bg-white/25 disabled:opacity-50"
+              className="shrink-0 rounded-lg bg-white/15 px-3 py-1 text-sm text-white pointer-coarse:min-h-touch hover:bg-white/25 disabled:opacity-50"
             >
               Restore
             </button>

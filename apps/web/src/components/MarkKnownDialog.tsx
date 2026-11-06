@@ -11,7 +11,7 @@ import { cardsCount } from '@/lib/cards';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
 
 const choiceClassName =
-  'cursor-pointer rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20';
+  'cursor-pointer rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20 pointer-coarse:min-h-touch';
 
 /**
  * Marking cards of a Reversible Deck known (ADR-0009, ADR-0011): asks which

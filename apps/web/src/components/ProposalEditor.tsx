@@ -318,7 +318,7 @@ export function ProposalEditor({
           <button
             type="button"
             disabled={isActionBlocked}
-            className="mt-8 w-full rounded-lg py-2 text-sm text-white/60 hover:text-white disabled:opacity-50"
+            className="mt-8 w-full rounded-lg py-2 text-sm text-white/60 pointer-coarse:min-h-touch hover:text-white disabled:opacity-50"
           >
             Discard proposal
           </button>

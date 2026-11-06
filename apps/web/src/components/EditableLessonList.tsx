@@ -35,7 +35,7 @@ export type EditableLesson = { id: string; lesson: LessonFields };
 type Removal = { verb: string; Icon: LucideIcon };
 
 const iconButtonClassName =
-  'relative touch-target shrink-0 rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-30';
+  'touch-target shrink-0 rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-30';
 
 /**
  * Text edited in place: it saves when the learner leaves it or presses
@@ -94,7 +94,7 @@ function InlineField({
       onBlur={commit}
       onKeyDown={handleKeyDown}
       disabled={disabled}
-      className={`min-w-0 border-b-2 border-transparent bg-transparent text-base text-white outline-none transition-colors hover:border-white/20 focus:border-white/60 disabled:opacity-60 md:text-[length:inherit] ${className}`}
+      className={`min-w-0 border-b-2 border-transparent bg-transparent text-base text-white pointer-coarse:min-h-touch outline-none transition-colors hover:border-white/20 focus:border-white/60 disabled:opacity-60 md:text-[length:inherit] ${className}`}
     />
   );
 }
@@ -137,7 +137,7 @@ export function AddField({
         onChange={(e) => setText(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className="min-w-0 flex-1 border-b-2 border-white/20 bg-transparent text-base text-white outline-none transition-colors placeholder:text-white/40 focus:border-white/60 disabled:opacity-60 md:text-[length:inherit]"
+        className="min-w-0 flex-1 border-b-2 border-white/20 bg-transparent text-base text-white pointer-coarse:min-h-touch outline-none transition-colors placeholder:text-white/40 focus:border-white/60 disabled:opacity-60 md:text-[length:inherit]"
       />
       <button
         type="submit"

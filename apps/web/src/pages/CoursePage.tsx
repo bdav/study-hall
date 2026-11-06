@@ -11,6 +11,7 @@ import { CenteredPage } from '@/components/CenteredPage';
 import { CourseSkeleton } from '@/components/PageSkeleton';
 import { PAGE_WIDTH } from '@/lib/layout';
 import {
+  HEADER_ICON_BUTTON,
   HEADER_MENU_ITEM,
   HeaderMenu,
   PinnedHeader,
@@ -64,7 +65,7 @@ function Syllabus({
                   aria-controls={objectivesId}
                   aria-label={`Objectives: ${lesson.title}`}
                   onClick={() => toggle(lesson.id)}
-                  className="relative touch-target shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+                  className="touch-target shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
                 >
                   <ChevronRight
                     className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
@@ -80,7 +81,7 @@ function Syllabus({
               </span>
               <Link
                 to={`/lessons/${lesson.id}`}
-                className="min-w-0 flex-1 font-medium underline-offset-2 hover:underline"
+                className="touch-target min-w-0 flex-1 font-medium underline-offset-2 hover:underline"
               >
                 {lesson.title}
               </Link>
@@ -160,7 +161,7 @@ function Review({
             to={`/decks/${deckId}`}
             // So the deck links back here rather than to Flashcards
             state={cameFromCourse(courseId)}
-            className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30"
+            className="inline-flex items-center rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm pointer-coarse:min-h-touch hover:bg-white/30"
           >
             Study now
           </Link>
@@ -301,7 +302,7 @@ export default function CoursePage() {
                 )
               ))}
             {isActive && (
-              <HeaderMenu triggerClassName="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white">
+              <HeaderMenu triggerClassName={HEADER_ICON_BUTTON}>
                 <DropdownMenuItem
                   onSelect={() => setIsEditing(true)}
                   className={HEADER_MENU_ITEM}
@@ -359,7 +360,7 @@ export default function CoursePage() {
                     type="button"
                     onClick={() => restore.mutate({ courseId })}
                     disabled={restore.isPending}
-                    className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-50"
+                    className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white backdrop-blur-sm pointer-coarse:min-h-touch hover:bg-white/30 disabled:opacity-50"
                   >
                     {restore.isPending ? 'Restoring…' : 'Restore course'}
                   </button>

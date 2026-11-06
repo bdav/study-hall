@@ -456,13 +456,13 @@ export default function DeckCardsPage() {
           </div>
         ) : (
           // Wraps rather than squeezing each action onto two lines
-          <div className="mr-4 flex flex-wrap justify-end gap-x-4 gap-y-2 whitespace-nowrap">
+          <div className="mr-4 flex flex-wrap justify-end gap-x-4 gap-y-2 whitespace-nowrap pointer-coarse:gap-y-5">
             {cards.length > 0 && (
               <button
                 type="button"
                 onClick={() => setSelection(new Set())}
                 aria-label="Select cards"
-                className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
+                className="touch-target inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
               >
                 <SquareCheck className="h-4 w-4 mr-1" />
                 Select
@@ -475,7 +475,7 @@ export default function DeckCardsPage() {
                 confirmLabel="Retire"
                 onConfirm={() => retireCards.mutate({ cardIds: retirableIds })}
                 trigger={
-                  <button className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
+                  <button className="touch-target inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
                     <ArchiveX className="h-4 w-4 mr-1" />
                     Retire {retirableIds.length} mastered{' '}
                     {retirableIds.length === 1 ? 'card' : 'cards'}
@@ -496,7 +496,7 @@ export default function DeckCardsPage() {
                 confirmLabel="Archive"
                 onConfirm={() => archiveDeck.mutate({ id: deckId })}
                 trigger={
-                  <button className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
+                  <button className="touch-target inline-flex items-center text-sm text-white/40 hover:text-white transition-colors">
                     <Archive className="h-4 w-4 mr-1" />
                     Archive deck
                   </button>
@@ -509,7 +509,7 @@ export default function DeckCardsPage() {
         {/* Card Grid */}
         <LayoutGroup>
           {/* One column on the narrowest phones, where two break words */}
-          <div className="mt-2 grid grid-cols-1 gap-6 min-[360px]:grid-cols-2 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-6 pointer-coarse:mt-3 min-[360px]:grid-cols-2 sm:grid-cols-3">
             {/* New Card button / form */}
             <AnimatePresence mode="popLayout" initial={false}>
               {isCreating ? (
@@ -539,7 +539,7 @@ export default function DeckCardsPage() {
                         <button
                           type="button"
                           aria-label="Cancel"
-                          className="absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                          className="touch-target absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                           onClick={cancelCreate}
                         >
                           <X className="size-4" />
@@ -548,7 +548,7 @@ export default function DeckCardsPage() {
                           <button
                             type="button"
                             aria-label="Flip to back"
-                            className="absolute right-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                            className="touch-target absolute right-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                             onClick={flipToBack}
                           >
                             <RefreshCw className="size-4" />
@@ -599,7 +599,7 @@ export default function DeckCardsPage() {
                         <button
                           type="button"
                           aria-label="Cancel"
-                          className="absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                          className="touch-target absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                           onClick={cancelCreate}
                         >
                           <X className="size-4" />
@@ -607,7 +607,7 @@ export default function DeckCardsPage() {
                         <button
                           type="button"
                           aria-label="Flip to front"
-                          className="absolute right-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                          className="touch-target absolute right-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                           onClick={flipToFront}
                         >
                           <RefreshCw className="size-4" />
@@ -700,7 +700,7 @@ export default function DeckCardsPage() {
                     <button
                       type="button"
                       aria-label="Cancel import"
-                      className="absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                      className="touch-target absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                       onClick={() => {
                         setIsImporting(false);
                         setCsvError(null);

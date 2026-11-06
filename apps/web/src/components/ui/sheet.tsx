@@ -49,7 +49,7 @@ function SheetContent({
         {children}
         <SheetPrimitive.Close
           data-slot="sheet-close"
-          className="absolute top-3 right-3 rounded-md p-1 opacity-70 hover:opacity-100"
+          className="touch-target absolute top-3 right-3 rounded-md p-1 opacity-70 hover:opacity-100"
         >
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>

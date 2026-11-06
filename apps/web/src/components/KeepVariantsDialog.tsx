@@ -76,7 +76,7 @@ export function KeepVariantsDialog({
           <ul className="mt-4 space-y-2">
             {variants.map((variant) => (
               <li key={variant.id}>
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-touch">
                   <input
                     type="checkbox"
                     checked={kept.has(variant.id)}

@@ -35,16 +35,19 @@ export function AnswersEditor({
           const label = `Answer ${i + 1}`;
           return (
             <li key={answer.key}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name={primaryName}
-                  checked={i === 0}
-                  onChange={() => form.makePrimary(i)}
-                  aria-label={`${label} is primary`}
-                  title="Primary answer"
-                  className="size-4 accent-white"
-                />
+              <div className="flex items-center gap-2 pointer-coarse:gap-3.5">
+                {/* min-w-0, as the row squeezes a radio a little */}
+                <label className="touch-target flex size-4 min-w-0">
+                  <input
+                    type="radio"
+                    name={primaryName}
+                    checked={i === 0}
+                    onChange={() => form.makePrimary(i)}
+                    aria-label={`${label} is primary`}
+                    title="Primary answer"
+                    className="size-4 accent-white"
+                  />
+                </label>
                 <Input
                   aria-label={label}
                   value={answer.text}
@@ -57,7 +60,7 @@ export function AnswersEditor({
                   aria-label={`Remove answer ${i + 1}`}
                   disabled={form.answers.length === 1}
                   onClick={() => form.remove(i)}
-                  className="rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
+                  className="touch-target rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
                 >
                   <X className="h-4 w-4" />
                 </button>

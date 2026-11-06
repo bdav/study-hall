@@ -55,7 +55,7 @@ export function DeckHeader({
           )}
         </div>
       )}
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-6">
+      <div className="flex flex-col gap-2 pointer-coarse:mt-2.5 md:flex-row md:items-center md:justify-between md:gap-6">
         <div className="min-w-0">
           {title ?? (
             <h1 className="text-3xl font-bold break-words text-white">

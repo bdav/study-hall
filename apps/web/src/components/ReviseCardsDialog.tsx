@@ -124,7 +124,7 @@ function AfterField(props: {
         if (e.key === 'Enter') e.preventDefault();
       }}
       aria-label={props.label}
-      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none md:text-sm ${glassInputClassName}`}
+      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none pointer-coarse:min-h-touch md:text-sm ${glassInputClassName}`}
     />
   );
 }
@@ -235,13 +235,17 @@ export function ReviseCardsDialog({
                 data-testid="card-change"
                 className="flex gap-3 rounded-lg border border-white/15 bg-white/5 p-3"
               >
-                <input
-                  type="checkbox"
-                  checked={row.selected}
-                  onChange={(e) => updateRow(i, { selected: e.target.checked })}
-                  aria-label={`Include change ${n}`}
-                  className="mt-1 size-4 shrink-0 accent-white"
-                />
+                <label className="touch-target mt-1 flex size-4 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={row.selected}
+                    onChange={(e) =>
+                      updateRow(i, { selected: e.target.checked })
+                    }
+                    aria-label={`Include change ${n}`}
+                    className="size-4 accent-white"
+                  />
+                </label>
                 <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
                   <div className="min-w-0 text-sm">
                     <p className="text-xs text-white/50">

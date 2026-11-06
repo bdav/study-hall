@@ -30,7 +30,7 @@ export function LessonOutline({
                 to={stepSearch(step)}
                 onClick={() => onNavigate?.(step)}
                 aria-current={isCurrent ? 'step' : undefined}
-                className={`block rounded-lg border-l-2 px-3 py-1.5 text-sm ${
+                className={`block rounded-lg border-l-2 px-3 py-1.5 text-sm pointer-coarse:flex pointer-coarse:min-h-touch pointer-coarse:flex-col pointer-coarse:justify-center ${
                   isCurrent
                     ? 'border-white bg-white/15 font-medium text-white'
                     : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white'

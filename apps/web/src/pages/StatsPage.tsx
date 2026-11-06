@@ -110,7 +110,7 @@ export default function StatsPage() {
                   <h3 className="mb-2 text-sm font-medium text-white/80">
                     <Link
                       to={`/decks/${deck.id}`}
-                      className="underline underline-offset-2 hover:text-white"
+                      className="touch-target underline underline-offset-2 hover:text-white"
                     >
                       {deck.name}
                     </Link>

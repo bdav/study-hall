@@ -152,7 +152,7 @@ function Results({ exercises }: { exercises: Exercise[] }) {
               {isMissed(exercise) && (
                 <Link
                   to={exerciseSearch(exercise.id)}
-                  className="shrink-0 text-white/70 underline hover:text-white"
+                  className="touch-target shrink-0 text-white/70 underline hover:text-white"
                 >
                   Try again
                 </Link>
@@ -216,7 +216,7 @@ export function LessonWrapUp({
             Every other lesson in this course is complete.{' '}
             <Link
               to={`/courses/${lesson.course.id}`}
-              className="underline hover:text-white"
+              className="touch-target underline hover:text-white"
             >
               Back to {lesson.course.title}
             </Link>

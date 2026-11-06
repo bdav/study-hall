@@ -9,7 +9,7 @@
 
 /** The field, which the pencil inside it follows. */
 export const EDIT_FIELD =
-  'group/edit rounded transition-colors hover:bg-white/10';
+  'group/edit rounded transition-colors hover:bg-white/10 pointer-coarse:min-h-touch';
 
 /** The field's pencil, marked `data-edit-pencil`. */
 export const EDIT_PENCIL =

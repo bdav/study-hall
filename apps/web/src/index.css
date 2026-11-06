@@ -54,11 +54,16 @@
 
 /*
  * On touch screens, a small control's tap area grows to at least the touch
- * size, centred on it, without changing how it looks. The control must be
- * positioned, such as with `relative`.
+ * size, centred on it, without changing how it looks. It positions the
+ * control itself, unless the control is positioned already.
  */
 @utility touch-target {
   @media (pointer: coarse) {
+    /* No specificity of its own, so `max-sm:absolute` and the like still win */
+    &:where(:not(.absolute, .fixed, .sticky)) {
+      position: relative;
+    }
+
     &::after {
       content: '';
       position: absolute;

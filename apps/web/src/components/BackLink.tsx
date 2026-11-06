@@ -13,7 +13,7 @@ export function BackLink({
   return (
     <Link
       to={to}
-      className="inline-flex items-center gap-1 text-sm text-white/60 hover:text-white"
+      className="touch-target inline-flex items-center gap-1 text-sm text-white/60 hover:text-white"
     >
       <ArrowLeft className="size-4" />
       {children}

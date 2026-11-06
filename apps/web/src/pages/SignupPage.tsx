@@ -127,7 +127,7 @@ export default function SignupPage() {
           Already have an account?{' '}
           <Link
             to="/login"
-            className="text-white/80 underline hover:text-white"
+            className="touch-target text-white/80 underline hover:text-white"
           >
             Log in
           </Link>

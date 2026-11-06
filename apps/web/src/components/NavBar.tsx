@@ -62,18 +62,18 @@ export function NavBar() {
   // On narrow screens the links are icons alone, padded to be easy to tap,
   // with their names kept for screen readers
   const baseLinkClass =
-    'flex items-center gap-1.5 rounded-md p-2 text-sm font-medium transition-colors hover:text-white sm:p-0';
+    'flex items-center justify-center gap-1.5 rounded-md p-2 text-sm font-medium transition-colors hover:text-white sm:p-0 pointer-coarse:min-h-touch pointer-coarse:min-w-touch';
   const labelClass = 'sr-only sm:not-sr-only';
   const linkClass = `${baseLinkClass} text-white/70`;
 
   return (
     // The gutter switches where the page's does (PAGE_WIDTH), so Study Hall
     // lines up with the page below it; on narrow screens the links sit close, so
-    // all five fit a 320px screen
-    <nav className="flex items-center gap-1 px-4 py-2 sm:gap-4 sm:py-4 md:px-8">
+    // all five fit a 320px screen, at the touch size on a touch screen
+    <nav className="flex items-center gap-1 px-4 py-2 pointer-coarse:max-sm:gap-0 sm:gap-4 sm:py-4 md:px-8">
       <Link
         to="/"
-        className="text-lg font-bold tracking-wide whitespace-nowrap text-white"
+        className="touch-target text-lg font-bold tracking-wide whitespace-nowrap text-white pointer-coarse:max-[339px]:text-base"
       >
         Study Hall
       </Link>

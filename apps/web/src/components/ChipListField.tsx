@@ -106,7 +106,7 @@ export function ChipListField({
           type="button"
           disabled={!canAdd}
           onClick={add}
-          className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30 disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white pointer-coarse:min-h-touch hover:bg-white/30 disabled:opacity-50"
         >
           Add
         </button>

@@ -18,7 +18,10 @@ export function AiUnavailableNotice({
       <p className="mt-2 text-white/70">{children}</p>
       <p className="mt-4 text-white/70">
         Standalone{' '}
-        <Link to="/flashcards" className="underline hover:text-white">
+        <Link
+          to="/flashcards"
+          className="touch-target underline hover:text-white"
+        >
           flashcards
         </Link>{' '}
         are fully available.

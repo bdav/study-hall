@@ -201,7 +201,7 @@ export function TutorPanel({
                   startThread.isPending ||
                   (!readingEarlier && messages.length === 0)
                 }
-                className="touch-target rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent"
+                className="touch-target rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white pointer-coarse:mr-1 disabled:opacity-40 disabled:hover:bg-transparent"
               >
                 <SquarePen aria-hidden className="size-4" />
               </button>
@@ -287,13 +287,13 @@ export function TutorPanel({
             rows={3}
             maxLength={4000}
             placeholder="Ask the tutor"
-            className="w-full resize-none rounded-md border border-white/20 bg-white/10 py-2 pr-11 pl-3 text-base text-white placeholder-white/40 outline-none focus-visible:border-white/40 focus-visible:ring-2 focus-visible:ring-white/20 md:text-sm"
+            className="w-full resize-none rounded-md border border-white/20 bg-white/10 py-2 pr-11 pl-3 pointer-coarse:pr-13 text-base text-white placeholder-white/40 outline-none focus-visible:border-white/40 focus-visible:ring-2 focus-visible:ring-white/20 md:text-sm"
           />
           <button
             type="submit"
             aria-label="Send"
             disabled={pending !== null || !draft.trim()}
-            className="touch-target absolute right-2 bottom-3.5 flex size-7 items-center justify-center rounded-md bg-white text-[oklch(0.25_0.08_230)] transition-opacity disabled:opacity-40"
+            className="absolute right-2 bottom-3.5 flex size-7 items-center justify-center pointer-coarse:min-h-touch pointer-coarse:min-w-touch rounded-md bg-white text-[oklch(0.25_0.08_230)] transition-opacity disabled:opacity-40"
           >
             <ArrowUp className="size-4" />
           </button>

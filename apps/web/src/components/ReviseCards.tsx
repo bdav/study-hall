@@ -97,7 +97,7 @@ export function ReviseCards({ deckId }: { deckId: string }) {
           propose.reset();
           setIsWriting(true);
         }}
-        className="inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
+        className="touch-target inline-flex items-center text-sm text-white/40 hover:text-white transition-colors"
       >
         <Sparkles className="h-4 w-4 mr-1" />
         Revise cards

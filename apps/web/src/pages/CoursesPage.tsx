@@ -29,7 +29,7 @@ function ArchivedCourses({
         aria-expanded={isOpen}
         aria-controls="archived-courses"
         onClick={() => setIsOpen((open) => !open)}
-        className="flex items-center gap-1 text-sm text-white/60 hover:text-white"
+        className="touch-target flex items-center gap-1 text-sm text-white/60 hover:text-white"
       >
         <ChevronRight
           className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}

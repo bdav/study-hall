@@ -59,7 +59,7 @@ export function AcceptedVariantsEditor({
               return (
                 <li
                   key={variant}
-                  className={`flex items-center gap-1 rounded-full py-0.5 pl-3 pr-1 ${sameAsAnswer ? 'bg-amber-300/20' : 'bg-white/10'}`}
+                  className={`flex items-center gap-1 rounded-full py-0.5 pl-3 pr-1 pointer-coarse:min-h-touch ${sameAsAnswer ? 'bg-amber-300/20' : 'bg-white/10'}`}
                 >
                   <span>{variant}</span>
                   {sameAsAnswer && (
@@ -71,7 +71,7 @@ export function AcceptedVariantsEditor({
                     type="button"
                     aria-label={`Remove ${variant}`}
                     onClick={() => onRemove(i)}
-                    className="rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                    className="touch-target rounded-full p-0.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

@@ -6,7 +6,7 @@ interface DeckTabsProps {
 }
 
 const baseClasses =
-  'w-16 py-1.5 text-center text-sm font-medium transition-colors border-b-2';
+  'w-16 py-1.5 text-center text-sm font-medium transition-colors border-b-2 pointer-coarse:min-h-touch';
 const activeClasses = `${baseClasses} border-white text-white cursor-default`;
 const inactiveClasses = `${baseClasses} border-transparent text-white/50 hover:text-white/80`;
 

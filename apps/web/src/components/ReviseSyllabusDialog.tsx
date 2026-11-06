@@ -218,7 +218,7 @@ function AfterField({
       rows={rows}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none md:text-sm ${glassInputClassName}`}
+      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none pointer-coarse:min-h-touch md:text-sm ${glassInputClassName}`}
     />
   );
 }
@@ -425,13 +425,15 @@ export function ReviseSyllabusDialog({
                 data-testid="syllabus-change"
                 className="flex gap-3 rounded-lg border border-white/15 bg-white/5 p-3"
               >
-                <input
-                  type="checkbox"
-                  checked={row.selected}
-                  onChange={(e) => update(i, { selected: e.target.checked })}
-                  aria-label={`Include change ${i + 1}`}
-                  className="mt-1 size-4 shrink-0 accent-white"
-                />
+                <label className="touch-target mt-1 flex size-4 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={row.selected}
+                    onChange={(e) => update(i, { selected: e.target.checked })}
+                    aria-label={`Include change ${i + 1}`}
+                    className="size-4 accent-white"
+                  />
+                </label>
                 {describe(row, i + 1)}
               </li>
             ))}

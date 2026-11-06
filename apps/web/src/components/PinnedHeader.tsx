@@ -70,6 +70,10 @@ export function PinnedHeader({
 }
 
 /** An item of a header's ⋯ menu. */
+/** An icon-only button in a pinned header, as its ⋯ menu's trigger is. */
+export const HEADER_ICON_BUTTON =
+  'flex items-center justify-center rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white pointer-coarse:min-h-touch pointer-coarse:min-w-touch';
+
 export const HEADER_MENU_ITEM = 'focus:bg-white/10 focus:text-white';
 
 /** A pinned header's ⋯ menu, holding the page's less common actions. */

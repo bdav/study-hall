@@ -101,7 +101,7 @@ export default function NewCoursePage() {
               <button
                 type="button"
                 onClick={startOver}
-                className="text-sm text-white/60 hover:text-white"
+                className="touch-target text-sm text-white/60 hover:text-white"
               >
                 Start over
               </button>

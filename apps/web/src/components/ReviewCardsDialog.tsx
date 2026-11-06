@@ -185,16 +185,18 @@ export function ReviewCardsDialog({
                 const duplicate = findDuplicate(row.front);
                 return (
                   <TableRow key={i} data-testid="review-card-row">
-                    <TableCell className="py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={row.selected}
-                        onChange={(e) =>
-                          updateRow(i, { selected: e.target.checked })
-                        }
-                        aria-label={`Include card ${i + 1}`}
-                        className="mt-2.5 size-4 accent-white"
-                      />
+                    <TableCell className="py-2 align-top pointer-coarse:pl-3">
+                      <label className="touch-target mt-2.5 flex size-4">
+                        <input
+                          type="checkbox"
+                          checked={row.selected}
+                          onChange={(e) =>
+                            updateRow(i, { selected: e.target.checked })
+                          }
+                          aria-label={`Include card ${i + 1}`}
+                          className="size-4 accent-white"
+                        />
+                      </label>
                     </TableCell>
                     <TableCell className="py-2 align-top">
                       <Input

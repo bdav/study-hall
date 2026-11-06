@@ -12,7 +12,7 @@ import { CardVersionsDialog } from '@/components/CardVersionsDialog';
 import { type StudyDirection } from '@/lib/directions';
 
 const flipButtonClasses =
-  'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
+  'touch-target absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
 
 /**
  * The card being studied in edit mode, the one in play or one reviewed: its

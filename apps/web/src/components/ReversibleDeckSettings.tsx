@@ -149,7 +149,7 @@ export function StudyBothWays({
               type="button"
               onClick={suggestLabels}
               disabled={suggest.isPending}
-              className="inline-flex items-center py-1 text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
+              className="touch-target inline-flex items-center py-1 text-xs text-white/50 transition-colors hover:text-white disabled:opacity-60"
             >
               <Sparkles aria-hidden className="mr-1 h-3.5 w-3.5" />
               {suggest.isPending ? 'Suggesting…' : 'Suggest labels'}

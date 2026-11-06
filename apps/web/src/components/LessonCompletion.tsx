@@ -40,7 +40,7 @@ export function CompletionToggle({ lesson }: { lesson: Lesson }) {
         setCompleted.mutate({ id: lesson.id, completed: !complete })
       }
       disabled={setCompleted.isPending}
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 max-sm:hidden ${
+      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-60 pointer-coarse:min-h-touch max-sm:hidden ${
         complete
           ? 'bg-white/20 text-white'
           : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -109,7 +109,7 @@ export function LessonCompletion({
         disabled={setCompleted.isPending}
         className={
           complete
-            ? 'rounded-lg px-3 py-2 text-sm text-white/60 hover:text-white disabled:opacity-60'
+            ? 'rounded-lg px-3 py-2 text-sm text-white/60 hover:text-white disabled:opacity-60 pointer-coarse:min-h-touch'
             : 'rounded-lg bg-white/20 px-4 py-2 text-white backdrop-blur-sm hover:bg-white/30 disabled:opacity-60'
         }
       >

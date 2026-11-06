@@ -31,7 +31,7 @@ export function InfoTip({
             e.preventDefault();
             setOpen(true);
           }}
-          className="touch-target relative cursor-pointer rounded-full text-white/50 hover:text-white/80"
+          className="touch-target cursor-pointer rounded-full text-white/50 hover:text-white/80"
         >
           <Info aria-hidden className="size-3.5" />
         </button>

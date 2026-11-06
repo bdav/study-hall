@@ -18,9 +18,9 @@ import { EDIT_FIELD, EDIT_PENCIL } from '@/lib/editPencil';
  * hovering the tile, or faintly on touch screens, which have no hover.
  */
 const tileActionClassName =
-  'relative touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60 pointer-coarse:text-white/40';
+  'touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-white/80 focus-visible:text-white/60 pointer-coarse:text-white/40';
 const tileDeleteClassName =
-  'relative touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400 pointer-coarse:text-white/40';
+  'touch-target rounded p-1 text-white/0 transition-colors group-hover:text-white/30 group-hover:hover:text-red-400 pointer-coarse:text-white/40';
 interface FlashCardTileProps {
   front: string;
   back: string;
@@ -102,7 +102,7 @@ function TileField({
           aria-label={`Edit ${label.toLowerCase()}`}
           title={`Edit ${label.toLowerCase()}`}
           data-edit-pencil
-          className={`relative touch-target rounded p-0.5 ${EDIT_PENCIL}`}
+          className={`touch-target rounded p-0.5 ${EDIT_PENCIL}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
@@ -233,16 +233,16 @@ export function FlashCardTile({
           className="col-start-1 row-start-1 flex min-w-0 flex-col rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm"
           style={{ backfaceVisibility: 'hidden' }}
         >
-          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
+          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2 pointer-coarse:min-h-12">
             <span className="text-xs font-medium uppercase tracking-wider text-white/40">
               Front
             </span>
             {!isSelecting && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 pointer-coarse:gap-4.5">
                 {isDirty && (
                   <button
                     onClick={handleRevert}
-                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    className="touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                     title="Revert changes"
                   >
                     <Undo2 className="h-3.5 w-3.5" />
@@ -253,7 +253,7 @@ export function FlashCardTile({
                 )}
                 <button
                   onClick={() => setIsFlipped(true)}
-                  className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                  className="touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                   title="Flip to back"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -268,7 +268,7 @@ export function FlashCardTile({
             placeholder="Front text..."
             showPencil={!isSelecting}
           />
-          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2 pointer-coarse:min-h-12 pointer-coarse:items-center pointer-coarse:gap-4.5">
             {retired && (
               <span className="mr-auto self-center pl-1 text-xs text-white/50">
                 Retired
@@ -338,19 +338,19 @@ export function FlashCardTile({
             transform: 'rotateY(180deg)',
           }}
         >
-          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2">
+          <div className="flex min-h-[30px] items-center justify-between px-3 pt-2 pointer-coarse:min-h-12">
             <span className="text-xs font-medium uppercase tracking-wider text-white/40">
               Back
             </span>
             {!isSelecting && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 pointer-coarse:gap-4.5">
                 {isDirty && (
                   <button
                     onClick={handleRevert}
                     // Keeps focus in the answer, so leaving it doesn't ask
                     // about variants of an answer being reverted
                     onMouseDown={(e) => e.preventDefault()}
-                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                    className="touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                     title="Revert changes"
                   >
                     <Undo2 className="h-3.5 w-3.5" />
@@ -361,7 +361,7 @@ export function FlashCardTile({
                 )}
                 <button
                   onClick={() => setIsFlipped(false)}
-                  className="relative touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+                  className="touch-target rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
                   title="Flip to front"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -377,7 +377,7 @@ export function FlashCardTile({
             placeholder="Back text..."
             showPencil={!isSelecting}
           />
-          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2">
+          <div className="flex min-h-[30px] justify-end gap-1 px-3 pb-2 pointer-coarse:min-h-12 pointer-coarse:items-center pointer-coarse:gap-4.5">
             {retired && (
               <span className="mr-auto self-center pl-1 text-xs text-white/50">
                 Retired

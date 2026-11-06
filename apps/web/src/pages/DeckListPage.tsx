@@ -70,7 +70,7 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
         aria-expanded={isOpen}
         aria-controls="archived-decks"
         onClick={() => setIsOpen((open) => !open)}
-        className="flex items-center gap-1 text-sm text-white/60 hover:text-white"
+        className="touch-target flex items-center gap-1 text-sm text-white/60 hover:text-white"
       >
         <ChevronRight
           className={`size-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
@@ -94,7 +94,7 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
             <div className="min-w-0 flex-1">
               <Link
                 to={`/decks/${deck.id}/cards`}
-                className="font-medium break-words hover:underline"
+                className="touch-target font-medium break-words hover:underline"
               >
                 {deck.name}
               </Link>
@@ -112,7 +112,7 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
                 aria-label={`Restore ${deck.name}`}
                 onClick={() => restore.mutate({ id: deck.id })}
                 disabled={restore.isPending}
-                className="text-sm text-white/70 hover:text-white disabled:opacity-50"
+                className="touch-target text-sm text-white/70 hover:text-white disabled:opacity-50"
               >
                 Restore
               </button>
@@ -125,7 +125,7 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
                   <button
                     type="button"
                     aria-label={`Delete ${deck.name} permanently`}
-                    className="relative touch-target rounded p-1 text-white/40 transition-colors hover:text-destructive"
+                    className="touch-target rounded p-1 text-white/40 transition-colors hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -213,7 +213,7 @@ export default function DeckListPage() {
                     <button
                       type="button"
                       aria-label="Cancel"
-                      className="absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
+                      className="touch-target absolute left-2 top-2 z-10 text-white/40 hover:text-white/70 transition-colors"
                       onClick={() => {
                         setIsCreating(false);
                         setNewDeckName('');
@@ -341,7 +341,7 @@ export default function DeckListPage() {
                           <button
                             type="button"
                             aria-label={`Archive ${deck.name}`}
-                            className="relative touch-target rounded p-1 text-white/40 hover:text-white transition-colors"
+                            className="touch-target rounded p-1 text-white/40 hover:text-white transition-colors"
                           >
                             <Archive className="size-4" />
                           </button>

@@ -149,7 +149,7 @@ export function CardVersionsDialog({
                           setIsConfirming(true);
                         }}
                         disabled={restore.isPending}
-                        className="shrink-0 cursor-pointer rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 disabled:cursor-default disabled:opacity-50"
+                        className="shrink-0 cursor-pointer rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 disabled:cursor-default disabled:opacity-50 pointer-coarse:min-h-touch"
                       >
                         Restore
                       </button>

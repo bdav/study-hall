@@ -8,7 +8,7 @@ import { MarkKnownDialog } from '@/components/MarkKnownDialog';
 import { type StudyDirection } from '@/lib/directions';
 
 const actionClassName =
-  'inline-flex items-center text-white/60 transition-colors hover:text-white disabled:pointer-events-none disabled:opacity-40';
+  'touch-target inline-flex items-center text-white/60 transition-colors hover:text-white disabled:pointer-events-none disabled:opacity-40';
 
 /**
  * The Cards tab's toolbar while selecting cards: how many are selected,
@@ -64,7 +64,7 @@ export function CardSelectionBar({
 
   return (
     // Wraps rather than running off the left or squeezing its actions
-    <div className="mr-4 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm whitespace-nowrap">
+    <div className="mr-4 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm whitespace-nowrap pointer-coarse:gap-y-5">
       <span className="text-white/70">{count} selected</span>
       <button
         type="button"

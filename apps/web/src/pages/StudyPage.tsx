@@ -96,7 +96,7 @@ function isPageEnter(e: KeyboardEvent) {
 }
 
 const flipButtonClasses =
-  'absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
+  'touch-target absolute right-3 top-3 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80';
 
 // The main text's class on both faces, which the card's anchor holds at
 // one height (#123); CardStack's anchor assumes its text-3xl. A long word
@@ -279,7 +279,7 @@ function CardBack({
         (canAccept || knownState || onMarkKnown || retiring) && (
           <div
             data-card-part="actions"
-            className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70"
+            className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm text-white/70 pointer-coarse:gap-y-5"
           >
             {canAccept && (
               <button
@@ -289,7 +289,7 @@ function CardBack({
                   e.stopPropagation();
                   onAcceptAnswer();
                 }}
-                className="relative touch-target underline hover:text-white disabled:opacity-50"
+                className="touch-target underline hover:text-white disabled:opacity-50"
               >
                 My answer was correct
               </button>
@@ -303,7 +303,7 @@ function CardBack({
                     e.stopPropagation();
                     retiring.undo();
                   }}
-                  className="relative touch-target underline hover:text-white"
+                  className="touch-target underline hover:text-white"
                 >
                   Undo
                 </button>
@@ -316,7 +316,7 @@ function CardBack({
                   e.stopPropagation();
                   retiring.ask();
                 }}
-                className="relative touch-target underline hover:text-white"
+                className="touch-target underline hover:text-white"
               >
                 Retire this card?
               </button>
@@ -333,7 +333,7 @@ function CardBack({
                     e.stopPropagation();
                     onMarkKnown();
                   }}
-                  className="relative touch-target underline hover:text-white"
+                  className="touch-target underline hover:text-white"
                 >
                   Mark known
                 </button>
@@ -568,7 +568,7 @@ function UnretireMissed({
       <ul className="mt-2 flex flex-col gap-1">
         {cards.map((card) => (
           <li key={card.id}>
-            <label className="flex cursor-pointer items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-2 pointer-coarse:min-h-touch">
               <input
                 type="checkbox"
                 className="size-4 accent-white"
@@ -910,7 +910,7 @@ export default function StudyPage() {
         <Link
           to={`/decks/${deckId}/cards`}
           state={location.state}
-          className="mt-2 text-white/80 underline hover:text-white"
+          className="touch-target mt-2 text-white/80 underline hover:text-white"
         >
           Add cards
         </Link>
@@ -999,7 +999,7 @@ export default function StudyPage() {
               id={startAnotherId}
               autoFocus
               onClick={startAnother}
-              className={`cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none ${active?.id === startAnotherId ? KEYBOARD_ENTER_GLOW : ''}`}
+              className={`touch-target cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none ${active?.id === startAnotherId ? KEYBOARD_ENTER_GLOW : ''}`}
             >
               Start another session
             </button>
@@ -1197,7 +1197,7 @@ export default function StudyPage() {
                 disabled={!canEdit}
                 title="Edit card"
                 onClick={() => startEditing()}
-                className="relative touch-target rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
+                className="touch-target rounded p-1 text-white/40 transition-colors enabled:hover:bg-white/10 enabled:hover:text-white/80"
               >
                 <Pencil className="h-4 w-4" />
               </button>
@@ -1280,11 +1280,11 @@ export default function StudyPage() {
           )}
 
           {isAnswering && (
-            <div className="mt-2 text-center">
+            <div className="mt-2 text-center pointer-coarse:mt-5">
               <button
                 type="button"
                 onClick={act.dontKnow}
-                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+                className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 I don't know
               </button>
@@ -1404,11 +1404,11 @@ export default function StudyPage() {
           ) : null}
 
           {isIdle && resumable && (
-            <div className="mt-2 text-center">
+            <div className="mt-2 text-center pointer-coarse:mt-5">
               <button
                 type="button"
                 onClick={act.abandon}
-                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+                className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 Abandon session
               </button>
@@ -1416,11 +1416,11 @@ export default function StudyPage() {
           )}
 
           {(isAnswering || isGraded) && (
-            <div className="mt-2 text-center">
+            <div className="mt-2 text-center pointer-coarse:mt-5">
               <button
                 type="button"
                 onClick={act.finish}
-                className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+                className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
                 Finish session
               </button>

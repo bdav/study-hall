@@ -29,7 +29,7 @@ export function AiSpendSummary() {
         <Link
           to="/ai-usage"
           state={FROM_COURSES}
-          className="text-white/70 underline underline-offset-2 hover:text-white"
+          className="touch-target text-white/70 underline underline-offset-2 hover:text-white"
         >
           See AI usage
         </Link>

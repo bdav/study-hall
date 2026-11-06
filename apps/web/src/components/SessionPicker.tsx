@@ -151,7 +151,7 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
               setTyped(null);
               onChange(null);
             }}
-            className="cursor-pointer text-sm text-white/50 underline hover:text-white/80"
+            className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
           >
             Clear date
           </button>

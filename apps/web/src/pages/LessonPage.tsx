@@ -45,6 +45,7 @@ import {
 import { ItemCount } from '@/components/ItemCount';
 import { LessonFrame } from '@/components/LessonFrame';
 import {
+  HEADER_ICON_BUTTON,
   HEADER_MENU_ITEM,
   HeaderMenu,
   PinnedHeader,
@@ -215,8 +216,6 @@ const EXPLAINED_ERRORS = [
 ];
 
 /** The header's icon-only buttons. */
-const ICON_BUTTON =
-  'rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white';
 
 /**
  * A choice between a few ways of showing a step, such as the reading view
@@ -332,7 +331,7 @@ function WrittenLessonHeader({
           </div>
         )}
         <CompletionToggle lesson={lesson} />
-        <HeaderMenu triggerClassName={ICON_BUTTON}>
+        <HeaderMenu triggerClassName={HEADER_ICON_BUTTON}>
           {/* The header has no room for the toggle on narrow screens */}
           <div className="sm:hidden">
             <CompletionMenuItem lesson={lesson} className={HEADER_MENU_ITEM} />
@@ -1020,7 +1019,7 @@ function WrittenLesson({
           ? setIsTutorBesideOpen(!isTutorBesideOpen)
           : setIsTutorDrawerOpen(!isTutorDrawerOpen)
       }
-      className={`shrink-0 ${ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
+      className={`shrink-0 ${HEADER_ICON_BUTTON} ${isTutorOpen ? 'bg-white/15 text-white' : ''}`}
     >
       <MessageCircle className="size-5" />
     </button>
@@ -1051,7 +1050,7 @@ function WrittenLesson({
           aria-label="Open outline"
           // With the tutor beside the lesson, the outline is a drawer until
           // the screen has room for both
-          className={`${tutorPanel && isTutorOpen ? 'xl:hidden' : 'md:hidden'} ${ICON_BUTTON}`}
+          className={`${tutorPanel && isTutorOpen ? 'xl:hidden' : 'md:hidden'} ${HEADER_ICON_BUTTON}`}
         >
           <Menu className="size-5" />
         </SheetTrigger>
