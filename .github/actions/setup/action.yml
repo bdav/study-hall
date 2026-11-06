@@ -1,0 +1,23 @@
+# What every CI job does before its check. A local action, so each job checks
+# the repository out first.
+name: Set up
+description: Install pnpm, Node and the dependencies, and generate the Prisma client
+
+runs:
+  using: composite
+  steps:
+    # The pnpm version comes from packageManager in package.json.
+    - uses: pnpm/action-setup@v6
+
+    # Caches the pnpm store, keyed on the lockfile.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Generate the Prisma client
+      run: pnpm prisma generate
+      shell: bash

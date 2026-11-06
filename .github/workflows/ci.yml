@@ -1,6 +1,8 @@
 # Typecheck, lint and both test suites on every push to main and every pull
-# request (#104). The repository is public: this workflow uses no secrets, and
-# never runs on pull_request_target, so a fork's pull request can't reach any.
+# request (#104), each in a job of its own, so they run side by side and one
+# failing doesn't stop the others (#131). The repository is public: this
+# workflow uses no secrets, and never runs on pull_request_target, so a fork's
+# pull request can't reach any.
 name: CI
 
 on:
@@ -15,10 +17,39 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# prisma.config.ts reads it, so even generating the client needs it. It matches
+# Docker Compose's database, as the API tests' Postgres does.
+env:
+  DATABASE_URL: postgresql://flashcards:flashcards@localhost:5432/flashcards
+
 jobs:
-  check:
+  typecheck:
     # Pinned, not ubuntu-latest, so a newer Ubuntu arrives in a commit CI
     # checks, not silently when GitHub moves ubuntu-latest (#111).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  web-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter web test run
+
+  api-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -39,40 +70,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
-    env:
-      DATABASE_URL: postgresql://flashcards:flashcards@localhost:5432/flashcards
-
     steps:
       - uses: actions/checkout@v7
-
-      # The pnpm version comes from packageManager in package.json.
-      - uses: pnpm/action-setup@v6
-
-      # Caches the pnpm store, keyed on the lockfile.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Generate the Prisma client
-        id: generate
-        run: pnpm prisma generate
-
-      # Each check runs even when one before it fails, so a run reports them all.
-      - name: Typecheck
-        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
-        run: pnpm typecheck
-
-      - name: Lint
-        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
-        run: pnpm lint
-
-      - name: Web tests
-        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
-        run: pnpm --filter web test run
-
-      - name: API tests
-        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
-        run: pnpm --filter api test
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter api test

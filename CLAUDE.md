@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 33/54 planned issues**
+**Completed: 34/55 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -30,6 +30,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #104 Run typecheck, lint and both test suites on every push
    - [x] #110 Move CI's actions off Node 20
    - [x] #111 Pin CI's runner to Ubuntu 24.04
+   - [x] #131 Run CI's checks in parallel jobs
 4. Review and scheduling
    - [x] #97 Rename the Stable lifecycle state to Reinforcing
    - [x] #98 Card Standing: read every card's standing from one place
@@ -196,7 +197,7 @@ The v2 schema (`prisma/schema.prisma`, designed in `docs/architecture/archive/v2
 - **The study card's slide**: a card is drawn again as its slide ends, so a click during it can be lost, on CI above all. In `StudyPage.test.tsx`, look for a graded card with `findResult`, which waits until it has settled
 - **AI in tests**: pass `ai: createFakeAiProvider()` in the caller context; queue outputs with `respondWith`, streamed replies with `streamReply` (pieces, optionally refused, failing after them or held open until `holdUntil` settles), failures with `failWith('timeout' | 'connection-error' | 'api-error')`, and inspect `requests` (structured calls) and `chatRequests` (streamed ones). Stub `AI_ALLOWED_EMAILS` with `vi.stubEnv`
 - **Test fixtures**: build decks with `createDeckWithCards` from `test-helpers.ts`, which creates cards the way the app does, and give a card a history with `recordCardHistory`, which records answers at given times (Retries, a reset and Mark known too) and replays them into its progress, so progress always agrees with the attempts; prefer it to writing progress directly
-- **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: typecheck, lint, the web tests and the API tests, against a Postgres service in the job. Keep it free of secrets; the repository is public
+- **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: typecheck, lint, the web tests and the API tests, each a job of its own sharing `.github/actions/setup`, the API tests' with a Postgres service. Keep it free of secrets; the repository is public
 
 ## Planning Docs
 

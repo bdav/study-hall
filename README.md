@@ -165,7 +165,7 @@ pnpm --filter web test
 
 ### Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: it typechecks both apps, lints both apps, and runs the web tests and the API tests, the API tests against a Postgres service in the job with the same per-suite schemas as locally. A run fails if any of them fails. It needs no secrets.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: it typechecks both apps, lints both apps, and runs the web tests and the API tests, each in a job of its own, the API tests against a Postgres service in theirs with the same per-suite schemas as locally. A run fails if any of them fails, and the others still finish. It needs no secrets.
 
 ## Deployment
 
