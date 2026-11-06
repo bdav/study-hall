@@ -15,7 +15,6 @@ import {
   gradeAnswer,
   matchAnswer,
   NO_MATCH,
-  normalizeAnswer,
   type Grading,
 } from './answerGrader.js';
 
@@ -242,7 +241,6 @@ function assertUsefulVariants(answers: AnswerEdit[]) {
 function answerData(text: string, position: number) {
   return {
     text,
-    normalizedText: normalizeAnswer(text),
     isPrimary: position === 0,
     position,
   };
@@ -383,7 +381,7 @@ export async function editCard(
     const kept = new Set(card.reverseVariants.map((variant) => variant.text));
     for (const text of reverseVariants.filter((text) => !kept.has(text))) {
       await db.reverseVariant.create({
-        data: { cardId, text, normalizedText: normalizeAnswer(text) },
+        data: { cardId, text },
       });
     }
   } else if (frontChanged) {
@@ -602,11 +600,7 @@ async function replaceAnswers(
     const kept = new Set(current.map((variant) => variant.text));
     for (const text of listed.filter((text) => !kept.has(text))) {
       await db.acceptedVariant.create({
-        data: {
-          canonicalAnswerId: answerId,
-          text,
-          normalizedText: normalizeAnswer(text),
-        },
+        data: { canonicalAnswerId: answerId, text },
       });
     }
   }
@@ -650,7 +644,7 @@ export async function addAcceptedVariant(
 
   try {
     await db.acceptedVariant.create({
-      data: { canonicalAnswerId, text, normalizedText: normalizeAnswer(text) },
+      data: { canonicalAnswerId, text },
     });
   } catch (error) {
     // The same variant added concurrently, caught by its unique constraint
@@ -693,7 +687,7 @@ export async function addReverseVariant(
 
   try {
     await db.reverseVariant.create({
-      data: { cardId, text, normalizedText: normalizeAnswer(text) },
+      data: { cardId, text },
     });
   } catch (error) {
     // The same variant added concurrently, caught by its unique constraint

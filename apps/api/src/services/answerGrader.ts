@@ -1,19 +1,9 @@
 import { type RecallGrade } from '@prisma/client';
 
 /**
- * Tier 1: Deterministic answer grading via normalized string matching.
- * Future tiers (embedding similarity, LLM adjudication) will extend this.
+ * Tier 1: deterministic answer grading. The AI tiers are parked
+ * (`updated-plan.md` §29c).
  */
-
-export function normalizeAnswer(answer: string): string {
-  return answer
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // strip diacritics
-    .replace(/[^\w\s]/g, '') // strip punctuation
-    .replace(/\s+/g, ' ') // normalize whitespace
-    .trim()
-    .toLowerCase();
-}
 
 /**
  * A deterministic grade, whether it was lowered for wrong accents, the

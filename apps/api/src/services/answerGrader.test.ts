@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeAnswer, matchAnswer, normalizeAnswer } from './answerGrader.js';
+import { gradeAnswer, matchAnswer } from './answerGrader.js';
 
 describe('matchAnswer', () => {
   it('reports an Accent Mismatch when only the accents differ', () => {
@@ -44,34 +44,6 @@ describe('matchAnswer', () => {
 
   it('never matches an answer with no letters or digits', () => {
     expect(matchAnswer('?', '!')).toBe('no-match');
-  });
-});
-
-describe('normalizeAnswer', () => {
-  it('lowercases the input', () => {
-    expect(normalizeAnswer('Paris')).toBe('paris');
-  });
-
-  it('trims whitespace', () => {
-    expect(normalizeAnswer('  Paris  ')).toBe('paris');
-  });
-
-  it('strips punctuation', () => {
-    expect(normalizeAnswer('Paris.')).toBe('paris');
-    expect(normalizeAnswer('Paris!')).toBe('paris');
-    expect(normalizeAnswer("it's")).toBe('its');
-  });
-
-  it('normalizes internal whitespace', () => {
-    expect(normalizeAnswer('New   York')).toBe('new york');
-  });
-
-  it('handles empty string', () => {
-    expect(normalizeAnswer('')).toBe('');
-  });
-
-  it('handles string with only punctuation and spaces', () => {
-    expect(normalizeAnswer('...  !!! ')).toBe('');
   });
 });
 

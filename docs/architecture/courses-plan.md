@@ -240,7 +240,7 @@ Tests: ownership, proposal edit operations, the accept transaction, archive filt
 **A5: Exercises and attempts (backend)**
 
 - Exercise Attempt model attached to a Lesson Version.
-- Deterministic evaluation reusing `normalizeAnswer`, with accent-mismatch detection.
+- Deterministic evaluation reusing `matchAnswer`, with accent-mismatch detection.
 - LLM evaluation for Open Exercises only: free-form explanations, and open short answers that match no expected answer (ADR-0005). Explanations are judged on their Essential Points (ADR-0006).
 - A judge evaluation script (`pnpm judge-eval:op`) runs fixed cases from several subjects against real models, to check the evaluation prompts and choose the model.
 - Feedback is optional per evaluation path.

@@ -220,7 +220,6 @@ model CanonicalAnswer {
   id               String            @id @default(cuid())
   cardId           String
   text             String
-  normalizedText   String?
   isPrimary        Boolean           @default(false)
   // Order among the card's answers, as the author gave them; the primary first
   position         Int               @default(0)
@@ -237,7 +236,6 @@ model AcceptedVariant {
   id                String          @id @default(cuid())
   canonicalAnswerId String
   text              String
-  normalizedText    String?
   createdAt         DateTime        @default(now())
   canonicalAnswer   CanonicalAnswer @relation(fields: [canonicalAnswerId], references: [id], onDelete: Cascade)
 
@@ -248,12 +246,11 @@ model AcceptedVariant {
 // An Accepted Variant of a card's front, accepted when it's studied in
 // Reverse (ADR-0011): each direction has its own
 model ReverseVariant {
-  id             String   @id @default(cuid())
-  cardId         String
-  text           String
-  normalizedText String?
-  createdAt      DateTime @default(now())
-  card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  cardId    String
+  text      String
+  createdAt DateTime @default(now())
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@unique([cardId, text])
   @@index([cardId])
