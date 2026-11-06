@@ -31,6 +31,7 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 | `AI_ALLOWED_EMAILS`     | Comma-separated emails that may use AI. Unset, nobody can. Never grants signup                                                 |
 | `AI_MONTHLY_CAP_USD`    | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                                    |
 | `SENTRY_DSN`            | Where the API reports server errors. Unset, it reports nothing                                                                 |
+| `RAILPACK_NODE_VERSION` | `22`, as CI runs. Railway's builder reads it first, ahead of `engines.node` in `package.json`, which Vercel reads              |
 
 **Web app, on Vercel**
 
@@ -55,7 +56,9 @@ The web app's build on Vercel is:
 DATABASE_URL=postgresql://unused pnpm prisma generate && pnpm --filter web build
 ```
 
-Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite in Vercel's config.
+Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite. All of this is in `vercel.json`, which also skips every deployment but production's, as there are no previews.
+
+Railway's commands, and Wait for CI, are its service's settings, in its dashboard. `railway.json` stops being read on 2026-12-01, and Wait for CI has no key in any config.
 
 Applied migrations are never edited or deleted, and `migrate dev` never runs in production. The seed refuses to run there: it would create an account with a known password.
 
@@ -66,6 +69,10 @@ Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no 
 An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well. Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
 
 In dev, signing up needs the same variable in `.env`, listing the email you sign up with, and an API restarted since you added it. The seed's account, `dev@example.com`, needs nothing: it's created directly and logs in as usual.
+
+## Backups
+
+None yet. Railway's own backups need its Pro plan, $20 a month against a budget of about $10, so production is on Hobby, and #133 adds a daily dump.
 
 ## Logs and error reports
 

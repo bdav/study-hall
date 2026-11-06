@@ -1,0 +1,7 @@
+{
+  "framework": "vite",
+  "buildCommand": "DATABASE_URL=postgresql://unused pnpm prisma generate && pnpm --filter web build",
+  "outputDirectory": "apps/web/dist",
+  "ignoreCommand": "[ \"$VERCEL_ENV\" != production ]",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
