@@ -628,6 +628,78 @@ describe('cardRouter', () => {
     });
   });
 
+  describe('update saying whether it reset progress', () => {
+    type Answer = { id: string; text: string };
+    type Edit = Omit<
+      Parameters<ReturnType<typeof createCaller>['card']['update']>[0],
+      'cardId'
+    >;
+    const cases: [string, (answers: [Answer, Answer]) => Edit, boolean][] = [
+      ['a changed front', () => ({ front: 'New Q' }), true],
+      [
+        "a changed answer's text",
+        ([first, second]) => ({
+          canonicalAnswers: [{ id: first.id, text: 'New A' }, second],
+        }),
+        true,
+      ],
+      [
+        'an added answer',
+        (answers) => ({ canonicalAnswers: [...answers, { text: 'New A' }] }),
+        true,
+      ],
+      ['a removed answer', ([first]) => ({ canonicalAnswers: [first] }), true],
+      [
+        'another primary',
+        ([first, second]) => ({ canonicalAnswers: [second, first] }),
+        false,
+      ],
+      [
+        'changed Accepted Variants',
+        ([first, second]) => ({
+          canonicalAnswers: [{ ...first, acceptedVariants: ['Ay'] }, second],
+        }),
+        false,
+      ],
+      [
+        'changed Reverse Variants',
+        () => ({ reverseVariants: ['The Q'] }),
+        false,
+      ],
+      [
+        'nothing changed',
+        (answers) => ({ front: 'Old Q', canonicalAnswers: answers }),
+        false,
+      ],
+    ];
+
+    it.each(cases)('after %s', async (_name, edit, resets) => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        cards: [{ front: 'Old Q', canonicalAnswers: ['A', 'B'] }],
+      });
+      await prisma.deck.update({
+        where: { id: deck.id },
+        data: { reversible: true },
+      });
+      const [card] = deck.cards;
+      const [first, second] = card.canonicalAnswers;
+      const { resetAt } = await progressOf(card.id);
+
+      const updated = await createCaller().card.update({
+        cardId: card.id,
+        ...edit([
+          { id: first.id, text: first.text },
+          { id: second.id, text: second.text },
+        ]),
+      });
+
+      expect(updated.progressReset).toBe(resets);
+      // What it says is what happened
+      expect((await progressOf(card.id)).resetAt > resetAt).toBe(resets);
+    });
+  });
+
   describe('delete', () => {
     it('deletes a card', async () => {
       const deck = await createDeckWithCards(prisma, {

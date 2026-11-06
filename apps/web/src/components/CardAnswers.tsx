@@ -34,7 +34,7 @@ export function CardAnswers({
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
+  onSaved?: (card: Flashcard, progressReset: boolean) => void;
   /** The summary can't be chosen, as while the Cards tab is selecting. */
   disabled?: boolean;
   className?: string;
@@ -155,13 +155,13 @@ function AnswersForm({
   card: Flashcard;
   reversible: boolean;
   onDone: () => void;
-  onSaved?: (card: Flashcard, resetsProgress: boolean) => void;
+  onSaved?: (card: Flashcard, progressReset: boolean) => void;
 }) {
   const form = useAnswersForm(card);
   const utils = trpc.useUtils();
   const update = trpc.card.update.useMutation({
     onSuccess: (updated) => {
-      onSaved?.(toFlashcard(updated), form.resetsProgress);
+      onSaved?.(toFlashcard(updated), updated.progressReset);
       utils.card.listByDeck.invalidate({ deckId });
       utils.deck.getById.invalidate({ id: deckId });
       onDone();

@@ -333,6 +333,8 @@ export async function createCards(
  * An edit from a revision of the deck (ADR-0007) records its model and
  * prompt version on the Card Version it starts, and one restoring an
  * earlier version (#54) that version's number.
+ * Returns the card, and in `progressReset` whether this edit reset its
+ * progress, which only the API decides (#126).
  */
 export async function editCard(
   db: Db,
@@ -390,7 +392,8 @@ export async function editCard(
   }
 
   const edited = await cardWithAnswers(db, cardId);
-  if (frontChanged || answersChanged) {
+  const progressReset = frontChanged || answersChanged;
+  if (progressReset) {
     const resetAt = new Date();
     await resetCardProgress(db, { cardId, resetAt });
     // The version this edit ends keeps the variants it had (#51)
@@ -420,7 +423,7 @@ export async function editCard(
     });
   }
 
-  return edited;
+  return { ...edited, progressReset };
 }
 
 /**

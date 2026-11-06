@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 32/54 planned issues**
+**Completed: 33/54 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -53,7 +53,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #108 Request logs and error reports
    - [x] #124 Size every shared control for touch from one named size
    - [x] #125 Bring every hand-built control up to the touch size
-   - [ ] #126 Have a card save say whether it reset progress
+   - [x] #126 Have a card save say whether it reset progress
    - [ ] #127 Pin the web's duplicate-answer check to matchAnswer
    - [ ] #128 Remove normalizeAnswer and the unread normalizedText columns
    - [ ] #113 Steady every page that refetches in place

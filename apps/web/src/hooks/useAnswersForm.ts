@@ -158,9 +158,6 @@ export function useAnswersForm(card: Flashcard) {
       })),
     );
   const isChanged = answersChanged || reverseVariantsChanged;
-  const sorted = (list: string[]) => [...list].sort().join('\n');
-  // Choosing another primary, or changing variants, keeps the card's progress
-  const resetsProgress = sorted(texts(edits)) !== sorted(texts(card.answers));
 
   return {
     answers,
@@ -184,7 +181,6 @@ export function useAnswersForm(card: Flashcard) {
     /** All the front's Reverse Variants, once changed; none otherwise. */
     reverseEdits: reverseVariantsChanged ? reverseEdits : undefined,
     isChanged,
-    resetsProgress,
     canSave:
       edits.length > 0 &&
       !answers.some((answer) => answer.variants.some(isSameAsAnswer)),

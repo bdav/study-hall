@@ -261,8 +261,24 @@ function cardOneWithVariants(variants: { id: string; text: string }[]) {
   };
 }
 
-/** Card edits and deletions that succeed, answering the way the API does. */
-function mockCardMutations() {
+/** What a card asks, which changing resets its progress. */
+function whatCardAsks(front: string, answers: { text: string }[]) {
+  return [front, ...answers.map((answer) => answer.text).sort()].join('\n');
+}
+
+/**
+ * Card edits and deletions that succeed, answering the way the API does,
+ * or saying `progressReset` of every save when it's given.
+ */
+function mockCardMutations({
+  progressReset,
+}: { progressReset?: boolean } = {}) {
+  const asked = new Map(
+    mockDeck.cards.map((card) => [
+      card.id,
+      whatCardAsks(card.front, card.canonicalAnswers),
+    ]),
+  );
   vi.mocked(trpc.card.update.useMutation).mockImplementation(((
     opts?: UpdateOptions,
   ) => ({
@@ -275,14 +291,18 @@ function mockCardMutations() {
           text: string;
           acceptedVariants?: string[];
         }[];
-      }) =>
-        opts?.onSuccess?.(
+      }) => {
+        // An update without a front keeps the card's
+        const front =
+          input.front ??
+          mockDeck.cards.find((card) => card.id === input.cardId)!.front;
+        const asks = whatCardAsks(front, input.canonicalAnswers);
+        const reset = progressReset ?? asks !== asked.get(input.cardId);
+        asked.set(input.cardId, asks);
+        return opts?.onSuccess?.(
           {
             id: input.cardId,
-            // An update without a front keeps the card's
-            front:
-              input.front ??
-              mockDeck.cards.find((card) => card.id === input.cardId)?.front,
+            front,
             canonicalAnswers: input.canonicalAnswers.map((answer, i) => ({
               id: answer.id ?? `answer-new-${i}`,
               text: answer.text,
@@ -292,11 +312,13 @@ function mockCardMutations() {
                 text,
               })),
             })),
+            progressReset: reset,
           } as never,
           input as never,
           undefined,
           {} as never,
-        ),
+        );
+      },
     ),
     isPending: false,
   })) as unknown as typeof trpc.card.update.useMutation);
@@ -1793,6 +1815,36 @@ describe('StudyPage', () => {
           "Graded before you edited this card. It doesn't count toward the card's progress.",
         ),
       ).toBeInTheDocument();
+    });
+
+    it('calls the card edited when its save says that reset its progress', async () => {
+      mockCardMutations({ progressReset: true });
+      const user = await startStudying();
+      await answerCard(user);
+
+      await startEditing(user);
+      await user.type(
+        screen.getByLabelText('New accepted variant of 4'),
+        'IV{Enter}',
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(screen.getByText(/graded before you edited/i)).toBeInTheDocument();
+    });
+
+    it("doesn't call the card edited when its save says nothing was reset", async () => {
+      mockCardMutations({ progressReset: false });
+      const user = await startStudying();
+      await answerCard(user);
+
+      await startEditing(user);
+      await user.clear(screen.getByLabelText('Answer 1'));
+      await user.type(screen.getByLabelText('Answer 1'), 'four{Enter}');
+
+      expect(screen.getByTestId('correct-answer')).toHaveTextContent('four');
+      expect(
+        screen.queryByText(/graded before you edited/i),
+      ).not.toBeInTheDocument();
     });
 
     it("doesn't call the card edited when only its primary answer changes", async () => {

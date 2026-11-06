@@ -18,10 +18,10 @@ const flipButtonClasses =
  * The card being studied in edit mode, the one in play or one reviewed: its
  * front view edits the front and its back view the answers, in place, as
  * on the deck's Cards tab. Front and answers save together with Save, and
- * changing the front or the answers' texts resets the card's progress and
- * keeps its attempts (ADR-0004), going to `onEdited`; a Save that resets
- * nothing, like choosing another primary or changing Accepted Variants,
- * goes to `onChanged`. Cancel drops the edits; Delete, once confirmed,
+ * the save says whether it reset the card's progress, keeping its attempts
+ * (ADR-0004): one that did goes to `onEdited`, and one that reset nothing,
+ * like choosing another primary or changing Accepted Variants, to
+ * `onChanged`. Cancel drops the edits; Delete, once confirmed,
  * removes the card; Mark known, there when `canMarkKnown` (not for a card
  * known already), marks it known (ADR-0009) in the Study Direction being
  * studied (ADR-0011), going to `onMarkedKnown`, and
@@ -70,7 +70,6 @@ export function StudyCardEditor({
   const [isShowingHistory, setIsShowingHistory] = useState(false);
   const form = useAnswersForm(card);
   const frontId = useId();
-  const frontChanged = front.trim() !== card.front;
 
   function refreshDeck() {
     utils.deck.getById.invalidate({ id: deckId });
@@ -81,7 +80,7 @@ export function StudyCardEditor({
   const update = trpc.card.update.useMutation({
     onSuccess: (updated) => {
       const edited = toFlashcard(updated);
-      if (frontChanged || form.resetsProgress) onEdited(edited);
+      if (updated.progressReset) onEdited(edited);
       else onChanged(edited);
       refreshDeck();
       onDone();
@@ -118,7 +117,7 @@ export function StudyCardEditor({
   function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!canSave) return;
-    if (!frontChanged && !form.isChanged) {
+    if (front.trim() === card.front && !form.isChanged) {
       onDone();
       return;
     }
