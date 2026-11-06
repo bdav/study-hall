@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { trpc } from '@/lib/trpc';
@@ -10,12 +11,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const me = trpc.auth.me.useQuery();
 
   const login = trpc.auth.login.useMutation({
-    onSuccess: () => {
-      utils.auth.me.invalidate();
+    onSuccess: async () => {
+      // All that's cached is from before: another account's data, and queries
+      // that failed once the session ended, which pages would show as errors
+      await queryClient.resetQueries();
       navigate('/');
     },
   });

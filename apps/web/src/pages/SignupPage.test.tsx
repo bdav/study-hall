@@ -8,9 +8,6 @@ import { trpc } from '@/lib/trpc';
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
-    useUtils: vi.fn(() => ({
-      auth: { me: { invalidate: vi.fn() } },
-    })),
     auth: {
       me: { useQuery: vi.fn() },
       signup: { useMutation: vi.fn() },

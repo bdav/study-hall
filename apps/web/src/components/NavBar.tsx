@@ -48,10 +48,13 @@ export function NavBar() {
   const me = trpc.auth.me.useQuery();
   const canUseAI = Boolean(me.data?.user?.canUseAI);
   const logout = trpc.auth.logout.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       // A course left half set up isn't the next account's
       forgetNewCourse();
-      utils.auth.me.invalidate();
+      // Known at once, not refetched: the login page sends back whoever it
+      // still sees logged in, to pages that now fail
+      await utils.auth.me.cancel();
+      utils.auth.me.setData(undefined, { user: null });
       navigate('/login');
     },
     onError: () => {

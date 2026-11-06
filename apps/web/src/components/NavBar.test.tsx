@@ -9,7 +9,7 @@ import { trpc } from '@/lib/trpc';
 vi.mock('@/lib/trpc', () => ({
   trpc: {
     useUtils: vi.fn(() => ({
-      auth: { me: { invalidate: vi.fn() } },
+      auth: { me: { cancel: vi.fn(), setData: vi.fn() } },
     })),
     auth: {
       logout: { useMutation: vi.fn() },
@@ -150,7 +150,7 @@ describe('NavBar', () => {
     expect(mockMutate).toHaveBeenCalled();
   });
 
-  it('forgets a new course left half set up on logging out, so the next account starts afresh', () => {
+  it('forgets a new course left half set up on logging out, so the next account starts afresh', async () => {
     sessionStorage.setItem('new-course:stage', '{"step":"interview"}');
     sessionStorage.setItem(
       'new-course:interview',
@@ -159,8 +159,8 @@ describe('NavBar', () => {
     renderNavBar();
 
     const options = vi.mocked(trpc.auth.logout.useMutation).mock
-      .lastCall![0] as { onSuccess: () => void };
-    options.onSuccess();
+      .lastCall![0] as { onSuccess: () => Promise<void> };
+    await options.onSuccess();
 
     expect(sessionStorage.getItem('new-course:stage')).toBeNull();
     expect(sessionStorage.getItem('new-course:interview')).toBeNull();
