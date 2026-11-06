@@ -81,7 +81,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [ ] Triage #76 cards from uploaded files, once live AI costs are known (with the maintainer; stop and ask)
    - [ ] #32 Explore: switchable visual themes (with the maintainer; stop and ask)
 
-**Waiting on design or triage**, outside the order until a session gives them a slot: none at the moment.
+**Waiting on design or triage**, outside the order until a session gives them a slot: #132 how grading treats marks that don't compose.
 
 Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
