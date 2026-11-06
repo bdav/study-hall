@@ -60,7 +60,8 @@ export function toFlashcard(card: {
 /**
  * Whether two answers grade as the same, the way `matchAnswer` on the API
  * finds an exact match: case, punctuation and extra whitespace never matter,
- * accents and the spaces between words do. The API has the final say.
+ * accents and the spaces between words do. A hand copy, held to `matchAnswer`
+ * on a table of answers in `cards.test.ts`.
  */
 export function isSameAnswer(a: string, b: string) {
   const form = (answer: string) =>
