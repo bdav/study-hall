@@ -416,9 +416,11 @@ function mockQueuePreview(
     nextDueAt: null,
     cramPace: null,
   },
+  { isPlaceholderData = false } = {},
 ) {
   vi.mocked(trpc.study.queuePreview.useQuery).mockReturnValue({
     data: preview,
+    isPlaceholderData,
   } as unknown as ReturnType<typeof trpc.study.queuePreview.useQuery>);
 }
 
@@ -687,6 +689,71 @@ describe('StudyPage', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText('Nothing due · 2 in deck')).toBeInTheDocument();
     expect(screen.getByText(/next card due .*oct 28/i)).toBeInTheDocument();
+  });
+
+  it("keeps what the title card says, marked busy, while another option's preview loads", () => {
+    setupBasicMocks();
+    mockQueuePreview(
+      { sessionSize: 1, dueCount: 1, newCount: 0, nextDueAt: null },
+      { isPlaceholderData: true },
+    );
+    renderStudyPage();
+
+    const details = screen.getByText('1 to study · 2 in deck').parentElement;
+    expect(details).toHaveAttribute('aria-busy', 'true');
+    expect(details).toHaveClass('opacity-60');
+    expect(trpc.study.queuePreview.useQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
+  it("doesn't take a kept preview's nothing to study as the new option's", () => {
+    setupBasicMocks();
+    mockQueuePreview(
+      { sessionSize: 0, dueCount: 0, newCount: 0, nextDueAt: null },
+      { isPlaceholderData: true },
+    );
+    renderStudyPage();
+
+    expect(screen.getByText('Nothing due · 2 in deck')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /test deck/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+  });
+
+  it('words a kept preview for the mode it came from until the new one loads', async () => {
+    setupBasicMocks();
+    const nothingDue = {
+      sessionSize: 0,
+      dueCount: 0,
+      newCount: 0,
+      nextDueAt: '2026-10-28T17:30:00.000Z',
+    };
+    mockQueuePreview(nothingDue);
+    const user = userEvent.setup();
+    renderStudyPage();
+    expect(screen.getByText('Nothing due · 2 in deck')).toBeInTheDocument();
+
+    mockQueuePreview(nothingDue, { isPlaceholderData: true });
+    await user.click(
+      within(screen.getByRole('group', { name: 'Study mode' })).getByRole(
+        'button',
+        { name: /drill weakest/i },
+      ),
+    );
+
+    expect(screen.getByText('Nothing due · 2 in deck')).toBeInTheDocument();
+    expect(screen.getByText(/next card due .*oct 28/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing to drill/i)).not.toBeInTheDocument();
+
+    mockQueuePreview(nothingDue);
+    await user.click(screen.getByRole('button', { name: /quick/i }));
+
+    expect(
+      screen.getByText('Nothing to drill · 2 in deck'),
+    ).toBeInTheDocument();
   });
 
   it("shows the session's size on the title card once it has started", async () => {
@@ -2837,16 +2904,20 @@ describe('StudyPage', () => {
       async function renderCram(
         cramUntil: string | null = null,
         cramPace: QueuePreview['cramPace'] = null,
+        { isPlaceholderData = false } = {},
       ) {
         update.mockReset();
         setupMocksWithStartSession();
-        mockQueuePreview({
-          sessionSize: 12,
-          dueCount: 0,
-          newCount: 40,
-          nextDueAt: null,
-          cramPace,
-        });
+        mockQueuePreview(
+          {
+            sessionSize: 12,
+            dueCount: 0,
+            newCount: 40,
+            nextDueAt: null,
+            cramPace,
+          },
+          { isPlaceholderData },
+        );
         vi.mocked(trpc.deck.getById.useQuery).mockReturnValue({
           data: { ...mockDeck, cramUntil },
           isLoading: false,
@@ -3017,6 +3088,20 @@ describe('StudyPage', () => {
         expect(
           screen.getByText('12 new cards a day to see them all by 14 Dec'),
         ).toBeInTheDocument();
+      });
+
+      it('keeps the pace, marked busy, while the options chosen load theirs', async () => {
+        await renderCram(
+          '2099-12-14T00:00:00.000Z',
+          { newPerDay: 12, inSession: 12 },
+          { isPlaceholderData: true },
+        );
+
+        const pace = screen.getByText(
+          '12 new cards a day to see them all by 14 Dec',
+        );
+        expect(pace).toHaveAttribute('aria-busy', 'true');
+        expect(pace).toHaveClass('opacity-60');
       });
 
       it('says when the session holds fewer than the date needs', async () => {

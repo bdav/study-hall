@@ -2026,10 +2026,13 @@ describe('DeckCardsPage', () => {
       expect(
         within(screen.getByRole('dialog')).getByText('Card history'),
       ).toBeInTheDocument();
-      expect(trpc.card.history.useQuery).toHaveBeenCalledWith({
-        cardId: 'card-1',
-        direction: 'FORWARD',
-      });
+      expect(trpc.card.history.useQuery).toHaveBeenCalledWith(
+        {
+          cardId: 'card-1',
+          direction: 'FORWARD',
+        },
+        expect.anything(),
+      );
     });
 
     it('hides the History action while selecting cards', async () => {

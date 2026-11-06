@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { TRPCClientError } from '@trpc/client';
+import { STEADY_QUERY } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { type SessionChoice } from '@/lib/sessionChoices';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
@@ -96,6 +97,7 @@ export function useStudySession(
       // now and then for cards come due
       refetchInterval: (query) =>
         query.state.data?.sessionSize === 0 ? 60_000 : false,
+      ...STEADY_QUERY,
     },
   );
   // The deck's unfinished session, which starting resumes; not kept once
@@ -290,15 +292,19 @@ export function useStudySession(
       }
     : null;
   const preview = queuePreview.data;
+  const isPreviewKept = queuePreview.isPlaceholderData;
 
   return {
     view: studyView(machine, {
       resumable: !!resumable,
-      sessionSize: preview?.sessionSize,
+      // A preview kept from other options is only to show: they may have had
+      // nothing to study when the ones chosen do
+      sessionSize: isPreviewKept ? undefined : preview?.sessionSize,
     }),
     // What a session started now would hold, and the unfinished one, which
     // starting resumes (#10)
     preview,
+    isPreviewKept,
     resumable,
     isAcceptingAnswer: acceptAnswer.isPending,
     isUnretiring: unretireCards.isPending,

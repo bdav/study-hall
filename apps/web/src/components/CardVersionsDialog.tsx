@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { toast } from 'sonner';
+import { STEADY_QUERY, steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { answeredLine, formatDay } from '@/lib/format';
 import {
@@ -57,7 +58,11 @@ export function CardVersionsDialog({
 }) {
   const utils = trpc.useUtils();
   const [direction, setDirection] = useState(initialDirection);
-  const query = trpc.card.history.useQuery({ cardId, direction });
+  const query = trpc.card.history.useQuery(
+    { cardId, direction },
+    // The versions are the same in either direction; only the answers differ
+    STEADY_QUERY,
+  );
   const history = query.data;
   // The version last chosen to restore, kept while its confirmation closes
   const [restoring, setRestoring] = useState<{
@@ -110,7 +115,12 @@ export function CardVersionsDialog({
           </p>
         )}
         {history && (
-          <div className={`-mx-1 space-y-3 px-1 ${tallDialogBodyClassName}`}>
+          <div
+            {...steadyContent(
+              query.isPlaceholderData,
+              `-mx-1 space-y-3 px-1 ${tallDialogBodyClassName}`,
+            )}
+          >
             {history.versions.map((version) => {
               const name = `Version ${version.number}${
                 version.isCurrent ? ' (current)' : ''

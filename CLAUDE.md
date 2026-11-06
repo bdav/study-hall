@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 36/55 planned issues**
+**Completed: 37/55 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -57,7 +57,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #126 Have a card save say whether it reset progress
    - [x] #127 Pin the web's duplicate-answer check to matchAnswer
    - [x] #128 Remove normalizeAnswer and the unread normalizedText columns
-   - [ ] #113 Steady every page that refetches in place
+   - [x] #113 Steady every page that refetches in place
    - [ ] #109 Set up production (the maintainer's dashboard steps; stop and ask)
 6. Today (designed in #92, ADR-0013)
    - [ ] #114 Home at / with Today: reviews due and lessons to continue
@@ -149,7 +149,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 ## Web Rules to Know
 
 - **Touch size**: on a touch screen a control is at least the touch size, 40px, `--spacing-touch` in `index.css`, the only place it's set. `Button`, `Input`, the select and menu items, `SegmentedControl` and `Switch` apply it. Any other control with a visible box uses `pointer-coarse:min-h-touch` (and `pointer-coarse:min-w-touch` if it's icon-only), and a bare icon or text link `touch-target`, which positions it too, so a mouse sees no change. An input can't draw `touch-target`'s area, so a bare one has a `<label>` around it with the class. Tap areas never overlap: where neighbours would, space them apart with `pointer-coarse:` gaps.
-- **Steady pages**: when a query's input changes while its page stays (a picker, filter or tab on the page), keep what the page shows until the new data loads: pass `placeholderData: keepPreviousData`, and while `isPlaceholderData` show the kept content dimmed with `aria-busy`. A page's loading skeleton is for its first load only. `DeckStatsPage` is the example; #113 gives this a shared helper.
+- **Steady pages**: when a query's input changes while its page stays (a picker, filter or tab on the page), keep what the page shows until the new data loads: pass `STEADY_QUERY` and spread `steadyContent(query.isPlaceholderData, className)` on what it shows, both from `lib/steady.ts`, which dim it and mark it `aria-busy` while it's kept. A page's loading skeleton is for its first load only. Never keep data that belongs to the item on screen, like a card's history below that card, and never decide anything from kept data: it's for other input, so `useStudySession` hides a kept preview from `canStart`, and the title card words one for the mode it came from.
 
 ## TDD Workflow
 

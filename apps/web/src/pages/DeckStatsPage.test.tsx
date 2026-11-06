@@ -384,6 +384,7 @@ describe('a reversible deck (#82)', () => {
       'aria-busy',
       'true',
     );
+    expect(screen.getByTestId('deck-stats')).toHaveClass('opacity-60');
     expect(trpc.stats.deckStats.useQuery).toHaveBeenLastCalledWith(
       { deckId: 'deck-1', direction: 'FORWARD' },
       expect.objectContaining({ placeholderData: expect.any(Function) }),

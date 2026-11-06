@@ -99,6 +99,7 @@ const mockRestore = vi.fn();
 
 function mockHistory(
   unversioned: { answeredCount: number; rightCount: number } | null = null,
+  { isPlaceholderData = false } = {},
 ) {
   vi.mocked(trpc.card.history.useQuery).mockReturnValue({
     data: {
@@ -107,6 +108,7 @@ function mockHistory(
       unversioned: unversioned && { attempts: [], ...unversioned },
     },
     isError: false,
+    isPlaceholderData,
   } as unknown as ReturnType<typeof trpc.card.history.useQuery>);
 }
 
@@ -144,6 +146,19 @@ beforeEach(() => {
 });
 
 describe('CardVersionsDialog', () => {
+  it('keeps the versions shown, marked busy, while another direction loads', () => {
+    mockHistory(null, { isPlaceholderData: true });
+    renderDialog();
+
+    const versionList = versionBlock(/current/).parentElement;
+    expect(versionList).toHaveAttribute('aria-busy', 'true');
+    expect(versionList).toHaveClass('opacity-60');
+    expect(trpc.card.history.useQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
   it("lists the card's versions newest first", () => {
     renderDialog();
 

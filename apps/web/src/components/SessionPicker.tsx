@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
 import { countOf } from '@/lib/format';
+import { steadyContent } from '@/lib/steady';
 import { glassInputClassName } from '@/lib/utils';
 import { InfoTip } from '@/components/InfoTip';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,8 @@ type CramDateField = {
   value: string | null;
   /** How many NEW cards a day reach it, and how many a session takes. */
   pace: { newPerDay: number; inSession: number } | null;
+  /** The pace is from before, while the options chosen load theirs. */
+  isPaceKept: boolean;
   hasFailed: boolean;
   onChange: (value: string | null) => void;
 };
@@ -114,7 +117,13 @@ function paceMessage(
  * field gives a part-typed year, or nothing, along the way, which stays in
  * the field until it's left.
  */
-function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
+function CramDateRow({
+  value,
+  pace,
+  isPaceKept,
+  hasFailed,
+  onChange,
+}: CramDateField) {
   const id = useId();
   const [typed, setTyped] = useState<string | null>(null);
   // Today in UTC, when the API takes a date to have passed
@@ -162,7 +171,11 @@ function CramDateRow({ value, pace, hasFailed, onChange }: CramDateField) {
           Couldn't save the date. Please try again.
         </p>
       ) : (
-        message && <p className="mt-1 text-xs text-white/50">{message}</p>
+        message && (
+          <p {...steadyContent(isPaceKept, 'mt-1 text-xs text-white/50')}>
+            {message}
+          </p>
+        )
       )}
     </div>
   );

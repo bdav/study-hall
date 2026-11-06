@@ -156,6 +156,39 @@ describe('TutorPanel', () => {
     expect(items[1]).toHaveTextContent('What do you think it means?');
   });
 
+  it('keeps the thread on screen, marked busy, while another loads', () => {
+    vi.mocked(trpc.tutor.thread.useQuery).mockReturnValue({
+      ...threadData('thread-1', [
+        { role: 'LEARNER', content: 'What does ciao mean?' },
+      ]),
+      isPlaceholderData: true,
+    } as unknown as ThreadQuery);
+
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
+
+    const messages = screen.getByRole('list', { name: 'Messages' });
+    expect(messages).toHaveTextContent('What does ciao mean?');
+    expect(messages).toHaveAttribute('aria-busy', 'true');
+    expect(messages).toHaveClass('opacity-60');
+    expect(trpc.tutor.thread.useQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
+  it("doesn't offer a new thread on what a kept thread shows", () => {
+    vi.mocked(trpc.tutor.thread.useQuery).mockReturnValue({
+      ...threadData('thread-1', [
+        { role: 'LEARNER', content: 'What does ciao mean?' },
+      ]),
+      isPlaceholderData: true,
+    } as unknown as ThreadQuery);
+
+    renderPanel(<TutorPanel lessonId="lesson-1" />);
+
+    expect(screen.getByRole('button', { name: 'New thread' })).toBeDisabled();
+  });
+
   it('invites a first question while the thread is empty', () => {
     mockThread([]);
 

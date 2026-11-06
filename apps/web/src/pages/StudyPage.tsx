@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
 import { cardsCount, toFlashcard, type Flashcard } from '@/lib/cards';
@@ -652,6 +653,7 @@ export default function StudyPage() {
     view,
     act,
     preview,
+    isPreviewKept,
     resumable,
     isAcceptingAnswer,
     isUnretiring,
@@ -668,22 +670,27 @@ export default function StudyPage() {
   const titleQueueLength = isAtTitle
     ? (screen.sessionSize ?? preview?.sessionSize ?? cards.length)
     : 0;
+  // The mode the preview is for, which a kept one isn't yet the one chosen
+  const [previewMode, setPreviewMode] = useState(studyMode);
+  if (!isPreviewKept && previewMode !== studyMode) setPreviewMode(studyMode);
   const titleDetails = (
-    <TitleCardDetails
-      deckSize={cards.length}
-      sessionSize={isAtTitle ? screen.sessionSize : null}
-      preview={preview}
-      resumable={
-        isIdle && resumable
-          ? {
-              ...resumable,
-              directionLabel: labels?.[resumable.direction],
-            }
-          : null
-      }
-      studyMode={studyMode}
-      retiredCount={deck?.retiredCount ?? 0}
-    />
+    <div {...steadyContent(isPreviewKept)}>
+      <TitleCardDetails
+        deckSize={cards.length}
+        sessionSize={isAtTitle ? screen.sessionSize : null}
+        preview={preview}
+        resumable={
+          isIdle && resumable
+            ? {
+                ...resumable,
+                directionLabel: labels?.[resumable.direction],
+              }
+            : null
+        }
+        studyMode={previewMode}
+        retiredCount={deck?.retiredCount ?? 0}
+      />
+    </div>
   );
 
   const studiedItem = cardScreen?.item;
@@ -1384,6 +1391,7 @@ export default function StudyPage() {
               cramDate={{
                 value: deck.cramUntil?.slice(0, 10) ?? null,
                 pace: preview?.cramPace ?? null,
+                isPaceKept: isPreviewKept,
                 hasFailed: cramDateFailed,
                 onChange: act.setCramDate,
               }}

@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from 'react';
 import { ArrowUp, Loader2, SquarePen } from 'lucide-react';
-import { keepPreviousData } from '@tanstack/react-query';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
+import { STEADY_QUERY, steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import {
   Select,
@@ -78,7 +78,7 @@ export function TutorPanel({
   const thread = trpc.tutor.thread.useQuery(
     earlierId ? { lessonId, threadId: earlierId } : { lessonId },
     // The thread on screen, and the picker, stay while another loads
-    { placeholderData: keepPreviousData },
+    STEADY_QUERY,
   );
   const threads = thread.data?.threads ?? [];
   const current = threads.find((t) => t.isCurrent);
@@ -199,6 +199,7 @@ export function TutorPanel({
                 disabled={
                   pending !== null ||
                   startThread.isPending ||
+                  thread.isPlaceholderData ||
                   (!readingEarlier && messages.length === 0)
                 }
                 className="touch-target rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white pointer-coarse:mr-1 disabled:opacity-40 disabled:hover:bg-transparent"
@@ -226,7 +227,10 @@ export function TutorPanel({
         // clear of the messages, which line up with the header. Scrolling
         // stops at the thread's ends rather than going on to scroll the
         // page, whose scrollbar shares that edge
-        className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain ${inDrawer ? '-mr-4 pr-4' : '-mr-6 pr-6'}`}
+        {...steadyContent(
+          thread.isPlaceholderData,
+          `flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain ${inDrawer ? '-mr-4 pr-4' : '-mr-6 pr-6'}`,
+        )}
       >
         {messages.map((message) => (
           <Message key={message.id} role={message.role}>
