@@ -43,7 +43,7 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 
 A push to `main` goes through these, in order. If one fails, the ones after it don't run, and the running version stays up.
 
-1. **CI** runs typecheck, lint and both test suites (`.github/workflows/ci.yml`). The hosts deploy only once it passes.
+1. **CI** runs typecheck, lint and both test suites (`.github/workflows/ci.yml`). The hosts deploy only once it passes. CI is four jobs, so a host that waits on named checks has to name all four.
 2. **Install:** `pnpm install --frozen-lockfile`. With `NODE_ENV=production` this skips dev dependencies, so anything needed at run time, `tsx` and `prisma` included, has to be a dependency. `prepare` is `husky || true` because Husky is a dev dependency.
 3. **Build:** `pnpm prisma generate`. There's nothing else to build.
 4. **Migrate:** `pnpm db:deploy`, Railway's pre-deploy step, runs `prisma migrate deploy`. A failed migration stops the deploy.
