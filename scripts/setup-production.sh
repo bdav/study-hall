@@ -453,7 +453,7 @@ stage_domains() {
   step "Enter api.study.$DOMAIN, with the port it suggests."
   note "Railway shows a CNAME and a TXT record. Both are needed, or requests get a 404."
   say ""
-  step "Vercel: Settings → Domains → Add Domain → study.$DOMAIN."
+  step "Vercel: Settings → Domains → Add Existing → study.$DOMAIN, connected to Production."
   note "Vercel shows a CNAME, specific to this project. Keep both tabs open."
   pause "Press Enter once both are added."
   next
