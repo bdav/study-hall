@@ -61,7 +61,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #134 Stop Dependabot's failed update jobs blocking Railway's deploys
    - [x] #135 Clear the open Dependabot alerts
    - [x] #109 Set up production (the maintainer's dashboard steps; stop and ask)
-   - [ ] #133 Back up the production database daily with a scheduled dump
+   - [ ] #133 Back up the production database with Railway's backups
 6. Today (designed in #92, ADR-0013)
    - [ ] #114 Home at / with Today: reviews due and lessons to continue
    - [ ] #115 Choose which decks Today reviews
