@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 38/58 planned issues**
+**Completed: 39/58 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -59,7 +59,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #128 Remove normalizeAnswer and the unread normalizedText columns
    - [x] #113 Steady every page that refetches in place
    - [x] #134 Stop Dependabot's failed update jobs blocking Railway's deploys
-   - [ ] #135 Clear the open Dependabot alerts
+   - [x] #135 Clear the open Dependabot alerts
    - [ ] #109 Set up production (the maintainer's dashboard steps; stop and ask)
    - [ ] #133 Back up the production database daily with a scheduled dump
 6. Today (designed in #92, ADR-0013)
@@ -114,6 +114,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 
 - `pnpm --filter web build` — production build (`tsc -b && vite build`)
 - `pnpm --filter web lint` — run ESLint
+- `pnpm dlx shadcn@4 add <component>`, run in `apps/web` — add a shadcn/ui component (`components.json`); the CLI isn't a dependency, as nothing imports it
 
 ### Database
 

@@ -81,12 +81,15 @@ function ArchivedCardList({ cards }: { cards: Flashcard[] }) {
 function EditableDeckTitle({ deckId, name }: { deckId: string; name: string }) {
   const utils = trpc.useUtils();
   const [localName, setLocalName] = useState(name);
+  const [prevName, setPrevName] = useState(name);
   const [isEditing, setIsEditing] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  useEffect(() => {
+  // Follows the server's name
+  if (name !== prevName) {
+    setPrevName(name);
     setLocalName(name);
-  }, [name]);
+  }
 
   const updateDeck = trpc.deck.update.useMutation({
     onSuccess: () => {

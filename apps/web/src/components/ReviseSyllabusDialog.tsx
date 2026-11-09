@@ -58,35 +58,29 @@ type Row = { selected: boolean } & (
 
 function toRows(proposal: SyllabusRevisionProposal): Row[] {
   return [
-    ...proposal.edits.map(
-      (edit): Row => ({
-        kind: 'EDIT',
-        lessonId: edit.lessonId,
-        before: edit.before,
-        proposed: edit.after,
-        title: edit.after.title,
-        objectives: edit.after.objectives.join('\n'),
-        selected: true,
-      }),
-    ),
-    ...proposal.additions.map(
-      (addition): Row => ({
-        kind: 'ADD',
-        afterLessonId: addition.afterLessonId,
-        proposed: addition,
-        title: addition.title,
-        objectives: addition.objectives.join('\n'),
-        selected: true,
-      }),
-    ),
-    ...proposal.archives.map(
-      (archive): Row => ({
-        kind: 'ARCHIVE',
-        lessonId: archive.lessonId,
-        title: archive.title,
-        selected: true,
-      }),
-    ),
+    ...proposal.edits.map((edit): Row => ({
+      kind: 'EDIT',
+      lessonId: edit.lessonId,
+      before: edit.before,
+      proposed: edit.after,
+      title: edit.after.title,
+      objectives: edit.after.objectives.join('\n'),
+      selected: true,
+    })),
+    ...proposal.additions.map((addition): Row => ({
+      kind: 'ADD',
+      afterLessonId: addition.afterLessonId,
+      proposed: addition,
+      title: addition.title,
+      objectives: addition.objectives.join('\n'),
+      selected: true,
+    })),
+    ...proposal.archives.map((archive): Row => ({
+      kind: 'ARCHIVE',
+      lessonId: archive.lessonId,
+      title: archive.title,
+      selected: true,
+    })),
     ...(proposal.order
       ? [{ kind: 'ORDER', after: proposal.order.after, selected: true } as Row]
       : []),

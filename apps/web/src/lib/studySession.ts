@@ -67,12 +67,7 @@ export type KnownState = 'marked' | 'already';
 
 /** A server call that failed, leaving the session where it was. */
 export type Failure =
-  | 'start'
-  | 'answer'
-  | 'finish'
-  | 'accept'
-  | 'retire'
-  | 'unretire';
+  'start' | 'answer' | 'finish' | 'accept' | 'retire' | 'unretire';
 
 export type StudySessionState = {
   session: Session;

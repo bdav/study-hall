@@ -14,14 +14,12 @@ export function lessonSteps(version: {
   examples: unknown[];
 }): LessonStep[] {
   return [
-    ...version.content.map(
-      (block, index): LessonStep => ({
-        id: `section-${index + 1}`,
-        kind: 'section',
-        title: block.heading,
-        sectionIndex: index,
-      }),
-    ),
+    ...version.content.map((block, index): LessonStep => ({
+      id: `section-${index + 1}`,
+      kind: 'section',
+      title: block.heading,
+      sectionIndex: index,
+    })),
     // A version without examples has nothing to show on the step
     ...(version.examples.length > 0
       ? [{ id: 'examples', kind: 'examples', title: 'Examples' } as const]

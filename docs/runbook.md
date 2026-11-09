@@ -60,7 +60,7 @@ Its output is `apps/web/dist`. The web app imports the API's types, so its typec
 
 Railway's commands, and Wait for CI, are its service's settings, in its dashboard. `railway.json` stops being read on 2026-12-01, and Wait for CI has no key in any config.
 
-Wait for CI can't be told which checks to wait for: it waits for every GitHub Actions check suite on the commit, and skips the deploy if any fails ("CI check suite failed"). So CI is the only thing that may run Actions on `main`'s commits. Anything else that does, a scheduled workflow included, can stop a deploy whose code passed CI. This is why Dependabot's security updates are off and only its alerts are on (#134): its update jobs run as Actions on `main`'s latest commit, and fail for any alert it can't fix, as for a transitive dependency. A failed job says nothing about the code, yet it blocks the deploy, even one fixing the vulnerability the job was about. Alerts run no Actions. #135 decides whether the updates come back.
+Wait for CI can't be told which checks to wait for: it waits for every GitHub Actions check suite on the commit, and skips the deploy if any fails ("CI check suite failed"). So CI is the only thing that may run Actions on `main`'s commits. Anything else that does, a scheduled workflow included, can stop a deploy whose code passed CI. This is why Dependabot's security updates are off and only its alerts are on (#134): its update jobs run as Actions on `main`'s latest commit, and fail for any alert it can't fix, as for a transitive dependency. A failed job says nothing about the code, yet it blocks the deploy, even one fixing the vulnerability the job was about. Alerts run no Actions, and the updates stay off (#135): alerts are cleared by hand, as [Dependency alerts](#dependency-alerts) says.
 
 Applied migrations are never edited or deleted, and `migrate dev` never runs in production. The seed refuses to run there: it would create an account with a known password.
 
@@ -116,6 +116,17 @@ done
 Ten `403`s and then a `429` means the forged addresses were ignored. Eleven `403`s means a client can pick its own address, so the limits per address can be dodged, though the limit per email still holds.
 
 Then run one more signup right away from another network, such as a phone's hotspot. A `403` means addresses are counted apart. A `429` means every client shares one address, so one person could lock out everyone: `X-Real-IP` isn't reaching the API, or `NODE_ENV` isn't `production`. Fix either failure before relying on the limits.
+
+## Dependency alerts
+
+Dependabot's alerts are on and its security updates off, as [How a deploy runs](#how-a-deploy-runs) says. Clear an alert by hand, most of them being for transitive dependencies:
+
+1. `pnpm update -r`, which updates every dependency within its range, then `pnpm audit` to see what's left. It reads the same advisories as Dependabot.
+2. For what's left, take a newer version of the direct dependency that pulls it in, a major one at a time.
+3. Only then a pnpm override in `package.json`, listed here with why it's there and when it can go. There are none now.
+4. An alert for code production never runs, like lint's, can be dismissed in GitHub instead, saying so.
+
+Typecheck, lint, both test suites and the web build must pass, and the study, lesson and tutor flows still work, before it goes to `main`. Updated tooling can lint or format differently: fix what it finds in the same commit.
 
 ## Resetting a forgotten password
 
