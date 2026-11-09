@@ -372,7 +372,7 @@ stage_dependabot() {
 stage_railway_project() {
   stage "Railway: the project, with variables before any deploy"
   open_url "https://railway.com/pricing"
-  step "Be on the Hobby plan, \$5 a month."
+  step "Be on the Pro plan, \$20 a month including \$20 of usage. Hobby can't make backups."
   open_url "https://railway.com/new"
   step "GitHub repo → $REPO → choose Add variables, not Deploy Now."
   note "The build needs DATABASE_URL. If it offers one service per package, keep the API's alone."
@@ -407,8 +407,8 @@ stage_railway_settings() {
   note "Railway waits for every Actions run on the commit, CI's four jobs and anything else."
   by_hand "All of those are set?"
   say ""
-  step "Workspace → Usage → Set Usage Limits: Hard limit \$10, email alert \$8."
-  note "\$10 is the budget, and the lowest hard limit Railway allows."
+  step "Workspace → Usage → Update limits, Compute: hard limit \$20, email alert \$12."
+  note "\$20 is what Pro includes, so the bill stays \$20. The Agent limits are Railway's AI, not the app's."
   by_hand "The hard limit is set?"
   next
 }
@@ -419,6 +419,11 @@ stage_railway_deploy() {
   note "Pre-deploy applies every migration. Deploy passes once /health answers."
   step "If it fails, read the deploy's logs. The last version isn't affected: there isn't one yet."
   by_hand "The deployment is Active, with its health check passed?"
+  say ""
+  step "Postgres → Backups → Edit schedule: daily, weekly and monthly."
+  step "Enable PITR, then Deploy the staged changes. Postgres redeploys once."
+  note "The runbook's Backups section says what they keep, and how to restore."
+  by_hand "The schedule shows its next backup, and point-in-time recovery is on?"
   next
 }
 
@@ -604,8 +609,6 @@ stage_wrap_up() {
   say "Production is up. Back in Claude Code, say what happened, so #109 can close:"
   step "Anything that differed from these steps, for the runbook."
   step "Anything this wizard lists next as still to do."
-  say ""
-  note "Daily backups aren't on yet: that's #133, next in the order."
   next
 }
 

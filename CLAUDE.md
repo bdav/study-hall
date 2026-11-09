@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 40/58 planned issues**
+**Completed: 41/58 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
 
@@ -61,7 +61,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #134 Stop Dependabot's failed update jobs blocking Railway's deploys
    - [x] #135 Clear the open Dependabot alerts
    - [x] #109 Set up production (the maintainer's dashboard steps; stop and ask)
-   - [ ] #133 Back up the production database with Railway's backups
+   - [x] #133 Back up the production database with Railway's backups
 6. Today (designed in #92, ADR-0013)
    - [ ] #114 Home at / with Today: reviews due and lessons to continue
    - [ ] #115 Choose which decks Today reviews

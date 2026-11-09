@@ -74,7 +74,21 @@ In dev, signing up needs the same variable in `.env`, listing the email you sign
 
 ## Backups
 
-None yet. Railway's own backups need its Pro plan, $20 a month against a budget of about $10, so production is on Hobby, and #133 adds a daily dump.
+Railway backs up the database itself, on its Pro plan: Hobby can only view and restore backups, not make them. Pro is $20 a month including $20 of usage, with the hard limit at $20 so the bill stays there, and an email alert at $12 (#133). Both are in the Postgres service's Backups tab:
+
+- **Volume backups**, on a schedule of daily (kept 6 days), weekly (kept 27) and monthly (kept 89), or by hand with New backup. They're incremental, billed as volume storage.
+- **Point-in-time recovery**, which archives Postgres's write-ahead log to the `Postgres-PITR` bucket, so the database can go back to a chosen moment, like just before a bad `UPDATE`.
+
+They live in Railway, so they don't survive the project: deleting a volume deletes its backups.
+
+**Restoring a volume backup** goes back over the database in place. There's no restoring into a scratch database, so be sure first, and take a New backup if the current state might be wanted.
+
+1. In the Backups tab, Restore the backup. It becomes a new volume at the same mount path, and the old one stays, unattached. Nothing changes yet: the restore is staged.
+2. Details on the project canvas lists the staged changes. Check the volume being attached is the backup's, then Deploy Changes, which asks for 2FA. Postgres redeploys.
+3. The dashboard can keep spinning: reload it. Check with `railway connect postgres` and a count, and log in.
+4. Backups taken after the restored one stay on the old volume. Delete it only once the new one has a backup of its own: New backup, or wait for the schedule.
+
+This was done once on 2026-11-09, while production held only the maintainer's account, and the app worked against the restored volume. A point-in-time restore hasn't been tried.
 
 ## Logs and error reports
 
