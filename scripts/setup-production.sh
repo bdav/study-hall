@@ -437,7 +437,8 @@ stage_vercel_project() {
 
 stage_vercel_checks() {
   stage "Vercel: wait for CI"
-  step "Settings → Environments → Production: keep automatic production aliasing on."
+  step "Settings → Environments → Production → Branch Tracking: keep Auto-assign Custom Production Domains on."
+  note "It's on by default. Checks need it: it moves the domain once they pass."
   step "Settings → Build and Deployment → Deployment Checks → Add Checks → GitHub."
   step "Select all four: $CI_JOBS."
   note "It builds first, then holds the deployment off your domain until they pass."
