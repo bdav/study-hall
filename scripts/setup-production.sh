@@ -556,7 +556,7 @@ stage_sentry_errors() {
     -d '{"email":"sentry-check\u0000@example.com","password":"x"}')
   say "The API answered: $status"
   open_url "https://sentry.io/issues/"
-  by_hand "A DriverAdapterError from auth.login is in study-hall-api?"
+  by_hand "A PrismaClientKnownRequestError from routers:auth.ts, seen just now, is in study-hall-api?"
   say ""
   open_url "$WEB"
   step "In that tab, open the developer console and paste:"
