@@ -44,7 +44,7 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 
 A push to `main` goes through these, in order. If one fails, the ones after it don't run, and the running version stays up.
 
-1. **CI** runs typecheck, lint and both test suites (`.github/workflows/ci.yml`). The hosts deploy only once it passes. CI is four jobs, so a host that waits on named checks has to name all four.
+1. **CI** runs typecheck, lint and both test suites (`.github/workflows/ci.yml`). The hosts deploy only once it passes. CI is four jobs, so Vercel, which waits on named checks, names all four. Railway can't name them (below).
 2. **Install:** `pnpm install --frozen-lockfile`. With `NODE_ENV=production` this skips dev dependencies, so anything needed at run time, `tsx` and `prisma` included, has to be a dependency. `prepare` is `husky || true` because Husky is a dev dependency.
 3. **Build:** `pnpm prisma generate`. There's nothing else to build.
 4. **Migrate:** `pnpm db:deploy`, Railway's pre-deploy step, runs `prisma migrate deploy`. A failed migration stops the deploy.
@@ -59,6 +59,8 @@ DATABASE_URL=postgresql://unused pnpm prisma generate && pnpm --filter web build
 Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite. All of this is in `vercel.json`, which also skips every deployment but production's, as there are no previews.
 
 Railway's commands, and Wait for CI, are its service's settings, in its dashboard. `railway.json` stops being read on 2026-12-01, and Wait for CI has no key in any config.
+
+Wait for CI can't be told which checks to wait for: it waits for every GitHub Actions check suite on the commit, and skips the deploy if any fails ("CI check suite failed"). So CI is the only thing that may run Actions on `main`'s commits. Anything else that does, a scheduled workflow included, can stop a deploy whose code passed CI. This is why Dependabot's security updates are off and only its alerts are on (#134): its update jobs run as Actions on `main`'s latest commit, and fail for any alert it can't fix, as for a transitive dependency. A failed job says nothing about the code, yet it blocks the deploy, even one fixing the vulnerability the job was about. Alerts run no Actions. #135 decides whether the updates come back.
 
 Applied migrations are never edited or deleted, and `migrate dev` never runs in production. The seed refuses to run there: it would create an account with a known password.
 

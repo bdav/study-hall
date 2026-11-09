@@ -244,9 +244,14 @@ repo_is_pushed() {
 github_two_factor() {
   [[ "$(gh api user --jq .two_factor_authentication 2>/dev/null)" == true ]]
 }
-dependabot_is_on() {
-  gh api "repos/$REPO/vulnerability-alerts" --silent 2>/dev/null \
-    && [[ "$(gh api "repos/$REPO/automated-security-fixes" --jq .enabled 2>/dev/null)" == true ]]
+dependabot_alerts_are_on() {
+  gh api "repos/$REPO/vulnerability-alerts" --silent 2>/dev/null
+}
+dependabot_updates_are_on() {
+  [[ "$(gh api "repos/$REPO/automated-security-fixes" --jq .enabled 2>/dev/null)" == true ]]
+}
+dependabot_updates_are_off() {
+  [[ "$(gh api "repos/$REPO/automated-security-fixes" --jq .enabled 2>/dev/null)" == false ]]
 }
 cname_is() {
   [[ "$(dig +short CNAME "$1" "@$DNS" | sed 's/\.$//')" == "${2%.}" ]]
@@ -345,13 +350,19 @@ stage_sentry() {
 }
 
 stage_dependabot() {
-  stage "GitHub: Dependabot security updates"
-  say "This one the wizard can do: it turns on alerts, then updates, for $REPO."
-  if confirm "Turn them on?"; then
+  stage "GitHub: Dependabot alerts"
+  say "This one the wizard can do: it turns on Dependabot's alerts for $REPO."
+  note "Its security updates stay off: they run as Actions on main's latest commit,"
+  note "and Railway's Wait for CI waits for every Actions run there, not just CI's,"
+  note "so a failed update job stops a deploy (#134). Alerts run no Actions."
+  if confirm "Turn alerts on?"; then
     gh api -X PUT "repos/$REPO/vulnerability-alerts" --silent || warn "alerts weren't turned on"
-    gh api -X PUT "repos/$REPO/automated-security-fixes" --silent || warn "updates weren't turned on"
   fi
-  until_ok "Dependabot alerts and security updates are on" dependabot_is_on
+  until_ok "Dependabot alerts are on" dependabot_alerts_are_on
+  if dependabot_updates_are_on && confirm "Security updates are on. Turn them off?"; then
+    gh api -X DELETE "repos/$REPO/automated-security-fixes" --silent || warn "updates weren't turned off"
+  fi
+  until_ok "Dependabot security updates are off" dependabot_updates_are_off
   next
 }
 
@@ -390,7 +401,7 @@ stage_railway_settings() {
   step "Start command: pnpm start"
   step "Healthcheck path: /health"
   step "Turn on Wait for CI."
-  note "Railway waits for the whole workflow, so the four jobs count as one."
+  note "Railway waits for every Actions run on the commit, CI's four jobs and anything else."
   by_hand "All of those are set?"
   say ""
   step "Workspace → Usage → Set Usage Limits: Hard limit \$10, email alert \$8."
