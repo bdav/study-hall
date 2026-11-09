@@ -274,8 +274,11 @@ cors_allows_web() {
   grep -qi "^access-control-allow-origin: $WEB" <<<"$headers" \
     && grep -qi '^access-control-allow-credentials: true' <<<"$headers"
 }
+# The API names its one origin to every site, and a browser refuses any
+# other, so another site is refused unless the API names that site
 cors_refuses_others() {
-  ! grep -qi '^access-control-allow-origin' <<<"$(cors_headers https://example.com)"
+  ! grep -qiE '^access-control-allow-origin: (https://example\.com|\*)' \
+    <<<"$(cors_headers https://example.com)"
 }
 signup_status() {
   curl -s -o /dev/null -w '%{http_code}' -X POST "$API/trpc/auth.signup" \
