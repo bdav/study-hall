@@ -568,7 +568,7 @@ stage_sentry_errors() {
 
 stage_database() {
   stage "Reaching the database by hand"
-  say "Resetting a password needs this, and it hasn't been tried on Railway yet."
+  say "Resetting a password needs this."
   if ! command -v railway >/dev/null 2>&1; then
     if confirm "Install the Railway CLI with Homebrew?"; then
       brew install railway || warn "the Railway CLI didn't install"
@@ -577,6 +577,18 @@ stage_database() {
   if command -v railway >/dev/null 2>&1; then
     railway login || warn "railway login failed"
     railway link || warn "railway link failed"
+    say "Postgres has no public address, so railway connect tunnels over SSH, with"
+    say "a key of its own registered with Railway, and held by your SSH agent:"
+    say "run in the background, ssh can't ask for a passphrase, and times out."
+    local key=~/.ssh/id_ed25519_railway
+    if [[ ! -f $key ]] && confirm "Make that key, at $key? Give it a passphrase."; then
+      ssh-keygen -t ed25519 -C "railway study-hall" -f "$key" || warn "ssh-keygen failed"
+    fi
+    if [[ -f $key ]]; then
+      ssh-add --apple-use-keychain "$key" || warn "ssh-add failed"
+    fi
+    note "If Railway offers to register any other key, answer no."
+    say ""
     say "Next you'll be in psql, on production. Read only, this:"
     step 'select count(*) from "User";'
     step '\q to leave'

@@ -145,7 +145,14 @@ There's no password reset in the app and no email sending, so it's done by hand.
    unset NEW_PASSWORD
    ```
 
-2. Connect to the production database with `railway connect postgres`, which needs the Railway CLI, linked to the project, and `psql` on your laptop.
+2. Connect to the production database with `railway connect postgres`, which needs the Railway CLI, linked to the project, and `psql` on your laptop. Postgres has no public address, so it tunnels over SSH, with a key registered with your Railway account and held by your SSH agent. Without the agent, `ssh` runs where it can't ask for the key's passphrase, and the tunnel times out. Once per laptop, make a key for Railway alone, then add it to the agent:
+
+   ```sh
+   ssh-keygen -t ed25519 -C "railway study-hall" -f ~/.ssh/id_ed25519_railway
+   ssh-add --apple-use-keychain ~/.ssh/id_ed25519_railway
+   ```
+
+   The first `railway connect postgres` offers to register it. Register no other key. A restart empties the agent: run the `ssh-add` again, which takes the passphrase from the keychain.
 
 3. Set the hash, single quotes around it, and clear that user's login sessions, which logs them out on every device. The email is stored in lowercase, so write it that way.
 
