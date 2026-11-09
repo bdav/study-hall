@@ -10,59 +10,13 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 41/58 planned issues**
+**Completed: 0/18 planned issues**
 
-When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. The list started afresh on 2026-11-01; checked tickets are cleared out now and then, and earlier work is in closed issues and git history.
+When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. Checked tickets are cleared out now and then, last on 2026-11-09, and earlier work is in closed issues and git history.
 
 A line marked "stop and ask" is a design, triage or setup session with the maintainer, not implementation: stop there and ask them to run it. Its box is checked when the session is done, and the tickets it produces join the order right after it, or where the line says. The sections after the current one are tentative: each design or triage session's commit updates the order to match what it decided.
 
-1. Polish
-   - [x] #80 Show courses as tiles, as Flashcards shows decks
-   - [x] #93 Start another session from the title card, with its options
-   - [x] #94 Make the glow on a control mean Enter will press it
-   - [x] #95 Show edit pencils on hover and focus, not at rest
-2. Reversible decks
-   - [x] #82 Reversible decks: study a deck in either direction
-   - [x] #83 AI-suggested Direction Labels for a reversible deck
-   - [x] #84 Card-writing rule for reversible decks
-   - [x] #96 Accept either front in Reverse when cards share an answer
-3. CI
-   - [x] #104 Run typecheck, lint and both test suites on every push
-   - [x] #110 Move CI's actions off Node 20
-   - [x] #111 Pin CI's runner to Ubuntu 24.04
-   - [x] #131 Run CI's checks in parallel jobs
-4. Review and scheduling
-   - [x] #97 Rename the Stable lifecycle state to Reinforcing
-   - [x] #98 Card Standing: read every card's standing from one place
-   - [x] #99 Card Standing: change card progress only through it
-   - [x] #85 Stats on the scheduler's terms
-   - [x] #112 Card Standing: read card history's standing from it
-   - [x] #92 Design: a Today view (a grilling with the maintainer; stop and ask)
-   - [x] #102 Design: the Study Session as a state machine (a grilling with the maintainer; stop and ask)
-   - [x] #120 Study Session machine: move the session and its navigation into a pure reducer
-   - [x] #121 Study Session machine: bring the page's state in and render from one view
-   - [x] #122 Hold the study card in one place, whatever shows below it
-   - [x] #123 Hold the study card's main text in place across its faces and grades
-   - [x] #86 Suggest retiring mastered cards, and unretire them
-   - [x] #87 Cram toward a target date
-5. Go live (spec #91)
-   - [x] Triage #61 touch-sized controls (with #32's named tokens) and #103 (with the maintainer; stop and ask)
-   - [x] #105 Make the API ready to run in production
-   - [x] #106 Invite-only signup, and expired sessions cleared at login
-   - [x] #129 Lowercase emails at signup and login
-   - [x] #107 Rate limits on login, signup and every request
-   - [x] #108 Request logs and error reports
-   - [x] #124 Size every shared control for touch from one named size
-   - [x] #125 Bring every hand-built control up to the touch size
-   - [x] #126 Have a card save say whether it reset progress
-   - [x] #127 Pin the web's duplicate-answer check to matchAnswer
-   - [x] #128 Remove normalizeAnswer and the unread normalizedText columns
-   - [x] #113 Steady every page that refetches in place
-   - [x] #134 Stop Dependabot's failed update jobs blocking Railway's deploys
-   - [x] #135 Clear the open Dependabot alerts
-   - [x] #109 Set up production (the maintainer's dashboard steps; stop and ask)
-   - [x] #133 Back up the production database with Railway's backups
-6. Today (designed in #92, ADR-0013)
+1. Today (designed in #92, ADR-0013)
    - [ ] #114 Home at / with Today: reviews due and lessons to continue
    - [ ] #115 Choose which decks Today reviews
    - [ ] #116 Today's Review: one Study Session across the ticked decks
@@ -70,7 +24,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [ ] #118 Offer Today's next steps when a session or lesson ends
    - [ ] #130 Give each learner their own monthly AI cap
    - [ ] #119 Show AI spend in the site navigation
-7. Courses
+2. Courses
    - [ ] #100 Refuse answers to an earlier Lesson Version's exercises
    - [ ] #101 Lesson Version view: render a version apart from the lesson around it
    - [ ] #88 View a lesson's earlier versions, read only
@@ -79,12 +33,13 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [ ] #70 Evaluation script for the Setup Interview and syllabus prompts
    - [ ] #90 Seed data for courses and every card state
    - #41's and #42's tickets join here
-8. Later
+3. Later
    - [ ] #71 Design: adapt a course to what the learner does (a grilling with the maintainer; stop and ask)
    - [ ] Triage #76 cards from uploaded files, once live AI costs are known (with the maintainer; stop and ask)
    - [ ] #32 Explore: switchable visual themes (with the maintainer; stop and ask)
+   - [ ] Triage #132 how grading treats marks that don't compose, once a deck or course in a script like Hindi or Arabic is planned (with the maintainer; stop and ask)
 
-**Waiting on design or triage**, outside the order until a session gives them a slot: #132 how grading treats marks that don't compose.
+**Waiting on design or triage**, outside the order until a session gives them a slot: none.
 
 Work planned and deliberately not being built is listed under Parked in `docs/architecture/updated-plan.md`.
 
