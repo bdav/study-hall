@@ -200,6 +200,8 @@ describe('studyRouter', () => {
         newCount: 1,
         nextDueAt: later,
         cramPace: null,
+        // No Today's Review to end
+        wouldEnd: [],
       });
     });
 
@@ -237,6 +239,8 @@ describe('studyRouter', () => {
         newCount: 0,
         nextDueAt: soon,
         cramPace: null,
+        // No Today's Review to end
+        wouldEnd: [],
       });
     });
 
@@ -270,6 +274,8 @@ describe('studyRouter', () => {
         // Halfway through its interval
         nextDueAt: new Date(earlyAt.getTime() + 2 * day),
         cramPace: null,
+        // No Today's Review to end
+        wouldEnd: [],
       });
       expect(await caller.study.queuePreview({ deckId: deck.id })).toEqual({
         sessionSize: 0,
@@ -277,6 +283,8 @@ describe('studyRouter', () => {
         newCount: 0,
         nextDueAt: new Date(halfwayAt.getTime() + 4 * day),
         cramPace: null,
+        // No Today's Review to end
+        wouldEnd: [],
       });
     });
 

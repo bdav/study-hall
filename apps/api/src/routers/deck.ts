@@ -55,6 +55,7 @@ import {
   findOwnedDeck,
 } from '../services/decks.js';
 import { liveCramDate } from '../services/cramDate.js';
+import { skipArchivedDeckInReviews } from '../services/studySessions.js';
 
 const text = z.string().trim().min(1);
 const proposalSource = z.string().min(1).max(100);
@@ -326,7 +327,8 @@ export const deckRouter = router({
 
   /**
    * Archives a deck (#77, ADR-0003): it leaves Flashcards and keeps its
-   * cards, Card Versions, attempts, progress and Study Sessions. A Course
+   * cards, Card Versions, attempts, progress and Study Sessions, and its
+   * cards still to come in an unfinished Today's Review are skipped. A Course
    * Deck goes with its course, so it can't be archived on its own while
    * the course is active.
    */
@@ -354,6 +356,7 @@ export const deckRouter = router({
             "A course's deck goes with its course: archive the course instead.",
         });
       }
+      await skipArchivedDeckInReviews(ctx.prisma, deck.id);
 
       return { success: true };
     }),

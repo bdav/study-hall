@@ -23,12 +23,16 @@ import { assertDeckActive, assertStudiesIn } from './decks.js';
 import {
   answeredSinceReset,
   applyCardAnswer,
+  type CardStanding,
   readCardStanding,
   replayCardAnswers,
 } from './cardStanding.js';
+import { newPerDayByDates, readCramDates } from './cramDate.js';
 import {
   composeQueue,
   findQueueCandidates,
+  countPooled,
+  poolStandings,
   queueCandidates,
 } from './queueGenerator.js';
 
@@ -40,7 +44,21 @@ const withItems = {
   items: {
     orderBy: { position: 'asc' },
     include: {
-      card: { include: withCanonicalAnswers },
+      // Its deck, as a Today's Review's cards come from several (#137)
+      card: {
+        include: {
+          ...withCanonicalAnswers,
+          deck: {
+            select: {
+              id: true,
+              name: true,
+              reversible: true,
+              forwardLabel: true,
+              reverseLabel: true,
+            },
+          },
+        },
+      },
       attempts: {
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -123,6 +141,11 @@ export async function previewQueue(
     dueCount: standings.counts.due,
     newCount: standings.counts.lifecycle.NEW,
     nextDueAt: standings.nextDueAt,
+    // An unfinished Today's Review starting would end
+    wouldEnd: await findSessionsEndedBy(prisma, {
+      userId,
+      starting: { kind: 'DECK', deckId },
+    }),
     // How the Cram date paces NEW cards, and how many of them a session
     // takes, which may be fewer than the date needs (#87)
     cramPace:
@@ -141,16 +164,31 @@ export async function previewQueue(
  * old to resume, ending each at its last activity. Their queues are left
  * as they were (`updated-plan.md` §12.4).
  */
-async function abandonStaleSessions(
+function abandonStaleSessions(
   prisma: PrismaClient,
   { userId, deckId }: LearnerDeck,
   cutoff: Date,
 ) {
-  const stale = await prisma.studySession.findMany({
-    where: { userId, deckId, status: 'ACTIVE', updatedAt: { lt: cutoff } },
+  return abandonSessions(prisma, {
+    userId,
+    deckId,
+    updatedAt: { lt: cutoff },
+  });
+}
+
+/**
+ * Abandons the unfinished Study Sessions that match, each ended at its last
+ * activity, its answers and queue left as they were.
+ */
+async function abandonSessions(
+  prisma: PrismaClient,
+  where: Prisma.StudySessionWhereInput,
+) {
+  const ending = await prisma.studySession.findMany({
+    where: { ...where, status: 'ACTIVE' },
     select: { id: true, updatedAt: true },
   });
-  for (const { id, updatedAt } of stale) {
+  for (const { id, updatedAt } of ending) {
     await prisma.studySession.updateMany({
       where: { id, status: 'ACTIVE' },
       data: { status: 'ABANDONED', endedAt: updatedAt },
@@ -198,6 +236,10 @@ export async function startStudySession(
     seed,
   });
   if (queue.length === 0) return null;
+  await abandonSessions(
+    prisma,
+    sessionsSharing({ userId, starting: { kind: 'DECK', deckId } }),
+  );
 
   try {
     return await prisma.studySession.create({
@@ -230,6 +272,297 @@ export async function startStudySession(
     }
     throw error;
   }
+}
+
+/** What a starting session is: a deck's own, or Today's Review. */
+type StartingSession =
+  | { kind: 'DECK'; deckId: string }
+  | { kind: 'TODAYS_REVIEW'; deckIds: string[] };
+
+/**
+ * The learner's other unfinished sessions sharing a deck with one starting,
+ * which starting it ends (ADR-0013): for a deck's own session, a Today's
+ * Review built from its deck; for Today's Review, the ticked decks' own
+ * sessions. Two decks' own sessions share none.
+ */
+function sessionsSharing({
+  userId,
+  starting,
+}: {
+  userId: string;
+  starting: StartingSession;
+}): Prisma.StudySessionWhereInput {
+  return starting.kind === 'DECK'
+    ? {
+        userId,
+        kind: 'TODAYS_REVIEW',
+        decks: { some: { deckId: starting.deckId } },
+      }
+    : { userId, kind: 'DECK', deckId: { in: starting.deckIds } };
+}
+
+/**
+ * The unfinished sessions starting one would end, for its title card to
+ * say so beforehand: those still to resume, each with its kind and a deck's
+ * own session's deck.
+ */
+async function findSessionsEndedBy(
+  prisma: PrismaClient,
+  { userId, starting }: { userId: string; starting: StartingSession },
+) {
+  const sessions = await prisma.studySession.findMany({
+    where: {
+      ...sessionsSharing({ userId, starting }),
+      status: 'ACTIVE',
+      updatedAt: { gte: resumeCutoff() },
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true, kind: true, deck: { select: { name: true } } },
+  });
+  return sessions.map(({ id, kind, deck }) => ({
+    id,
+    kind,
+    deckName: deck?.name ?? null,
+  }));
+}
+
+/** Today's Review's choice: Review retired is a deck's alone. */
+export type ReviewChoice = {
+  sessionType: SessionType;
+  studyMode: Exclude<StudyMode, 'REVIEW_RETIRED'>;
+};
+
+/**
+ * The decks Today's Review takes: those Flashcards lists that the learner
+ * hasn't left out (#115), oldest first, the order its new cards take turns
+ * in.
+ */
+async function findTickedDeckIds(prisma: PrismaClient, userId: string) {
+  const decks = await prisma.deck.findMany({
+    where: { userId, archivedAt: null, leftOutOfToday: false },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: { id: true },
+  });
+  return decks.map((deck) => deck.id);
+}
+
+/**
+ * Today's Review's cards now in a Study Mode: one read of the ticked
+ * decks' Card Standing, in both directions, pooled (`poolStandings`), with
+ * Cram's pace toward the decks' dates counting each card once.
+ */
+async function readTodaysReview(
+  prisma: PrismaClient,
+  userId: string,
+  studyMode: ReviewChoice['studyMode'],
+  now = new Date(),
+) {
+  const deckIds = await findTickedDeckIds(prisma, userId);
+  const standings = await readCardStanding(prisma, {
+    userId,
+    deckIds,
+    studyMode,
+    now,
+  });
+  const pooled = poolStandings(standings, studyMode);
+  const newCards = pooled.cards.filter((card) => card.lifecycleState === 'NEW');
+  return {
+    deckIds,
+    nextDueAt: standings.nextDueAt,
+    pooled: {
+      ...pooled,
+      newPerDay:
+        standings.newPerDay === null
+          ? null
+          : newPerDayByDates(
+              await readCramDates(prisma, deckIds, now),
+              newCards,
+              now,
+            ),
+    },
+  };
+}
+
+/**
+ * What Today's Review of the given type and mode started now would hold
+ * (#137): its size, as starting it would compose it; its due and new cards,
+ * each card once, and how many decks they're from; when the next card on a
+ * ticked deck comes due, for when it would hold nothing; and the unfinished
+ * sessions starting it would end.
+ */
+export async function previewTodaysReview(
+  prisma: PrismaClient,
+  { userId }: { userId: string },
+  { sessionType, studyMode }: ReviewChoice,
+) {
+  const { deckIds, nextDueAt, pooled } = await readTodaysReview(
+    prisma,
+    userId,
+    studyMode,
+  );
+  const queue = composeQueue({
+    candidates: queueCandidates(pooled, studyMode),
+    sessionType,
+    studyMode,
+    seed: 0,
+  });
+  return {
+    sessionSize: queue.length,
+    ...countPooled(pooled),
+    nextDueAt,
+    wouldEnd: await findSessionsEndedBy(prisma, {
+      userId,
+      starting: { kind: 'TODAYS_REVIEW', deckIds },
+    }),
+  };
+}
+
+/** The pooled standing of each card asked, by its id. */
+function standingOf(pooled: { cards: CardStanding[] }) {
+  const cards = new Map(pooled.cards.map((card) => [card.cardId, card]));
+  return (cardId: string) => cards.get(cardId)!;
+}
+
+/** The learner's unfinished Today's Review, active since `cutoff`. */
+function resumableReview(
+  userId: string,
+  cutoff: Date,
+): Prisma.StudySessionWhereInput {
+  return {
+    userId,
+    kind: 'TODAYS_REVIEW',
+    status: 'ACTIVE',
+    updatedAt: { gte: cutoff },
+  };
+}
+
+/**
+ * The learner's unfinished Today's Review that can still be resumed,
+ * active since `cutoff`, with its queue; null when there's none.
+ */
+export function findResumableReview(
+  prisma: PrismaClient,
+  { userId }: { userId: string },
+  cutoff = resumeCutoff(),
+) {
+  return prisma.studySession.findFirst({
+    where: resumableReview(userId, cutoff),
+    include: withItems,
+  });
+}
+
+/**
+ * Skips an archived deck's cards still to come in unfinished Today's
+ * Reviews, which go on with the other decks' (#137).
+ */
+export function skipArchivedDeckInReviews(
+  tx: Prisma.TransactionClient,
+  deckId: string,
+) {
+  return tx.studySessionItem.updateMany({
+    where: {
+      status: 'PENDING',
+      card: { deckId },
+      studySession: { kind: 'TODAYS_REVIEW', status: 'ACTIVE' },
+    },
+    data: { status: 'SKIPPED' },
+  });
+}
+
+/**
+ * Starts Today's Review (ADR-0013, #137): one Study Session across the
+ * ticked decks, recording them, its queue composed from their pooled
+ * standing by the session type and mode, each card in the direction the
+ * pool chose; or resumes the learner's unfinished one if it's recent
+ * enough, abandoning one that's too old. Starting ends the ticked decks'
+ * own unfinished sessions. Returns null, and starts nothing, when no
+ * ticked deck has anything to study.
+ */
+export async function startTodaysReview(
+  prisma: PrismaClient,
+  { userId }: { userId: string },
+  {
+    sessionType,
+    studyMode,
+    seed = Math.floor(Math.random() * 2 ** 32),
+  }: ReviewChoice & { seed?: number },
+) {
+  const cutoff = resumeCutoff();
+  await abandonSessions(prisma, {
+    userId,
+    kind: 'TODAYS_REVIEW',
+    updatedAt: { lt: cutoff },
+  });
+  const resumable = await findResumableReview(prisma, { userId }, cutoff);
+  if (resumable) return resumable;
+
+  const { deckIds, pooled } = await readTodaysReview(prisma, userId, studyMode);
+  const queue = composeQueue({
+    candidates: queueCandidates(pooled, studyMode),
+    sessionType,
+    studyMode,
+    seed,
+  });
+  if (queue.length === 0) return null;
+  const asked = standingOf(pooled);
+  await abandonSessions(
+    prisma,
+    sessionsSharing({
+      userId,
+      starting: { kind: 'TODAYS_REVIEW', deckIds },
+    }),
+  );
+
+  try {
+    return await prisma.studySession.create({
+      data: {
+        userId,
+        kind: 'TODAYS_REVIEW',
+        sessionType,
+        studyMode,
+        decks: { create: deckIds.map((deckId) => ({ deckId })) },
+        items: {
+          create: queue.map((cardId, position) => ({
+            cardId,
+            direction: asked(cardId).direction,
+            position,
+          })),
+        },
+      },
+      include: withItems,
+    });
+  } catch (error) {
+    // Another start got there first: a learner has one unfinished Today's
+    // Review (StudySession_one_active_todays_review), which this resumes
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const started = await findResumableReview(prisma, { userId });
+      if (started) return started;
+    }
+    throw error;
+  }
+}
+
+/**
+ * How far the learner's unfinished Today's Review has got, for Today's
+ * tile: its cards answered or skipped out of all of them, Retries left out;
+ * null when there's none to resume.
+ */
+export async function todaysReviewProgress(
+  prisma: PrismaClient,
+  { userId }: { userId: string },
+) {
+  const review = await prisma.studySession.findFirst({
+    where: resumableReview(userId, resumeCutoff()),
+    select: { items: { where: { isRetry: false }, select: { status: true } } },
+  });
+  if (!review) return null;
+  return {
+    answered: review.items.filter((item) => item.status !== 'PENDING').length,
+    size: review.items.length,
+  };
 }
 
 /**
@@ -356,7 +689,7 @@ export async function answerItem(
           deck: { select: { archivedAt: true, reversible: true } },
         },
       },
-      studySession: { select: { status: true, studyMode: true } },
+      studySession: { select: { status: true, studyMode: true, kind: true } },
     },
   });
   if (!item) {
@@ -365,7 +698,18 @@ export async function answerItem(
       message: 'Study session card not found',
     });
   }
-  // A session started before the card's deck was archived
+  // A session started before the card's deck was archived: Today's Review
+  // skips the card, going on with the other decks' (#137)
+  if (
+    item.card.deck.archivedAt &&
+    item.studySession.kind === 'TODAYS_REVIEW' &&
+    item.studySession.status === 'ACTIVE'
+  ) {
+    await prisma.studySessionItem.updateMany({
+      where: { id: item.id, status: 'PENDING' },
+      data: { status: 'SKIPPED' },
+    });
+  }
   assertDeckActive(item.card.deck);
   if (item.studySession.status !== 'ACTIVE') {
     throw new TRPCError({

@@ -309,6 +309,7 @@ describe("a session's items, each in its own direction", () => {
       ['Spain', 'Madrid'],
     ]);
     const asia = await capitals('Asia', [['Japan', 'Tokyo']]);
+    const elsewhere = await capitals('Elsewhere', [['Peru', 'Lima']]);
     const review = await startReview([
       { cardId: europe.cards[0].id, deckId: europe.id, direction: 'FORWARD' },
       { cardId: europe.cards[1].id, deckId: europe.id, direction: 'REVERSE' },
@@ -318,15 +319,16 @@ describe("a session's items, each in its own direction", () => {
       itemId: review.items[1].id,
       userAnswer: 'Spain',
     });
-    const asiaInReverse = await createCaller().study.startSession({
-      deckId: asia.id,
+    // A deck's own session in Reverse, on a deck the review doesn't share
+    const elsewhereInReverse = await createCaller().study.startSession({
+      deckId: elsewhere.id,
       direction: 'REVERSE',
     });
 
     await createCaller().deck.update({ id: europe.id, reversible: false });
 
     expect(await statusOf(review.id)).toBe('ACTIVE');
-    expect(await statusOf(asiaInReverse!.id)).toBe('ACTIVE');
+    expect(await statusOf(elsewhereInReverse!.id)).toBe('ACTIVE');
   });
 });
 

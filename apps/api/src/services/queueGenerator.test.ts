@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { cramDueAt, cramNewPerDay } from './cramDate.js';
-import { composeQueue, type QueueCandidates } from './queueGenerator.js';
+import { type CardStanding } from './cardStanding.js';
+import {
+  composeQueue,
+  poolStandings,
+  type QueueCandidates,
+  queueCandidates,
+} from './queueGenerator.js';
 
 /** Card ids "<prefix>1" to "<prefix>n", in priority order. */
 function ids(prefix: string, n: number) {
@@ -37,6 +43,8 @@ const GOLDEN = ['L2', 'L1', 'N1', 'R2', 'R3', 'N2', 'W1', 'R1'];
 // Drill Weakest's and Cram's Quick queues for seed 42, recorded likewise
 // prettier-ignore
 const DRILL_GOLDEN = ['L3', 'L1', 'W3', 'W8', 'W7', 'W9', 'W1', 'L2', 'W4', 'W6', 'W2', 'W5'];
+// Today's Review's Quick queue for seed 42 across two decks, recorded likewise
+const REVIEW_GOLDEN = ['x1', 'y1', 'x3', 'y2', 'y3', 'x2'];
 // prettier-ignore
 const CRAM_GOLDEN = ['L3', 'R4', 'N1', 'L2', 'N2', 'L1', 'R3', 'N3', 'R2', 'N4', 'W1', 'R1'];
 
@@ -550,5 +558,185 @@ describe('Cram toward a date (#87)', () => {
 
       expect(study(20)).toEqual(study(null));
     });
+  });
+});
+
+describe("Today's Review's pooled standing (ADR-0013)", () => {
+  const now = new Date('2026-11-10T12:00:00.000Z');
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+
+  /** A card's standing in one direction, NEW and not due unless given. */
+  function standing(
+    cardId: string,
+    card: Partial<CardStanding> = {},
+  ): CardStanding {
+    return {
+      cardId,
+      deckId: 'deck-a',
+      direction: 'FORWARD',
+      lifecycleState: 'NEW',
+      masteryBand: 'fragile',
+      isKnown: false,
+      isDue: false,
+      dueAt: null,
+      isWeak: false,
+      isRetirable: false,
+      recentMisses: 0,
+      countedAnswers: { MISSED: 0, PARTIALLY_CORRECT: 0, GOOD: 0, NAILED: 0 },
+      ...card,
+    };
+  }
+
+  const dueLearning = (overdueDays: number) => ({
+    lifecycleState: 'LEARNING' as const,
+    masteryBand: 'fragile' as const,
+    isDue: true,
+    dueAt: daysAgo(overdueDays),
+  });
+  const dueReinforcing = (overdueDays: number) => ({
+    lifecycleState: 'REINFORCING' as const,
+    masteryBand: 'solid' as const,
+    isDue: true,
+    dueAt: daysAgo(overdueDays),
+  });
+
+  /**
+   * Card Standing as it reads several decks in both directions: cards deck
+   * by deck, due ones most overdue first, Weak ones as ranked.
+   */
+  function read(cards: CardStanding[]) {
+    return {
+      cards,
+      due: cards
+        .filter((card) => card.isDue)
+        .toSorted((a, b) => a.dueAt!.getTime() - b.dueAt!.getTime()),
+      weak: cards.filter((card) => card.isWeak),
+      newPerDay: null,
+    };
+  }
+
+  /** Each card the pool asks, and the direction it asks it in. */
+  const asked = (pooled: ReturnType<typeof poolStandings>) =>
+    Object.fromEntries(
+      pooled.cards.map((card) => [card.cardId, card.direction]),
+    );
+
+  it('asks each card once, in the more urgent of its directions, Forward on a tie', () => {
+    const pooled = poolStandings(
+      read([
+        // NEW Forward, due Reverse: Reverse
+        standing('a'),
+        standing('a', { direction: 'REVERSE', ...dueLearning(1) }),
+        // Both due REINFORCING: the more overdue, Reverse
+        standing('b', dueReinforcing(3)),
+        standing('b', { direction: 'REVERSE', ...dueReinforcing(5) }),
+        // Both NEW: Forward
+        standing('c'),
+        standing('c', { direction: 'REVERSE' }),
+        // Weak and due Forward, due LEARNING Reverse: LEARNING first
+        standing('d', { ...dueReinforcing(9), isWeak: true }),
+        standing('d', { direction: 'REVERSE', ...dueLearning(1) }),
+        // Studied one way only
+        standing('e', dueReinforcing(2)),
+      ]),
+      'STUDY',
+    );
+
+    expect(asked(pooled)).toEqual({
+      a: 'REVERSE',
+      b: 'REVERSE',
+      c: 'FORWARD',
+      d: 'REVERSE',
+      e: 'FORWARD',
+    });
+    // The due and Weak cards it keeps are the directions it asks
+    expect(pooled.due.map((card) => [card.cardId, card.direction])).toEqual([
+      ['b', 'REVERSE'],
+      ['e', 'FORWARD'],
+      ['a', 'REVERSE'],
+      ['d', 'REVERSE'],
+    ]);
+    expect(pooled.weak).toEqual([]);
+  });
+
+  it('counts a Weak card not yet due as urgent in Drill Weakest alone', () => {
+    const weakNotDue = standing('a', {
+      lifecycleState: 'REINFORCING',
+      masteryBand: 'developing',
+      dueAt: new Date(now.getTime() + 86_400_000),
+      isWeak: true,
+    });
+    const cards = read([weakNotDue, standing('a', { direction: 'REVERSE' })]);
+
+    expect(asked(poolStandings(cards, 'DRILL_WEAKEST'))).toEqual({
+      a: 'FORWARD',
+    });
+    expect(asked(poolStandings(cards, 'STUDY'))).toEqual({ a: 'REVERSE' });
+  });
+
+  it('takes NEW cards from each deck in turn, each in its own deck order', () => {
+    const fromDeck = (deckId: string, ids: string[]) =>
+      ids.map((cardId) => standing(cardId, { deckId }));
+
+    const { newCards } = queueCandidates(
+      poolStandings(
+        read([
+          ...fromDeck('x', ['x1', 'x2', 'x3']),
+          ...fromDeck('y', ['y1', 'y2']),
+        ]),
+        'STUDY',
+      ),
+      'STUDY',
+    );
+
+    expect(newCards).toEqual(['x1', 'y1', 'x2', 'y2', 'x3']);
+  });
+
+  it('pools due cards by urgency whatever their deck', () => {
+    const { dueReinforcing: pooledDue } = queueCandidates(
+      poolStandings(
+        read([
+          standing('x1', { deckId: 'x', ...dueReinforcing(1) }),
+          standing('x2', { deckId: 'x', ...dueReinforcing(6) }),
+          standing('y1', { deckId: 'y', ...dueReinforcing(4) }),
+        ]),
+        'STUDY',
+      ),
+      'STUDY',
+    );
+
+    expect(pooledDue).toEqual(['x2', 'y1', 'x1']);
+  });
+
+  it("composes a Quick review's queue for seed 42 as recorded", () => {
+    const pooled = poolStandings(
+      read([
+        standing('x1', { deckId: 'x', ...dueLearning(2) }),
+        standing('x1', {
+          deckId: 'x',
+          direction: 'REVERSE',
+          ...dueLearning(3),
+        }),
+        standing('x2', { deckId: 'x', ...dueReinforcing(5) }),
+        standing('x3', { deckId: 'x' }),
+        standing('x4', { deckId: 'x' }),
+        standing('y1', { deckId: 'y', ...dueReinforcing(1) }),
+        standing('y2', { deckId: 'y', ...dueReinforcing(8), isWeak: true }),
+        standing('y3', { deckId: 'y' }),
+        standing('y3', { deckId: 'y', direction: 'REVERSE' }),
+      ]),
+      'STUDY',
+    );
+
+    const queue = composeQueue({
+      candidates: queueCandidates(pooled, 'STUDY'),
+      sessionType: 'QUICK',
+      seed: 42,
+    });
+
+    expect(queue).toEqual(REVIEW_GOLDEN);
+    // x1 in Reverse, its more overdue direction
+    expect(asked(pooled).x1).toBe('REVERSE');
+    expect(new Set(queue).size).toBe(queue.length);
   });
 });

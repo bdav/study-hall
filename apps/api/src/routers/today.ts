@@ -1,7 +1,12 @@
 import { type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
-import { readCardStanding } from '../services/cardStanding.js';
+import {
+  type CardStanding,
+  readCardStanding,
+} from '../services/cardStanding.js';
+import { countPooled, poolStandings } from '../services/queueGenerator.js';
+import { todaysReviewProgress } from '../services/studySessions.js';
 import { liveCramDate } from '../services/cramDate.js';
 import { deckNotFoundError } from '../services/decks.js';
 import { continueTarget } from '../services/syllabus.js';
@@ -129,11 +134,28 @@ export const todayRouter = router({
     });
 
     // Every deck's cards, both ways a Reversible Deck is studied, in one read
-    const { cards, nextDueAt } = await readCardStanding(ctx.prisma, {
+    const standings = await readCardStanding(ctx.prisma, {
       userId: ctx.userId,
       deckIds: decks.map((deck) => deck.id),
       now,
     });
+    const { cards, nextDueAt } = standings;
+
+    // Today's Review's cards: the ticked decks', each card once, as its
+    // queue counts them (#137)
+    const ticked = new Set(
+      decks.filter((deck) => !deck.leftOutOfToday).map((deck) => deck.id),
+    );
+    const onTicked = (card: CardStanding) => ticked.has(card.deckId);
+    const pooled = poolStandings(
+      {
+        cards: cards.filter(onTicked),
+        due: standings.due.filter(onTicked),
+        weak: standings.weak.filter(onTicked),
+        newPerDay: null,
+      },
+      'STUDY',
+    );
 
     const courses = (
       await ctx.prisma.course.findMany({
@@ -169,6 +191,13 @@ export const todayRouter = router({
           ),
         // For when none are due or new
         nextDueAt,
+        // Today's Review's tile
+        todaysReview: {
+          ...countPooled(pooled),
+          unfinished: await todaysReviewProgress(ctx.prisma, {
+            userId: ctx.userId,
+          }),
+        },
       },
       continueLearning: courses.flatMap((course) => {
         const next = nextInCourse(course);

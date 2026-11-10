@@ -6,9 +6,12 @@ import {
   acceptAnswer,
   answerItem,
   finishStudySession,
+  findResumableReview,
   findResumableSession,
   previewQueue,
+  previewTodaysReview,
   startStudySession,
+  startTodaysReview,
 } from '../services/studySessions.js';
 import {
   assertStudiesIn,
@@ -31,7 +34,39 @@ const sessionChoiceInput = {
   direction: studyDirection,
 };
 
+/**
+ * How the learner chooses to study Today's Review: its type, as for a
+ * deck, and its mode, Study, Drill Weakest or Cram; Review retired is a
+ * deck's alone, and each card's direction the pool's (ADR-0013).
+ */
+const reviewChoiceInput = {
+  sessionType: sessionChoiceInput.sessionType,
+  studyMode: z.enum(['STUDY', 'DRILL_WEAKEST', 'CRAM']).default('STUDY'),
+};
+
 export const studyRouter = router({
+  /** What Today's Review started now would hold (#137). */
+  reviewPreview: protectedProcedure
+    .input(z.object(reviewChoiceInput))
+    .query(({ ctx, input }) =>
+      previewTodaysReview(ctx.prisma, { userId: ctx.userId }, input),
+    ),
+
+  /** The learner's unfinished Today's Review to resume, or null. */
+  activeReview: protectedProcedure.query(({ ctx }) =>
+    findResumableReview(ctx.prisma, { userId: ctx.userId }),
+  ),
+
+  /**
+   * Starts Today's Review across the ticked decks, or resumes the
+   * unfinished one; null when there's nothing to study.
+   */
+  startReview: protectedProcedure
+    .input(z.object(reviewChoiceInput))
+    .mutation(({ ctx, input }) =>
+      startTodaysReview(ctx.prisma, { userId: ctx.userId }, input),
+    ),
+
   queuePreview: protectedProcedure
     .input(z.object({ deckId: z.string(), ...sessionChoiceInput }))
     .query(async ({ ctx, input }) => {

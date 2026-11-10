@@ -367,7 +367,7 @@ const MOST = Math.max(...Object.values(SESSION_SIZES).map(({ max }) => max));
  * cards.
  */
 export function queueCandidates(
-  { cards, due, weak, newPerDay }: Standings,
+  { cards, due, weak, newPerDay }: CandidateStandings,
   studyMode: StudyMode,
 ): QueueCandidates {
   const { weakBeforeDue, takesNew, takesRetired } = MODE_RULES[studyMode];
@@ -393,6 +393,96 @@ export function queueCandidates(
           .map(({ cardId }) => cardId)
       : [],
     newPerDay,
+  };
+}
+
+/** What `queueCandidates` draws on of a read of Card Standing, pooled or not. */
+type CandidateStandings = Pick<
+  Standings,
+  'cards' | 'due' | 'weak' | 'newPerDay'
+>;
+
+/**
+ * How urgently a card's standing in one Study Direction calls for it in a
+ * Study Mode, most urgent lowest, as the queue's buckets rank them: due
+ * LEARNING, then Weak (once due, or before in Drill Weakest), then due
+ * REINFORCING, then NEW, then the rest.
+ */
+function urgency(card: CardStanding, studyMode: StudyMode) {
+  if (card.isDue && card.lifecycleState === 'LEARNING') return 0;
+  if (card.isWeak && (card.isDue || MODE_RULES[studyMode].weakBeforeDue)) {
+    return 1;
+  }
+  if (card.isDue) return 2;
+  if (card.lifecycleState === 'NEW') return 3;
+  return 4;
+}
+
+/** Whether `a` calls for its card more urgently than `b`, Forward on a tie. */
+function moreUrgent(a: CardStanding, b: CardStanding, studyMode: StudyMode) {
+  return (
+    urgency(a, studyMode) - urgency(b, studyMode) ||
+    (a.dueAt?.getTime() ?? Infinity) - (b.dueAt?.getTime() ?? Infinity) ||
+    (a.direction === 'FORWARD' ? -1 : 1)
+  );
+}
+
+/**
+ * Today's Review's Card Standing (ADR-0013), from a read of several decks
+ * in both directions: each card in at most one Study Direction, the more
+ * urgent of its two (the higher bucket, then the more overdue, Forward on
+ * a tie), so a Reverse prompt never gives away its Forward answer in the
+ * same session; and its NEW cards taken from each deck in turn, each in its
+ * own deck order, so one big new deck can't fill the session. Due and Weak
+ * cards keep the order the read gives them, whatever their deck.
+ */
+export function poolStandings(
+  { cards, due, weak, newPerDay }: CandidateStandings,
+  studyMode: StudyMode,
+): CandidateStandings {
+  const asked = new Map<string, CardStanding>();
+  for (const card of cards) {
+    const other = asked.get(card.cardId);
+    if (!other || moreUrgent(card, other, studyMode) < 0) {
+      asked.set(card.cardId, card);
+    }
+  }
+  const isAsked = (card: CardStanding) => asked.get(card.cardId) === card;
+
+  // Deck by deck, as the read gives them, then dealt out a deck at a time
+  const newByDeck = new Map<string, CardStanding[]>();
+  for (const card of cards.filter(isAsked)) {
+    if (card.lifecycleState !== 'NEW') continue;
+    newByDeck.set(card.deckId, [...(newByDeck.get(card.deckId) ?? []), card]);
+  }
+  const decks = [...newByDeck.values()];
+  const newInTurn = Array.from(
+    { length: Math.max(0, ...decks.map((deck) => deck.length)) },
+    (_, turn) => decks.flatMap((deck) => deck[turn] ?? []),
+  ).flat();
+
+  return {
+    cards: [
+      ...cards.filter((card) => isAsked(card) && card.lifecycleState !== 'NEW'),
+      ...newInTurn,
+    ],
+    due: due.filter(isAsked),
+    weak: weak.filter(isAsked),
+    newPerDay,
+  };
+}
+
+/**
+ * What Today's Review's pooled standing holds, as its tile and preview
+ * count it: its due cards and NEW ones, each card once, and how many decks
+ * they're from.
+ */
+export function countPooled({ cards, due }: CandidateStandings) {
+  const newCards = cards.filter((card) => card.lifecycleState === 'NEW');
+  return {
+    dueCount: due.length,
+    newCount: newCards.length,
+    deckCount: new Set([...due, ...newCards].map((card) => card.deckId)).size,
   };
 }
 

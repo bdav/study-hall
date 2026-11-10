@@ -18,8 +18,16 @@ const day = 24 * 60 * 60 * 1000;
 const dateIn = (days: number) =>
   `${new Date(Date.now() + days * day).toISOString().slice(0, 10)}T00:00:00.000Z`;
 
+/** Today's Review's tile with nothing to take. */
+const noReview: Today['review']['todaysReview'] = {
+  dueCount: 0,
+  newCount: 0,
+  deckCount: 0,
+  unfinished: null,
+};
+
 const nothing: Today = {
-  review: { decks: [], nextDueAt: null },
+  review: { decks: [], nextDueAt: null, todaysReview: noReview },
   continueLearning: [],
   aiPaused: false,
   previews: { decks: [], courses: [] },
@@ -132,7 +140,9 @@ function linksIn(region: HTMLElement) {
 
 describe('HomePage', () => {
   it('heads the page Today', () => {
-    renderHome({ review: { decks: decksToReview, nextDueAt: null } });
+    renderHome({
+      review: { decks: decksToReview, nextDueAt: null, todaysReview: noReview },
+    });
 
     expect(
       screen.getByRole('heading', { level: 1, name: 'Today' }),
@@ -141,7 +151,13 @@ describe('HomePage', () => {
 
   describe('Review', () => {
     it('shows each deck to review as its tile, in order, opening its study page, with its due and new counts', () => {
-      renderHome({ review: { decks: decksToReview, nextDueAt: null } });
+      renderHome({
+        review: {
+          decks: decksToReview,
+          nextDueAt: null,
+          todaysReview: noReview,
+        },
+      });
 
       const rows = within(block('Review')).getAllByRole('link');
       expect(rows.map((row) => row.getAttribute('href'))).toEqual([
@@ -157,7 +173,13 @@ describe('HomePage', () => {
     });
 
     it("labels a Course Deck with its course, and shows a deck's Cram Date", () => {
-      renderHome({ review: { decks: decksToReview, nextDueAt: null } });
+      renderHome({
+        review: {
+          decks: decksToReview,
+          nextDueAt: null,
+          todaysReview: noReview,
+        },
+      });
 
       const italian = within(block('Review')).getAllByRole('link')[1];
       expect(italian).toHaveTextContent('Course: Italian for travel');
@@ -166,7 +188,11 @@ describe('HomePage', () => {
 
     it('gives way to the Flashcards preview when nothing is due or new, saying when the next card comes due', () => {
       renderHome({
-        review: { decks: [], nextDueAt: '2099-11-12T15:30:00.000Z' },
+        review: {
+          decks: [],
+          nextDueAt: '2099-11-12T15:30:00.000Z',
+          todaysReview: noReview,
+        },
         continueLearning: coursesToContinue,
         previews: { decks: deckTiles, courses: courseTiles },
       });
@@ -258,7 +284,11 @@ describe('HomePage', () => {
 
     it('gives way to the Courses preview when no course has a next step', () => {
       renderHome({
-        review: { decks: decksToReview, nextDueAt: null },
+        review: {
+          decks: decksToReview,
+          nextDueAt: null,
+          todaysReview: noReview,
+        },
         previews: { decks: deckTiles, courses: courseTiles },
       });
 
