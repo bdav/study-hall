@@ -30,6 +30,7 @@ const decksToReview: Today['review']['decks'] = [
     id: 'deck-1',
     name: 'Capitals',
     course: null,
+    cardCount: 30,
     dueCount: 4,
     newCount: 2,
     cramUntil: null,
@@ -38,6 +39,7 @@ const decksToReview: Today['review']['decks'] = [
     id: 'deck-2',
     name: 'Italian',
     course: { title: 'Italian for travel' },
+    cardCount: 7,
     dueCount: 0,
     newCount: 7,
     cramUntil: '2099-06-01T00:00:00.000Z',
@@ -48,6 +50,7 @@ const coursesToContinue: Today['continueLearning'] = [
   {
     id: 'course-1',
     title: 'Italian for travel',
+    goal: 'Get by on holiday',
     deadline: dateIn(21),
     next: {
       kind: 'LESSON',
@@ -57,6 +60,7 @@ const coursesToContinue: Today['continueLearning'] = [
   {
     id: 'course-2',
     title: 'Spanish',
+    goal: 'Talk to my neighbours',
     deadline: null,
     next: { kind: 'SYLLABUS_PROPOSAL' },
   },
@@ -134,7 +138,7 @@ describe('HomePage', () => {
   });
 
   describe('Review', () => {
-    it('lists each deck to review, in order, opening its study page, with its due and new counts', () => {
+    it('shows each deck to review as its tile, in order, opening its study page, with its due and new counts', () => {
       renderHome({ review: { decks: decksToReview, nextDueAt: null } });
 
       const rows = within(block('Review')).getAllByRole('link');
@@ -143,6 +147,7 @@ describe('HomePage', () => {
         '/decks/deck-2',
       ]);
       expect(rows[0]).toHaveTextContent('Capitals');
+      expect(rows[0]).toHaveTextContent('30 cards');
       expect(rows[0]).toHaveTextContent('4 due · 2 new');
       // Nothing of a count that's nought
       expect(rows[1]).toHaveTextContent('7 new');
@@ -169,14 +174,16 @@ describe('HomePage', () => {
       ).not.toBeInTheDocument();
       const flashcards = block('Flashcards');
       expect(flashcards).toHaveTextContent(/Next card due \w+, Nov 12/);
-      // New deck first, then a row's worth of decks, most recent first,
-      // then the way to them all
+      // The way to them all beside its heading, then New deck and every
+      // deck, most recent first
       expect(linksIn(flashcards)).toEqual([
+        ['All flashcards →', '/flashcards'],
         ['New deck', '/flashcards'],
         [expect.stringContaining('Recent'), '/decks/deck-9'],
         [expect.stringContaining('Older'), '/decks/deck-8'],
-        ['All flashcards →', '/flashcards'],
+        [expect.stringContaining('Oldest'), '/decks/deck-7'],
       ]);
+      expect(flashcards).toHaveTextContent('12 cards');
       // Continue learning is still there, and nobody's caught up
       expect(block('Continue learning')).toBeInTheDocument();
       expect(
@@ -186,12 +193,13 @@ describe('HomePage', () => {
   });
 
   describe('Continue learning', () => {
-    it("lists each course's next lesson, opening it, with its deadline", () => {
+    it('shows each course as its tile with its next lesson, opening it, and its deadline', () => {
       renderHome({ continueLearning: coursesToContinue });
 
       const rows = within(block('Continue learning')).getAllByRole('link');
       expect(rows[0]).toHaveAttribute('href', '/lessons/lesson-3');
       expect(rows[0]).toHaveTextContent('Italian for travel');
+      expect(rows[0]).toHaveTextContent('Get by on holiday');
       expect(rows[0]).toHaveTextContent('Continue: Ordering food');
       expect(rows[0]).toHaveTextContent('Deadline in 3 weeks');
     });
@@ -256,10 +264,11 @@ describe('HomePage', () => {
         screen.queryByRole('region', { name: 'Continue learning' }),
       ).not.toBeInTheDocument();
       expect(linksIn(block('Courses'))).toEqual([
+        ['All courses →', '/courses'],
         ['New course', '/courses/new'],
         [expect.stringContaining('Recent course'), '/courses/course-9'],
         [expect.stringContaining('Older course'), '/courses/course-8'],
-        ['All courses →', '/courses'],
+        [expect.stringContaining('Oldest course'), '/courses/course-7'],
       ]);
       expect(block('Courses')).toHaveTextContent('10 of 10 lessons complete');
       expect(block('Courses')).toHaveTextContent('Syllabus proposal ready');
@@ -290,12 +299,12 @@ describe('HomePage', () => {
 
     expect(screen.getByText("You're all caught up")).toBeInTheDocument();
     expect(linksIn(block('Flashcards'))).toEqual([
-      ['New deck', '/flashcards'],
       ['All flashcards →', '/flashcards'],
+      ['New deck', '/flashcards'],
     ]);
     expect(linksIn(block('Courses'))).toEqual([
-      ['New course', '/courses/new'],
       ['All courses →', '/courses'],
+      ['New course', '/courses/new'],
     ]);
     // No card is due at any time
     expect(block('Flashcards')).not.toHaveTextContent('Next card due');

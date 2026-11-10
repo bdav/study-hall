@@ -48,3 +48,11 @@ export const TILE_SHAPE = 'aspect-3/2';
  * row in a one-column list.
  */
 export const TILE_SHAPE_WIDE_ON_PHONES = 'aspect-2/1 sm:aspect-3/2';
+
+/**
+ * Padding that starts a row where PAGE_WIDTH's content starts, for a row
+ * that runs the window's whole width, such as Home's carousels, with the
+ * scroll padding that stops its tiles there too.
+ */
+export const PAGE_START =
+  'pl-4 md:pl-8 xl:pl-[calc((100%_-_80rem)/2_+_2rem)] scroll-pl-4 md:scroll-pl-8 xl:scroll-pl-[calc((100%_-_80rem)/2_+_2rem)]';

@@ -16,6 +16,7 @@ import { CenteredPage } from '@/components/CenteredPage';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DeckListSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
+import { DeckTile } from '@/components/DeckTile';
 import { formatDate, formatPercent } from '@/lib/format';
 import {
   archiveDeckDescription,
@@ -304,18 +305,7 @@ export default function DeckListPage() {
                 to={`/decks/${deck.id}`}
                 className="group/deck block transition-shadow hover:shadow-lg"
               >
-                <DeckCard stackCount={Math.min(deck.cardCount, 3)} wideOnPhones>
-                  <p className="text-center text-lg font-bold uppercase tracking-wide text-white">
-                    {deck.name}
-                  </p>
-                  {deck.course && (
-                    <p className="mt-0.5 text-center text-xs text-white/50">
-                      Course: {deck.course.title}
-                    </p>
-                  )}
-                  <p className="mt-1 text-sm text-white/60">
-                    {deck.cardCount} cards
-                  </p>
+                <DeckTile deck={deck} wideOnPhones>
                   {deck.totalAttempts > 0 && (
                     <p className="mt-2 text-sm font-medium text-white/80">
                       {formatPercent(deck.accuracy)}
@@ -357,7 +347,7 @@ export default function DeckListPage() {
                       />
                     </div>
                   )}
-                </DeckCard>
+                </DeckTile>
               </MotionLink>
             ))}
           </div>

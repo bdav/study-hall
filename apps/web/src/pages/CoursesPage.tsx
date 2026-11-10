@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { AiSpendSummary } from '@/components/AiSpendSummary';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseListSkeleton } from '@/components/PageSkeleton';
+import { CourseProgress, CourseTile } from '@/components/CourseTile';
+import { NewTileFace } from '@/components/NewTile';
 import { Tile } from '@/components/Tile';
 import { formatDate } from '@/lib/format';
 import { TILE_GRID } from '@/lib/layout';
@@ -102,10 +104,7 @@ export default function CoursesPage() {
               className="flex h-full transition-shadow hover:shadow-lg"
             >
               <Tile wideOnPhones>
-                <Plus className="h-10 w-10 text-white/60" aria-hidden />
-                <p className="mt-2 text-sm font-medium text-white/60">
-                  New course
-                </p>
+                <NewTileFace label="New course" />
               </Tile>
             </Link>
           </li>
@@ -117,20 +116,9 @@ export default function CoursesPage() {
                 to={`/courses/${course.id}`}
                 className="flex h-full transition-shadow hover:shadow-lg"
               >
-                <Tile wideOnPhones>
-                  <p className="line-clamp-4 text-center text-lg font-bold break-words">
-                    {course.title}
-                  </p>
-                  {/* The full goal is on the course page */}
-                  <p className="mt-1 line-clamp-2 text-center text-sm break-words text-white/70">
-                    {course.goal}
-                  </p>
-                  <p className="mt-2 text-xs text-white/50">
-                    {course.syllabusAccepted
-                      ? `${course.completedLessonCount} of ${course.lessonCount} lessons complete`
-                      : 'Syllabus proposal ready'}
-                  </p>
-                </Tile>
+                <CourseTile course={course} wideOnPhones>
+                  <CourseProgress course={course} />
+                </CourseTile>
               </Link>
             </li>
           ))}

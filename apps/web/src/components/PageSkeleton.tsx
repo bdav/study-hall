@@ -1,6 +1,12 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { CenteredPage } from '@/components/CenteredPage';
-import { TILE_GRID, TILE_SHAPE_WIDE_ON_PHONES } from '@/lib/layout';
+import {
+  PAGE_START,
+  PAGE_WIDTH,
+  TILE_GRID,
+  TILE_SHAPE,
+  TILE_SHAPE_WIDE_ON_PHONES,
+} from '@/lib/layout';
 
 /** A page of tiles, as Flashcards' decks and Courses' courses. */
 function TileGridSkeleton() {
@@ -91,19 +97,30 @@ export function StudySkeleton() {
 /** Home: its heading and two blocks of rows. */
 export function HomeSkeleton() {
   return (
-    <CenteredPage>
-      <div className="w-full max-w-4xl" role="status" aria-label="Loading">
+    <main
+      className="flex flex-1 flex-col overflow-hidden py-8"
+      role="status"
+      aria-label="Loading"
+    >
+      <div className={PAGE_WIDTH}>
         <Skeleton className="h-8 w-32" />
-        {[1, 2].map((block) => (
-          <div key={block} className="mt-8 space-y-2">
+      </div>
+      {[1, 2].map((block) => (
+        <div key={block} className="mt-8">
+          <div className={PAGE_WIDTH}>
             <Skeleton className="h-6 w-40" />
-            {[1, 2].map((row) => (
-              <Skeleton key={row} className="h-14 w-full rounded-xl" />
+          </div>
+          <div className={`mt-4 flex gap-4 ${PAGE_START}`}>
+            {[1, 2, 3, 4, 5].map((tile) => (
+              <Skeleton
+                key={tile}
+                className={`${TILE_SHAPE} w-64 shrink-0 rounded-xl sm:w-72`}
+              />
             ))}
           </div>
-        ))}
-      </div>
-    </CenteredPage>
+        </div>
+      ))}
+    </main>
   );
 }
 

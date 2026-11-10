@@ -84,7 +84,7 @@ function makeDue(cardId: string) {
 
 describe('today.get', () => {
   describe('Review', () => {
-    it('lists each deck with cards due or new, with its due and new counts', async () => {
+    it('lists each deck with cards due or new, with its cards and its due and new counts', async () => {
       const deck = await deckOf(3, 'Capitals');
       await makeDue(deck.cards[0].id);
 
@@ -94,6 +94,7 @@ describe('today.get', () => {
         expect.objectContaining({
           id: deck.id,
           name: 'Capitals',
+          cardCount: 3,
           dueCount: 1,
           newCount: 2,
         }),
@@ -275,6 +276,7 @@ describe('today.get', () => {
         {
           id: course.id,
           title: 'Italian',
+          goal: 'Learn Italian',
           deadline: null,
           next: {
             kind: 'LESSON',
@@ -298,6 +300,7 @@ describe('today.get', () => {
         {
           id: course.id,
           title: 'Spanish',
+          goal: 'Learn Spanish',
           deadline: new Date('2099-03-01'),
           next: { kind: 'SYLLABUS_PROPOSAL' },
         },

@@ -147,6 +147,7 @@ export const todayRouter = router({
               id: deck.id,
               name: deck.name,
               course: deck.course,
+              cardCount: deck._count.cards,
               dueCount: deckCards.filter((card) => card.isDue).length,
               newCount: deckCards.filter(
                 (card) => card.lifecycleState === 'NEW',
@@ -171,6 +172,7 @@ export const todayRouter = router({
               {
                 id: course.id,
                 title: course.title,
+                goal: course.goal,
                 deadline: course.deadline,
                 next,
               },
