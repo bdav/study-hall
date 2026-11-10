@@ -27,30 +27,28 @@ const COURSE_LINK = 'flex h-full transition-shadow hover:shadow-lg';
 function Block({
   id,
   title,
-  aside,
   note,
+  footer,
   children,
 }: {
   id: string;
   title: string;
-  /** Beside the heading, such as the way to the whole area. */
-  aside?: ReactNode;
   /** Below the heading. */
   note?: ReactNode;
+  /** Below the tiles, such as the way to the whole area. */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section aria-labelledby={id} className="mt-8">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 id={id} className="text-lg font-semibold">
-          {title}
-        </h2>
-        {aside}
-      </div>
+      <h2 id={id} className="text-lg font-semibold">
+        {title}
+      </h2>
       {note}
       <div className="mt-2">
         <Carousel label={title}>{children}</Carousel>
       </div>
+      {footer}
     </section>
   );
 }
@@ -150,15 +148,17 @@ function ContinueLearning({
   );
 }
 
-/** The way from a preview to its whole area, beside its heading. */
+/** The way from a preview to its whole area, below its tiles. */
 function AllLink({ to, children }: { to: string; children: string }) {
   return (
-    <Link
-      to={to}
-      className="touch-target shrink-0 text-sm text-white/70 hover:text-white"
-    >
-      {children}
-    </Link>
+    <p className="mt-2">
+      <Link
+        to={to}
+        className="touch-target text-sm text-white/70 hover:text-white"
+      >
+        {children}
+      </Link>
+    </p>
   );
 }
 
@@ -174,7 +174,7 @@ function FlashcardsPreview({
     <Block
       id="flashcards"
       title="Flashcards"
-      aside={<AllLink to="/flashcards">All flashcards →</AllLink>}
+      footer={<AllLink to="/flashcards">All flashcards →</AllLink>}
       note={
         nextDueAt && (
           <p className="mt-1 text-sm text-white/60">
@@ -211,7 +211,7 @@ function CoursesPreview({
     <Block
       id="courses"
       title="Courses"
-      aside={<AllLink to="/courses">All courses →</AllLink>}
+      footer={<AllLink to="/courses">All courses →</AllLink>}
     >
       <CarouselItem>
         <Link to="/courses/new" className={COURSE_LINK}>

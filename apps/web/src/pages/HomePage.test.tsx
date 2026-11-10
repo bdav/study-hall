@@ -174,14 +174,14 @@ describe('HomePage', () => {
       ).not.toBeInTheDocument();
       const flashcards = block('Flashcards');
       expect(flashcards).toHaveTextContent(/Next card due \w+, Nov 12/);
-      // The way to them all beside its heading, then New deck and every
-      // deck, most recent first
+      // New deck, then every deck, most recent first, then the way to
+      // them all
       expect(linksIn(flashcards)).toEqual([
-        ['All flashcards →', '/flashcards'],
         ['New deck', '/flashcards'],
         [expect.stringContaining('Recent'), '/decks/deck-9'],
         [expect.stringContaining('Older'), '/decks/deck-8'],
         [expect.stringContaining('Oldest'), '/decks/deck-7'],
+        ['All flashcards →', '/flashcards'],
       ]);
       expect(flashcards).toHaveTextContent('12 cards');
       // Continue learning is still there, and nobody's caught up
@@ -264,11 +264,11 @@ describe('HomePage', () => {
         screen.queryByRole('region', { name: 'Continue learning' }),
       ).not.toBeInTheDocument();
       expect(linksIn(block('Courses'))).toEqual([
-        ['All courses →', '/courses'],
         ['New course', '/courses/new'],
         [expect.stringContaining('Recent course'), '/courses/course-9'],
         [expect.stringContaining('Older course'), '/courses/course-8'],
         [expect.stringContaining('Oldest course'), '/courses/course-7'],
+        ['All courses →', '/courses'],
       ]);
       expect(block('Courses')).toHaveTextContent('10 of 10 lessons complete');
       expect(block('Courses')).toHaveTextContent('Syllabus proposal ready');
@@ -299,12 +299,12 @@ describe('HomePage', () => {
 
     expect(screen.getByText("You're all caught up")).toBeInTheDocument();
     expect(linksIn(block('Flashcards'))).toEqual([
-      ['All flashcards →', '/flashcards'],
       ['New deck', '/flashcards'],
+      ['All flashcards →', '/flashcards'],
     ]);
     expect(linksIn(block('Courses'))).toEqual([
-      ['All courses →', '/courses'],
       ['New course', '/courses/new'],
+      ['All courses →', '/courses'],
     ]);
     // No card is due at any time
     expect(block('Flashcards')).not.toHaveTextContent('Next card due');
