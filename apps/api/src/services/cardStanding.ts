@@ -182,6 +182,22 @@ function isWeak(card: Progress, misses: number) {
 type CardsRead = { deckIds: string[] } | { cardIds: string[] };
 
 /**
+ * When the next of these cards not yet due comes due in the Study Mode they
+ * were read for: the read's own `nextDueAt`, or a part of the read's, such
+ * as the decks Today's Review takes (#115).
+ */
+export function nextDueAtOf(
+  cards: { dueAt: Date | null }[],
+  now: Date,
+): Date | null {
+  return cards.reduce<Date | null>(
+    (next, { dueAt }) =>
+      dueAt && dueAt > now && (!next || dueAt < next) ? dueAt : next,
+    null,
+  );
+}
+
+/**
  * The standing of a learner's cards (`CardsRead`), in one Study Direction
  * or, when none is given, both, for a Study Mode (Study unless given): each
  * deck in deck order, a card's Forward before its Reverse.
@@ -296,12 +312,7 @@ export async function readCardStanding(
       ),
       answers: addAnswers(cards.map((card) => card.countedAnswers)),
     },
-    // When the next card not yet due comes due in the Study Mode
-    nextDueAt: cards.reduce<Date | null>(
-      (next, { dueAt }) =>
-        dueAt && dueAt > now && (!next || dueAt < next) ? dueAt : next,
-      null,
-    ),
+    nextDueAt: nextDueAtOf(cards, now),
     // How many NEW cards a day reach the decks' Cram Dates; none without one
     newPerDay: newPerDayByDates(
       cramDates,

@@ -13,7 +13,7 @@ function archivedDeckError() {
   });
 }
 
-function deckNotFoundError() {
+export function deckNotFoundError() {
   return new TRPCError({ code: 'NOT_FOUND', message: 'Deck not found' });
 }
 

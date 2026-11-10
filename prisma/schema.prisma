@@ -147,6 +147,10 @@ model Deck {
   // The Cram Date, a day Cram paces the deck toward (#87); a Course Deck's
   // starts at its course's deadline. Past it, it counts as none
   cramUntil             DateTime?      @db.Date
+  // Left out of Today's Review by the learner (#115): every deck is ticked
+  // in Today to start. Kept while the deck has nothing due or new, and
+  // while it's archived
+  leftOutOfToday        Boolean        @default(false)
   // Archived decks leave Flashcards and keep everything (ADR-0003, #77)
   archivedAt            DateTime?
   createdAt             DateTime       @default(now())

@@ -481,6 +481,197 @@ describe('today.get', () => {
   });
 });
 
+describe('choosing which decks Today reviews', () => {
+  /** The learner's Review rows, by deck name, and whether each is ticked. */
+  async function ticks() {
+    const { review } = await createCaller().today.get();
+    return Object.fromEntries(
+      review.decks.map((deck) => [deck.name, deck.ticked]),
+    );
+  }
+
+  /** Answers a deck's every card well, just now, so none is due or new. */
+  async function catchUp(deck: Awaited<ReturnType<typeof deckOf>>) {
+    for (const card of deck.cards) {
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: card.id,
+        answers: [{ grade: 'GOOD', at: new Date() }],
+      });
+    }
+  }
+
+  it('ticks every deck to start, a new one included', async () => {
+    const capitals = await deckOf(1, 'Capitals');
+    await deckOf(2, 'Italian');
+    expect(await ticks()).toEqual({ Capitals: true, Italian: true });
+
+    // A deck made after one is left out starts ticked too
+    await createCaller().today.setDecksTicked({
+      deckIds: [capitals.id],
+      ticked: false,
+    });
+    const greek = await createCaller().deck.create({ name: 'Greek' });
+    await createCaller().card.create({
+      deckId: greek.id,
+      front: 'Alpha',
+      canonicalAnswers: ['α'],
+    });
+
+    expect(await ticks()).toEqual({
+      Capitals: false,
+      Italian: true,
+      Greek: true,
+    });
+  });
+
+  it('keeps an unticked deck listed with its counts, unticked, until it is ticked again', async () => {
+    const capitals = await deckOf(2, 'Capitals');
+    await deckOf(1, 'Italian');
+
+    await createCaller().today.setDecksTicked({
+      deckIds: [capitals.id],
+      ticked: false,
+    });
+
+    const { review } = await createCaller().today.get();
+    expect(review.decks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Capitals',
+          newCount: 2,
+          ticked: false,
+        }),
+      ]),
+    );
+    expect(await ticks()).toEqual({ Capitals: false, Italian: true });
+
+    await createCaller().today.setDecksTicked({
+      deckIds: [capitals.id],
+      ticked: true,
+    });
+    expect(await ticks()).toEqual({ Capitals: true, Italian: true });
+  });
+
+  it('ticks or unticks several decks at once, as Select all does', async () => {
+    const decks = await Promise.all([
+      deckOf(1, 'Capitals'),
+      deckOf(1, 'Italian'),
+    ]);
+    const deckIds = decks.map((deck) => deck.id);
+
+    await createCaller().today.setDecksTicked({ deckIds, ticked: false });
+    expect(await ticks()).toEqual({ Capitals: false, Italian: false });
+
+    await createCaller().today.setDecksTicked({ deckIds, ticked: true });
+    expect(await ticks()).toEqual({ Capitals: true, Italian: true });
+  });
+
+  it("keeps a deck's tick while it has nothing due or new, for when it next has cards", async () => {
+    const deck = await deckOf(1, 'Capitals');
+    await createCaller().today.setDecksTicked({
+      deckIds: [deck.id],
+      ticked: false,
+    });
+    await catchUp(deck);
+    expect(await ticks()).toEqual({});
+
+    await createCaller().card.create({
+      deckId: deck.id,
+      front: 'Card 2',
+      canonicalAnswers: ['A2'],
+    });
+
+    expect(await ticks()).toEqual({ Capitals: false });
+  });
+
+  it('drops a deck with its tick when archived, and brings the tick back when it is restored', async () => {
+    const unticked = await deckOf(1, 'Unticked');
+    const ticked = await deckOf(1, 'Ticked');
+    await createCaller().today.setDecksTicked({
+      deckIds: [unticked.id],
+      ticked: false,
+    });
+
+    for (const deck of [unticked, ticked]) {
+      await createCaller().deck.archive({ id: deck.id });
+    }
+    expect(await ticks()).toEqual({});
+
+    for (const deck of [unticked, ticked]) {
+      await createCaller().deck.restore({ id: deck.id });
+    }
+    expect(await ticks()).toEqual({ Unticked: false, Ticked: true });
+  });
+
+  it('says when the next card on a ticked deck comes due, leaving out unticked decks', async () => {
+    const ticked = await deckOf(1, 'Ticked');
+    const unticked = await deckOf(1, 'Unticked');
+    // Answered NAILED, the ticked deck's card comes due later
+    await recordCardHistory(prisma, {
+      userId,
+      cardId: ticked.cards[0].id,
+      answers: [{ grade: 'NAILED', at: new Date() }],
+    });
+    await recordCardHistory(prisma, {
+      userId,
+      cardId: unticked.cards[0].id,
+      answers: [{ grade: 'MISSED', at: new Date() }],
+    });
+    await createCaller().today.setDecksTicked({
+      deckIds: [unticked.id],
+      ticked: false,
+    });
+    const dueAt = async (deck: typeof ticked) =>
+      (
+        await prisma.cardProgress.findFirstOrThrow({
+          where: { cardId: deck.cards[0].id, direction: 'FORWARD' },
+        })
+      ).dueAt;
+    expect((await dueAt(unticked))!.getTime()).toBeLessThan(
+      (await dueAt(ticked))!.getTime(),
+    );
+
+    const { review } = await createCaller().today.get();
+
+    expect(review.nextDueAt).toEqual(await dueAt(ticked));
+  });
+
+  it('says no card comes due while every deck is unticked', async () => {
+    const deck = await deckOf(1, 'Capitals');
+    await catchUp(deck);
+    await createCaller().today.setDecksTicked({
+      deckIds: [deck.id],
+      ticked: false,
+    });
+
+    expect((await createCaller().today.get()).review.nextDueAt).toBeNull();
+  });
+
+  it("refuses another learner's deck, changing nothing", async () => {
+    const mine = await deckOf(1, 'Mine');
+    const theirs = await deckOf(1, 'Theirs', otherUserId);
+
+    await expect(
+      createCaller().today.setDecksTicked({
+        deckIds: [mine.id, theirs.id],
+        ticked: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    expect(await ticks()).toEqual({ Mine: true });
+    const [theirRow] = (await createCaller(otherUserId).today.get()).review
+      .decks;
+    expect(theirRow.ticked).toBe(true);
+  });
+
+  it('refuses a choice naming no deck', async () => {
+    await expect(
+      createCaller().today.setDecksTicked({ deckIds: [], ticked: false }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
+
 /** A lesson of a course's accepted Syllabus, as the learner has left it. */
 type LessonSpec = {
   title: string;

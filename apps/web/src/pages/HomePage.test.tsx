@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
@@ -6,8 +6,27 @@ import { MemoryRouter } from 'react-router-dom';
 import HomePage from './HomePage';
 import { trpc } from '@/lib/trpc';
 
+const mockSetDecksTicked = vi.fn();
+
 vi.mock('@/lib/trpc', () => ({
-  trpc: { today: { get: { useQuery: vi.fn() } } },
+  trpc: {
+    useUtils: vi.fn(() => ({
+      today: {
+        get: {
+          cancel: vi.fn(),
+          getData: vi.fn(),
+          setData: vi.fn(),
+          invalidate: vi.fn(),
+        },
+      },
+    })),
+    today: {
+      get: { useQuery: vi.fn() },
+      setDecksTicked: {
+        useMutation: vi.fn(() => ({ mutate: mockSetDecksTicked })),
+      },
+    },
+  },
 }));
 
 type TodayQuery = ReturnType<typeof trpc.today.get.useQuery>;
@@ -34,6 +53,7 @@ const decksToReview: Today['review']['decks'] = [
     dueCount: 4,
     newCount: 2,
     cramUntil: null,
+    ticked: true,
   },
   {
     id: 'deck-2',
@@ -43,6 +63,7 @@ const decksToReview: Today['review']['decks'] = [
     dueCount: 0,
     newCount: 7,
     cramUntil: '2099-06-01T00:00:00.000Z',
+    ticked: true,
   },
 ];
 
@@ -186,6 +207,102 @@ describe('HomePage', () => {
       expect(flashcards).toHaveTextContent('12 cards');
       // Continue learning is still there, and nobody's caught up
       expect(block('Continue learning')).toBeInTheDocument();
+      expect(
+        screen.queryByText("You're all caught up"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('choosing which decks Today reviews', () => {
+    const someUnticked = decksToReview.map((deck, i) => ({
+      ...deck,
+      ticked: i === 0,
+    }));
+    const noneTicked = decksToReview.map((deck) => ({
+      ...deck,
+      ticked: false,
+    }));
+
+    it("gives each deck's tile a tickbox, labelled with its deck, ticked as saved", () => {
+      renderHome({ review: { decks: someUnticked, nextDueAt: null } });
+
+      expect(
+        screen.getByRole('checkbox', { name: 'Review Capitals' }),
+      ).toBeChecked();
+      expect(
+        screen.getByRole('checkbox', { name: 'Review Italian' }),
+      ).not.toBeChecked();
+      // An unticked deck still opens its study page
+      expect(within(block('Review')).getAllByRole('link')[1]).toHaveAttribute(
+        'href',
+        '/decks/deck-2',
+      );
+    });
+
+    it('saves a tick or an untick', () => {
+      renderHome({ review: { decks: someUnticked, nextDueAt: null } });
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Review Italian' }));
+      expect(mockSetDecksTicked).toHaveBeenLastCalledWith({
+        deckIds: ['deck-2'],
+        ticked: true,
+      });
+
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: 'Review Capitals' }),
+      );
+      expect(mockSetDecksTicked).toHaveBeenLastCalledWith({
+        deckIds: ['deck-1'],
+        ticked: false,
+      });
+    });
+
+    it('ticks every deck with Select all, while any is unticked', () => {
+      renderHome({ review: { decks: someUnticked, nextDueAt: null } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
+
+      expect(mockSetDecksTicked).toHaveBeenLastCalledWith({
+        deckIds: ['deck-1', 'deck-2'],
+        ticked: true,
+      });
+    });
+
+    it('unticks every deck with Select none, once all are ticked', () => {
+      renderHome({ review: { decks: decksToReview, nextDueAt: null } });
+
+      expect(
+        screen.queryByRole('button', { name: 'Select all' }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Select none' }));
+
+      expect(mockSetDecksTicked).toHaveBeenLastCalledWith({
+        deckIds: ['deck-1', 'deck-2'],
+        ticked: false,
+      });
+    });
+
+    it('keeps every row, unticked, when none is ticked, saying so and when the next card comes due', () => {
+      renderHome({
+        review: { decks: noneTicked, nextDueAt: '2099-11-12T15:30:00.000Z' },
+      });
+
+      const review = block('Review');
+      expect(review).toHaveTextContent(
+        /Nothing ticked to review\. Next card due \w+, Nov 12/,
+      );
+      expect(within(review).getAllByRole('checkbox')).toHaveLength(2);
+      expect(
+        screen.queryByRole('region', { name: 'Flashcards' }),
+      ).not.toBeInTheDocument();
+      // Nothing ticked and no course to continue is all caught up
+      expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+    });
+
+    it("isn't all caught up while a ticked deck has cards due or new", () => {
+      renderHome({ review: { decks: someUnticked, nextDueAt: null } });
+
+      expect(block('Review')).not.toHaveTextContent('Nothing ticked');
       expect(
         screen.queryByText("You're all caught up"),
       ).not.toBeInTheDocument();
