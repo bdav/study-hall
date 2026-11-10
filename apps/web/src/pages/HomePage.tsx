@@ -12,7 +12,7 @@ import { NewTileFace } from '@/components/NewTile';
 import { HomeSkeleton } from '@/components/PageSkeleton';
 import { Tile } from '@/components/Tile';
 import { deadlineLine, formatCalendarDay, formatDueTime } from '@/lib/format';
-import { PAGE_WIDTH } from '@/lib/layout';
+import { FULL_WIDTH_GUTTER } from '@/lib/layout';
 import { NEW_DECK } from '@/lib/decks';
 
 type Today = inferRouterOutputs<AppRouter>['today']['get'];
@@ -23,10 +23,7 @@ const DECK_LINK = 'block transition-shadow hover:shadow-lg';
 /** A course tile's link, as tall as its row, as Courses' are. */
 const COURSE_LINK = 'flex h-full transition-shadow hover:shadow-lg';
 
-/**
- * A block of Home: a carousel of tiles named by its heading, with what the
- * heading says beside and below it in line with the page.
- */
+/** A block of Home: a carousel of tiles named by its heading. */
 function Block({
   id,
   title,
@@ -44,15 +41,13 @@ function Block({
 }) {
   return (
     <section aria-labelledby={id} className="mt-8">
-      <div className={PAGE_WIDTH}>
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 id={id} className="text-lg font-semibold">
-            {title}
-          </h2>
-          {aside}
-        </div>
-        {note}
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 id={id} className="text-lg font-semibold">
+          {title}
+        </h2>
+        {aside}
       </div>
+      {note}
       <div className="mt-2">
         <Carousel label={title}>{children}</Carousel>
       </div>
@@ -240,7 +235,7 @@ function CoursesPreview({
 
 /**
  * Home: Today, what the learner has to do now (#114), as rows of tiles the
- * window's whole width. Review and Continue learning each give way to a
+ * window's whole width, in the site navigation's gutter. Review and Continue learning each give way to a
  * preview of their area when they're empty.
  */
 export default function HomePage() {
@@ -263,13 +258,13 @@ export default function HomePage() {
   const continueEmpty = continueLearning.length === 0;
 
   return (
-    <main className="flex flex-1 flex-col py-8 text-white">
-      <div className={PAGE_WIDTH}>
-        <h1 className="text-2xl font-bold">Today</h1>
-        {reviewEmpty && continueEmpty && (
-          <p className="mt-2 text-lg text-white/80">You're all caught up</p>
-        )}
-      </div>
+    <main
+      className={`flex min-w-0 flex-1 flex-col py-8 text-white ${FULL_WIDTH_GUTTER}`}
+    >
+      <h1 className="text-2xl font-bold">Today</h1>
+      {reviewEmpty && continueEmpty && (
+        <p className="mt-2 text-lg text-white/80">You're all caught up</p>
+      )}
 
       {reviewEmpty ? (
         <FlashcardsPreview

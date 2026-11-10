@@ -1,8 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { CenteredPage } from '@/components/CenteredPage';
 import {
-  PAGE_START,
-  PAGE_WIDTH,
+  FULL_WIDTH_GUTTER,
   TILE_GRID,
   TILE_SHAPE,
   TILE_SHAPE_WIDE_ON_PHONES,
@@ -98,19 +97,15 @@ export function StudySkeleton() {
 export function HomeSkeleton() {
   return (
     <main
-      className="flex flex-1 flex-col overflow-hidden py-8"
+      className={`flex flex-1 flex-col overflow-hidden py-8 ${FULL_WIDTH_GUTTER}`}
       role="status"
       aria-label="Loading"
     >
-      <div className={PAGE_WIDTH}>
-        <Skeleton className="h-8 w-32" />
-      </div>
+      <Skeleton className="h-8 w-32" />
       {[1, 2].map((block) => (
         <div key={block} className="mt-8">
-          <div className={PAGE_WIDTH}>
-            <Skeleton className="h-6 w-40" />
-          </div>
-          <div className={`mt-4 flex gap-4 ${PAGE_START}`}>
+          <Skeleton className="h-6 w-40" />
+          <div className="mt-4 flex gap-4 overflow-hidden">
             {[1, 2, 3, 4, 5].map((tile) => (
               <Skeleton
                 key={tile}

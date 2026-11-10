@@ -6,15 +6,24 @@ import {
   type ReactNode,
 } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { PAGE_START } from '@/lib/layout';
 
 /** How much of the width in view an arrow pages by, so a tile stays in view. */
 const PAGE_BY = 0.9;
 
+/** How far in from an edge with more tiles beyond it the row fades out. */
+const FADE = '3rem';
+
+/** Fades the row out at each edge with more tiles beyond it. */
+function fadeMask(more: { back: boolean; forward: boolean }) {
+  const edge = (faded: boolean) => (faded ? 'transparent' : 'black');
+  const mask = `linear-gradient(to right, ${edge(more.back)}, black ${FADE}, black calc(100% - ${FADE}), ${edge(more.forward)})`;
+  return { maskImage: mask, WebkitMaskImage: mask };
+}
+
 /**
- * A row of tiles that runs the window's whole width and scrolls sideways,
- * its first tile in line with the page: swiped on a touch screen, and paged
- * with an arrow at either end, shown on hover, when there's more that way.
+ * A row of tiles that scrolls sideways, fading out at an edge with more
+ * beyond it: swiped on a touch screen, and paged with an arrow at either
+ * end, shown on hover, when there's more that way.
  */
 export function Carousel({
   label,
@@ -58,7 +67,8 @@ export function Carousel({
         ref={rowRef}
         aria-label={label}
         onScroll={measure}
-        className={`flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth py-2 pr-4 [scrollbar-width:none] motion-reduce:scroll-auto md:pr-8 [&::-webkit-scrollbar]:hidden ${PAGE_START}`}
+        style={fadeMask(more)}
+        className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth py-2 [scrollbar-width:none] motion-reduce:scroll-auto [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </ul>
@@ -93,9 +103,9 @@ function CarouselArrow({
       aria-label={`Scroll ${label} ${side}`}
       onClick={onClick}
       // Touch screens swipe, so have none
-      className={`absolute inset-y-2 flex w-10 items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover/carousel:opacity-100 hover:bg-black/70 focus-visible:opacity-100 pointer-coarse:hidden md:w-12 ${side === 'back' ? 'left-0 rounded-r-xl' : 'right-0 rounded-l-xl'}`}
+      className={`absolute top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover/carousel:opacity-100 hover:bg-black/70 focus-visible:opacity-100 pointer-coarse:hidden ${side === 'back' ? '-left-2' : '-right-2'}`}
     >
-      <Icon className="size-8" aria-hidden />
+      <Icon className="size-6" aria-hidden />
     </button>
   );
 }
