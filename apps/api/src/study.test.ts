@@ -1562,7 +1562,8 @@ async function startedSession(cards: NewCard[]) {
   const deck = await deckWith(cards);
   const session = await createCaller().study.startSession({ deckId: deck.id });
   if (!session) throw new Error('Expected a session to start');
-  return session;
+  // A deck's own session, on its deck
+  return { ...session, deckId: deck.id };
 }
 
 /** Makes a card a LEARNING card due at the given time. */

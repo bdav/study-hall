@@ -120,11 +120,19 @@ const mockSession = {
   items: mockDeck.cards.map((card, i) => ({
     id: `item-${i + 1}`,
     card,
+    direction: 'FORWARD',
     status: 'PENDING',
     isRetry: false,
     attempts: [] as { id: string; userAnswer: string; recallGrade: string }[],
   })),
 };
+
+/** mockSession in one Study Direction, each item asked that way, as a deck's own session is. */
+const sessionIn = (direction: string) => ({
+  ...mockSession,
+  direction,
+  items: mockSession.items.map((item) => ({ ...item, direction })),
+});
 
 /**
  * The graded card's result, once the card has slid in: it's drawn again as
@@ -3488,7 +3496,7 @@ describe('a reversible deck (#82)', () => {
       onSuccess?: (data: unknown) => void;
     }) => ({
       mutate: start.mockImplementation((input: { direction: string }) =>
-        opts?.onSuccess?.({ ...mockSession, direction: input.direction }),
+        opts?.onSuccess?.(sessionIn(input.direction)),
       ),
     })) as unknown as typeof trpc.study.startSession.useMutation);
     return start;
@@ -3702,7 +3710,7 @@ describe('a reversible deck (#82)', () => {
 
   it('says which direction an unfinished session is in', () => {
     setupReversible();
-    mockActiveSession({ ...mockSession, direction: 'REVERSE' });
+    mockActiveSession(sessionIn('REVERSE'));
     renderStudyPage();
 
     expect(screen.getByText('Resume session?')).toBeInTheDocument();

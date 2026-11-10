@@ -38,14 +38,15 @@ function itemsInPlay(session: ServerSession) {
  * resumed, with its deck and Study Direction. An answer is shown with its
  * grade; how it matched isn't kept, so isn't shown.
  */
-function toItems(session: ServerSession, deckId: string): SessionItem[] {
+function toItems(session: ServerSession): SessionItem[] {
   return itemsInPlay(session).map((item) => {
     const answer = item.attempts[0];
     return {
       itemId: item.id,
       card: toFlashcard(item.card),
-      deckId,
-      direction: session.direction,
+      deckId: item.card.deckId,
+      // Each item asks its card its own way (#136)
+      direction: item.direction,
       isRetry: item.isRetry,
       answer: answer
         ? {
@@ -113,7 +114,7 @@ export function useStudySession(
         session: started && {
           id: started.id,
           studyMode: started.studyMode,
-          items: toItems(started, deckId ?? ''),
+          items: toItems(started),
         },
       });
     },

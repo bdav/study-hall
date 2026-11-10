@@ -821,12 +821,10 @@ export async function markCardsKnown(
     await tx.studySessionItem.updateMany({
       where: {
         cardId: { in: cardIds },
+        // Each waiting item asks its card one way, its own (#136)
+        direction: { in: directions },
         status: 'PENDING',
-        studySession: {
-          userId,
-          status: 'ACTIVE',
-          direction: { in: directions },
-        },
+        studySession: { userId, status: 'ACTIVE' },
       },
       data: { status: 'SKIPPED' },
     });

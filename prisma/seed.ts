@@ -192,6 +192,7 @@ async function main() {
     data: {
       userId: user.id,
       deckId: capitals.deck.id,
+      decks: { create: { deckId: capitals.deck.id } },
       status: 'COMPLETED',
       sessionType: 'STANDARD',
       studyMode: 'STUDY',
@@ -246,6 +247,7 @@ async function main() {
     data: {
       userId: user.id,
       deckId: math.deck.id,
+      decks: { create: { deckId: math.deck.id } },
       status: 'COMPLETED',
       sessionType: 'QUICK',
       studyMode: 'STUDY',
@@ -272,6 +274,7 @@ async function main() {
     data: {
       userId: user.id,
       deckId: spanish.deck.id,
+      decks: { create: { deckId: spanish.deck.id } },
       status: 'COMPLETED',
       sessionType: 'STANDARD',
       studyMode: 'STUDY',

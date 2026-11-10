@@ -147,6 +147,7 @@ export async function recordStudySession(
     data: {
       userId,
       deckId,
+      decks: { create: { deckId } },
       direction,
       sessionType: 'STANDARD',
       status: 'COMPLETED',
@@ -275,6 +276,7 @@ export async function recordCardHistory(
         data: {
           userId,
           deckId: card.deckId,
+          decks: { create: { deckId: card.deckId } },
           direction,
           sessionType: 'STANDARD',
           status: 'COMPLETED',

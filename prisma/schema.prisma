@@ -23,6 +23,13 @@ enum CardLifecycleState {
   RETIRED
 }
 
+// A deck's own Study Session, or Today's Review across the decks ticked for
+// it (ADR-0013)
+enum StudySessionKind {
+  DECK
+  TODAYS_REVIEW
+}
+
 enum StudySessionStatus {
   ACTIVE
   COMPLETED
@@ -159,6 +166,8 @@ model Deck {
   course                Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
   cards                 Card[]
   studySessions         StudySession[]
+  // Every session built from this deck, its own and Today's Reviews
+  studySessionDecks     StudySessionDeck[]
 
   @@index([userId, archivedAt])
 }
@@ -301,31 +310,52 @@ model CardProgress {
 model StudySession {
   id          String             @id @default(cuid())
   userId      String
-  deckId      String
+  kind        StudySessionKind   @default(DECK)
+  // A deck's own session's deck; none on a Today's Review, whose decks are
+  // in `decks`, as every session's are (#136)
+  deckId      String?
   status      StudySessionStatus @default(ACTIVE)
   sessionType SessionType
   studyMode   StudyMode          @default(STUDY)
-  // A session is in one Study Direction (ADR-0011)
+  // A deck's own session is in one Study Direction (ADR-0011); each item
+  // records its own, which a Today's Review's items choose card by card
   direction   StudyDirection     @default(FORWARD)
   startedAt   DateTime           @default(now())
   endedAt     DateTime?
   updatedAt   DateTime           @updatedAt
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deck        Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deck        Deck?              @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  decks       StudySessionDeck[]
   items       StudySessionItem[]
   attempts    CardAttempt[]
 
   // A learner has at most one unfinished session on a deck (#10)
   @@unique([userId, deckId], map: "StudySession_one_active_per_deck", where: raw("status = 'ACTIVE'"))
+  // and at most one unfinished Today's Review (ADR-0013)
+  @@unique([userId, kind], map: "StudySession_one_active_todays_review", where: raw("status = 'ACTIVE' AND kind = 'TODAYS_REVIEW'"))
   @@index([userId])
   @@index([deckId])
   @@index([userId, deckId, status])
+}
+
+// A deck a Study Session was built from: a deck's own session has one row,
+// a Today's Review one for each deck ticked when it started (#136)
+model StudySessionDeck {
+  studySessionId String
+  deckId         String
+  studySession   StudySession @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
+  deck           Deck         @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@id([studySessionId, deckId])
+  @@index([deckId])
 }
 
 model StudySessionItem {
   id             String                 @id @default(cuid())
   studySessionId String
   cardId         String
+  // The Study Direction it asks its card in, which its attempts record
+  direction      StudyDirection
   position       Int
   status         StudySessionItemStatus @default(PENDING)
   // A Retry: a missed card brought back later in the session (#11)
@@ -350,7 +380,7 @@ model CardAttempt {
   // The Card Version answered; none for attempts from before versions were
   // recorded and before the card's last reset (ADR-0008)
   cardVersionId         String?
-  // Its session's Study Direction (ADR-0011)
+  // Its item's Study Direction (ADR-0011), as asked
   direction             StudyDirection    @default(FORWARD)
   userAnswer            String?
   recallGrade           RecallGrade

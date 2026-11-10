@@ -281,8 +281,24 @@ export const deckRouter = router({
 
       return ctx.prisma.$transaction(async (tx) => {
         if (input.reversible === false) {
+          // Its own unfinished sessions in Reverse, and a Today's Review
+          // still to ask one of its cards in Reverse
           await tx.studySession.updateMany({
-            where: { deckId: input.id, direction: 'REVERSE', status: 'ACTIVE' },
+            where: {
+              status: 'ACTIVE',
+              OR: [
+                { deckId: input.id, direction: 'REVERSE' },
+                {
+                  items: {
+                    some: {
+                      direction: 'REVERSE',
+                      status: 'PENDING',
+                      card: { deckId: input.id },
+                    },
+                  },
+                },
+              ],
+            },
             data: { status: 'ABANDONED', endedAt: new Date() },
           });
         }

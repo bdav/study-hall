@@ -207,8 +207,13 @@ export async function startStudySession(
         sessionType,
         studyMode,
         direction,
+        decks: { create: { deckId } },
         items: {
-          create: queue.map((cardId, position) => ({ cardId, position })),
+          create: queue.map((cardId, position) => ({
+            cardId,
+            direction,
+            position,
+          })),
         },
       },
       include: withItems,
@@ -229,12 +234,17 @@ export async function startStudySession(
 
 /**
  * Brings a missed card back at the end of its session, after every card
- * and earlier Retry, at most MAX_RETRIES times. Returns the new item, or
- * null once the card has come back as often as it may.
+ * and earlier Retry, at most MAX_RETRIES times, asked the way it was.
+ * Returns the new item, or null once the card has come back as often as it
+ * may.
  */
 async function queueRetry(
   tx: Prisma.TransactionClient,
-  { studySessionId, cardId }: { studySessionId: string; cardId: string },
+  {
+    studySessionId,
+    cardId,
+    direction,
+  }: { studySessionId: string; cardId: string; direction: StudyDirection },
 ) {
   const retries = await tx.studySessionItem.count({
     where: { studySessionId, cardId, isRetry: true },
@@ -249,6 +259,7 @@ async function queueRetry(
     data: {
       studySessionId,
       cardId,
+      direction,
       position: (last._max.position ?? -1) + 1,
       isRetry: true,
     },
@@ -339,15 +350,13 @@ export async function answerItem(
   const item = await prisma.studySessionItem.findFirst({
     where: { id: itemId, studySession: { userId } },
     include: {
-      card: { include: withCanonicalAnswers },
-      studySession: {
-        select: {
-          status: true,
-          direction: true,
-          studyMode: true,
+      card: {
+        include: {
+          ...withCanonicalAnswers,
           deck: { select: { archivedAt: true, reversible: true } },
         },
       },
+      studySession: { select: { status: true, studyMode: true } },
     },
   });
   if (!item) {
@@ -356,17 +365,17 @@ export async function answerItem(
       message: 'Study session card not found',
     });
   }
-  // A session started before its deck was archived
-  assertDeckActive(item.studySession.deck);
+  // A session started before the card's deck was archived
+  assertDeckActive(item.card.deck);
   if (item.studySession.status !== 'ACTIVE') {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: 'Session already finished',
     });
   }
-  const { direction } = item.studySession;
-  // A Reverse session on a deck turned one-way meanwhile
-  assertStudiesIn(item.studySession.deck, direction);
+  const { direction } = item;
+  // Asked in Reverse on a deck turned one-way meanwhile
+  assertStudiesIn(item.card.deck, direction);
 
   const {
     grading: { recallGrade, accentMismatch, matchedAnswer, matchedVariant },
@@ -655,6 +664,7 @@ const RECENT_SESSIONS = 10;
  * studied in, newest first: when, their type
  * and mode, how they ended, how many cards they answered and how many of
  * those right, Retries left out, and their deck, with its course if any.
+ * Decks' own sessions only: Today's Reviews join them in #117.
  */
 export async function findRecentSessions(
   prisma: PrismaClient,
@@ -667,6 +677,7 @@ export async function findRecentSessions(
   const sessions = await prisma.studySession.findMany({
     where: {
       userId,
+      kind: 'DECK',
       deckId: { in: deckIds },
       status: { in: ['COMPLETED', 'ABANDONED'] },
       // Reverse none while its deck isn't reversible (ADR-0011)
@@ -699,9 +710,18 @@ export async function findRecentSessions(
       },
     },
   });
-  return sessions.map(({ attempts, ...session }) => ({
-    ...session,
-    answered: attempts.length,
-    right: attempts.filter((attempt) => isCorrect(attempt.recallGrade)).length,
-  }));
+  // A deck's own session always has its deck
+  return sessions.flatMap(({ attempts, deck, ...session }) =>
+    deck
+      ? [
+          {
+            ...session,
+            deck,
+            answered: attempts.length,
+            right: attempts.filter((attempt) => isCorrect(attempt.recallGrade))
+              .length,
+          },
+        ]
+      : [],
+  );
 }
