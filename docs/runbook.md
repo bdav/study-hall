@@ -56,7 +56,7 @@ The web app's build on Vercel is:
 DATABASE_URL=postgresql://unused pnpm prisma generate && pnpm --filter web build
 ```
 
-Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite. All of this is in `vercel.json`, which also skips every deployment but production's, as there are no previews.
+Its output is `apps/web/dist`. The web app imports the API's types, so its typecheck needs the Prisma client generated. Generating never connects, so the URL is a placeholder, and Vercel holds no database address. The app routes in the browser, so every path has to serve `index.html`, with a rewrite. All of this is in `vercel.json`, which also deploys `main` alone, as there are no previews (`git.deploymentEnabled`: a branch matching both patterns deploys, as one says it may). It names the branch, rather than skipping any build whose `VERCEL_ENV` isn't `production`: an Ignored Build Step reading that skipped every push to `main`, its green status reading "Canceled by Ignored Build Step".
 
 Railway's commands, and Wait for CI, are its service's settings, in its dashboard. `railway.json` stops being read on 2026-12-01, and Wait for CI has no key in any config.
 

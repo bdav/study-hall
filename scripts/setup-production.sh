@@ -432,7 +432,7 @@ stage_vercel_project() {
   open_url "https://vercel.com/new"
   step "Import $REPO, on the Hobby plan."
   step "Leave Root Directory at the repository's root, and the Install Command alone."
-  note "vercel.json sets the rest: framework, build, output, and production-only builds."
+  note "vercel.json sets the rest: framework, build, output, and deploying main alone."
   say ""
   say "Before deploying, add Environment Variables, for Production only:"
   step "VITE_API_URL = $API/trpc"
