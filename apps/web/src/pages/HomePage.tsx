@@ -2,8 +2,6 @@ import { type ReactNode } from 'react';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from 'api/app';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
-import { Check } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { CenteredPage } from '@/components/CenteredPage';
 import { Carousel, CarouselItem } from '@/components/Carousel';
@@ -29,15 +27,12 @@ const COURSE_LINK = 'flex h-full transition-shadow hover:shadow-lg';
 function Block({
   id,
   title,
-  action,
   note,
   footer,
   children,
 }: {
   id: string;
   title: string;
-  /** Beside the heading, acting on the block's tiles. */
-  action?: ReactNode;
   /** Below the heading. */
   note?: ReactNode;
   /** Below the tiles, such as the way to the whole area. */
@@ -46,12 +41,9 @@ function Block({
 }) {
   return (
     <section aria-labelledby={id} className="mt-8">
-      <div className="flex items-baseline gap-4">
-        <h2 id={id} className="text-lg font-semibold">
-          {title}
-        </h2>
-        {action}
-      </div>
+      <h2 id={id} className="text-lg font-semibold">
+        {title}
+      </h2>
       {note}
       <div className="mt-2">
         <Carousel label={title}>{children}</Carousel>
@@ -72,151 +64,23 @@ function reviewCounts({
   ].join(' · ');
 }
 
-/**
- * Saves which decks Today's Review takes (#115), showing the change at once
- * and putting it back should saving fail.
- */
-function useSetDecksTicked() {
-  const utils = trpc.useUtils();
-  return trpc.today.setDecksTicked.useMutation({
-    onMutate: async ({ deckIds, ticked }) => {
-      await utils.today.get.cancel();
-      const before = utils.today.get.getData();
-      utils.today.get.setData(
-        undefined,
-        (today) =>
-          today && {
-            ...today,
-            review: {
-              ...today.review,
-              decks: today.review.decks.map((deck) =>
-                deckIds.includes(deck.id) ? { ...deck, ticked } : deck,
-              ),
-            },
-          },
-      );
-      return { before };
-    },
-    onError: (_error, _input, context) => {
-      utils.today.get.setData(undefined, context?.before);
-      toast.error("Couldn't save which decks to review. Try again.");
-    },
-    // When the next card comes due follows the ticked decks
-    onSettled: () => utils.today.get.invalidate(),
-  });
-}
-
-/**
- * A Review tile's tickbox, a badge in its lower right corner, clear of the
- * deck's stack, beside the tile's link rather than in it. Goes inside a
- * relative wrapper of the tile.
- */
-function DeckTick({
-  name,
-  ticked,
-  onChange,
-}: {
-  name: string;
-  ticked: boolean;
-  onChange: (ticked: boolean) => void;
-}) {
+function Review({ decks }: { decks: Today['review']['decks'] }) {
   return (
-    <label className="touch-target absolute right-2 bottom-2 z-10 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={ticked}
-        onChange={(e) => onChange(e.target.checked)}
-        aria-label={`Review ${name}`}
-        className="peer sr-only"
-      />
-      <span
-        aria-hidden
-        className={`flex size-6 items-center justify-center rounded-full border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-white peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-transparent ${
-          ticked
-            ? 'border-white bg-white text-slate-900'
-            : 'border-white/60 bg-black/10 hover:border-white'
-        }`}
-      >
-        {ticked && <Check className="size-4" strokeWidth={3} />}
-      </span>
-    </label>
-  );
-}
-
-/**
- * Review: a tile for each deck with cards due or new, each with a tickbox
- * choosing whether Today's Review takes it; an unticked one stays, so it
- * can be ticked again.
- */
-function Review({
-  decks,
-  nextDueAt,
-}: {
-  decks: Today['review']['decks'];
-  nextDueAt: string | null;
-}) {
-  const setDecksTicked = useSetDecksTicked();
-  const allTicked = decks.every((deck) => deck.ticked);
-  const noneTicked = !decks.some((deck) => deck.ticked);
-
-  return (
-    <Block
-      id="review"
-      title="Review"
-      action={
-        <button
-          type="button"
-          onClick={() =>
-            setDecksTicked.mutate({
-              deckIds: decks.map((deck) => deck.id),
-              ticked: !allTicked,
-            })
-          }
-          className="touch-target text-sm text-white/70 hover:text-white"
-        >
-          {allTicked ? 'Select none' : 'Select all'}
-        </button>
-      }
-      note={
-        <>
-          <p className="mt-1 text-sm text-white/60">
-            Tick the decks to review together, in one session.
-          </p>
-          {noneTicked && (
-            <p className="mt-1 text-sm text-white/60">
-              Nothing ticked to review.
-              {nextDueAt && ` Next card due ${formatDueTime(nextDueAt)}`}
-            </p>
-          )}
-        </>
-      }
-    >
+    <Block id="review" title="Review">
       {decks.map((deck) => (
         <CarouselItem key={deck.id}>
-          <div className="relative">
-            <Link
-              to={`/decks/${deck.id}`}
-              className={`${DECK_LINK} transition-opacity ${deck.ticked ? '' : 'opacity-60'}`}
-            >
-              <DeckTile deck={deck}>
-                <p className="mt-2 text-sm font-medium text-white/90">
-                  {reviewCounts(deck)}
+          <Link to={`/decks/${deck.id}`} className={DECK_LINK}>
+            <DeckTile deck={deck}>
+              <p className="mt-2 text-sm font-medium text-white/90">
+                {reviewCounts(deck)}
+              </p>
+              {deck.cramUntil && (
+                <p className="mt-0.5 text-xs text-white/50">
+                  Cram until {formatCalendarDay(deck.cramUntil)}
                 </p>
-                {deck.cramUntil && (
-                  <p className="mt-0.5 text-xs text-white/50">
-                    Cram until {formatCalendarDay(deck.cramUntil)}
-                  </p>
-                )}
-              </DeckTile>
-            </Link>
-            <DeckTick
-              name={deck.name}
-              ticked={deck.ticked}
-              onChange={(ticked) =>
-                setDecksTicked.mutate({ deckIds: [deck.id], ticked })
-              }
-            />
-          </div>
+              )}
+            </DeckTile>
+          </Link>
         </CarouselItem>
       ))}
     </Block>
@@ -390,10 +254,7 @@ export default function HomePage() {
   }
 
   const { review, continueLearning, aiPaused, previews } = todayQuery.data;
-  // Review gives way to Flashcards only with no deck to list, ticked or
-  // not; it's caught up once no ticked deck has cards due or new
   const reviewEmpty = review.decks.length === 0;
-  const reviewCaughtUp = !review.decks.some((deck) => deck.ticked);
   const continueEmpty = continueLearning.length === 0;
 
   return (
@@ -401,7 +262,7 @@ export default function HomePage() {
       className={`flex min-w-0 flex-1 flex-col py-8 text-white ${FULL_WIDTH_GUTTER}`}
     >
       <h1 className="text-2xl font-bold">Today</h1>
-      {reviewCaughtUp && continueEmpty && (
+      {reviewEmpty && continueEmpty && (
         <p className="mt-2 text-lg text-white/80">You're all caught up</p>
       )}
 
@@ -411,7 +272,7 @@ export default function HomePage() {
           nextDueAt={review.nextDueAt}
         />
       ) : (
-        <Review decks={review.decks} nextDueAt={review.nextDueAt} />
+        <Review decks={review.decks} />
       )}
 
       {continueEmpty ? (

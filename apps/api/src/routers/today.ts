@@ -1,7 +1,7 @@
 import { type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { protectedProcedure, router } from './trpc.js';
-import { nextDueAtOf, readCardStanding } from '../services/cardStanding.js';
+import { readCardStanding } from '../services/cardStanding.js';
 import { liveCramDate } from '../services/cramDate.js';
 import { deckNotFoundError } from '../services/decks.js';
 import { continueTarget } from '../services/syllabus.js';
@@ -103,7 +103,7 @@ export const todayRouter = router({
   /**
    * Today (#114): what the learner has to do now, never stats. Review: the
    * decks Flashcards lists with cards due or new, most due, then most new,
-   * then by name, each ticked unless the learner left it out (#115).
+   * then by name, each saying whether Today's Review takes it (#115).
    * Continue learning: each active course's next step, the course the
    * learner was last active in first.
    */
@@ -129,20 +129,11 @@ export const todayRouter = router({
     });
 
     // Every deck's cards, both ways a Reversible Deck is studied, in one read
-    const { cards } = await readCardStanding(ctx.prisma, {
+    const { cards, nextDueAt } = await readCardStanding(ctx.prisma, {
       userId: ctx.userId,
       deckIds: decks.map((deck) => deck.id),
       now,
     });
-
-    // When the next card comes due, on the ticked decks alone
-    const ticked = new Set(
-      decks.filter((deck) => !deck.leftOutOfToday).map((deck) => deck.id),
-    );
-    const nextDueAt = nextDueAtOf(
-      cards.filter((card) => ticked.has(card.deckId)),
-      now,
-    );
 
     const courses = (
       await ctx.prisma.course.findMany({
@@ -176,7 +167,7 @@ export const todayRouter = router({
               b.newCount - a.newCount ||
               byName(a.name, b.name),
           ),
-        // For when no ticked deck has cards due or new
+        // For when none are due or new
         nextDueAt,
       },
       continueLearning: courses.flatMap((course) => {
@@ -230,9 +221,9 @@ export const todayRouter = router({
   }),
 
   /**
-   * Ticks or unticks decks in Today's Review (#115): one from its row, or
-   * every row at once with Select all. What's kept is the decks left out,
-   * so a new deck starts ticked.
+   * Ticks or unticks decks for Today's Review (#115): one, or several at
+   * once with Select all. What's kept is the decks left out, so a new deck
+   * starts ticked.
    */
   setDecksTicked: protectedProcedure
     .input(

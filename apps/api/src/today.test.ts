@@ -604,50 +604,6 @@ describe('choosing which decks Today reviews', () => {
     expect(await ticks()).toEqual({ Unticked: false, Ticked: true });
   });
 
-  it('says when the next card on a ticked deck comes due, leaving out unticked decks', async () => {
-    const ticked = await deckOf(1, 'Ticked');
-    const unticked = await deckOf(1, 'Unticked');
-    // Answered NAILED, the ticked deck's card comes due later
-    await recordCardHistory(prisma, {
-      userId,
-      cardId: ticked.cards[0].id,
-      answers: [{ grade: 'NAILED', at: new Date() }],
-    });
-    await recordCardHistory(prisma, {
-      userId,
-      cardId: unticked.cards[0].id,
-      answers: [{ grade: 'MISSED', at: new Date() }],
-    });
-    await createCaller().today.setDecksTicked({
-      deckIds: [unticked.id],
-      ticked: false,
-    });
-    const dueAt = async (deck: typeof ticked) =>
-      (
-        await prisma.cardProgress.findFirstOrThrow({
-          where: { cardId: deck.cards[0].id, direction: 'FORWARD' },
-        })
-      ).dueAt;
-    expect((await dueAt(unticked))!.getTime()).toBeLessThan(
-      (await dueAt(ticked))!.getTime(),
-    );
-
-    const { review } = await createCaller().today.get();
-
-    expect(review.nextDueAt).toEqual(await dueAt(ticked));
-  });
-
-  it('says no card comes due while every deck is unticked', async () => {
-    const deck = await deckOf(1, 'Capitals');
-    await catchUp(deck);
-    await createCaller().today.setDecksTicked({
-      deckIds: [deck.id],
-      ticked: false,
-    });
-
-    expect((await createCaller().today.get()).review.nextDueAt).toBeNull();
-  });
-
   it("refuses another learner's deck, changing nothing", async () => {
     const mine = await deckOf(1, 'Mine');
     const theirs = await deckOf(1, 'Theirs', otherUserId);
