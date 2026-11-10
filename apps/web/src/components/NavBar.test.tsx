@@ -52,6 +52,56 @@ beforeEach(() => {
 });
 
 describe('NavBar', () => {
+  it('links Home first of the areas, and Study Hall to it', () => {
+    renderNavBar('/courses');
+
+    const links = screen
+      .getAllByRole('link')
+      .map((link) => [link.textContent, link.getAttribute('href')]);
+    expect(links.slice(0, 3)).toEqual([
+      ['Study Hall', '/'],
+      ['Home', '/'],
+      ['Courses', '/courses'],
+    ]);
+  });
+
+  it('marks Home as current on Home alone', () => {
+    renderNavBar('/');
+
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    for (const name of ['Courses', 'Flashcards', 'Stats', 'AI usage']) {
+      expect(screen.getByRole('link', { name })).not.toHaveAttribute(
+        'aria-current',
+      );
+    }
+  });
+
+  it("isn't on Home anywhere else", () => {
+    renderNavBar('/decks/deck-1');
+
+    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute(
+      'aria-current',
+    );
+    expect(screen.getByRole('link', { name: 'Study Hall' })).not.toHaveClass(
+      'max-sm:underline',
+    );
+  });
+
+  it('leaves Home to Study Hall on narrow screens, so the bar still fits 320px, marking Study Hall there on Home', () => {
+    renderNavBar('/');
+
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveClass(
+      'max-sm:hidden',
+    );
+    const studyHall = screen.getByRole('link', { name: 'Study Hall' });
+    expect(studyHall).toHaveClass('max-sm:underline');
+    // Home alone is current, so screen readers hear one
+    expect(studyHall).not.toHaveAttribute('aria-current');
+  });
+
   it('renders Courses and Flashcards as peer areas', () => {
     renderNavBar();
 

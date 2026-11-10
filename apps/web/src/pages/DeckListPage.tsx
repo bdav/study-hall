@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Archive,
@@ -17,7 +17,11 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DeckListSkeleton } from '@/components/PageSkeleton';
 import { DeckCard } from '@/components/DeckCard';
 import { formatDate, formatPercent } from '@/lib/format';
-import { archiveDeckDescription, canArchiveDeck } from '@/lib/decks';
+import {
+  archiveDeckDescription,
+  canArchiveDeck,
+  openedForNewDeck,
+} from '@/lib/decks';
 import { TILE_GRID } from '@/lib/layout';
 import { ENTER_GLOW, TILE_ENTER_GLOW } from '@/lib/enterGlow';
 import { isFocusWithin, useActiveElement } from '@/hooks/useActiveElement';
@@ -140,7 +144,11 @@ function ArchivedDecks({ archived }: { archived: ArchivedDeck[] }) {
 }
 
 export default function DeckListPage() {
-  const [isCreating, setIsCreating] = useState(false);
+  const location = useLocation();
+  // Open to start with when Home's New deck led here
+  const [isCreating, setIsCreating] = useState(() =>
+    openedForNewDeck(location.state),
+  );
   const [newDeckName, setNewDeckName] = useState('');
   // For the glow on what Enter would press (#94)
   const active = useActiveElement();

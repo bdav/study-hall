@@ -47,6 +47,25 @@ function fakeApi({ signedIn = true } = {}) {
         },
       ];
     }
+    // Home, where logging in lands
+    if (path === 'today.get') {
+      return {
+        review: { decks: [], nextDueAt: null },
+        continueLearning: [
+          {
+            id: 'course-1',
+            title: api.courseTitle,
+            deadline: null,
+            next: {
+              kind: 'LESSON',
+              lesson: { id: 'lesson-1', title: 'The alphabet', written: true },
+            },
+          },
+        ],
+        aiPaused: false,
+        previews: { decks: [], courses: [] },
+      };
+    }
     return [];
   }
 

@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { STUDY_DIRECTIONS, type StudyDirection } from '@/lib/directions';
-import { countOf } from '@/lib/format';
+import { countOf, formatCalendarDay } from '@/lib/format';
 import { steadyContent } from '@/lib/steady';
 import { glassInputClassName } from '@/lib/utils';
 import { InfoTip } from '@/components/InfoTip';
@@ -18,13 +18,6 @@ const DIRECTION_DETAILS: Record<StudyDirection, string> = {
   FORWARD: 'Each card shows its front; type the answer',
   REVERSE: 'Each card shows its answer; type the front',
 };
-
-// A date in the UTC day it's stored for, as the API reads it
-const cramDateFormat = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
 
 /** The Cram Date, its pace for NEW cards and how to change it (#87). */
 type CramDateField = {
@@ -95,7 +88,7 @@ function cramDateDetail(value: string | null) {
   if (!value) {
     return 'Optional: the day you need to know this deck by. Cram paces reviews and new cards toward it.';
   }
-  const date = cramDateFormat.format(new Date(value));
+  const date = formatCalendarDay(value);
   return `Reviews come back sooner as ${date} nears, and new cards are paced to reach it. Only Cram uses this date.`;
 }
 
@@ -105,7 +98,7 @@ function paceMessage(
   { newPerDay, inSession }: NonNullable<CramDateField['pace']>,
 ) {
   if (newPerDay === 0) return null;
-  const date = cramDateFormat.format(new Date(value));
+  const date = formatCalendarDay(value);
   const pace = `${countOf(newPerDay, 'new card')} a day to see them all by ${date}`;
   return inSession < newPerDay
     ? `${pace}; this session takes ${inSession}`

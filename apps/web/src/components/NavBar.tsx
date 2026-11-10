@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   GraduationCap,
+  House,
   Layers,
   LogOut,
   Sparkles,
@@ -12,6 +13,16 @@ import { forgetNewCourse } from '@/lib/newCourse';
 
 /** The top-level areas, each owning the paths that start with its prefixes. */
 const AREAS = [
+  {
+    to: '/',
+    label: 'Home',
+    icon: House,
+    // Home alone, as no other path is "/" or starts with "//"
+    prefixes: ['/'],
+    // Study Hall links Home, and stands for it on narrow screens, where
+    // there's no room for both
+    fromSm: true,
+  },
   {
     to: '/courses',
     label: 'Courses',
@@ -44,6 +55,7 @@ function isInArea(pathname: string, prefixes: string[]) {
 export function NavBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const onHome = pathname === '/';
   const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery();
   const canUseAI = Boolean(me.data?.user?.canUseAI);
@@ -76,19 +88,22 @@ export function NavBar() {
     <nav className="flex items-center gap-1 px-4 py-2 pointer-coarse:max-sm:gap-0 sm:gap-4 sm:py-4 md:px-8">
       <Link
         to="/"
-        className="touch-target text-lg font-bold tracking-wide whitespace-nowrap text-white pointer-coarse:max-[339px]:text-base"
+        // Below sm, where Home isn't in the bar, Study Hall is marked on Home;
+        // Home's own link says it's current to screen readers, as Study Hall
+        // saying so too would make two
+        className={`touch-target text-lg font-bold tracking-wide whitespace-nowrap text-white pointer-coarse:max-[339px]:text-base ${onHome ? 'decoration-2 underline-offset-4 max-sm:underline' : ''}`}
       >
         Study Hall
       </Link>
       {AREAS.filter((area) => canUseAI || !area.needsAI).map(
-        ({ to, label, icon: Icon, prefixes }) => {
+        ({ to, label, icon: Icon, prefixes, fromSm }) => {
           const current = isInArea(pathname, prefixes);
           return (
             <Link
               key={to}
               to={to}
               // An icon alone is marked by a soft background as well as colour
-              className={`${baseLinkClass} ${current ? 'bg-white/15 text-white sm:bg-transparent' : 'text-white/70'}`}
+              className={`${baseLinkClass} ${current ? 'bg-white/15 text-white sm:bg-transparent' : 'text-white/70'} ${fromSm ? 'max-sm:hidden' : ''}`}
               aria-current={current ? 'page' : undefined}
             >
               <Icon className="h-4 w-4" aria-hidden />

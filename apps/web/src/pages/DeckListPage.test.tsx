@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DeckListPage from './DeckListPage';
 import { trpc } from '@/lib/trpc';
+import { NEW_DECK } from '@/lib/decks';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -63,14 +64,14 @@ const mockDecks = [
   },
 ];
 
-function renderDeckListPage() {
+function renderDeckListPage(state?: unknown) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={[{ pathname: '/', state }]}>
         <DeckListPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -227,6 +228,14 @@ describe('DeckListPage', () => {
 
     expect(screen.getByText(/deck name/i)).toBeInTheDocument();
     expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  it("opens the create form at once when Home's New deck sent the learner here", () => {
+    setupMocks();
+    renderDeckListPage(NEW_DECK);
+
+    expect(screen.getByText(/deck name/i)).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveFocus();
   });
 
   it('calls create mutation when form is submitted', async () => {

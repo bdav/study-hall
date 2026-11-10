@@ -51,6 +51,19 @@ vi.mock('@/lib/trpc', () => ({
         useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
       },
     },
+    today: {
+      get: {
+        useQuery: vi.fn(() => ({
+          data: {
+            review: { decks: [], nextDueAt: null },
+            continueLearning: [],
+            aiPaused: false,
+            previews: { decks: [], courses: [] },
+          },
+          isLoading: false,
+        })),
+      },
+    },
     course: {
       list: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
       listArchived: { useQuery: vi.fn(() => ({ data: [] })) },
@@ -73,13 +86,21 @@ function renderAt(path: string) {
 }
 
 describe('routes', () => {
-  it('lands on Courses by default', async () => {
+  it('lands on Home, showing Today', async () => {
     const router = renderAt('/');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Today' }),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('shows the courses under Courses', async () => {
+    renderAt('/courses');
 
     expect(
       await screen.findByRole('heading', { name: 'Your Courses' }),
     ).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/courses');
   });
 
   it('shows the decks under Flashcards', async () => {

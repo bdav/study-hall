@@ -30,3 +30,19 @@ export function courseLedHere(state: unknown, courseId: string) {
     state.fromCourseId === courseId
   );
 }
+
+/**
+ * The router state a link to Flashcards carries to open its New Deck form
+ * at once, as Home's New deck tile does.
+ */
+export const NEW_DECK = { newDeck: true };
+
+/** Whether Flashcards was opened to make a new deck. */
+export function openedForNewDeck(state: unknown) {
+  return (
+    typeof state === 'object' &&
+    state !== null &&
+    'newDeck' in state &&
+    state.newDeck === true
+  );
+}

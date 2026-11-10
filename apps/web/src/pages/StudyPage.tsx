@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { formatDueTime } from '@/lib/format';
 import { steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
@@ -398,14 +399,6 @@ function cardCount(count: number) {
   return `${count} ${count === 1 ? 'card' : 'cards'}`;
 }
 
-const nextDueFormat = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
-
 /**
  * The title card's count: before a session, how many cards one would hold
  * and how many the deck has, or that nothing is due and when the next card
@@ -479,7 +472,7 @@ function TitleCardDetails({
       </p>
       {!isDrill && preview.nextDueAt && (
         <p className="mt-1 text-xs text-white/40">
-          Next card due {nextDueFormat.format(new Date(preview.nextDueAt))}
+          Next card due {formatDueTime(preview.nextDueAt)}
         </p>
       )}
     </>

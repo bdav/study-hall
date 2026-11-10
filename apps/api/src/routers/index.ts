@@ -8,6 +8,7 @@ import { exerciseRouter } from './exercise.js';
 import { lessonRouter } from './lesson.js';
 import { studyRouter } from './study.js';
 import { statsRouter } from './stats.js';
+import { todayRouter } from './today.js';
 import { tutorRouter } from './tutor.js';
 
 export { publicProcedure };
@@ -25,5 +26,6 @@ export const appRouter = router({
   lesson: lessonRouter,
   study: studyRouter,
   stats: statsRouter,
+  today: todayRouter,
   tutor: tutorRouter,
 });

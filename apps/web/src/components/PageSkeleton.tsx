@@ -88,6 +88,25 @@ export function StudySkeleton() {
   );
 }
 
+/** Home: its heading and two blocks of rows. */
+export function HomeSkeleton() {
+  return (
+    <CenteredPage>
+      <div className="w-full max-w-4xl" role="status" aria-label="Loading">
+        <Skeleton className="h-8 w-32" />
+        {[1, 2].map((block) => (
+          <div key={block} className="mt-8 space-y-2">
+            <Skeleton className="h-6 w-40" />
+            {[1, 2].map((row) => (
+              <Skeleton key={row} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        ))}
+      </div>
+    </CenteredPage>
+  );
+}
+
 export function CourseListSkeleton() {
   return <TileGridSkeleton />;
 }

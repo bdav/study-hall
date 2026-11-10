@@ -1,8 +1,5 @@
-import {
-  createBrowserRouter,
-  Navigate,
-  type RouteObject,
-} from 'react-router-dom';
+import { createBrowserRouter, type RouteObject } from 'react-router-dom';
+import HomePage from './pages/HomePage';
 import CoursesPage from './pages/CoursesPage';
 import NewCoursePage from './pages/NewCoursePage';
 import CoursePage from './pages/CoursePage';
@@ -38,10 +35,9 @@ export const routes: RouteObject[] = [
         element: <Layout />,
         errorElement: <RouteErrorFallback />,
         children: [
-          // `/` is kept free for a later view above both areas
           {
             path: '/',
-            element: <Navigate to="/courses" replace />,
+            element: <HomePage />,
           },
           {
             path: '/courses',
