@@ -107,8 +107,9 @@ function useSetDecksTicked() {
 }
 
 /**
- * A Review tile's tickbox, a badge in its corner, beside the tile's link
- * rather than in it. Goes inside a relative wrapper of the tile.
+ * A Review tile's tickbox, a badge in its lower right corner, clear of the
+ * deck's stack, beside the tile's link rather than in it. Goes inside a
+ * relative wrapper of the tile.
  */
 function DeckTick({
   name,
@@ -120,8 +121,7 @@ function DeckTick({
   onChange: (ticked: boolean) => void;
 }) {
   return (
-    // The tile's face starts below the deck's 12px stack (`DeckCard`)
-    <label className="touch-target absolute top-5 right-2 z-10 cursor-pointer">
+    <label className="touch-target absolute right-2 bottom-2 z-10 cursor-pointer">
       <input
         type="checkbox"
         checked={ticked}
@@ -178,12 +178,17 @@ function Review({
         </button>
       }
       note={
-        noneTicked && (
+        <>
           <p className="mt-1 text-sm text-white/60">
-            Nothing ticked to review.
-            {nextDueAt && ` Next card due ${formatDueTime(nextDueAt)}`}
+            Tick the decks to review together, in one session.
           </p>
-        )
+          {noneTicked && (
+            <p className="mt-1 text-sm text-white/60">
+              Nothing ticked to review.
+              {nextDueAt && ` Next card due ${formatDueTime(nextDueAt)}`}
+            </p>
+          )}
+        </>
       }
     >
       {decks.map((deck) => (

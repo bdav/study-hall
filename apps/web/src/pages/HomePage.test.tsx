@@ -223,8 +223,12 @@ describe('HomePage', () => {
       ticked: false,
     }));
 
-    it("gives each deck's tile a tickbox, labelled with its deck, ticked as saved", () => {
+    it("gives each deck's tile a tickbox, labelled with its deck, ticked as saved, and says what ticking does", () => {
       renderHome({ review: { decks: someUnticked, nextDueAt: null } });
+
+      expect(block('Review')).toHaveTextContent(
+        'Tick the decks to review together, in one session.',
+      );
 
       expect(
         screen.getByRole('checkbox', { name: 'Review Capitals' }),
