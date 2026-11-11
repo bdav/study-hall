@@ -131,6 +131,13 @@ function block(name: string) {
   return screen.getByRole('region', { name });
 }
 
+/** A block's deck tiles, each opening its deck. */
+function deckTilesIn(region: HTMLElement) {
+  return within(region)
+    .getAllByRole('link')
+    .filter((link) => link.getAttribute('href')?.startsWith('/decks/'));
+}
+
 /** The links in a block, by their names, in order. */
 function linksIn(region: HTMLElement) {
   return within(region)
@@ -149,6 +156,78 @@ describe('HomePage', () => {
     ).toBeInTheDocument();
   });
 
+  describe("Today's Review's tile", () => {
+    const tile = () => within(block('Review')).getAllByRole('link')[0];
+
+    it('comes first in Review, opening Today’s Review, with what it would take from the ticked decks', () => {
+      renderHome({
+        review: {
+          decks: decksToReview,
+          nextDueAt: null,
+          todaysReview: {
+            dueCount: 4,
+            newCount: 9,
+            deckCount: 2,
+            unfinished: null,
+          },
+        },
+      });
+
+      expect(tile()).toHaveAttribute('href', '/review');
+      expect(tile()).toHaveTextContent("Today's Review");
+      expect(tile()).toHaveTextContent('4 due · 9 new');
+      expect(tile()).toHaveTextContent('from 2 decks');
+    });
+
+    it('says when nothing ticked is due', () => {
+      renderHome({
+        review: {
+          decks: decksToReview.map((deck) => ({ ...deck, ticked: false })),
+          nextDueAt: null,
+          todaysReview: noReview,
+        },
+      });
+
+      expect(tile()).toHaveTextContent('Nothing ticked is due');
+    });
+
+    it('stays, to resume an unfinished review, when no deck has cards due or new', () => {
+      renderHome({
+        review: {
+          decks: [],
+          nextDueAt: null,
+          todaysReview: {
+            ...noReview,
+            unfinished: { answered: 9, size: 10 },
+          },
+        },
+      });
+
+      expect(tile()).toHaveTextContent('Resume review?');
+      expect(
+        screen.queryByRole('region', { name: 'Flashcards' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers an unfinished review to resume, saying how far it got', () => {
+      renderHome({
+        review: {
+          decks: decksToReview,
+          nextDueAt: null,
+          todaysReview: {
+            dueCount: 4,
+            newCount: 9,
+            deckCount: 2,
+            unfinished: { answered: 3, size: 10 },
+          },
+        },
+      });
+
+      expect(tile()).toHaveTextContent('Resume review?');
+      expect(tile()).toHaveTextContent('3 of 10 answered');
+    });
+  });
+
   describe('Review', () => {
     it('shows each deck to review as its tile, in order, opening its study page, with its due and new counts', () => {
       renderHome({
@@ -159,7 +238,7 @@ describe('HomePage', () => {
         },
       });
 
-      const rows = within(block('Review')).getAllByRole('link');
+      const rows = deckTilesIn(block('Review'));
       expect(rows.map((row) => row.getAttribute('href'))).toEqual([
         '/decks/deck-1',
         '/decks/deck-2',
@@ -181,7 +260,7 @@ describe('HomePage', () => {
         },
       });
 
-      const italian = within(block('Review')).getAllByRole('link')[1];
+      const italian = deckTilesIn(block('Review'))[1];
       expect(italian).toHaveTextContent('Course: Italian for travel');
       expect(italian).toHaveTextContent('Cram until 1 Jun');
     });

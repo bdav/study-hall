@@ -46,3 +46,17 @@ export function openedForNewDeck(state: unknown) {
     state.newDeck === true
   );
 }
+
+/** "4 due · 2 new", leaving out a count that's nought. */
+export function dueAndNew({
+  dueCount,
+  newCount,
+}: {
+  dueCount: number;
+  newCount: number;
+}) {
+  return [
+    ...(dueCount > 0 ? [`${dueCount} due`] : []),
+    ...(newCount > 0 ? [`${newCount} new`] : []),
+  ].join(' · ');
+}

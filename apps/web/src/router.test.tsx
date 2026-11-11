@@ -55,7 +55,16 @@ vi.mock('@/lib/trpc', () => ({
       get: {
         useQuery: vi.fn(() => ({
           data: {
-            review: { decks: [], nextDueAt: null },
+            review: {
+              decks: [],
+              nextDueAt: null,
+              todaysReview: {
+                dueCount: 0,
+                newCount: 0,
+                deckCount: 0,
+                unfinished: null,
+              },
+            },
             continueLearning: [],
             aiPaused: false,
             previews: { decks: [], courses: [] },

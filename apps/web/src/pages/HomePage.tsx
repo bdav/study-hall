@@ -11,9 +11,14 @@ import { DeckTile } from '@/components/DeckTile';
 import { NewTileFace } from '@/components/NewTile';
 import { HomeSkeleton } from '@/components/PageSkeleton';
 import { Tile } from '@/components/Tile';
-import { deadlineLine, formatCalendarDay, formatDueTime } from '@/lib/format';
+import {
+  countOf,
+  deadlineLine,
+  formatCalendarDay,
+  formatDueTime,
+} from '@/lib/format';
 import { FULL_WIDTH_GUTTER } from '@/lib/layout';
-import { NEW_DECK } from '@/lib/decks';
+import { dueAndNew, NEW_DECK } from '@/lib/decks';
 
 type Today = inferRouterOutputs<AppRouter>['today']['get'];
 
@@ -53,26 +58,60 @@ function Block({
   );
 }
 
-/** "4 due · 2 new", leaving out a count that's nought. */
-function reviewCounts({
-  dueCount,
-  newCount,
-}: Today['review']['decks'][number]) {
-  return [
-    ...(dueCount > 0 ? [`${dueCount} due`] : []),
-    ...(newCount > 0 ? [`${newCount} new`] : []),
-  ].join(' · ');
+/**
+ * Today's Review's tile, first in Review (#116): what a review would take
+ * from the ticked decks, or that nothing ticked is due, or how far an
+ * unfinished one got; it opens Today's Review.
+ */
+function TodaysReviewTile({
+  review: { dueCount, newCount, deckCount, unfinished },
+}: {
+  review: Today['review']['todaysReview'];
+}) {
+  return (
+    <CarouselItem>
+      <Link to="/review" className={DECK_LINK}>
+        <DeckCard stackCount={3}>
+          <p className="text-center text-lg font-bold tracking-wide text-white">
+            Today's Review
+          </p>
+          {unfinished ? (
+            <>
+              <p className="mt-2 text-sm font-medium text-white/90">
+                Resume review?
+              </p>
+              <p className="mt-0.5 text-xs text-white/50">
+                {unfinished.answered} of {unfinished.size} answered
+              </p>
+            </>
+          ) : dueCount + newCount > 0 ? (
+            <>
+              <p className="mt-2 text-sm font-medium text-white/90">
+                {dueAndNew({ dueCount, newCount })}
+              </p>
+              <p className="mt-0.5 text-xs text-white/50">
+                from {countOf(deckCount, 'deck')}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-white/60">Nothing ticked is due</p>
+          )}
+        </DeckCard>
+      </Link>
+    </CarouselItem>
+  );
 }
 
-function Review({ decks }: { decks: Today['review']['decks'] }) {
+function Review({ review }: { review: Today['review'] }) {
   return (
     <Block id="review" title="Review">
-      {decks.map((deck) => (
+      <TodaysReviewTile review={review.todaysReview} />
+      {review.decks.map((deck) => (
         <CarouselItem key={deck.id}>
           <Link to={`/decks/${deck.id}`} className={DECK_LINK}>
             <DeckTile deck={deck}>
               <p className="mt-2 text-sm font-medium text-white/90">
-                {reviewCounts(deck)}
+                {dueAndNew(deck)}
               </p>
               {deck.cramUntil && (
                 <p className="mt-0.5 text-xs text-white/50">
@@ -254,7 +293,9 @@ export default function HomePage() {
   }
 
   const { review, continueLearning, aiPaused, previews } = todayQuery.data;
-  const reviewEmpty = review.decks.length === 0;
+  // An unfinished review keeps Review's row, for its Resume
+  const reviewEmpty =
+    review.decks.length === 0 && !review.todaysReview.unfinished;
   const continueEmpty = continueLearning.length === 0;
 
   return (
@@ -272,7 +313,7 @@ export default function HomePage() {
           nextDueAt={review.nextDueAt}
         />
       ) : (
-        <Review decks={review.decks} />
+        <Review review={review} />
       )}
 
       {continueEmpty ? (

@@ -6,6 +6,7 @@ import { STEADY_QUERY } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { type SessionChoice } from '@/lib/sessionChoices';
 import { toFlashcard, type Flashcard } from '@/lib/cards';
+import { directionLabels, type StudyDirection } from '@/lib/directions';
 import { gradeOf } from '@/lib/recallGrades';
 import {
   initialState,
@@ -20,6 +21,33 @@ import {
 type ServerSession = NonNullable<
   inferRouterOutputs<AppRouter>['study']['activeSession']
 >;
+
+/**
+ * What the study screen studies: a deck's own sessions, or Today's Review
+ * across the decks ticked for it (#116).
+ */
+export type StudySource =
+  { kind: 'deck'; deckId: string | undefined } | { kind: 'review' };
+
+/** A deck a session's cards come from, as each card on screen names it. */
+export type ItemDeck = {
+  name: string;
+  /** Its Direction Labels, on a Reversible Deck. */
+  labels: Record<StudyDirection, string> | null;
+};
+
+/** The decks a session's cards come from, by id. */
+function decksOf(session: ServerSession) {
+  return new Map<string, ItemDeck>(
+    session.items.map(({ card: { deck } }) => [
+      deck.id,
+      {
+        name: deck.name,
+        labels: deck.reversible ? directionLabels(deck) : null,
+      },
+    ]),
+  );
+}
 
 /**
  * A session's items still in play: those answered, then those to come;
@@ -76,39 +104,69 @@ function progressOf(session: ServerSession) {
 /**
  * The study page's Study Session: the machine in `lib/studySession.ts`,
  * whose commands this makes through tRPC, feeding their results back in,
- * and the title card's queries. It gives what's on screen (`view`) and the
- * learner's intents (`act`).
+ * and the title card's queries, a deck's or Today's Review's. It gives
+ * what's on screen (`view`) and the learner's intents (`act`).
  */
 export function useStudySession(
-  deckId: string | undefined,
+  source: StudySource,
   choice: SessionChoice,
+  {
+    ticking = false,
+  }: {
+    /** Today's Review's decks being ticked, so its preview is about to change. */
+    ticking?: boolean;
+  } = {},
 ) {
+  const isReview = source.kind === 'review';
+  const deckId = source.kind === 'deck' ? source.deckId : undefined;
+  const isDeck = !!deckId;
+  // Today's Review's choice: its cards' directions are its own, and Review
+  // retired is a deck's alone
+  const reviewChoice = {
+    sessionType: choice.sessionType,
+    studyMode:
+      choice.studyMode === 'REVIEW_RETIRED'
+        ? ('STUDY' as const)
+        : choice.studyMode,
+  };
   const [machine, setMachine] = useState(initialState);
+  // Each deck the session's cards come from, as the server gave them
+  const [itemDecks, setItemDecks] = useState(new Map<string, ItemDeck>());
   // The machine as of the latest event, so events in the same moment, such
   // as a second press of Start, each see the one before
   const latest = useRef(initialState);
 
   const utils = trpc.useUtils();
   // What a session started now would hold, in the options chosen
+  const previewOptions = {
+    // With nothing to study the title card starts nothing, so look again
+    // now and then for cards come due
+    refetchInterval: (query: { state: { data?: { sessionSize: number } } }) =>
+      query.state.data?.sessionSize === 0 ? 60_000 : false,
+    ...STEADY_QUERY,
+  };
   const queuePreview = trpc.study.queuePreview.useQuery(
     { deckId: deckId ?? '', ...choice },
-    {
-      enabled: !!deckId,
-      // With nothing to study the title card starts nothing, so look again
-      // now and then for cards come due
-      refetchInterval: (query) =>
-        query.state.data?.sessionSize === 0 ? 60_000 : false,
-      ...STEADY_QUERY,
-    },
+    { enabled: isDeck, ...previewOptions },
   );
-  // The deck's unfinished session, which starting resumes; not kept once
-  // off screen, so a session finished since isn't offered meanwhile
+  const reviewPreview = trpc.study.reviewPreview.useQuery(reviewChoice, {
+    enabled: isReview,
+    ...previewOptions,
+  });
+  // The unfinished session, which starting resumes; not kept once off
+  // screen, so a session finished since isn't offered meanwhile
   const activeSession = trpc.study.activeSession.useQuery(
     { deckId: deckId ?? '' },
-    { enabled: !!deckId, gcTime: 0 },
+    { enabled: isDeck, gcTime: 0 },
   );
-  const startSession = trpc.study.startSession.useMutation({
-    onSuccess: (started) => {
+  const activeReview = trpc.study.activeReview.useQuery(undefined, {
+    enabled: isReview,
+    gcTime: 0,
+  });
+  const onStarted = {
+    onSuccess: (started: ServerSession | null) => {
+      // A review's cards come from several decks; a deck's are its own
+      if (started && isReview) setItemDecks(decksOf(started));
       send({
         type: 'started',
         session: started && {
@@ -117,11 +175,32 @@ export function useStudySession(
           items: toItems(started),
         },
       });
+      // Today's counts have changed, its tile's among them
+      if (isReview) utils.today.get.invalidate();
     },
     onError: () => {
       send({ type: 'failed', of: 'start' });
     },
-  });
+  };
+  const startSession = trpc.study.startSession.useMutation(onStarted);
+  const startReview = trpc.study.startReview.useMutation(onStarted);
+
+  /** The title card's queries, looked at again. */
+  function refreshTitleCard() {
+    if (isReview) {
+      utils.study.activeReview.invalidate();
+      utils.study.reviewPreview.invalidate();
+    } else {
+      utils.study.activeSession.invalidate({ deckId });
+      utils.study.queuePreview.invalidate({ deckId });
+    }
+  }
+
+  /** A change to a card's deck, such as its retired count. */
+  function refreshDeck() {
+    // A review's cards come from several decks
+    utils.deck.getById.invalidate(isReview ? undefined : { id: deckId });
+  }
   // The Cram Date, kept on the deck, which the title card then counts by
   // (#87)
   const setCramDate = trpc.deck.update.useMutation({
@@ -136,10 +215,7 @@ export function useStudySession(
   const acceptAnswer = trpc.study.acceptAnswer.useMutation();
   // Abandoning the unfinished session offers a new one in its place
   const abandonSession = trpc.study.abandonSession.useMutation({
-    onSuccess: () => {
-      utils.study.activeSession.invalidate({ deckId });
-      utils.study.queuePreview.invalidate({ deckId });
-    },
+    onSuccess: refreshTitleCard,
   });
   const markKnown = trpc.card.markKnown.useMutation({
     onSuccess: ({ markedCount }, { cardIds }) => {
@@ -165,7 +241,8 @@ export function useStudySession(
   async function run(command: StudySessionCommand) {
     switch (command.type) {
       case 'start':
-        if (deckId) startSession.mutate({ deckId, ...choice });
+        if (isReview) startReview.mutate(reviewChoice);
+        else if (deckId) startSession.mutate({ deckId, ...choice });
         return;
       case 'submit': {
         const { itemId, userAnswer } = command;
@@ -214,6 +291,7 @@ export function useStudySession(
           return;
         }
         await send({ type: 'finished' });
+        if (isReview) utils.today.get.invalidate();
         return;
       case 'accept': {
         const { attemptId, canonicalAnswerId } = command;
@@ -250,7 +328,7 @@ export function useStudySession(
         await send({ type: 'retired', cardId: command.cardId });
         utils.card.history.invalidate({ cardId: command.cardId });
         // The deck's retired count, which offers Review retired, has grown
-        utils.deck.getById.invalidate({ id: deckId });
+        refreshDeck();
         return;
       case 'undoRetire':
         try {
@@ -262,7 +340,7 @@ export function useStudySession(
         }
         await send({ type: 'retireUndone', cardId: command.cardId });
         utils.card.history.invalidate({ cardId: command.cardId });
-        utils.deck.getById.invalidate({ id: deckId });
+        refreshDeck();
         return;
       case 'unretire':
         try {
@@ -273,8 +351,8 @@ export function useStudySession(
         }
         await send({ type: 'unretired', cardIds: command.cardIds });
         // The deck's retired count, and its cards, have changed
-        utils.deck.getById.invalidate({ id: deckId });
-        utils.card.listByDeck.invalidate({ deckId });
+        refreshDeck();
+        utils.card.listByDeck.invalidate(isReview ? undefined : { deckId });
         return;
       case 'markKnown':
         markKnown.mutate({
@@ -285,28 +363,43 @@ export function useStudySession(
     }
   }
 
-  const resumable = activeSession.data
+  const active = isReview ? activeReview.data : activeSession.data;
+  const resumable = active
     ? {
-        id: activeSession.data.id,
-        direction: activeSession.data.direction,
-        ...progressOf(activeSession.data),
+        id: active.id,
+        direction: active.direction,
+        ...progressOf(active),
       }
     : null;
-  const preview = queuePreview.data;
-  const isPreviewKept = queuePreview.isPlaceholderData;
+  const previewQuery = isReview ? reviewPreview : queuePreview;
+  const preview = previewQuery.data;
+  // A review's preview is kept, too, while its decks are being ticked and
+  // until it's looked at again, as its options haven't changed but its decks
+  // have
+  const isPreviewKept =
+    previewQuery.isPlaceholderData ||
+    (isReview && (ticking || (previewQuery.isFetching && !!preview)));
 
   return {
     view: studyView(machine, {
       resumable: !!resumable,
       // A preview kept from other options is only to show: they may have had
-      // nothing to study when the ones chosen do
-      sessionSize: isPreviewKept ? undefined : preview?.sessionSize,
+      // nothing to study when the ones chosen do. Start waits for a tick
+      // being saved, as the decks it would take are changing
+      sessionSize:
+        isReview && ticking
+          ? 0
+          : isPreviewKept
+            ? undefined
+            : preview?.sessionSize,
     }),
     // What a session started now would hold, and the unfinished one, which
     // starting resumes (#10)
     preview,
     isPreviewKept,
     resumable,
+    /** The deck a card of the session comes from. */
+    deckOf: (deckId: string) => itemDecks.get(deckId),
     isAcceptingAnswer: acceptAnswer.isPending,
     isUnretiring: unretireCards.isPending,
     cramDateFailed: setCramDate.isError,
@@ -317,7 +410,7 @@ export function useStudySession(
       },
       /** Next: starts a session from the title card, or moves on. */
       next: () => {
-        if (deckId) send({ type: 'next' });
+        if (isReview || deckId) send({ type: 'next' });
       },
       back: () => send({ type: 'back' }),
       flip: () => send({ type: 'flip' }),
@@ -359,8 +452,13 @@ export function useStudySession(
        */
       startAnother: () => {
         send({ type: 'startAnother' });
-        utils.study.activeSession.setData({ deckId: deckId ?? '' }, null);
-        utils.study.queuePreview.invalidate({ deckId });
+        if (isReview) {
+          utils.study.activeReview.setData(undefined, null);
+          utils.study.reviewPreview.invalidate();
+        } else {
+          utils.study.activeSession.setData({ deckId: deckId ?? '' }, null);
+          utils.study.queuePreview.invalidate({ deckId });
+        }
       },
       /** An edit to a card of the session that reset its progress. */
       cardEdited: (card: Flashcard) => send({ type: 'cardEdited', card }),

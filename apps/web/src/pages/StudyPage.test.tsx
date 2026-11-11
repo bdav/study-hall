@@ -57,7 +57,14 @@ vi.mock('@/lib/trpc', () => ({
       restore: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
       update: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
+    today: {
+      get: { useQuery: vi.fn(() => ({ data: undefined })) },
+      setDecksTicked: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+    },
     study: {
+      startReview: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+      reviewPreview: { useQuery: vi.fn(() => ({ data: undefined })) },
+      activeReview: { useQuery: vi.fn(() => ({ data: undefined })) },
       startSession: { useMutation: vi.fn() },
       submitAnswer: { useMutation: vi.fn() },
       dontKnow: { useMutation: vi.fn() },
@@ -413,6 +420,7 @@ type QueuePreview = {
   newCount: number;
   nextDueAt: string | null;
   cramPace?: { newPerDay: number; inSession: number } | null;
+  wouldEnd?: { id: string; kind: string; deckName: string | null }[];
 };
 
 /** What a session started now would hold; both cards, NEW, by default. */
@@ -427,7 +435,8 @@ function mockQueuePreview(
   { isPlaceholderData = false } = {},
 ) {
   vi.mocked(trpc.study.queuePreview.useQuery).mockReturnValue({
-    data: preview,
+    // Nothing for Start to end, unless given
+    data: { wouldEnd: [], ...preview },
     isPlaceholderData,
   } as unknown as ReturnType<typeof trpc.study.queuePreview.useQuery>);
 }
@@ -679,6 +688,22 @@ describe('StudyPage', () => {
     expect(
       screen.getByRole('button', { name: /test deck/i }),
     ).toHaveTextContent('1 to study · 2 in deck');
+  });
+
+  it("says beforehand when its Start would end an unfinished Today's Review", () => {
+    setupBasicMocks();
+    mockQueuePreview({
+      sessionSize: 1,
+      dueCount: 1,
+      newCount: 0,
+      nextDueAt: null,
+      wouldEnd: [{ id: 'review-1', kind: 'TODAYS_REVIEW', deckName: null }],
+    });
+    renderStudyPage();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "Starting ends your unfinished Today's Review, keeping its answers.",
+    );
   });
 
   it('says when nothing is due, and when the next card is', () => {

@@ -64,6 +64,10 @@ export const routes: RouteObject[] = [
             element: <DeckListPage />,
           },
           {
+            path: '/review',
+            element: <StudyPage review />,
+          },
+          {
             path: '/decks/:deckId',
             element: <StudyPage />,
           },

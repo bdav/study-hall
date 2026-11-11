@@ -7,8 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { formatDueTime } from '@/lib/format';
+import { countOf, formatDueTime } from '@/lib/format';
 import { steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
@@ -47,7 +49,10 @@ import {
   useSlideAnimation,
   type CardSnapshot,
 } from '@/hooks/useSlideAnimation';
+import { BackLink } from '@/components/BackLink';
 import { DeckHeader } from '@/components/DeckHeader';
+import { ReviewDecks } from '@/components/ReviewDecks';
+import { useSetDecksTicked } from '@/hooks/useSetDecksTicked';
 import { StudyCardEditor } from '@/components/StudyCardEditor';
 import { CardAnswersSummary } from '@/components/CardAnswers';
 import { CardHistory } from '@/components/CardHistory';
@@ -405,14 +410,21 @@ function cardCount(count: number) {
  * is; during a session, its size.
  */
 function TitleCardDetails({
-  deckSize,
+  scope,
+  noun,
   sessionSize,
   preview,
   resumable,
   studyMode,
   retiredCount,
 }: {
-  deckSize: number;
+  /**
+   * What the session draws on, after its count: "38 in deck", or Today's
+   * Review's "from 4 decks"; none when there's nothing to say.
+   */
+  scope: string | null;
+  /** What a session is called on the page: a deck's, or a review (#116). */
+  noun: 'session' | 'review';
   sessionSize: number | null;
   preview: { sessionSize: number; nextDueAt: string | null } | undefined;
   /**
@@ -437,7 +449,7 @@ function TitleCardDetails({
   if (resumable) {
     return (
       <>
-        <p className="mt-4 text-base text-white/80">Resume session?</p>
+        <p className="mt-4 text-base text-white/80">Resume {noun}?</p>
         <p className="mt-1 text-sm text-white/50">
           {resumable.answered} of {resumable.size} answered
           {resumable.directionLabel && ` · ${resumable.directionLabel}`}
@@ -457,18 +469,19 @@ function TitleCardDetails({
       </p>
     );
   }
-  if (!preview) return <p className={className}>{deckSize} in deck</p>;
+  const withScope = (line: string) => (scope ? `${line} · ${scope}` : line);
+  if (!preview) return scope && <p className={className}>{scope}</p>;
   if (preview.sessionSize > 0) {
     return (
       <p className={className}>
-        {preview.sessionSize} to study · {deckSize} in deck
+        {withScope(`${preview.sessionSize} to study`)}
       </p>
     );
   }
   return (
     <>
       <p className={className}>
-        {isDrill ? 'Nothing to drill' : 'Nothing due'} · {deckSize} in deck
+        {withScope(isDrill ? 'Nothing to drill' : 'Nothing due')}
       </p>
       {!isDrill && preview.nextDueAt && (
         <p className="mt-1 text-xs text-white/40">
@@ -603,7 +616,50 @@ const failureMessages: Record<Failure, string> = {
   unretire: "Couldn't unretire the cards. Please try again.",
 };
 
-export default function StudyPage() {
+/**
+ * Beside Start: the unfinished sessions starting would end, as they share
+ * a deck with the one starting (#137), their answers kept.
+ */
+function WouldEnd({
+  sessions,
+}: {
+  sessions: inferRouterOutputs<AppRouter>['study']['reviewPreview']['wouldEnd'];
+}) {
+  if (sessions.length === 0) return null;
+  const named = sessions.map((session) =>
+    session.kind === 'TODAYS_REVIEW'
+      ? "your unfinished Today's Review"
+      : `your unfinished session on ${session.deckName}`,
+  );
+  const ended = new Intl.ListFormat('en', { type: 'conjunction' }).format(
+    named,
+  );
+  return (
+    <p role="status" className="mt-4 text-center text-sm text-amber-100">
+      Starting ends {ended}, keeping {sessions.length > 1 ? 'their' : 'its'}{' '}
+      answers.
+    </p>
+  );
+}
+
+/** Today's Review's header, leading back to Home, where it's started. */
+function ReviewHeader() {
+  return (
+    <div className="w-full max-w-4xl">
+      <BackLink to="/">Home</BackLink>
+      <h1 className="text-3xl font-bold break-words text-white pointer-coarse:mt-2.5">
+        Today's Review
+      </h1>
+    </div>
+  );
+}
+
+/**
+ * The study screen: a deck's own Study Sessions at `/decks/:deckId`, or,
+ * with `review`, Today's Review at `/review`, across the decks ticked for
+ * it (#116), each card from its own deck.
+ */
+export default function StudyPage({ review = false }: { review?: boolean }) {
   const { deckId } = useParams<{ deckId: string }>();
   // Where the deck was reached from, which its links within it carry
   const location = useLocation();
@@ -627,8 +683,11 @@ export default function StudyPage() {
   );
   const deckQuery = trpc.deck.getById.useQuery(
     { id: deckId ?? '' },
-    { enabled: !!deckId },
+    { enabled: !review && !!deckId },
   );
+  // Today's Review's decks, to tick, from Today
+  const todayQuery = trpc.today.get.useQuery(undefined, { enabled: review });
+  const setDecksTicked = useSetDecksTicked();
   const deck = deckQuery.data;
   const isReversible = !!deck?.reversible;
   const labels = deck && isReversible ? directionLabels(deck) : undefined;
@@ -637,9 +696,10 @@ export default function StudyPage() {
 
   // Review retired only on a deck with retired cards, Study otherwise, as
   // the mode remembered may have been chosen on another deck (#86)
-  const offersReviewRetired = (deck?.retiredCount ?? 0) > 0;
+  const offersReviewRetired = !review && (deck?.retiredCount ?? 0) > 0;
   const studyMode =
-    chosenMode === 'REVIEW_RETIRED' && deck && !offersReviewRetired
+    chosenMode === 'REVIEW_RETIRED' &&
+    (review || (deck && !offersReviewRetired))
       ? 'STUDY'
       : chosenMode;
   const {
@@ -648,10 +708,16 @@ export default function StudyPage() {
     preview,
     isPreviewKept,
     resumable,
+    deckOf,
     isAcceptingAnswer,
     isUnretiring,
     cramDateFailed,
-  } = useStudySession(deckId, { sessionType, studyMode, direction });
+  } = useStudySession(
+    review ? { kind: 'review' } : { kind: 'deck', deckId },
+    { sessionType, studyMode, direction },
+    { ticking: setDecksTicked.isPending },
+  );
+  const noun = review ? 'review' : 'session';
   const { screen } = view;
   const cardScreen = screen.kind === 'card' ? screen : null;
   const isAtTitle = screen.kind === 'title';
@@ -669,7 +735,14 @@ export default function StudyPage() {
   const titleDetails = (
     <div {...steadyContent(isPreviewKept)}>
       <TitleCardDetails
-        deckSize={cards.length}
+        scope={
+          review
+            ? preview && 'deckCount' in preview && preview.deckCount > 0
+              ? `from ${countOf(preview.deckCount, 'deck')}`
+              : null
+            : `${cards.length} in deck`
+        }
+        noun={noun}
         sessionSize={isAtTitle ? screen.sessionSize : null}
         preview={preview}
         resumable={
@@ -688,6 +761,10 @@ export default function StudyPage() {
 
   const studiedItem = cardScreen?.item;
   const itemDirection = studiedItem?.direction ?? direction;
+  // In Today's Review, the deck the card on screen comes from, and the
+  // labels its directions go by
+  const itemDeck = review && studiedItem ? deckOf(studiedItem.deckId) : null;
+  const itemLabels = review ? (itemDeck?.labels ?? undefined) : labels;
   // The card on screen as it's asked in its item's direction: in Reverse,
   // its primary answer asking for its front (ADR-0011). Edits go to the card
   // itself
@@ -811,7 +888,7 @@ export default function StudyPage() {
   // has loaded, a slide ends, an answer is graded or edit mode ends:
   // Previous after going back, otherwise Next. Answering, the answer has it,
   // and once the session is over, Start another session
-  const isDeckLoaded = !!deck;
+  const isDeckLoaded = review ? !!todayQuery.data : !!deck;
   const isOver = screen.kind === 'summary';
   useEffect(() => {
     if (!isDeckLoaded || exitingCard || isEditing || isAnswering || isOver)
@@ -868,20 +945,35 @@ export default function StudyPage() {
     slideTo('right', act.startAnother);
   }
 
-  if (deckQuery.isLoading) {
+  const pageQuery = review ? todayQuery : deckQuery;
+  if (pageQuery.isLoading) {
     return <StudySkeleton />;
   }
 
-  if (deckQuery.isError || !deck) {
+  if (pageQuery.isError || (!review && !deck)) {
     return (
       <CenteredPage centered>
-        <p className="text-destructive">Error loading deck.</p>
+        <p className="text-destructive">
+          {review ? "Error loading Today's Review." : 'Error loading deck.'}
+        </p>
       </CenteredPage>
     );
   }
 
+  const header = deck ? (
+    <DeckHeader
+      deckName={deck.name}
+      deckId={deckId ?? ''}
+      activeTab="study"
+      course={deck.course}
+    />
+  ) : (
+    <ReviewHeader />
+  );
+  const title = deck ? deck.name : "Today's Review";
+
   // Read only: nothing to study until it's restored (#77)
-  if (deck.archivedAt) {
+  if (!review && deck?.archivedAt) {
     return (
       <CenteredPage>
         <DeckHeader
@@ -895,15 +987,10 @@ export default function StudyPage() {
     );
   }
 
-  if (cards.length === 0) {
+  if (!review && cards.length === 0) {
     return (
       <CenteredPage>
-        <DeckHeader
-          deckName={deck.name}
-          deckId={deckId ?? ''}
-          activeTab="study"
-          course={deck.course}
-        />
+        {header}
         <p className="mt-6 text-center text-white/60">
           This deck has no cards.
         </p>
@@ -921,17 +1008,14 @@ export default function StudyPage() {
   if (screen.kind === 'nothing-due') {
     return (
       <CenteredPage>
-        <DeckHeader
-          deckName={deck.name}
-          deckId={deckId ?? ''}
-          activeTab="study"
-          course={deck.course}
-        />
+        {header}
         <StudyStage>
           <div className="w-full max-w-md pt-3">
             <div className="flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 text-center backdrop-blur-sm">
               <p className="text-white/60">
-                Nothing is due right now. Come back later to review this deck.
+                {review
+                  ? 'Nothing is due right now on the decks ticked. Come back later.'
+                  : 'Nothing is due right now. Come back later to review this deck.'}
               </p>
             </div>
           </div>
@@ -943,12 +1027,7 @@ export default function StudyPage() {
   if (screen.kind === 'summary') {
     return (
       <CenteredPage>
-        <DeckHeader
-          deckName={deck.name}
-          deckId={deckId ?? ''}
-          activeTab="study"
-          course={deck.course}
-        />
+        {header}
         <StudyStage>
           <div
             className="relative w-full max-w-md pt-3"
@@ -957,7 +1036,7 @@ export default function StudyPage() {
           >
             <div className="relative flex aspect-3/2 w-full flex-col items-center justify-center rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm">
               <h2 className="text-2xl font-bold text-white">
-                Session complete!
+                {review ? 'Review complete!' : 'Session complete!'}
               </h2>
               <p className="mt-2 text-sm text-white/50">
                 You answered {screen.answered} of {screen.size} cards.
@@ -1001,7 +1080,7 @@ export default function StudyPage() {
               onClick={startAnother}
               className={`touch-target cursor-pointer bg-transparent text-lg font-semibold text-white focus:outline-none ${active?.id === startAnotherId ? KEYBOARD_ENTER_GLOW : ''}`}
             >
-              Start another session
+              Start another {noun}
             </button>
           </div>
         </StudyStage>
@@ -1064,10 +1143,10 @@ export default function StudyPage() {
   const renderDisplayCard = (card: Flashcard) =>
     isEditing && studiedItem ? (
       <StudyCardEditor
-        deckId={deckId ?? ''}
+        deckId={studiedItem.deckId}
         card={studiedItem.card}
         direction={itemDirection}
-        labels={labels}
+        labels={itemLabels}
         queueLength={remainingCount}
         progress={progress}
         canMarkKnown={canMarkDisplayKnown}
@@ -1118,12 +1197,7 @@ export default function StudyPage() {
 
   return (
     <CenteredPage>
-      <DeckHeader
-        deckName={deck.name}
-        deckId={deckId ?? ''}
-        activeTab="study"
-        course={deck.course}
-      />
+      {header}
 
       <StudyStage>
         <div
@@ -1158,9 +1232,7 @@ export default function StudyPage() {
                       renderDisplayCard(displayCard)
                     ) : (
                       <CardStack queueLength={titleQueueLength}>
-                        <p className="text-3xl font-bold text-white">
-                          {deck.name}
-                        </p>
+                        <p className="text-3xl font-bold text-white">{title}</p>
                         {titleDetails}
                       </CardStack>
                     )}
@@ -1181,11 +1253,22 @@ export default function StudyPage() {
                 }
                 onClick={canStart ? slideToNext : undefined}
               >
-                <p className="text-3xl font-bold text-white">{deck.name}</p>
+                <p className="text-3xl font-bold text-white">{title}</p>
                 {titleDetails}
               </CardStack>
             </div>
           ) : null}
+
+          {/* In Today's Review, which deck the card is from, and which way
+              it's asked on a Reversible Deck */}
+          {itemDeck && !isEditing && (
+            <p className="pointer-events-none absolute inset-x-12 top-6 z-10 truncate text-center text-xs text-white/50">
+              {itemDeck.name}
+              {itemDeck.labels &&
+                studiedItem &&
+                ` · ${itemDeck.labels[studiedItem.direction]}`}
+            </p>
+          )}
 
           {/* Part of the editor, so Enter toggles it rather than moving on */}
           {/* Gone in edit mode, which Cancel or Save ends */}
@@ -1374,28 +1457,48 @@ export default function StudyPage() {
               )}
             </>
           ) : isIdle && !resumable ? (
-            // How to study, below the title card before a session
-            <SessionPicker
-              sessionType={sessionType}
-              onSessionType={setSessionType}
-              studyMode={studyMode}
-              onStudyMode={setStudyMode}
-              offersReviewRetired={offersReviewRetired}
-              cramDate={{
-                value: deck.cramUntil?.slice(0, 10) ?? null,
-                pace: preview?.cramPace ?? null,
-                isPaceKept: isPreviewKept,
-                hasFailed: cramDateFailed,
-                onChange: act.setCramDate,
-              }}
-              direction={
-                labels && {
-                  value: direction,
-                  labels,
-                  onChange: setDirection,
+            // How to study, below the title card before a session, and in
+            // Today's Review which decks it takes
+            <>
+              <SessionPicker
+                sessionType={sessionType}
+                onSessionType={setSessionType}
+                studyMode={studyMode}
+                onStudyMode={setStudyMode}
+                offersReviewRetired={offersReviewRetired}
+                // Each deck's own Cram Date counts in a review
+                cramDate={
+                  deck && !review
+                    ? {
+                        value: deck.cramUntil?.slice(0, 10) ?? null,
+                        pace:
+                          preview && 'cramPace' in preview
+                            ? preview.cramPace
+                            : null,
+                        isPaceKept: isPreviewKept,
+                        hasFailed: cramDateFailed,
+                        onChange: act.setCramDate,
+                      }
+                    : undefined
                 }
-              }
-            />
+                direction={
+                  labels && {
+                    value: direction,
+                    labels,
+                    onChange: setDirection,
+                  }
+                }
+              />
+              {preview && !isPreviewKept && (
+                <WouldEnd sessions={preview.wouldEnd} />
+              )}
+              {review && todayQuery.data && (
+                <ReviewDecks
+                  decks={todayQuery.data.review.decks}
+                  onTick={setDecksTicked.mutate}
+                />
+              )}
+            </>
           ) : !isAnswering ? (
             // Holds the answer's place, label included
             <div className="py-2 text-center" aria-hidden>
@@ -1411,7 +1514,7 @@ export default function StudyPage() {
                 onClick={act.abandon}
                 className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
-                Abandon session
+                Abandon {noun}
               </button>
             </div>
           )}
@@ -1423,7 +1526,7 @@ export default function StudyPage() {
                 onClick={act.finish}
                 className="touch-target cursor-pointer text-sm text-white/50 underline hover:text-white/80"
               >
-                Finish session
+                Finish {noun}
               </button>
             </div>
           )}

@@ -53,7 +53,8 @@ export function SessionPicker({
   onStudyMode: (value: StudyMode) => void;
   /** Review retired, offered only on a deck with retired cards (#86). */
   offersReviewRetired?: boolean;
-  cramDate: CramDateField;
+  /** Cram's date, on a deck's own title card; none in Today's Review. */
+  cramDate?: CramDateField;
   /** On a Reversible Deck, the direction chosen and the deck's labels. */
   direction?: {
     value: StudyDirection;
@@ -77,7 +78,7 @@ export function SessionPicker({
         value={studyMode}
         onChange={onStudyMode}
       />
-      {studyMode === 'CRAM' && <CramDateRow {...cramDate} />}
+      {studyMode === 'CRAM' && cramDate && <CramDateRow {...cramDate} />}
       {direction && <DirectionRow {...direction} />}
     </div>
   );
