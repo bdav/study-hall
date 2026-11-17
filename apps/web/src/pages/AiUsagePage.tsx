@@ -99,8 +99,8 @@ export default function AiUsagePage() {
         {backLink}
         <h1 className="mt-2 text-2xl font-bold">AI usage</h1>
         <p className="mt-1 text-sm text-white/60">
-          Estimated costs of only your own AI calls. The monthly spending cap
-          counts every learner&apos;s.
+          Estimated costs of only your own AI calls, which your monthly spending
+          cap counts.
         </p>
 
         <div className="mt-8">

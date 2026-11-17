@@ -1403,18 +1403,9 @@ If AI fails:
 
 ## 17.7 Cost Controls
 
-> **Decided (2026-11-05, spec #91):** The cap's check stays as it is, read before each call and recorded after, so concurrent calls can overshoot it by a few calls' cost. That's accepted, bounded by the production Anthropic workspace's own spend limit. Each learner gets their own monthly cap in #130, in place of one cap across everyone, and the workspace's limit becomes the ceiling on the total.
+> **Decided (2026-11-05, spec #91):** The cap's check stays as it is, read before each call and recorded after, so concurrent calls can overshoot it by a few calls' cost. That's accepted, bounded by the production Anthropic workspace's own spend limit.
 
-Use:
-
-operational budget plus graceful fallback plus concrete per-user quotas
-
-Need implementation detail later for:
-
-- per-user limits
-- tier caps if any
-- monthly app-wide cap
-- fallback behavior once cap is reached
+> **Decided (2026-11-17, #130):** Each learner has their own monthly cap, `AI_MONTHLY_CAP_USD`, the same for everyone, in place of one cap across all learners. A learner's spend is their own calls this AI month, priced as the AI usage page prices them, and reaching the cap pauses AI for them alone, with a clear message; everything that doesn't need AI keeps working. Each learner sees only their own spend. The app doesn't cap the total: the Anthropic workspace's spend limit is the ceiling on the bill, set to the cap times the number of people on the AI allowlist (the runbook says how), and a call past it fails as any failed model call does. There are no tiers: one cap for all. One shared pool that only an admin could see was turned down, as it needs an admin role and lets one learner pause everyone.
 
 ⸻
 

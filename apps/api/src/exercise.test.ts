@@ -665,6 +665,29 @@ describe('exerciseRouter', () => {
       expect(await prisma.exerciseAttempt.count()).toBe(0);
     });
 
+    it('judges the answer while another learner is past their cap (#130)', async () => {
+      allowAI();
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '0.0001');
+      await prisma.aiUsage.create({
+        data: {
+          userId: otherUserId,
+          purpose: 'LESSON_GENERATION',
+          model: 'claude-sonnet-5-5',
+          inputTokens: 1000,
+          outputTokens: 1000,
+        },
+      });
+      const { exercise } = await createOpenShortAnswer();
+      ai.respondWith({ evaluation: 'CORRECT', feedback: 'Right.' });
+
+      const attempt = await createCaller().exercise.submitAttempt({
+        exerciseId: exercise.id,
+        answer: 'Come va?',
+      });
+
+      expect(attempt.evaluation).toBe('CORRECT');
+    });
+
     it('stores no attempt when the model output is invalid, and the learner can retry', async () => {
       allowAI();
       const { exercise } = await createOpenShortAnswer();

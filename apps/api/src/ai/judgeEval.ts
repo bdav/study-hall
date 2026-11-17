@@ -7,8 +7,9 @@
  *   pnpm judge-eval:op [model]
  *
  * Calls are made as the user in `JUDGE_EVAL_EMAIL` (default the seeded
- * dev@example.com) and recorded like any other, so they count toward the
- * monthly AI spending cap. A full run costs a few cents.
+ * dev@example.com) and recorded like any other, so they count toward that
+ * learner's own monthly AI spending cap (#130), and the run is refused once
+ * they've reached it. A full run costs a few cents.
  */
 import { prisma } from '../db.js';
 import { userCanUseAI } from './access.js';
@@ -33,8 +34,8 @@ async function main() {
   if (!(await userCanUseAI(prisma, user.id))) {
     throw new Error(`${email} isn't in AI_ALLOWED_EMAILS`);
   }
-  if (await isAiPaused(prisma)) {
-    throw new Error("This month's AI spending cap has been reached");
+  if (await isAiPaused(prisma, user.id)) {
+    throw new Error(`${email} has reached this month's AI spending cap`);
   }
 
   const ai = createAnthropicProvider();

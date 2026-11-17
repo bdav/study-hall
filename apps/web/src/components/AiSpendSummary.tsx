@@ -4,8 +4,8 @@ import { formatUsd } from '@/lib/format';
 import { FROM_COURSES } from '@/lib/aiUsage';
 
 /**
- * This month's AI spend against the monthly cap, for learners who can use
- * AI. The spend is every learner's, since that's what the cap measures.
+ * The learner's own AI spend this month against their monthly cap, for
+ * learners who can use AI; each learner has their own (#130).
  */
 export function AiSpendSummary() {
   const me = trpc.auth.me.useQuery();
@@ -24,7 +24,7 @@ export function AiSpendSummary() {
     <div className="mt-4 rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p>
-          AI this month: {formatUsd(spentUsd)} of {formatUsd(capUsd)}
+          Your AI this month: {formatUsd(spentUsd)} of {formatUsd(capUsd)}
         </p>
         <Link
           to="/ai-usage"
@@ -36,8 +36,8 @@ export function AiSpendSummary() {
       </div>
       {paused && (
         <p className="mt-1 text-amber-200">
-          AI features are paused until next month because the spending cap has
-          been reached. Your existing courses still work.
+          AI features are paused until next month because you've reached this
+          month's AI spending cap. Your existing courses still work.
         </p>
       )}
     </div>

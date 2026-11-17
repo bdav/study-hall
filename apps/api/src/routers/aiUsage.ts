@@ -3,7 +3,10 @@ import { aiSpendStatus } from '../ai/spend.js';
 import { aiUsageReport } from '../ai/usageReport.js';
 
 export const aiUsageRouter = router({
-  summary: aiAccessProcedure.query(({ ctx }) => aiSpendStatus(ctx.prisma)),
+  /** The signed-in learner's own spend this month against their cap. */
+  summary: aiAccessProcedure.query(({ ctx }) =>
+    aiSpendStatus(ctx.prisma, ctx.userId),
+  ),
 
   report: protectedProcedure.query(({ ctx }) =>
     aiUsageReport(ctx.prisma, ctx.userId),

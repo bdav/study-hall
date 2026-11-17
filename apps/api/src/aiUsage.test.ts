@@ -103,18 +103,37 @@ async function recordCall({
 
 describe('aiUsage router', () => {
   describe('summary', () => {
-    it("reports this month's spend across every learner against the cap", async () => {
+    it("reports the learner's own spend this month against their cap, not another learner's (#130)", async () => {
       await recordCall({ outputTokens: 80_000 }); // $0.80
       await recordCall({ by: otherUserId, outputTokens: 40_000 }); // $0.40
 
       const summary = await createCaller().aiUsage.summary();
 
-      expect(summary.spentUsd).toBeCloseTo(1.2, 8);
+      expect(summary.spentUsd).toBeCloseTo(0.8, 8);
       expect(summary.capUsd).toBe(10);
       expect(summary.paused).toBe(false);
     });
 
-    it('says AI is paused once the month reaches the cap', async () => {
+    it('gives each learner their own figures, one paused at the cap and the other not', async () => {
+      vi.stubEnv(
+        'AI_ALLOWED_EMAILS',
+        'usage-test@example.com, other-usage@example.com',
+      );
+      await recordCall({ outputTokens: 1_000_000 }); // $10
+      await recordCall({ by: otherUserId, outputTokens: 20_000 }); // $0.20
+
+      const [mine, theirs] = await Promise.all([
+        createCaller().aiUsage.summary(),
+        createCaller(otherUserId).aiUsage.summary(),
+      ]);
+
+      expect(mine).toMatchObject({ capUsd: 10, paused: true });
+      expect(mine.spentUsd).toBeCloseTo(10, 8);
+      expect(theirs).toMatchObject({ capUsd: 10, paused: false });
+      expect(theirs.spentUsd).toBeCloseTo(0.2, 8);
+    });
+
+    it("says AI is paused once the learner's spend this month reaches their cap", async () => {
       await recordCall({ outputTokens: 1_000_000 }); // $10
 
       const summary = await createCaller().aiUsage.summary();
@@ -148,7 +167,7 @@ describe('aiUsage router', () => {
       expect(summary.spentUsd).toBeCloseTo(0.1, 8);
     });
 
-    it("refuses learners who can't use AI, since the total covers everyone", async () => {
+    it("refuses learners who can't use AI", async () => {
       await expect(createCaller(otherUserId).aiUsage.summary()).rejects.toThrow(
         expect.objectContaining({ code: 'FORBIDDEN' }),
       );

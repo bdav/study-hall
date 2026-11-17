@@ -68,7 +68,7 @@ The learning loop is **Learn → Practice → Assess → Review → Adapt**. Thi
 - **Access:** a central `canUseAI(user)` check gates every AI-backed capability. v1 implements it as an email allowlist from an environment variable. Domain code calls the check and never reads the allowlist. Standalone flashcards are available to everyone. Course creation is gated only because it is AI-backed in v1.
 - **Cost and traceability:**
   - Every model call writes an AI usage record: purpose, model, input and output tokens, and the user.
-  - A monthly cap from an environment variable disables AI features with a clear message once it's reached.
+  - A monthly cap from an environment variable, each learner's own (#130), disables AI features for a learner with a clear message once they reach it.
   - Every generated item (Syllabus Proposal, Lesson Version, card proposal) records the model and prompt version that produced it.
   - Tutor calls use prompt caching for the lesson content.
 - **Latency:** tutor replies stream. Syllabus and lesson generation are single requests with a loading state. No background jobs (v2 constraint unchanged).

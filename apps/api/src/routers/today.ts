@@ -245,7 +245,7 @@ export const todayRouter = router({
         }),
       },
       // A lesson not yet written can't be written while AI is paused
-      aiPaused: await isAiPaused(ctx.prisma),
+      aiPaused: await isAiPaused(ctx.prisma, ctx.userId),
     };
   }),
 

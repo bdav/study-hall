@@ -394,6 +394,23 @@ describe('today.get', () => {
       vi.stubEnv('AI_MONTHLY_CAP_USD', '50');
       expect((await createCaller().today.get()).aiPaused).toBe(false);
     });
+
+    it('says AI is paused for this learner alone, by their own spend (#130)', async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      // $5 at Sonnet 5.5's $10 per million output tokens
+      await prisma.aiUsage.create({
+        data: {
+          userId: otherUserId,
+          purpose: 'SYLLABUS_GENERATION',
+          model: 'claude-sonnet-5-5',
+          inputTokens: 0,
+          outputTokens: 500_000,
+        },
+      });
+
+      expect((await createCaller(otherUserId).today.get()).aiPaused).toBe(true);
+      expect((await createCaller().today.get()).aiPaused).toBe(false);
+    });
   });
 
   describe('the previews, for when a block is empty', () => {

@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 7/24 planned issues**
+**Completed: 8/24 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. Checked tickets are cleared out now and then, last on 2026-11-09, and earlier work is in closed issues and git history.
 
@@ -24,7 +24,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #116 Today's Review on the web: its tile, title card and study screen
    - [x] #117 Count Today's Review in each deck's stats
    - [x] #118 Offer Today's next steps when a session or lesson ends
-   - [ ] #130 Give each learner their own monthly AI cap
+   - [x] #130 Give each learner their own monthly AI cap
    - [ ] #119 Show AI spend in the site navigation
    - [ ] #138 Count a deck as studied when its cards were last answered
    - [ ] #139 Create a batch of cards in a few statements, not several per card
@@ -69,7 +69,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 - `pnpm --filter web test:watch` — run web tests in watch mode
 - `pnpm --filter api test` — run API Vitest tests
 - `pnpm typecheck` — typecheck both apps, tests included (`tsx` and Vitest strip types without checking them)
-- `pnpm judge-eval:op [model]` — run the exercise judge on fixed cases with real model calls (`ai/judgeEvalCases.ts`), to check the evaluation prompts and compare models. Not part of the test suite; costs a few cents, counted toward the cap as `dev@example.com` (`JUDGE_EVAL_EMAIL`)
+- `pnpm judge-eval:op [model]` — run the exercise judge on fixed cases with real model calls (`ai/judgeEvalCases.ts`), to check the evaluation prompts and compare models. Not part of the test suite; costs a few cents, counted toward `dev@example.com`'s own cap (`JUDGE_EVAL_EMAIL`), and refused once that learner has reached it
 
 ### Web App (`apps/web`)
 
@@ -92,7 +92,7 @@ Commit subjects stay plain sentences, with no issue-number prefix. Link a commit
 - `ANTHROPIC_API_KEY` — used by the Anthropic provider; only AI calls need it. Set it in `.env`, or as a 1Password secret reference in `.env.1password` for `pnpm dev:op`
 - `SIGNUP_ALLOWED_EMAILS` — comma-separated allowlist read only by `canSignUp` (`apps/api/src/auth/allowlist.ts`); unset means nobody can sign up, and the seed's `dev@example.com` doesn't need it
 - `AI_ALLOWED_EMAILS` — comma-separated allowlist read only by `canUseAI` (`apps/api/src/ai/access.ts`); unset means nobody can use AI features
-- `AI_MONTHLY_CAP_USD` — monthly AI spending cap in US dollars, across all users (`apps/api/src/ai/spend.ts`); unset or invalid means AI is paused
+- `AI_MONTHLY_CAP_USD` — each learner's monthly AI spending cap in US dollars, the same for all, counting their own calls (`apps/api/src/ai/spend.ts`, #130); unset or invalid means AI is paused for everyone
 - `SENTRY_DSN`, `VITE_SENTRY_DSN` — where the API and the web app report errors; unset means they report nothing, so leave them unset in dev
 
 ## Architecture
@@ -130,7 +130,7 @@ TDD is most valuable for: CSV parsing, auth helpers, permission/ownership rules,
 
 Before changing how an existing feature behaves, read its entry in `docs/features.md`, and update that entry in the same commit. It also maps the routes and every tRPC procedure.
 
-All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the month's AI spend reaches the cap, before any model call. `aiAccessProcedure` is the `canUseAI` check alone, for AI information that stays readable while AI is paused. A procedure that needs AI only sometimes, like `exercise.submitAttempt`, stays a `protectedProcedure` and calls `assertCanUseAI` and `assertAiNotPaused` before its model call. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
+All procedures except `auth.*` and `healthCheck` require authentication via `protectedProcedure`. AI-backed procedures use `aiProcedure`, which also requires `canUseAI` and refuses with `TOO_MANY_REQUESTS` once the learner's own AI spend this month reaches their cap, before any model call. `aiAccessProcedure` is the `canUseAI` check alone, for AI information that stays readable while AI is paused. A procedure that needs AI only sometimes, like `exercise.submitAttempt`, stays a `protectedProcedure` and calls `assertCanUseAI` and `assertAiNotPaused` before its model call. All data procedures enforce ownership (user can only access their own decks/cards/sessions).
 
 ### Key Services
 
@@ -146,7 +146,7 @@ All procedures except `auth.*` and `healthCheck` require authentication via `pro
 
 - **`observability.ts`**: what `createApp` is given: `jsonLinesLogger` and `createErrorReporter` (Sentry) in `server.ts`, recording stand-ins in tests (#108). Logs hold nothing private, listed in its `LogEntry`'s comment, so `route` is a path alone, as a tRPC GET's query string holds its input, and `createApp` answers errors itself, as Express would print a body that won't parse. Sentry's default integrations stay off on both sides (`lib/errorReports.ts` on the web): what they'd attach is what the logs leave out.
 
-- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `generateStreamed` does the same for a reply streamed by the provider's `streamChat` (the tutor's), yielding its text as it arrives and storing it through `onComplete` once complete; it runs to the end even if the caller stops reading, and only the AI's failures become `BAD_GATEWAY`. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rates), pricing uncached input, 5-minute and 1-hour cache writes, cache reads and output each at the model's rate (#31); the provider reports cache writes by lifetime, counting any it can't attribute as 1-hour, and `AiUsage` stores them (`cacheWrite5mTokens`, `cacheWrite1hTokens`, `cacheReadTokens`). Haiku 5.5's long-prompt rate applies when a call's prompt, cached tokens included, is over 100K tokens, as Anthropic bills it. `spend.ts` also defines the AI month (UTC); the spending cap (`aiSpendStatus`) and the usage report (`usageReport.ts`) both price and group calls with it, and the report's input tokens count every input token, cached or not.
+- **AI platform (`ai/`)**: every model call goes through the `AiProvider` on the tRPC context (`ctx.ai`): Anthropic in production, `createFakeAiProvider()` in tests, so no test makes a network call. `generateStructured` runs one call, writes its `AiUsage` record, validates the output with a Zod schema and returns it with the model and prompt version to store; a failed call or invalid output is a retryable `BAD_GATEWAY` error. A call that ends without a response (the provider throws `AiOutcomeUnknownError` on a timeout or dropped connection) may still be billed, so it is recorded as `failed`, with a generous token estimate when the provider has no counts; an API error response is not billed and not recorded. The Anthropic client has SDK retries off (`maxRetries: 0`), so each call is one attempt and one record. `generateStreamed` does the same for a reply streamed by the provider's `streamChat` (the tutor's), yielding its text as it arrives and storing it through `onComplete` once complete; it runs to the end even if the caller stops reading, and only the AI's failures become `BAD_GATEWAY`. `spend.ts` estimates each call's cost from a per-model price table (unknown models get the highest rates), pricing uncached input, 5-minute and 1-hour cache writes, cache reads and output each at the model's rate (#31); the provider reports cache writes by lifetime, counting any it can't attribute as 1-hour, and `AiUsage` stores them (`cacheWrite5mTokens`, `cacheWrite1hTokens`, `cacheReadTokens`). Haiku 5.5's long-prompt rate applies when a call's prompt, cached tokens included, is over 100K tokens, as Anthropic bills it. `spend.ts` also defines the AI month (UTC); each learner's spending cap (`aiSpendStatus`) and the usage report (`usageReport.ts`) both price and group calls with it, and the report's input tokens count every input token, cached or not.
 
 ### Data Model
 

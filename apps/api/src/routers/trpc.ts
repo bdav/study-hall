@@ -42,11 +42,11 @@ export async function assertCanUseAI(
 }
 
 /**
- * Throws TOO_MANY_REQUESTS once this month's AI spend reaches the cap, so
- * no model call is made.
+ * Throws TOO_MANY_REQUESTS once the learner's AI spend this month reaches
+ * their cap, so no model call is made.
  */
-export async function assertAiNotPaused(prisma: PrismaClient) {
-  if (await isAiPaused(prisma)) {
+export async function assertAiNotPaused(prisma: PrismaClient, userId: string) {
+  if (await isAiPaused(prisma, userId)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: AI_PAUSED_MESSAGE,
@@ -68,10 +68,11 @@ export const aiAccessProcedure = protectedProcedure.use(
 
 /**
  * Procedure for AI-backed capabilities: requires an authenticated user who
- * passes `canUseAI`, and throws FORBIDDEN otherwise. Once this month's AI
- * spend reaches the cap it throws TOO_MANY_REQUESTS before any model call.
+ * passes `canUseAI`, and throws FORBIDDEN otherwise. Once their AI spend
+ * this month reaches their cap it throws TOO_MANY_REQUESTS before any
+ * model call.
  */
 export const aiProcedure = aiAccessProcedure.use(async ({ ctx, next }) => {
-  await assertAiNotPaused(ctx.prisma);
+  await assertAiNotPaused(ctx.prisma, ctx.userId);
   return next();
 });

@@ -205,14 +205,14 @@ describe('CoursesPage', () => {
   });
 
   describe('AI spend summary', () => {
-    it("shows this month's AI spend against the cap, linking to the usage page", () => {
+    it("shows the learner's own AI spend this month against their cap, linking to the usage page (#130)", () => {
       renderPage({ data: courses } as Partial<ListQuery>, {
         canUseAI: true,
         summary: { spentUsd: 1.2, capUsd: 10, paused: false },
       });
 
       expect(
-        screen.getByText('AI this month: $1.20 of $10.00'),
+        screen.getByText('Your AI this month: $1.20 of $10.00'),
       ).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /ai usage/i })).toHaveAttribute(
         'href',
@@ -235,16 +235,20 @@ describe('CoursesPage', () => {
       ).toBeInTheDocument();
     });
 
-    it('says when AI features are paused because the cap is reached', () => {
+    it('says when AI features are paused because the learner has reached their cap', () => {
       renderPage({ data: courses } as Partial<ListQuery>, {
         canUseAI: true,
         summary: { spentUsd: 10.3, capUsd: 10, paused: true },
       });
 
       expect(
-        screen.getByText('AI this month: $10.30 of $10.00'),
+        screen.getByText('Your AI this month: $10.30 of $10.00'),
       ).toBeInTheDocument();
-      expect(screen.getByText(/ai features are paused/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /ai features are paused .* you've reached this month's/i,
+        ),
+      ).toBeInTheDocument();
     });
 
     it("doesn't ask for or show AI spend to a learner who can't use AI", () => {

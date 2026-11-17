@@ -183,7 +183,7 @@ describe('courseRouter', () => {
       });
     }
 
-    it('pauses AI features once the month reaches the cap, without calling the model', async () => {
+    it("pauses AI features once the learner's spend this month reaches their cap, without calling the model", async () => {
       vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
       await recordSpend(5);
 
@@ -215,14 +215,26 @@ describe('courseRouter', () => {
       expect(ai.requests).toHaveLength(0);
     });
 
-    it("counts every user's AI usage toward the cap", async () => {
+    it("counts only a learner's own calls toward their cap, pausing them alone (#130)", async () => {
       vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
-      await recordSpend(3);
-      await recordSpend(2, { by: otherUserId });
+      await recordSpend(5);
+      await recordSpend(4.99, { by: otherUserId });
 
       await expect(createCourse()).rejects.toThrow(
         expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }),
       );
+      // Another learner's calls go on
+      await expect(
+        createCourse(createCaller(otherUserId)),
+      ).resolves.toHaveProperty('id');
+    });
+
+    it("isn't paused by another learner's calls", async () => {
+      vi.stubEnv('AI_MONTHLY_CAP_USD', '5');
+      await recordSpend(3);
+      await recordSpend(2, { by: otherUserId });
+
+      await expect(createCourse()).resolves.toHaveProperty('id');
     });
 
     it('starts each month afresh, in UTC', async () => {

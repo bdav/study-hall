@@ -153,13 +153,16 @@ export function aiMonthOf(date: Date): string {
 }
 
 /**
- * This month's estimated AI spend in US dollars across every user, since
- * the bill is shared. Each call is priced on its own because some prices
- * depend on the size of that call's prompt.
+ * A learner's estimated AI spend this month in US dollars: their own calls
+ * alone, as each learner has their own cap (#130). Each call is priced on
+ * its own because some prices depend on the size of that call's prompt.
  */
-export async function monthlyAiSpendUsd(prisma: PrismaClient): Promise<number> {
+export async function monthlyAiSpendUsd(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<number> {
   const usage = await prisma.aiUsage.findMany({
-    where: { createdAt: { gte: startOfAiMonth(new Date()) } },
+    where: { userId, createdAt: { gte: startOfAiMonth(new Date()) } },
     select: callUsageFields,
   });
 
@@ -167,8 +170,10 @@ export async function monthlyAiSpendUsd(prisma: PrismaClient): Promise<number> {
 }
 
 /**
- * The monthly cap in US dollars from `AI_MONTHLY_CAP_USD`. Unset or invalid
- * means no AI spending at all, like an unset allowlist.
+ * Each learner's monthly cap in US dollars from `AI_MONTHLY_CAP_USD`, the
+ * same for all. Unset or invalid means no AI spending at all, like an unset
+ * allowlist. Nothing caps the total: the Anthropic workspace's spend limit
+ * is the ceiling on the bill (see the runbook).
  */
 export function monthlyCapUsd(): number {
   const cap = Number(process.env.AI_MONTHLY_CAP_USD);
@@ -176,22 +181,32 @@ export function monthlyCapUsd(): number {
 }
 
 /**
- * This month's spend against the cap. Reaching the cap pauses AI features.
+ * A learner's spend this month against their cap. Reaching it pauses AI
+ * features for them alone.
  */
-export async function aiSpendStatus(prisma: PrismaClient): Promise<{
+export async function aiSpendStatus(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<{
   spentUsd: number;
   capUsd: number;
   paused: boolean;
 }> {
-  const spentUsd = await monthlyAiSpendUsd(prisma);
+  const spentUsd = await monthlyAiSpendUsd(prisma, userId);
   const capUsd = monthlyCapUsd();
   return { spentUsd, capUsd, paused: spentUsd >= capUsd };
 }
 
-/** Whether this month's spend has reached the cap, which pauses AI features. */
-export async function isAiPaused(prisma: PrismaClient): Promise<boolean> {
-  return (await aiSpendStatus(prisma)).paused;
+/**
+ * Whether a learner's spend this month has reached their cap, which pauses
+ * AI features for them.
+ */
+export async function isAiPaused(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<boolean> {
+  return (await aiSpendStatus(prisma, userId)).paused;
 }
 
 export const AI_PAUSED_MESSAGE =
-  "AI features are paused until next month because this month's AI spending cap has been reached. Your existing courses still work.";
+  "AI features are paused until next month because you've reached this month's AI spending cap. Your existing courses still work.";

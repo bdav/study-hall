@@ -478,7 +478,7 @@ describe('NewCoursePage', () => {
       mutation: {
         error: {
           message:
-            "AI features are paused until next month because this month's AI spending cap has been reached.",
+            "AI features are paused until next month because you've reached this month's AI spending cap.",
           data: { code: 'TOO_MANY_REQUESTS' },
         } as CreateMutation['error'],
       },
@@ -1054,7 +1054,7 @@ describe('the Setup Interview', () => {
       await user.click(screen.getByRole('button', { name: 'Start' }));
       failRound(rerender, {
         message:
-          "AI features are paused until next month because this month's AI spending cap has been reached.",
+          "AI features are paused until next month because you've reached this month's AI spending cap.",
         data: { code: 'TOO_MANY_REQUESTS' },
       });
 

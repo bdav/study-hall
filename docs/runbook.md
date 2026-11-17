@@ -31,7 +31,7 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 | `ANTHROPIC_API_KEY`     | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it                         |
 | `SIGNUP_ALLOWED_EMAILS` | Comma-separated emails that may make an account. Unset, nobody can. Never grants AI                                            |
 | `AI_ALLOWED_EMAILS`     | Comma-separated emails that may use AI. Unset, nobody can. Never grants signup                                                 |
-| `AI_MONTHLY_CAP_USD`    | The month's AI spending cap in US dollars, across all users. Unset or invalid, AI is paused                                    |
+| `AI_MONTHLY_CAP_USD`    | Each learner's monthly AI spending cap in US dollars, the same for all. Unset or invalid, AI is paused for everyone            |
 | `SENTRY_DSN`            | Where the API reports server errors. Unset, it reports nothing                                                                 |
 | `RAILPACK_NODE_VERSION` | `22`, as CI runs. Railway's builder reads it first, ahead of `engines.node` in `package.json`, which Vercel reads              |
 
@@ -70,9 +70,17 @@ Applied migrations are never edited or deleted, and `migrate dev` never runs in 
 
 Add their email to `SIGNUP_ALLOWED_EMAILS` on Railway, comma-separated, with no code change. The API reads it from its environment, so the invitation counts once the API has restarted with the new value. Then they sign up at `study.beaudavenport.com` with that email; anyone else is told signup is by invitation.
 
-An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well. Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
+An invitation doesn't include AI. To give someone AI too, add them to `AI_ALLOWED_EMAILS` as well, and raise the Anthropic workspace's spend limit by one cap ([AI spending](#ai-spending)). Removing an email from the signup allowlist stops it signing up, and doesn't touch an account it already made.
 
 In dev, signing up needs the same variable in `.env`, listing the email you sign up with, and an API restarted since you added it. The seed's account, `dev@example.com`, needs nothing: it's created directly and logs in as usual.
+
+## AI spending
+
+Each learner has their own monthly cap, `AI_MONTHLY_CAP_USD`, the same for everyone (#130). Their spend is their own calls this month, in UTC, as the AI usage page shows it, and once it reaches the cap AI pauses for them alone until the next month. Everything that doesn't need AI keeps working.
+
+The app doesn't limit the total. The production Anthropic workspace's spend limit is the ceiling on the bill: set it in the Anthropic Console, in the production workspace's limits, to the cap times the number of emails on `AI_ALLOWED_EMAILS`. Raise it whenever you add someone to that allowlist, or the workspace runs out before each learner has reached their cap, and learners are cut off early; lower it when you take someone off. Past it, the API answers a model call's error as it does any failed call: the learner is told to try again, and nothing is recorded or charged.
+
+The cap's check reads the spend before each call and records it after, so calls made at the same moment can each pass and go over by a few calls' cost. The workspace's limit bounds that too.
 
 ## Backups
 

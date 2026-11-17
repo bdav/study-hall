@@ -73,7 +73,7 @@ export const exerciseRouter = router({
           ctx.userId,
           AI_EVALUATION_DENIED_MESSAGE,
         );
-        await assertAiNotPaused(ctx.prisma);
+        await assertAiNotPaused(ctx.prisma, ctx.userId);
         evaluated = {
           ...(await judgeAnswer(ctx, exercise, input.answer)),
           method: 'LLM' as const,
