@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { inferRouterOutputs } from '@trpc/server';
@@ -168,15 +168,17 @@ function mockReview({
   decks = [capitals, italian],
   previewed = preview,
   unfinished = null,
+  continueLearning = [],
 }: {
   decks?: ReviewDeck[];
   previewed?: typeof preview;
   unfinished?: typeof review | null;
+  continueLearning?: Today['continueLearning'];
 } = {}) {
   vi.mocked(trpc.today.get.useQuery).mockReturnValue({
     data: {
       review: { decks, nextDueAt: null },
-      continueLearning: [],
+      continueLearning,
       aiPaused: false,
       previews: { decks: [], courses: [] },
     },
@@ -412,8 +414,8 @@ describe("studying Today's Review", () => {
     expect(screen.getByText('Capitals · City → country')).toBeInTheDocument();
   });
 
-  it('offers Start another review once it ends', async () => {
-    mockReview();
+  /** Starts a review and finishes it at once, to its summary. */
+  async function finishReview() {
     vi.mocked(trpc.study.finishSession.useMutation).mockReturnValue({
       mutate: vi.fn(),
       mutateAsync: vi.fn(() => Promise.resolve({ id: 'review-1' })),
@@ -425,12 +427,48 @@ describe("studying Today's Review", () => {
     await user.click(
       await screen.findByRole('button', { name: 'Finish review' }),
     );
+    await screen.findByRole('button', { name: 'Start another review' });
+  }
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Start another review' }),
-      ).toBeInTheDocument(),
-    );
+  it('offers Start another review once it ends, and nothing more with no course to continue', async () => {
+    mockReview();
+    await finishReview();
+
     expect(screen.getByText('Review complete!')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Next steps' })).toBeNull();
+  });
+
+  it("offers the first course's next step after Start another review (#118)", async () => {
+    mockReview({
+      continueLearning: [
+        {
+          id: 'course-1',
+          title: 'Italian for travel',
+          goal: 'Order dinner',
+          deadline: null,
+          next: {
+            kind: 'LESSON',
+            lesson: { id: 'lesson-3', title: 'Greetings', written: true },
+          },
+        },
+        {
+          id: 'course-2',
+          title: 'Spanish',
+          goal: 'Chat',
+          deadline: null,
+          next: { kind: 'SYLLABUS_PROPOSAL' },
+        },
+      ],
+    });
+    await finishReview();
+
+    const offers = within(screen.getByRole('list', { name: 'Next steps' }))
+      .getAllByRole('link')
+      .map((link) => [link.textContent, link.getAttribute('href')]);
+    expect(offers).toEqual([['Continue: Greetings', '/lessons/lesson-3']]);
+    // After Start another review, which keeps focus
+    expect(
+      screen.getByRole('button', { name: 'Start another review' }),
+    ).toHaveFocus();
   });
 });

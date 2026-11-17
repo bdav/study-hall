@@ -8,6 +8,8 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from 'api/app';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import StudyPage from './StudyPage';
@@ -23,6 +25,7 @@ const mockInvalidateHistory = vi.fn();
 const mockInvalidateActiveSession = vi.fn();
 const mockInvalidateQueuePreview = vi.fn();
 const mockSetActiveSession = vi.fn();
+const mockInvalidateToday = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -39,6 +42,7 @@ vi.mock('@/lib/trpc', () => ({
         },
         queuePreview: { invalidate: mockInvalidateQueuePreview },
       },
+      today: { get: { invalidate: mockInvalidateToday } },
     })),
     card: {
       update: { useMutation: vi.fn() },
@@ -4252,6 +4256,171 @@ describe('starting another session (#93)', () => {
   });
 });
 
+describe("Today's next steps at the end of a deck's session (#118)", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    localStorage.clear();
+    vi.mocked(trpc.today.get.useQuery).mockReturnValue({
+      data: undefined,
+    } as ReturnType<typeof trpc.today.get.useQuery>);
+  });
+
+  type Today = inferRouterOutputs<AppRouter>['today']['get'];
+  type ReviewDeck = Today['review']['decks'][number];
+
+  const reviewDeck = (
+    id: string,
+    name: string,
+    overrides: Partial<ReviewDeck> = {},
+  ): ReviewDeck => ({
+    id,
+    name,
+    course: null,
+    cardCount: 10,
+    dueCount: 4,
+    newCount: 0,
+    cramUntil: null,
+    ticked: true,
+    ...overrides,
+  });
+
+  function mockToday({
+    decks = [] as ReviewDeck[],
+    continueLearning = [] as Today['continueLearning'],
+  } = {}) {
+    vi.mocked(trpc.today.get.useQuery).mockReturnValue({
+      data: {
+        review: { decks, nextDueAt: null },
+        continueLearning,
+        previews: { decks: [], courses: [] },
+        aiPaused: false,
+      },
+    } as unknown as ReturnType<typeof trpc.today.get.useQuery>);
+  }
+
+  /** Answers both cards of a session and moves on to its end. */
+  async function studyToTheEnd(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    for (const answer of ['4', 'Paris']) {
+      await user.type(await screen.findByRole('textbox'), `${answer}{Enter}`);
+      await findResult();
+      await user.click(await screen.findByRole('button', { name: /next/i }));
+    }
+    await screen.findByRole('heading', { name: /session complete/i });
+  }
+
+  const offers = () =>
+    within(screen.getByRole('list', { name: 'Next steps' }))
+      .getAllByRole('link')
+      .map((link) => [link.textContent, link.getAttribute('href')]);
+
+  it("offers the next ticked deck in Today's order and the first course's next step, after Start another session", async () => {
+    setupMocksWithStartSession();
+    mockToday({
+      decks: [
+        reviewDeck('deck-1', 'Test Deck', { dueCount: 9 }),
+        reviewDeck('deck-9', 'Unticked', { dueCount: 8, ticked: false }),
+        reviewDeck('deck-2', 'Capitals'),
+        reviewDeck('deck-3', 'Italian', { dueCount: 0, newCount: 5 }),
+      ],
+      continueLearning: [
+        {
+          id: 'course-1',
+          title: 'Italian for travel',
+          goal: 'Order dinner',
+          deadline: null,
+          next: {
+            kind: 'LESSON',
+            lesson: { id: 'lesson-3', title: 'Greetings', written: true },
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+
+    expect(offers()).toEqual([
+      ['Next deck: Capitals (4 due)', '/decks/deck-2'],
+      ['Continue: Greetings', '/lessons/lesson-3'],
+    ]);
+    // Start another session first, keeping focus and Enter (#93, #94)
+    expect(
+      screen.getByRole('button', { name: 'Start another session' }),
+    ).toHaveFocus();
+  });
+
+  it('leaves out a step there is none for', async () => {
+    setupMocksWithStartSession();
+    mockToday({ decks: [reviewDeck('deck-1', 'Test Deck')] });
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+
+    expect(screen.queryByRole('list', { name: 'Next steps' })).toBeNull();
+  });
+
+  it("opens the next deck's own title card", async () => {
+    setupMocksWithStartSession();
+    mockToday({
+      decks: [
+        reviewDeck('deck-1', 'Test Deck'),
+        reviewDeck('deck-2', 'Capitals'),
+      ],
+    });
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+
+    await user.click(
+      screen.getByRole('link', { name: 'Next deck: Capitals (4 due)' }),
+    );
+
+    expect(
+      await screen.findByRole('button', { name: /test deck/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /session complete/i }),
+    ).toBeNull();
+    expect(trpc.deck.getById.useQuery).toHaveBeenLastCalledWith(
+      { id: 'deck-2' },
+      expect.anything(),
+    );
+  });
+
+  it('glows on a step with focus, as Enter would open it (#94)', async () => {
+    setupMocksWithStartSession();
+    mockToday({
+      decks: [
+        reviewDeck('deck-1', 'Test Deck'),
+        reviewDeck('deck-2', 'Capitals'),
+      ],
+    });
+    const user = userEvent.setup();
+    renderStudyPage();
+    await studyToTheEnd(user);
+    const nextDeck = screen.getByRole('link', {
+      name: 'Next deck: Capitals (4 due)',
+    });
+    expect(nextDeck).not.toHaveClass('animate-pulse-halo');
+
+    act(() => nextDeck.focus());
+
+    expect(nextDeck).toHaveClass('animate-pulse-halo');
+  });
+
+  it("refreshes Today, as the deck's counts have changed", async () => {
+    setupMocksWithStartSession();
+    mockToday();
+    const user = userEvent.setup();
+    renderStudyPage();
+    mockInvalidateToday.mockClear();
+    await studyToTheEnd(user);
+
+    expect(mockInvalidateToday).toHaveBeenCalled();
+  });
+});
+
 describe('the glow on what Enter will press (#94)', () => {
   /** Whether a control shows the glow that says Enter will press it. */
   const isGlowing = (element: HTMLElement) =>
@@ -4298,6 +4467,8 @@ describe('the glow on what Enter will press (#94)', () => {
 
   it('moves the glow off Next when focus moves to another button, which Enter then presses', async () => {
     const user = await gradeFirstCard();
+    // Once focus has moved to Next, so it can't land there after
+    await waitFor(() => expect(nextButton()).toHaveFocus());
     const markKnown = screen.getByRole('button', { name: 'Mark known' });
 
     act(() => markKnown.focus());

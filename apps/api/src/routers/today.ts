@@ -126,7 +126,7 @@ export const todayRouter = router({
         name: true,
         cramUntil: true,
         leftOutOfToday: true,
-        course: { select: { title: true } },
+        course: { select: { id: true, title: true } },
         _count: { select: { cards: true } },
       },
     });

@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 6/22 planned issues**
+**Completed: 7/22 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. Checked tickets are cleared out now and then, last on 2026-11-09, and earlier work is in closed issues and git history.
 
@@ -23,7 +23,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [x] #137 Today's Review on the API: one session pooled across the ticked decks
    - [x] #116 Today's Review on the web: its tile, title card and study screen
    - [x] #117 Count Today's Review in each deck's stats
-   - [ ] #118 Offer Today's next steps when a session or lesson ends
+   - [x] #118 Offer Today's next steps when a session or lesson ends
    - [ ] #130 Give each learner their own monthly AI cap
    - [ ] #119 Show AI spend in the site navigation
    - [ ] #138 Count a deck as studied when its cards were last answered

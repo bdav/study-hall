@@ -7,6 +7,8 @@ import { trpc } from '@/lib/trpc';
 import { exerciseSearch } from '@/lib/lessonSteps';
 import { LessonCompletion } from '@/components/LessonCompletion';
 import { ReviewCardsDialog } from '@/components/ReviewCardsDialog';
+import { NextSteps } from '@/components/NextSteps';
+import { afterLesson } from '@/lib/nextSteps';
 
 type Lesson = inferRouterOutputs<AppRouter>['lesson']['getById'];
 type LessonVersion = NonNullable<Lesson['version']>;
@@ -44,6 +46,8 @@ function MakeReviewCards({
       propose.reset();
       utils.card.listByDeck.invalidate({ deckId });
       utils.deck.list.invalidate();
+      // The Course Deck's new cards, which Review below counts (#118)
+      utils.today.get.invalidate();
       toast.success(
         `Added ${createdCount} review ${createdCount === 1 ? 'card' : 'cards'} to the course deck`,
       );
@@ -167,8 +171,9 @@ function Results({ exercises }: { exercises: Exercise[] }) {
 
 /**
  * The end of a lesson: how the learner did, review cards, Lesson
- * Completion and the way on to the next lesson. Only the review cards need
- * AI.
+ * Completion and the way on: the next lesson, then Today's next steps, its
+ * Course Deck to review and the next course (#118). Only the review cards
+ * need AI.
  */
 export function LessonWrapUp({
   lesson,
@@ -180,6 +185,7 @@ export function LessonWrapUp({
   canUseAI: boolean;
 }) {
   const { exercises } = version;
+  const today = trpc.today.get.useQuery();
   const triedEvery =
     exercises.length > 0 &&
     exercises.every((exercise) => exercise.latestAttempt);
@@ -202,11 +208,11 @@ export function LessonWrapUp({
           "You've tried every exercise. If you're done with this lesson, mark it complete."
         }
       />
-      <div className="mt-8">
+      <div className="mt-8 flex flex-col items-start gap-3">
         {lesson.nextLesson ? (
           <Link
             to={`/lessons/${lesson.nextLesson.id}`}
-            className="inline-flex items-center gap-1 rounded-lg bg-white/25 px-5 py-2.5 font-medium text-white backdrop-blur-sm hover:bg-white/35"
+            className="inline-flex items-center gap-1 rounded-lg bg-white/25 px-5 py-2.5 font-medium text-white backdrop-blur-sm hover:bg-white/35 pointer-coarse:min-h-touch"
           >
             Continue: {lesson.nextLesson.title}
             <ChevronRight className="size-4" />
@@ -221,6 +227,13 @@ export function LessonWrapUp({
               Back to {lesson.course.title}
             </Link>
           </p>
+        )}
+        {today.data && (
+          <NextSteps
+            steps={afterLesson(today.data, lesson.course.id)}
+            className="flex flex-wrap gap-3"
+            linkClassName="inline-flex items-center rounded-lg bg-white/10 px-5 py-2.5 text-white backdrop-blur-sm hover:bg-white/20 pointer-coarse:min-h-touch"
+          />
         )}
       </div>
     </section>

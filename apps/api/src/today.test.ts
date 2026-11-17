@@ -216,7 +216,7 @@ describe('today.get', () => {
       ]);
     });
 
-    it('labels a Course Deck with its course', async () => {
+    it('labels a Course Deck with its course, which a lesson finds its deck by', async () => {
       const deck = await deckOf(1, 'Italian');
       const course = await createCourse({ title: 'Italian course' });
       await prisma.deck.update({
@@ -226,7 +226,7 @@ describe('today.get', () => {
 
       const [row] = (await createCaller().today.get()).review.decks;
 
-      expect(row.course).toEqual({ title: 'Italian course' });
+      expect(row.course).toEqual({ id: course.id, title: 'Italian course' });
     });
 
     it('says when the next card comes due, once none are due or new', async () => {

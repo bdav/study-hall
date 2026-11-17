@@ -32,6 +32,7 @@ const mockInvalidateCourse = vi.fn();
 const mockResetAnswers = vi.fn();
 const mockInvalidateDecks = vi.fn();
 const mockInvalidateTutorThread = vi.fn();
+const mockInvalidateToday = vi.fn();
 
 vi.mock('@/lib/trpc', () => ({
   trpc: {
@@ -48,8 +49,10 @@ vi.mock('@/lib/trpc', () => ({
       card: { listByDeck: { invalidate: mockInvalidateCards } },
       deck: { list: { invalidate: mockInvalidateDecks } },
       tutor: { thread: { invalidate: mockInvalidateTutorThread } },
+      today: { get: { invalidate: mockInvalidateToday } },
     })),
     auth: { me: { useQuery: vi.fn() } },
+    today: { get: { useQuery: vi.fn(() => ({ data: undefined })) } },
     lesson: {
       getById: { useQuery: vi.fn() },
       generate: { useMutation: vi.fn() },
@@ -1943,6 +1946,134 @@ describe('LessonPage', () => {
           screen.queryByRole('link', { name: /^continue/i }),
         ).not.toBeInTheDocument();
       });
+
+      describe("Today's next steps (#118)", () => {
+        afterEach(() => {
+          vi.mocked(trpc.today.get.useQuery).mockReturnValue({
+            data: undefined,
+          } as ReturnType<typeof trpc.today.get.useQuery>);
+        });
+
+        /** Today with this course's deck due and another course to go on to. */
+        function mockToday({ courseDeck = true, otherCourse = true } = {}) {
+          vi.mocked(trpc.today.get.useQuery).mockReturnValue({
+            data: {
+              review: {
+                decks: [
+                  {
+                    id: 'deck-9',
+                    name: 'Capitals',
+                    course: null,
+                    cardCount: 5,
+                    dueCount: 5,
+                    newCount: 0,
+                    cramUntil: null,
+                    ticked: true,
+                  },
+                  ...(courseDeck
+                    ? [
+                        {
+                          id: 'deck-1',
+                          name: 'Italian',
+                          course: { id: 'course-1', title: 'Italian' },
+                          cardCount: 12,
+                          dueCount: 3,
+                          newCount: 1,
+                          cramUntil: null,
+                          ticked: true,
+                        },
+                      ]
+                    : []),
+                ],
+                nextDueAt: null,
+              },
+              continueLearning: [
+                {
+                  id: 'course-1',
+                  title: 'Italian',
+                  goal: 'Order dinner',
+                  deadline: null,
+                  next: {
+                    kind: 'LESSON',
+                    lesson: {
+                      id: 'lesson-2',
+                      title: 'At the café',
+                      written: true,
+                    },
+                  },
+                },
+                ...(otherCourse
+                  ? [
+                      {
+                        id: 'course-2',
+                        title: 'Spanish',
+                        goal: 'Chat',
+                        deadline: null,
+                        next: {
+                          kind: 'LESSON',
+                          lesson: {
+                            id: 'lesson-7',
+                            title: 'Numbers',
+                            written: false,
+                          },
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+              previews: { decks: [], courses: [] },
+              aiPaused: false,
+            },
+          } as unknown as ReturnType<typeof trpc.today.get.useQuery>);
+        }
+
+        const offers = () =>
+          within(screen.getByRole('list', { name: 'Next steps' }))
+            .getAllByRole('link')
+            .map((link) => [link.textContent, link.getAttribute('href')]);
+
+        it("offers this course's deck and the next course after Continue, without AI access", () => {
+          mockToday();
+          wrapUpFor(withAttempts([null, null, null]), { canUseAI: false });
+
+          const continueLink = screen.getByRole('link', {
+            name: 'Continue: At the café',
+          });
+          expect(offers()).toEqual([
+            ['Review: Italian (3 due)', '/decks/deck-1'],
+            ['Next course: Numbers', '/lessons/lesson-7'],
+          ]);
+          // Continue first
+          expect(
+            continueLink.compareDocumentPosition(
+              screen.getByRole('list', { name: 'Next steps' }),
+            ) & Node.DOCUMENT_POSITION_FOLLOWING,
+          ).toBeTruthy();
+        });
+
+        it('offers them beside the news that every other lesson is complete', () => {
+          mockToday();
+          wrapUpFor(withAttempts([null, null, null], { nextLesson: null }));
+
+          expect(
+            screen.getByText(/every other lesson in this course is complete/i),
+          ).toBeInTheDocument();
+          expect(offers()).toEqual([
+            ['Review: Italian (3 due)', '/decks/deck-1'],
+            ['Next course: Numbers', '/lessons/lesson-7'],
+          ]);
+        });
+
+        it('leaves out a step there is none for', () => {
+          mockToday({ courseDeck: false, otherCourse: false });
+          wrapUpFor(withAttempts([null, null, null]));
+
+          expect(screen.queryByRole('list', { name: 'Next steps' })).toBeNull();
+          expect(
+            screen.getByRole('link', { name: 'Continue: At the café' }),
+          ).toBeInTheDocument();
+        });
+      });
     });
   });
 
@@ -2565,6 +2696,8 @@ describe('LessonPage', () => {
       expect(mockResetProposal).toHaveBeenCalled();
       expect(mockInvalidateCards).toHaveBeenCalledWith({ deckId: 'deck-1' });
       expect(mockInvalidateDecks).toHaveBeenCalled();
+      // The Course Deck's new cards, for the Wrap up's Review (#118)
+      expect(mockInvalidateToday).toHaveBeenCalled();
       expect(toast.success).toHaveBeenCalledWith(
         'Added 1 review card to the course deck',
       );

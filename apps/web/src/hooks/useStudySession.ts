@@ -278,6 +278,8 @@ export function useStudySession(
         return;
       }
       case 'finish':
+        // Today's counts have changed, for its next steps among them (#118)
+        utils.today.get.invalidate();
         // A session resumed with every card answered is complete already;
         // the server only needs telling
         if (latest.current.session.status === 'complete') {
@@ -291,7 +293,6 @@ export function useStudySession(
           return;
         }
         await send({ type: 'finished' });
-        if (isReview) utils.today.get.invalidate();
         return;
       case 'accept': {
         const { attemptId, canonicalAnswerId } = command;

@@ -47,7 +47,7 @@ const decksToReview: Today['review']['decks'] = [
   {
     id: 'deck-2',
     name: 'Italian',
-    course: { title: 'Italian for travel' },
+    course: { id: 'course-1', title: 'Italian for travel' },
     cardCount: 7,
     dueCount: 0,
     newCount: 7,
@@ -78,7 +78,12 @@ const coursesToContinue: Today['continueLearning'] = [
 
 const deckTiles: Today['previews']['decks'] = [
   { id: 'deck-9', name: 'Recent', course: null, cardCount: 12 },
-  { id: 'deck-8', name: 'Older', course: { title: 'Italian' }, cardCount: 3 },
+  {
+    id: 'deck-8',
+    name: 'Older',
+    course: { id: 'course-1', title: 'Italian' },
+    cardCount: 3,
+  },
   { id: 'deck-7', name: 'Oldest', course: null, cardCount: 1 },
 ];
 

@@ -55,6 +55,8 @@ import { ReviewDecks } from '@/components/ReviewDecks';
 import { useSetDecksTicked } from '@/hooks/useSetDecksTicked';
 import { StudyCardEditor } from '@/components/StudyCardEditor';
 import { CardAnswersSummary } from '@/components/CardAnswers';
+import { NextSteps } from '@/components/NextSteps';
+import { afterDeckSession, afterReview } from '@/lib/nextSteps';
 import { CardHistory } from '@/components/CardHistory';
 import {
   asDirected,
@@ -657,10 +659,22 @@ function ReviewHeader() {
 /**
  * The study screen: a deck's own Study Sessions at `/decks/:deckId`, or,
  * with `review`, Today's Review at `/review`, across the decks ticked for
- * it (#116), each card from its own deck.
+ * it (#116), each card from its own deck. Each deck's study screen starts
+ * afresh, as Next deck leads from one deck's summary to another's title
+ * card (#118).
  */
 export default function StudyPage({ review = false }: { review?: boolean }) {
   const { deckId } = useParams<{ deckId: string }>();
+  return <StudyScreen key={deckId} review={review} deckId={deckId} />;
+}
+
+function StudyScreen({
+  review,
+  deckId,
+}: {
+  review: boolean;
+  deckId: string | undefined;
+}) {
   // Where the deck was reached from, which its links within it carry
   const location = useLocation();
   const yourAnswerId = useId();
@@ -685,8 +699,6 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
     { id: deckId ?? '' },
     { enabled: !review && !!deckId },
   );
-  // Today's Review's decks, to tick, from Today
-  const todayQuery = trpc.today.get.useQuery(undefined, { enabled: review });
   const setDecksTicked = useSetDecksTicked();
   const deck = deckQuery.data;
   const isReversible = !!deck?.reversible;
@@ -719,6 +731,11 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
   );
   const noun = review ? 'review' : 'session';
   const { screen } = view;
+  // Today: Today's Review's decks, to tick, and once a session ends its
+  // next steps (#118)
+  const todayQuery = trpc.today.get.useQuery(undefined, {
+    enabled: review || screen.kind === 'summary',
+  });
   const cardScreen = screen.kind === 'card' ? screen : null;
   const isAtTitle = screen.kind === 'title';
   // Before a session, rather than gone back to the title card within one
@@ -1083,6 +1100,19 @@ export default function StudyPage({ review = false }: { review?: boolean }) {
               Start another {noun}
             </button>
           </div>
+          {todayQuery.data && (
+            <NextSteps
+              steps={
+                review
+                  ? afterReview(todayQuery.data)
+                  : afterDeckSession(todayQuery.data, deckId ?? '')
+              }
+              // Apart from Start another's tap area, and each other's
+              className="mt-2 flex flex-col items-center gap-2 pointer-coarse:mt-4 pointer-coarse:gap-4"
+              linkClassName="touch-target text-white/80 underline hover:text-white focus:outline-none"
+              glow
+            />
+          )}
         </StudyStage>
       </CenteredPage>
     );
