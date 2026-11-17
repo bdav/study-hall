@@ -436,6 +436,29 @@ describe('today.get', () => {
       });
     });
 
+    it("counts a deck as studied when a Today's Review asked its cards", async () => {
+      const yesterday = await deckOf(1, 'Studied yesterday');
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: yesterday.cards[0].id,
+        answers: [{ grade: 'GOOD', at: daysAgo(1) }],
+      });
+      await createCaller().today.setDecksTicked({
+        deckIds: [yesterday.id],
+        ticked: false,
+      });
+      const reviewed = await deckOf(1, 'Reviewed today');
+      const review = await createCaller().study.startReview({});
+      await createCaller().study.finishSession({ id: review!.id });
+
+      const { previews } = await createCaller().today.get();
+
+      expect(previews.decks.map((deck) => deck.id)).toEqual([
+        reviewed.id,
+        yesterday.id,
+      ]);
+    });
+
     it('gives every active course, completed ones too, the one last active in first', async () => {
       const complete = await createCourse({
         title: 'Complete',

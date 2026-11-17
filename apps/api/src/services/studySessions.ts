@@ -1003,12 +1003,33 @@ export async function abandonStudySession(
 const RECENT_SESSIONS = 10;
 
 /**
+ * What a session asked of the given decks: an item or attempt on one of
+ * their cards, in one Study Direction when given and otherwise in each its
+ * deck is studied in (Reverse none while its deck isn't reversible,
+ * ADR-0011).
+ */
+function askedOf(deckIds: string[], direction?: StudyDirection) {
+  return {
+    card: { deckId: { in: deckIds } },
+    ...(direction
+      ? { direction }
+      : {
+          OR: [
+            { direction: 'FORWARD' as const },
+            { card: { deck: { reversible: true } } },
+          ],
+        }),
+  };
+}
+
+/**
  * A learner's latest finished or abandoned Study Sessions on the given
  * decks, in one Study Direction when given and otherwise in each they're
- * studied in, newest first: when, their type
- * and mode, how they ended, how many cards they answered and how many of
- * those right, Retries left out, and their deck, with its course if any.
- * Decks' own sessions only: Today's Reviews join them in #117.
+ * studied in, newest first: when, their type and mode, how they ended, and
+ * how many of the decks' cards they answered and how many of those right,
+ * Retries left out. A deck's own session gives its deck, with its course if
+ * any; a Today's Review that asked any of the decks' cards (#117,
+ * ADR-0013), how many of the decks it asked.
  */
 export async function findRecentSessions(
   prisma: PrismaClient,
@@ -1018,23 +1039,29 @@ export async function findRecentSessions(
     direction,
   }: { userId: string; deckIds: string[]; direction?: StudyDirection },
 ) {
+  const asked = askedOf(deckIds, direction);
   const sessions = await prisma.studySession.findMany({
     where: {
       userId,
-      kind: 'DECK',
-      deckId: { in: deckIds },
       status: { in: ['COMPLETED', 'ABANDONED'] },
-      // Reverse none while its deck isn't reversible (ADR-0011)
-      ...(direction
-        ? { direction }
-        : {
-            OR: [{ direction: 'FORWARD' }, { deck: { reversible: true } }],
-          }),
+      OR: [
+        {
+          kind: 'DECK',
+          deckId: { in: deckIds },
+          ...(direction
+            ? { direction }
+            : {
+                OR: [{ direction: 'FORWARD' }, { deck: { reversible: true } }],
+              }),
+        },
+        { kind: 'TODAYS_REVIEW', items: { some: asked } },
+      ],
     },
     orderBy: [{ startedAt: 'desc' }, { id: 'asc' }],
     take: RECENT_SESSIONS,
     select: {
       id: true,
+      kind: true,
       startedAt: true,
       endedAt: true,
       sessionType: true,
@@ -1048,24 +1075,67 @@ export async function findRecentSessions(
           course: { select: { id: true, title: true } },
         },
       },
+      items: { where: asked, select: { card: { select: { deckId: true } } } },
       attempts: {
-        where: { isRetry: false },
+        where: { isRetry: false, ...asked },
         select: { recallGrade: true },
       },
     },
   });
-  // A deck's own session always has its deck
-  return sessions.flatMap(({ attempts, deck, ...session }) =>
-    deck
-      ? [
-          {
-            ...session,
-            deck,
-            answered: attempts.length,
-            right: attempts.filter((attempt) => isCorrect(attempt.recallGrade))
-              .length,
-          },
-        ]
-      : [],
+  type Found = (typeof sessions)[number];
+  type RecentSession = Omit<Found, 'attempts' | 'deck' | 'items' | 'kind'> & {
+    answered: number;
+    right: number;
+  } & (
+      | { kind: 'DECK'; deck: NonNullable<Found['deck']> }
+      | { kind: 'TODAYS_REVIEW'; deckCount: number }
+    );
+  return sessions.flatMap(
+    ({ attempts, deck, items, kind, ...session }): RecentSession[] => {
+      const counted = {
+        ...session,
+        answered: attempts.length,
+        right: attempts.filter((attempt) => isCorrect(attempt.recallGrade))
+          .length,
+      };
+      if (kind === 'TODAYS_REVIEW') {
+        const deckCount = new Set(items.map(({ card }) => card.deckId)).size;
+        return [{ ...counted, kind, deckCount }];
+      }
+      // A deck's own session always has its deck
+      return deck ? [{ ...counted, kind, deck }] : [];
+    },
+  );
+}
+
+/**
+ * When the learner last studied each of the given decks: the start of the
+ * latest Study Session that was its own or a Today's Review that asked any
+ * of its cards (#117), keyed by deck; a deck never studied has none.
+ */
+export async function findLastStudied(
+  prisma: PrismaClient,
+  { userId, deckIds }: { userId: string; deckIds: string[] },
+) {
+  const latest = await Promise.all(
+    deckIds.map((deckId) =>
+      prisma.studySession.findFirst({
+        where: {
+          userId,
+          OR: [
+            { kind: 'DECK', deckId },
+            { kind: 'TODAYS_REVIEW', items: { some: { card: { deckId } } } },
+          ],
+        },
+        orderBy: { startedAt: 'desc' },
+        select: { startedAt: true },
+      }),
+    ),
+  );
+  return new Map(
+    deckIds.flatMap((deckId, i) => {
+      const session = latest[i];
+      return session ? [[deckId, session.startedAt] as const] : [];
+    }),
   );
 }

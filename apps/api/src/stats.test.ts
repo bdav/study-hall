@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { type PrismaClient, type RecallGrade } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
   recordCardHistory,
+  recordStudySession,
   type HistoryAnswer,
 } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
@@ -376,5 +377,171 @@ describe('statsRouter', () => {
         sessions: [],
       });
     });
+  });
+});
+
+/**
+ * Today's Review (ADR-0013) in stats (#117): its answers count on each
+ * card's deck, and it's one of the sessions of each deck it asked.
+ */
+describe("Today's Review in stats", () => {
+  let learnerId: string;
+  let learnerCount = 0;
+
+  beforeEach(async () => {
+    learnerId = (
+      await prisma.user.create({
+        data: {
+          email: `stats-review-${++learnerCount}@example.com`,
+          passwordHash: 'fakehash',
+        },
+      })
+    ).id;
+  });
+
+  const caller = () => createCaller(learnerId);
+
+  /** A deck of NEW cards "<name> 1" to "<name> n", answered "A1" to "An". */
+  function learnerDeck(name: string, n: number) {
+    return createDeckWithCards(prisma, {
+      userId: learnerId,
+      name,
+      cards: Array.from({ length: n }, (_, i) => ({
+        front: `${name} ${i + 1}`,
+        canonicalAnswers: [`A${i + 1}`],
+      })),
+    });
+  }
+
+  /**
+   * Runs a Today's Review to its end: the fronts given are missed, their
+   * Retries answered right, and every other card answered right.
+   */
+  async function review(missed: string[] = []) {
+    const started = (await caller().study.startReview({}))!;
+    for (const item of started.items) {
+      const answer = `A${item.card.front.split(' ').at(-1)}`;
+      if (missed.includes(item.card.front)) {
+        const { retryItem } = await caller().study.dontKnow({
+          itemId: item.id,
+        });
+        await caller().study.submitAnswer({
+          itemId: retryItem!.id,
+          userAnswer: answer,
+        });
+      } else {
+        await caller().study.submitAnswer({
+          itemId: item.id,
+          userAnswer: answer,
+        });
+      }
+    }
+    await caller().study.finishSession({ id: started.id });
+    return started;
+  }
+
+  it("lists a Today's Review among a deck's sessions, counting only that deck's cards", async () => {
+    const capitals = await learnerDeck('Capitals', 2);
+    const italian = await learnerDeck('Italian', 2);
+    const finished = await review(['Capitals 2']);
+
+    const [capitalsStats, italianStats] = await Promise.all([
+      caller().stats.deckStats({ deckId: capitals.id }),
+      caller().stats.deckStats({ deckId: italian.id }),
+    ]);
+
+    expect(capitalsStats.sessions).toMatchObject([
+      {
+        id: finished.id,
+        kind: 'TODAYS_REVIEW',
+        status: 'COMPLETED',
+        answered: 2,
+        right: 1,
+      },
+    ]);
+    expect(italianStats.sessions).toMatchObject([
+      { id: finished.id, kind: 'TODAYS_REVIEW', answered: 2, right: 2 },
+    ]);
+    // Its answers count on each card's deck, Retries left out
+    expect(capitalsStats).toMatchObject({ answerCount: 2, accuracy: 0.5 });
+  });
+
+  it("leaves a Today's Review out of the sessions of a deck it asked nothing of, or in another direction", async () => {
+    const capitals = await learnerDeck('Capitals', 2);
+    await prisma.deck.update({
+      where: { id: capitals.id },
+      data: { reversible: true },
+    });
+    // Ticked, with nothing to ask
+    const empty = await learnerDeck('Empty', 0);
+    await review();
+
+    // Each card NEW both ways, so asked Forward, as on a tie
+    const [reverse, emptyStats] = await Promise.all([
+      caller().stats.deckStats({ deckId: capitals.id, direction: 'REVERSE' }),
+      caller().stats.deckStats({ deckId: empty.id }),
+    ]);
+
+    expect(reverse.sessions).toEqual([]);
+    expect(emptyStats.sessions).toEqual([]);
+  });
+
+  it("lists a Today's Review once in overall stats, with all its cards and how many decks it asked", async () => {
+    const capitals = await learnerDeck('Capitals', 2);
+    await learnerDeck('Italian', 2);
+    await learnerDeck('Empty', 0);
+    await recordStudySession(prisma, {
+      userId: learnerId,
+      deckId: capitals.id,
+      answers: [{ cardId: capitals.cards[0].id, userAnswer: 'A1' }],
+    });
+    // Capitals 1 just answered, so not due: the review asks the other 3
+    const finished = await review(['Italian 1']);
+
+    const stats = await caller().stats.overallStats();
+
+    expect(stats.sessions).toMatchObject([
+      {
+        id: finished.id,
+        kind: 'TODAYS_REVIEW',
+        deckCount: 2,
+        answered: 3,
+        right: 2,
+      },
+      { kind: 'DECK', deck: { id: capitals.id }, answered: 1, right: 1 },
+    ]);
+    expect(stats).toMatchObject({ answerCount: 4, accuracy: 0.75 });
+  });
+
+  it("counts a Today's Review in overall stats only on the decks still in Flashcards", async () => {
+    await learnerDeck('Capitals', 2);
+    const italian = await learnerDeck('Italian', 2);
+    const finished = await review(['Capitals 2']);
+    await caller().deck.archive({ id: italian.id });
+
+    const stats = await caller().stats.overallStats();
+
+    // As overall stats leave an archived deck out (#77)
+    expect(stats.sessions).toMatchObject([
+      { id: finished.id, deckCount: 1, answered: 2, right: 1 },
+    ]);
+    expect(stats).toMatchObject({ answerCount: 2, accuracy: 0.5 });
+  });
+
+  it("counts a Today's Review in the deck list's accuracy and last studied of each deck it asked", async () => {
+    const capitals = await learnerDeck('Capitals', 2);
+    const empty = await learnerDeck('Empty', 0);
+    const finished = await review(['Capitals 2']);
+
+    const decks = await caller().deck.list();
+    const listed = (id: string) => decks.find((deck) => deck.id === id);
+
+    expect(listed(capitals.id)).toMatchObject({
+      totalAttempts: 2,
+      accuracy: 0.5,
+      lastStudied: finished.startedAt,
+    });
+    // Ticked, but none of its cards asked
+    expect(listed(empty.id)!.lastStudied).toBeNull();
   });
 });

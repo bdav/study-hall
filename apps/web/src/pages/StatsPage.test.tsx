@@ -65,6 +65,7 @@ function overallStats(overrides: Partial<OverallStats> = {}): OverallStats {
     sessions: [
       {
         id: 'session-1',
+        kind: 'DECK',
         startedAt: '2026-11-01T12:00:00.000Z',
         endedAt: '2026-11-01T12:10:00.000Z',
         sessionType: 'QUICK',
@@ -203,6 +204,58 @@ describe('StatsPage', () => {
       '4',
       'Finished',
     ]);
+  });
+
+  it("lists a Today's Review once, naming how many decks it asked", () => {
+    const review = {
+      kind: 'TODAYS_REVIEW' as const,
+      endedAt: null,
+      sessionType: 'STANDARD' as const,
+      studyMode: 'STUDY' as const,
+      direction: 'FORWARD' as const,
+      status: 'COMPLETED' as const,
+    };
+    mockStats(
+      overallStats({
+        sessions: [
+          {
+            ...review,
+            id: 'review-2',
+            startedAt: '2026-11-03T12:00:00.000Z',
+            deckCount: 3,
+            answered: 12,
+            right: 9,
+          },
+          {
+            ...review,
+            id: 'review-1',
+            startedAt: '2026-11-02T12:00:00.000Z',
+            deckCount: 1,
+            answered: 5,
+            right: 5,
+          },
+        ],
+      }),
+    );
+    renderStatsPage();
+
+    const [, threeDecks, oneDeck] = within(
+      region('Recent sessions'),
+    ).getAllByRole('row');
+    expect(
+      within(threeDecks)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual([
+      'Nov 3, 2026',
+      'Review · 3 decks',
+      'Standard',
+      'Study',
+      '12',
+      '9',
+      'Finished',
+    ]);
+    expect(within(oneDeck).getByText('Review · 1 deck')).toBeInTheDocument();
   });
 
   it('says when no session has finished yet', () => {

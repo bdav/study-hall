@@ -6,7 +6,10 @@ import {
   readCardStanding,
 } from '../services/cardStanding.js';
 import { countPooled, poolStandings } from '../services/queueGenerator.js';
-import { todaysReviewProgress } from '../services/studySessions.js';
+import {
+  findLastStudied,
+  todaysReviewProgress,
+} from '../services/studySessions.js';
 import { liveCramDate } from '../services/cramDate.js';
 import { deckNotFoundError } from '../services/decks.js';
 import { continueTarget } from '../services/syllabus.js';
@@ -125,20 +128,21 @@ export const todayRouter = router({
         leftOutOfToday: true,
         course: { select: { title: true } },
         _count: { select: { cards: true } },
-        studySessions: {
-          orderBy: { startedAt: 'desc' },
-          take: 1,
-          select: { startedAt: true },
-        },
       },
     });
-
-    // Every deck's cards, both ways a Reversible Deck is studied, in one read
-    const standings = await readCardStanding(ctx.prisma, {
+    const learnerDecks = {
       userId: ctx.userId,
       deckIds: decks.map((deck) => deck.id),
-      now,
-    });
+    };
+
+    // Every deck's cards, both ways a Reversible Deck is studied, in one
+    // read, and when each deck was last studied
+    const [standings, lastStudied] = await Promise.all([
+      readCardStanding(ctx.prisma, { ...learnerDecks, now }),
+      findLastStudied(ctx.prisma, learnerDecks),
+    ]);
+    const lastStudiedAt = (deckId: string) =>
+      lastStudied.get(deckId)?.getTime() ?? 0;
     const { cards, nextDueAt } = standings;
 
     // Today's Review's cards: the ticked decks', each card once, as its
@@ -218,11 +222,7 @@ export const todayRouter = router({
         // Most recently studied first, then those never studied (a stable
         // sort, so newest first)
         decks: decks
-          .toSorted(
-            (a, b) =>
-              (b.studySessions[0]?.startedAt.getTime() ?? 0) -
-              (a.studySessions[0]?.startedAt.getTime() ?? 0),
-          )
+          .toSorted((a, b) => lastStudiedAt(b.id) - lastStudiedAt(a.id))
           .map((deck) => ({
             id: deck.id,
             name: deck.name,

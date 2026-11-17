@@ -55,7 +55,10 @@ import {
   findOwnedDeck,
 } from '../services/decks.js';
 import { liveCramDate } from '../services/cramDate.js';
-import { skipArchivedDeckInReviews } from '../services/studySessions.js';
+import {
+  findLastStudied,
+  skipArchivedDeckInReviews,
+} from '../services/studySessions.js';
 
 const text = z.string().trim().min(1);
 const proposalSource = z.string().min(1).max(100);
@@ -180,19 +183,19 @@ export const deckRouter = router({
       include: {
         course: { select: { id: true, title: true, archivedAt: true } },
         _count: { select: { cards: true } },
-        studySessions: {
-          orderBy: { startedAt: 'desc' },
-          take: 1,
-          select: { startedAt: true },
-        },
       },
     });
-
-    // Each deck's Counted Answers, from one read of its cards' standing
-    const { cards } = await readCardStanding(ctx.prisma, {
+    const learnerDecks = {
       userId: ctx.userId,
       deckIds: decks.map((deck) => deck.id),
-    });
+    };
+
+    // Each deck's Counted Answers, from one read of its cards' standing,
+    // and when it was last studied
+    const [{ cards }, lastStudied] = await Promise.all([
+      readCardStanding(ctx.prisma, learnerDecks),
+      findLastStudied(ctx.prisma, learnerDecks),
+    ]);
     const answersOf = (deckId: string) =>
       addAnswers(
         cards
@@ -214,7 +217,7 @@ export const deckRouter = router({
         cardCount: deck._count.cards,
         totalAttempts: answerCount(answers),
         accuracy: accuracy(answers),
-        lastStudied: deck.studySessions[0]?.startedAt ?? null,
+        lastStudied: lastStudied.get(deck.id) ?? null,
       };
     });
   }),

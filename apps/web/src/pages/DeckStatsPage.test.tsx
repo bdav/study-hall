@@ -67,6 +67,7 @@ function deckStats(overrides: Partial<DeckStats> = {}): DeckStats {
     sessions: [
       {
         id: 'session-2',
+        kind: 'DECK',
         startedAt: '2026-11-01T12:00:00.000Z',
         endedAt: '2026-11-01T12:10:00.000Z',
         sessionType: 'QUICK',
@@ -79,6 +80,7 @@ function deckStats(overrides: Partial<DeckStats> = {}): DeckStats {
       },
       {
         id: 'session-1',
+        kind: 'DECK',
         startedAt: '2026-10-30T12:00:00.000Z',
         endedAt: '2026-10-30T12:20:00.000Z',
         sessionType: 'STANDARD',
@@ -248,6 +250,43 @@ describe('DeckStatsPage', () => {
     expect(rowsOf('Recent sessions')).toEqual([
       ['Nov 1, 2026', 'Quick', 'Cram', '3', '1', 'Abandoned'],
       ['Oct 30, 2026', 'Standard', 'Study', '10', '8', 'Finished'],
+    ]);
+  });
+
+  it("names a Today's Review among the deck's sessions", () => {
+    setupMocks({
+      data: deckStats({
+        sessions: [
+          {
+            id: 'review-1',
+            kind: 'TODAYS_REVIEW',
+            startedAt: '2026-11-02T12:00:00.000Z',
+            endedAt: '2026-11-02T12:15:00.000Z',
+            sessionType: 'STANDARD',
+            studyMode: 'STUDY',
+            direction: 'FORWARD',
+            status: 'COMPLETED',
+            deckCount: 2,
+            answered: 4,
+            right: 3,
+          },
+        ],
+      }),
+    });
+    renderDeckStatsPage();
+
+    const [, row] = within(
+      screen.getByRole('region', { name: 'Recent sessions' }),
+    ).getAllByRole('row');
+    const [when, ...rest] = within(row).getAllByRole('cell');
+    expect(within(when).getByText('Nov 2, 2026')).toBeInTheDocument();
+    expect(within(when).getByText("Today's Review")).toBeInTheDocument();
+    expect(rest.map((cell) => cell.textContent)).toEqual([
+      'Standard',
+      'Study',
+      '4',
+      '3',
+      'Finished',
     ]);
   });
 

@@ -153,15 +153,24 @@ const labelOf = <T extends string>(
   value: T,
 ) => choices.find((choice) => choice.value === value)?.label ?? value;
 
-/** A session's deck, and its course when it has one. */
-function deckLine({ name, course }: Session['deck']) {
+/**
+ * A session's deck, and its course when it has one; a Today's Review's,
+ * how many decks it asked (#117).
+ */
+function deckLine(session: Session) {
+  if (session.kind === 'TODAYS_REVIEW') {
+    const { deckCount } = session;
+    return `Review · ${deckCount} ${deckCount === 1 ? 'deck' : 'decks'}`;
+  }
+  const { name, course } = session.deck;
   return course ? `${name} · ${course.title}` : name;
 }
 
 /**
  * The latest finished or abandoned Study Sessions: when, their type and
  * Study Mode, how many cards they answered and got right, and how they
- * ended; and their deck, when `showDeck`.
+ * ended; and their deck, when `showDeck`, or else which are Today's
+ * Reviews, as a deck's own list names them (#117).
  */
 export function RecentSessions({
   sessions,
@@ -190,8 +199,15 @@ export function RecentSessions({
           <TableBody>
             {sessions.map((session) => (
               <TableRow key={session.id}>
-                <TableCell>{formatDate(session.startedAt)}</TableCell>
-                {showDeck && <TableCell>{deckLine(session.deck)}</TableCell>}
+                <TableCell>
+                  {formatDate(session.startedAt)}
+                  {!showDeck && session.kind === 'TODAYS_REVIEW' && (
+                    <span className="block text-xs text-white/60">
+                      Today's Review
+                    </span>
+                  )}
+                </TableCell>
+                {showDeck && <TableCell>{deckLine(session)}</TableCell>}
                 <TableCell>
                   {labelOf(SESSION_TYPES, session.sessionType)}
                 </TableCell>
