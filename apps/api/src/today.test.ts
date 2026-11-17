@@ -453,7 +453,7 @@ describe('today.get', () => {
       });
     });
 
-    it("counts a deck as studied when a Today's Review asked its cards", async () => {
+    it("counts a deck as studied when a Today's Review answered its cards", async () => {
       const yesterday = await deckOf(1, 'Studied yesterday');
       await recordCardHistory(prisma, {
         userId,
@@ -466,6 +466,10 @@ describe('today.get', () => {
       });
       const reviewed = await deckOf(1, 'Reviewed today');
       const review = await createCaller().study.startReview({});
+      await createCaller().study.submitAnswer({
+        itemId: review!.items[0].id,
+        userAnswer: 'A1',
+      });
       await createCaller().study.finishSession({ id: review!.id });
 
       const { previews } = await createCaller().today.get();
@@ -473,6 +477,25 @@ describe('today.get', () => {
       expect(previews.decks.map((deck) => deck.id)).toEqual([
         reviewed.id,
         yesterday.id,
+      ]);
+    });
+
+    it("leaves a deck as it was when a Today's Review asked its cards but answered none", async () => {
+      const lastWeek = await deckOf(1, 'Studied last week');
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: lastWeek.cards[0].id,
+        answers: [{ grade: 'GOOD', at: daysAgo(7) }],
+      });
+      const neverStudied = await deckOf(1, 'Never studied');
+      const review = await createCaller().study.startReview({});
+      await createCaller().study.abandonSession({ id: review!.id });
+
+      const { previews } = await createCaller().today.get();
+
+      expect(previews.decks.map((deck) => deck.id)).toEqual([
+        lastWeek.id,
+        neverStudied.id,
       ]);
     });
 

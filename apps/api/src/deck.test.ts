@@ -3,10 +3,16 @@ import { type PrismaClient } from '@prisma/client';
 import {
   createDeckWithCards,
   createTestPrisma,
+  recordCardHistory,
   recordStudySession,
 } from './test-helpers.js';
 import { appRouter } from './routers/index.js';
 import { createFakeAiProvider } from './ai/fakeProvider.js';
+
+const day = 24 * 60 * 60 * 1000;
+// Whole days before a fixed moment, so the times compare exactly
+const now = new Date();
+const daysAgo = (n: number) => new Date(now.getTime() - n * day);
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -145,6 +151,65 @@ describe('deckRouter', () => {
       expect(result[0].totalAttempts).toBe(2);
       expect(result[0].accuracy).toBeCloseTo(0.5, 5);
       expect(result[0].lastStudied).toBeDefined();
+    });
+
+    it("gives last studied as the time of the deck's latest answer, a Retry's or one from before an edit too", async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Answered Deck',
+        cards: [
+          { front: 'Q1', canonicalAnswers: ['A1'] },
+          { front: 'Q2', canonicalAnswers: ['A2'] },
+        ],
+      });
+      // Q1's session started five days ago, its Retry answered yesterday
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: deck.cards[0].id,
+        answers: [
+          { grade: 'MISSED', at: daysAgo(5) },
+          { grade: 'GOOD', at: daysAgo(1), retry: true },
+        ],
+      });
+      // The latest session to start, three days ago
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: deck.cards[1].id,
+        answers: [{ grade: 'GOOD', at: daysAgo(3) }],
+      });
+      // An edit resets Q1's progress, leaving its answers uncounted
+      await createCaller().card.update({
+        cardId: deck.cards[0].id,
+        front: 'New Q1',
+      });
+
+      const [listed] = await createCaller().deck.list();
+
+      expect(listed.lastStudied).toEqual(daysAgo(1));
+    });
+
+    it("leaves out a deck's own session and a Today's Review with no answers, abandoned or under way", async () => {
+      const deck = await createDeckWithCards(prisma, {
+        userId,
+        name: 'Started Deck',
+        cards: [{ front: 'Q1', canonicalAnswers: ['A1'] }],
+      });
+      await recordCardHistory(prisma, {
+        userId,
+        cardId: deck.cards[0].id,
+        answers: [{ grade: 'MISSED', at: daysAgo(2) }],
+      });
+      const caller = createCaller();
+      const own = await caller.study.startSession({ deckId: deck.id });
+      await caller.study.abandonSession({ id: own!.id });
+      const review = await caller.study.startReview({});
+
+      const underWay = await caller.deck.list();
+      await caller.study.abandonSession({ id: review!.id });
+      const abandoned = await caller.deck.list();
+
+      expect(underWay[0].lastStudied).toEqual(daysAgo(2));
+      expect(abandoned[0].lastStudied).toEqual(daysAgo(2));
     });
 
     it("counts only attempts made since each card's latest progress reset", async () => {

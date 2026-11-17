@@ -528,10 +528,17 @@ describe("Today's Review in stats", () => {
     expect(stats).toMatchObject({ answerCount: 2, accuracy: 0.5 });
   });
 
-  it("counts a Today's Review in the deck list's accuracy and last studied of each deck it asked", async () => {
+  it("counts a Today's Review in the deck list's accuracy and last studied of each deck it answered", async () => {
     const capitals = await learnerDeck('Capitals', 2);
     const empty = await learnerDeck('Empty', 0);
     const finished = await review(['Capitals 2']);
+    // Started a day before its answers, so the two differ
+    const { startedAt } = await prisma.studySession.update({
+      where: { id: finished.id },
+      data: {
+        startedAt: new Date(finished.startedAt.getTime() - day),
+      },
+    });
 
     const decks = await caller().deck.list();
     const listed = (id: string) => decks.find((deck) => deck.id === id);
@@ -539,8 +546,11 @@ describe("Today's Review in stats", () => {
     expect(listed(capitals.id)).toMatchObject({
       totalAttempts: 2,
       accuracy: 0.5,
-      lastStudied: finished.startedAt,
     });
+    // When its cards were answered, not when the review started
+    expect(listed(capitals.id)!.lastStudied!.getTime()).toBeGreaterThan(
+      startedAt.getTime() + day - 1,
+    );
     // Ticked, but none of its cards asked
     expect(listed(empty.id)!.lastStudied).toBeNull();
   });

@@ -1109,33 +1109,35 @@ export async function findRecentSessions(
 }
 
 /**
- * When the learner last studied each of the given decks: the start of the
- * latest Study Session that was its own or a Today's Review that asked any
- * of its cards (#117), keyed by deck; a deck never studied has none.
+ * When the learner last studied each of the given decks: their latest
+ * answer to any of its cards, in its own Study Session or a Today's Review
+ * (#117, #138), keyed by deck. Any answer counts, not only Counted Answers:
+ * Retries, Review retired's and those from before a card's last reset too,
+ * so editing a card never moves it back. A session with no answers counts
+ * for nothing, and a deck never answered has none.
  */
 export async function findLastStudied(
   prisma: PrismaClient,
   { userId, deckIds }: { userId: string; deckIds: string[] },
 ) {
-  const latest = await Promise.all(
-    deckIds.map((deckId) =>
-      prisma.studySession.findFirst({
-        where: {
-          userId,
-          OR: [
-            { kind: 'DECK', deckId },
-            { kind: 'TODAYS_REVIEW', items: { some: { card: { deckId } } } },
-          ],
-        },
-        orderBy: { startedAt: 'desc' },
-        select: { startedAt: true },
-      }),
-    ),
-  );
-  return new Map(
-    deckIds.flatMap((deckId, i) => {
-      const session = latest[i];
-      return session ? [[deckId, session.startedAt] as const] : [];
-    }),
-  );
+  const latestByCard = await prisma.cardAttempt.groupBy({
+    by: ['cardId'],
+    where: { studySession: { userId }, card: { deckId: { in: deckIds } } },
+    _max: { createdAt: true },
+  });
+  const cards = await prisma.card.findMany({
+    where: { id: { in: latestByCard.map(({ cardId }) => cardId) } },
+    select: { id: true, deckId: true },
+  });
+  const deckOf = new Map(cards.map((card) => [card.id, card.deckId]));
+
+  const latest = new Map<string, Date>();
+  for (const { cardId, _max } of latestByCard) {
+    const deckId = deckOf.get(cardId);
+    const at = _max.createdAt;
+    if (!deckId || !at) continue;
+    const before = latest.get(deckId);
+    if (!before || at > before) latest.set(deckId, at);
+  }
+  return latest;
 }
