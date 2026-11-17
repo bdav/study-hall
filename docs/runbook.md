@@ -4,11 +4,13 @@ How Study Hall runs in production, for whoever operates it months from now. The 
 
 ## Architecture
 
-| Part     | Host    | Address                       |
-| -------- | ------- | ----------------------------- |
-| Web app  | Vercel  | `study.beaudavenport.com`     |
-| API      | Railway | `api.study.beaudavenport.com` |
-| Postgres | Railway | Only the API uses it          |
+| Part     | Host    | Address                       | Region                          |
+| -------- | ------- | ----------------------------- | ------------------------------- |
+| Web app  | Vercel  | `study.beaudavenport.com`     | Vercel's edge                   |
+| API      | Railway | `api.study.beaudavenport.com` | `us-west2` (California)         |
+| Postgres | Railway | Only the API uses it          | `us-west2`, the same as the API |
+
+Keep the API and Postgres in the same Railway region. Every query is a round trip between them, and a request makes several in turn: with the API in California and Postgres in Virginia, a round trip took about 65 ms, most requests about a second, and saving 40 generated cards 27 seconds. In one region a round trip is about a millisecond. Moving a service with a volume, as Postgres has, migrates the volume, and the database is down until that's done. Check after a move that backups and point-in-time recovery are still on.
 
 The two addresses are subdomains of one domain, so they count as the same site. The API's login cookie (HttpOnly, `SameSite=Lax`, host-only, `Secure` in production) reaches it from the web app with no cookie domain and no `SameSite=None`, Safari on iOS included.
 
