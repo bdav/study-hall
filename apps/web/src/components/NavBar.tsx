@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { forgetNewCourse } from '@/lib/newCourse';
+import { AiSpend } from '@/components/AiSpend';
 
 /** The top-level areas, each owning the paths that start with its prefixes. */
 const AREAS = [
@@ -43,8 +44,13 @@ const AREAS = [
     prefixes: ['/ai-usage'],
     // Only learners who can use AI have any
     needsAI: true,
+    // Below sm, where there's no room for it, the AI spend icon stands in,
+    // linking here
+    fromSm: true,
   },
 ];
+
+const AI_USAGE = AREAS.find((area) => area.to === '/ai-usage')!;
 
 function isInArea(pathname: string, prefixes: string[]) {
   return prefixes.some(
@@ -112,7 +118,12 @@ export function NavBar() {
           );
         },
       )}
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1 pointer-coarse:max-sm:gap-0 sm:gap-4">
+        <AiSpend
+          canUseAI={canUseAI}
+          // Below sm it stands for AI usage, so it's marked on its page
+          className={`${baseLinkClass} ${isInArea(pathname, AI_USAGE.prefixes) ? 'text-white max-sm:bg-white/15 sm:text-white/70' : 'text-white/70'}`}
+        />
         <button
           onClick={() => logout.mutate()}
           disabled={logout.isPending}

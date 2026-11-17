@@ -39,10 +39,7 @@ const report = {
   ],
 };
 
-function renderPage(
-  query: Partial<ReportQuery>,
-  { fromCourses = true }: { fromCourses?: boolean } = {},
-) {
+function renderPage(query: Partial<ReportQuery>) {
   vi.mocked(trpc.aiUsage.report.useQuery).mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -51,14 +48,7 @@ function renderPage(
   } as ReportQuery);
 
   return render(
-    <MemoryRouter
-      initialEntries={[
-        {
-          pathname: '/ai-usage',
-          state: fromCourses ? { from: 'courses' } : undefined,
-        },
-      ]}
-    >
+    <MemoryRouter initialEntries={['/ai-usage']}>
       <AiUsagePage />
     </MemoryRouter>,
   );
@@ -106,25 +96,10 @@ describe('AiUsagePage', () => {
       'before any usage',
       { month: '2026-10', totalUsd: 0, breakdown: [], previousMonths: [] },
     ],
-  ])('links back to Courses %s, when opened from Courses', (_, data) => {
-    renderPage({ data } as Partial<ReportQuery>);
-
-    expect(screen.getByRole('link', { name: /^courses$/i })).toHaveAttribute(
-      'href',
-      '/courses',
-    );
-  });
-
-  it.each([
-    ['with usage', report],
-    [
-      'before any usage',
-      { month: '2026-10', totalUsd: 0, breakdown: [], previousMonths: [] },
-    ],
   ])(
-    'has no back link %s when opened from elsewhere, such as the header',
+    'has no back link %s: it is an area of the navigation, which opens it (#119)',
     (_, data) => {
-      renderPage({ data } as Partial<ReportQuery>, { fromCourses: false });
+      renderPage({ data } as Partial<ReportQuery>);
 
       expect(
         screen.queryByRole('link', { name: /^courses$/i }),

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { AiSpendSummary } from '@/components/AiSpendSummary';
 import { CenteredPage } from '@/components/CenteredPage';
 import { CourseListSkeleton } from '@/components/PageSkeleton';
 import { CourseProgress, CourseTile } from '@/components/CourseTile';
@@ -86,8 +85,6 @@ export default function CoursesPage() {
     <CenteredPage>
       <div className="w-full max-w-4xl text-white">
         <h1 className="text-2xl font-bold">Your Courses</h1>
-
-        <AiSpendSummary />
 
         {courses.length === 0 && (
           <p className="mt-6 text-white/60">

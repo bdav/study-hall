@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import CoursesPage from './CoursesPage';
 import { trpc } from '@/lib/trpc';
 
@@ -72,15 +72,9 @@ function renderPage(
     <MemoryRouter>
       <Routes>
         <Route path="/" element={<CoursesPage />} />
-        <Route path="/ai-usage" element={<ArrivedWith />} />
       </Routes>
     </MemoryRouter>,
   );
-}
-
-/** Shows the router state a page was opened with. */
-function ArrivedWith() {
-  return <p>Arrived with {JSON.stringify(useLocation().state)}</p>;
 }
 
 beforeEach(() => {
@@ -204,60 +198,13 @@ describe('CoursesPage', () => {
     expect(screen.getByText(/error loading courses/i)).toBeInTheDocument();
   });
 
-  describe('AI spend summary', () => {
-    it("shows the learner's own AI spend this month against their cap, linking to the usage page (#130)", () => {
-      renderPage({ data: courses } as Partial<ListQuery>, {
-        canUseAI: true,
-        summary: { spentUsd: 1.2, capUsd: 10, paused: false },
-      });
-
-      expect(
-        screen.getByText('Your AI this month: $1.20 of $10.00'),
-      ).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /ai usage/i })).toHaveAttribute(
-        'href',
-        '/ai-usage',
-      );
-      expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
+  it("leaves AI spend to the site's navigation, not asking for it (#119)", () => {
+    renderPage({ data: courses } as Partial<ListQuery>, {
+      canUseAI: true,
+      summary: { spentUsd: 1.2, capUsd: 10, paused: false },
     });
 
-    it('opens AI usage saying it came from Courses, so it links back', async () => {
-      const user = userEvent.setup();
-      renderPage({ data: courses } as Partial<ListQuery>, {
-        canUseAI: true,
-        summary: { spentUsd: 1.2, capUsd: 10, paused: false },
-      });
-
-      await user.click(screen.getByRole('link', { name: /ai usage/i }));
-
-      expect(
-        screen.getByText('Arrived with {"from":"courses"}'),
-      ).toBeInTheDocument();
-    });
-
-    it('says when AI features are paused because the learner has reached their cap', () => {
-      renderPage({ data: courses } as Partial<ListQuery>, {
-        canUseAI: true,
-        summary: { spentUsd: 10.3, capUsd: 10, paused: true },
-      });
-
-      expect(
-        screen.getByText('Your AI this month: $10.30 of $10.00'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /ai features are paused .* you've reached this month's/i,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it("doesn't ask for or show AI spend to a learner who can't use AI", () => {
-      renderPage({ data: courses } as Partial<ListQuery>, { canUseAI: false });
-
-      expect(trpc.aiUsage.summary.useQuery).toHaveBeenCalledWith(undefined, {
-        enabled: false,
-      });
-      expect(screen.queryByText(/ai this month/i)).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText(/ai this month/i)).not.toBeInTheDocument();
+    expect(trpc.aiUsage.summary.useQuery).not.toHaveBeenCalled();
   });
 });
