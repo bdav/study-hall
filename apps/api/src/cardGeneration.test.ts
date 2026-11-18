@@ -14,11 +14,13 @@ import { createFakeAiProvider } from './ai/fakeProvider.js';
 import {
   CARD_GENERATION_MODEL,
   CARD_GENERATION_PROMPT_VERSION,
+  MAX_GENERATED_CARDS,
 } from './ai/cardGeneration.js';
 import { REVERSIBLE_DECK_RULE } from './ai/cardProposal.js';
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
+let recordingQueries: ReturnType<typeof createTestPrisma>['recordingQueries'];
 
 let userId: string;
 let otherUserId: string;
@@ -29,6 +31,7 @@ beforeAll(async () => {
   const testDb = createTestPrisma();
   prisma = testDb.prisma;
   cleanup = testDb.cleanup;
+  recordingQueries = testDb.recordingQueries;
 
   const user = await prisma.user.create({
     data: { email: 'card-generation@example.com', passwordHash: 'fakehash' },
@@ -483,6 +486,34 @@ describe('deck.addGeneratedCards', () => {
         cards: [typedRecall('Preterite of hacer: yo ___', 'hice')],
       }),
     ).resolves.toEqual({ createdCount: 1 });
+  });
+
+  it('saves 250 cards in as many SQL statements as 1 (#139)', async () => {
+    const recording = recordingQueries();
+    const caller = appRouter.createCaller({
+      prisma: recording.prisma,
+      userId,
+      sessionToken: null,
+      ai,
+    });
+    async function statementsToSave(count: number) {
+      const deck = await spanishDeck();
+      recording.queries.length = 0;
+      await caller.deck.addGeneratedCards({
+        deckId: deck.id,
+        model: CARD_GENERATION_MODEL,
+        promptVersion: CARD_GENERATION_PROMPT_VERSION,
+        cards: proposedCards(count),
+      });
+      return recording.queries.length;
+    }
+
+    const forOne = await statementsToSave(1);
+    const forMost = await statementsToSave(MAX_GENERATED_CARDS);
+
+    // Logged at all, or the two would agree with none
+    expect(forOne).toBeGreaterThan(0);
+    expect(forMost).toBe(forOne);
   });
 
   it('refuses more than 250 cards', async () => {

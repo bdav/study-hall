@@ -258,7 +258,9 @@ export interface CardSource {
  * Creates cards at the end of a deck, in the order given, each with its
  * Canonical Answers, the first primary, its progress started for the deck
  * owner through Card Standing (`startCardProgress`), and its first Card
- * Version, starting with that progress.
+ * Version, starting with that progress. The whole batch takes one insert
+ * per table, so the same few statements for one card as for hundreds
+ * (#139); the caller's transaction keeps it all or nothing.
  */
 export async function createCards(
   db: Db,
@@ -269,48 +271,65 @@ export async function createCards(
     source,
   }: { deckId: string; userId: string; cards: NewCard[]; source?: CardSource },
 ) {
+  for (const card of cards) assertDistinctAnswers(card.canonicalAnswers);
+  if (cards.length === 0) return [];
+
   const last = await db.card.aggregate({
     where: { deckId },
     _max: { position: true },
   });
   const firstPosition = (last._max.position ?? -1) + 1;
+  const startedAt = new Date();
 
-  for (const card of cards) assertDistinctAnswers(card.canonicalAnswers);
-
-  const created = [];
-  for (const [i, card] of cards.entries()) {
-    const startedAt = new Date();
-    const newCard = await db.card.create({
-      data: {
-        deckId,
-        front: card.front,
-        position: firstPosition + i,
-        sourceLessonId: source?.lessonId,
-        sourceModel: source?.model,
-        sourcePromptVersion: source?.promptVersion,
-        canonicalAnswers: {
-          create: card.canonicalAnswers.map(answerData),
-        },
-        versions: {
-          create: {
-            number: 1,
-            front: card.front,
-            canonicalAnswers: card.canonicalAnswers,
-            startedAt,
-          },
-        },
-      },
-      include: withCanonicalAnswers,
-    });
-    await startCardProgress(db, {
-      userId,
+  const inserted = await db.card.createManyAndReturn({
+    data: cards.map((card, i) => ({
       deckId,
-      cardId: newCard.id,
+      front: card.front,
+      position: firstPosition + i,
+      sourceLessonId: source?.lessonId,
+      sourceModel: source?.model,
+      sourcePromptVersion: source?.promptVersion,
+    })),
+    select: { id: true, position: true },
+  });
+  // Each card's id, in the order given, by the position it was given, as
+  // the order an insert returns its rows in isn't promised
+  const idAt = new Map(inserted.map((card) => [card.position, card.id]));
+  const created = cards.map((card, i) => ({
+    ...card,
+    id: idAt.get(firstPosition + i)!,
+  }));
+  const ids = created.map((card) => card.id);
+
+  await db.canonicalAnswer.createMany({
+    data: created.flatMap((card) =>
+      card.canonicalAnswers.map((text, position) => ({
+        cardId: card.id,
+        ...answerData(text, position),
+      })),
+    ),
+  });
+  await db.cardVersion.createMany({
+    data: created.map((card) => ({
+      cardId: card.id,
+      number: 1,
+      front: card.front,
+      canonicalAnswers: card.canonicalAnswers,
       startedAt,
-    });
-    created.push(newCard);
-  }
-  return created;
+    })),
+  });
+  await startCardProgress(db, {
+    userId,
+    deckId,
+    cardIds: ids,
+    startedAt,
+  });
+
+  return db.card.findMany({
+    where: { id: { in: ids } },
+    include: withCanonicalAnswers,
+    orderBy: deckOrder,
+  });
 }
 
 /**

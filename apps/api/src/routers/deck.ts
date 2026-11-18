@@ -779,16 +779,13 @@ export const deckRouter = router({
         front,
         canonicalAnswers: [canonicalAnswer],
       }));
-      await ctx.prisma.$transaction(
-        (tx) =>
-          createCards(tx, {
-            deckId: deck.id,
-            userId: ctx.userId,
-            cards,
-            source: { model: input.model, promptVersion: input.promptVersion },
-          }),
-        // Up to MAX_GENERATED_CARDS cards, each several inserts
-        { timeout: 60_000 },
+      await ctx.prisma.$transaction((tx) =>
+        createCards(tx, {
+          deckId: deck.id,
+          userId: ctx.userId,
+          cards,
+          source: { model: input.model, promptVersion: input.promptVersion },
+        }),
       );
 
       return { createdCount: cards.length };

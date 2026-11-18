@@ -50,15 +50,29 @@ export function createTestPrisma() {
   // Create the schema and apply migrations
   applyMigrations(testUrl);
 
-  const adapter = new PrismaPg(
-    { connectionString: baseUrl },
-    { schema: schemaName },
-  );
-  const prisma = new PrismaClient({ adapter });
+  const newAdapter = () =>
+    new PrismaPg({ connectionString: baseUrl }, { schema: schemaName });
+  const prisma = new PrismaClient({ adapter: newAdapter() });
+  const recorders: PrismaClient[] = [];
 
   return {
     prisma,
+    /**
+     * Another client on the same schema that records each SQL statement it
+     * sends, in order, for a test that counts them.
+     */
+    recordingQueries() {
+      const recorder = new PrismaClient({
+        adapter: newAdapter(),
+        log: [{ emit: 'event', level: 'query' }],
+      });
+      const queries: string[] = [];
+      recorder.$on('query', (event) => queries.push(event.query));
+      recorders.push(recorder);
+      return { prisma: recorder as PrismaClient, queries };
+    },
     async cleanup() {
+      await Promise.all(recorders.map((recorder) => recorder.$disconnect()));
       await prisma.$executeRawUnsafe(
         `DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`,
       );

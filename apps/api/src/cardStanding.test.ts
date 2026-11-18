@@ -893,7 +893,7 @@ describe('changing card progress through Card Standing', () => {
     await startCardProgress(prisma, {
       userId,
       deckId: deck.id,
-      cardId: card.id,
+      cardIds: [card.id],
       startedAt: new Date(),
     });
 

@@ -696,27 +696,29 @@ export async function recordRetireUndone(
 export const STUDY_DIRECTIONS: StudyDirection[] = ['FORWARD', 'REVERSE'];
 
 /**
- * Starts a new card's progress for its deck's owner: NEW in each Study
- * Direction, studied in Reverse or not (ADR-0011), from `startedAt`, when
- * its first Card Version starts.
+ * Starts new cards' progress for their deck's owner, in one insert: NEW in
+ * each Study Direction, studied in Reverse or not (ADR-0011), from
+ * `startedAt`, when their first Card Versions start.
  */
 export function startCardProgress(
   db: Db,
   {
     userId,
     deckId,
-    cardId,
+    cardIds,
     startedAt,
-  }: { userId: string; deckId: string; cardId: string; startedAt: Date },
+  }: { userId: string; deckId: string; cardIds: string[]; startedAt: Date },
 ) {
   return db.cardProgress.createMany({
-    data: STUDY_DIRECTIONS.map((direction) => ({
-      userId,
-      deckId,
-      cardId,
-      direction,
-      resetAt: startedAt,
-    })),
+    data: cardIds.flatMap((cardId) =>
+      STUDY_DIRECTIONS.map((direction) => ({
+        userId,
+        deckId,
+        cardId,
+        direction,
+        resetAt: startedAt,
+      })),
+    ),
   });
 }
 
