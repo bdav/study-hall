@@ -14,6 +14,8 @@ import { countOf, formatDueTime } from '@/lib/format';
 import { steadyContent } from '@/lib/steady';
 import { trpc } from '@/lib/trpc';
 import { useSwipe } from '@/hooks/useSwipe';
+import { useKeyboardRoom } from '@/hooks/useKeyboardRoom';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { cardsCount, toFlashcard, type Flashcard } from '@/lib/cards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -78,6 +80,17 @@ const navButtonClasses =
 /** Holds Previous and Next: a row below md, nothing of its own from md. */
 const navRowClasses = 'mt-2 flex justify-between md:contents';
 
+/**
+ * What a card fitted above a phone's keyboard leaves room for (#140): the
+ * stack's 12px above its face, the answer field's 78px below it, and 8px
+ * clear above and below what's visible, with a little to spare.
+ */
+const ROOM_AROUND_FITTED_CARD = 112;
+/** How far below the top of what's visible a fitted card's top is kept. */
+const FITTED_CARD_CLEARANCE = 8;
+/** Less room than this, as in a phone held sideways, and the card isn't fitted. */
+const MIN_FITTED_CARD_HEIGHT = 120;
+
 /** Whether a key belongs to a dialog or the card's editor, not the page. */
 function isInDialog(target: EventTarget | null) {
   return (
@@ -124,7 +137,19 @@ const ASKED_GAP = 8;
  * far as the room above it allows, beyond which the card grows downward.
  * On the back, what was asked hangs just above it, taking no space.
  */
-function CardAnchor({ asked, text }: { asked?: string; text: string }) {
+function CardAnchor({
+  asked,
+  text,
+  fitRoom,
+}: {
+  asked?: string;
+  text: string;
+  /**
+   * Fitted above a phone's keyboard (#140), the most height its card may
+   * take: the text steps down a size at a time until it fits (`fitText`).
+   */
+  fitRoom?: number;
+}) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLParagraphElement>(null);
   const askedRef = useRef<HTMLParagraphElement>(null);
@@ -136,7 +161,17 @@ function CardAnchor({ asked, text }: { asked?: string; text: string }) {
     const face = anchor?.closest('[data-card-face]');
     if (!anchor || !textEl || !face) return;
     function place() {
-      if (!anchor || !textEl || !face) return;
+      if (!anchor || !textEl || !(face instanceof HTMLElement)) return;
+      // Its size first, as the lift is measured from it
+      if (fitRoom !== undefined) {
+        fitText(textEl, face, fitRoom);
+      } else {
+        for (const style of [textEl.style, face.style]) {
+          style.removeProperty('font-size');
+          style.removeProperty('line-height');
+          style.removeProperty('max-height');
+        }
+      }
       const above = askedRef.current
         ? askedRef.current.offsetHeight + ASKED_GAP
         : 0;
@@ -156,7 +191,7 @@ function CardAnchor({ asked, text }: { asked?: string; text: string }) {
     observer.observe(textEl);
     observer.observe(face);
     return () => observer.disconnect();
-  }, []);
+  }, [fitRoom]);
 
   return (
     <div ref={anchorRef} data-card-anchor className="relative w-full">
@@ -178,10 +213,52 @@ function CardAnchor({ asked, text }: { asked?: string; text: string }) {
   );
 }
 
-function CardFront({ text, onFlip }: { text: string; onFlip?: () => void }) {
+/** The main text's sizes, largest first, as Tailwind's text-3xl down to text-base. */
+const FITTED_TEXT_SIZES = [
+  ['1.875rem', '2.25rem'],
+  ['1.5rem', '2rem'],
+  ['1.25rem', '1.75rem'],
+  ['1.125rem', '1.75rem'],
+  ['1rem', '1.5rem'],
+] as const;
+
+/**
+ * Caps a fitted card's face to `room` and steps its main text down a size
+ * until it fits inside the face's padding, starting again from the largest
+ * each time, as the room or the text may have changed. At the smallest, a
+ * face that still can't hold it grows rather than let it spill.
+ */
+function fitText(textEl: HTMLElement, face: HTMLElement, room: number) {
+  face.style.maxHeight = `${room}px`;
+  const box = getComputedStyle(face);
+  const textRoom =
+    room -
+    [
+      box.paddingTop,
+      box.paddingBottom,
+      box.borderTopWidth,
+      box.borderBottomWidth,
+    ].reduce((total, size) => total + (parseFloat(size) || 0), 0);
+  for (const [fontSize, lineHeight] of FITTED_TEXT_SIZES) {
+    textEl.style.fontSize = fontSize;
+    textEl.style.lineHeight = lineHeight;
+    if (textEl.offsetHeight <= textRoom) return;
+  }
+  face.style.removeProperty('max-height');
+}
+
+function CardFront({
+  text,
+  onFlip,
+  fitRoom,
+}: {
+  text: string;
+  onFlip?: () => void;
+  fitRoom?: number;
+}) {
   return (
     <>
-      <CardAnchor text={text} />
+      <CardAnchor text={text} fitRoom={fitRoom} />
       {onFlip && (
         <button
           onClick={(e) => {
@@ -823,6 +900,33 @@ function StudyScreen({
   );
 
   const isEditing = !!displayCard && !!cardScreen?.editing;
+
+  // While the card waits for its answer with a phone's keyboard open, it
+  // and the answer field fit in what's visible above the keyboard, the card
+  // at the top of it, and Previous and Next, which can't be pressed then,
+  // make way (#140); swiping still goes back
+  const keyboardRoom = useKeyboardRoom();
+  // A phone's width, below sm, not a tablet's
+  const isPhone = !useMediaQuery('(min-width: 40rem)');
+  const roomForCard =
+    keyboardRoom === null ? null : keyboardRoom - ROOM_AROUND_FITTED_CARD;
+  const fitRoom =
+    isAnswering &&
+    !isEditing &&
+    isPhone &&
+    roomForCard !== null &&
+    roomForCard >= MIN_FITTED_CARD_HEIGHT
+      ? roomForCard
+      : undefined;
+  const cardAreaRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const cardArea = cardAreaRef.current;
+    if (fitRoom === undefined || !cardArea) return;
+    const visibleTop = window.visualViewport?.offsetTop ?? 0;
+    const offset =
+      cardArea.getBoundingClientRect().top - visibleTop - FITTED_CARD_CLEARANCE;
+    if (Math.abs(offset) > 1) window.scrollBy({ top: offset });
+  }, [fitRoom]);
   // An answered card keeps the side it shows; an unanswered one has no back
   // outside edit mode
   const editorShowsBack = displayResult
@@ -1132,7 +1236,10 @@ function StudyScreen({
     onMarkKnown,
     knownState,
     retiring,
+    fitRoom: cardFitRoom,
   }: CardSnapshot & {
+    /** Fitted above a phone's keyboard, the most height it may take. */
+    fitRoom?: number;
     onFlip?: () => void;
     editedAfterAnswer?: boolean;
     onAcceptAnswer?: () => void;
@@ -1142,6 +1249,7 @@ function StudyScreen({
   }) => (
     <CardStack
       anchored
+      fitted={cardFitRoom !== undefined}
       queueLength={queueLength}
       progress={cardProgress}
       isFlipped={result ? flipped : undefined}
@@ -1164,6 +1272,7 @@ function StudyScreen({
       <CardFront
         text={card.front}
         onFlip={result && !flipped ? onFlip : undefined}
+        fitRoom={cardFitRoom}
       />
     </CardStack>
   );
@@ -1222,6 +1331,7 @@ function StudyScreen({
           : undefined,
         knownState: cardScreen?.known,
         retiring: retireOffer,
+        fitRoom,
       })
     );
 
@@ -1231,6 +1341,7 @@ function StudyScreen({
 
       <StudyStage>
         <div
+          ref={cardAreaRef}
           className="relative w-full max-w-md"
           onTouchStart={swipe.onTouchStart}
           onTouchEnd={swipe.onTouchEnd}
@@ -1317,7 +1428,7 @@ function StudyScreen({
             </div>
           )}
 
-          <div className={navRowClasses}>
+          <div className={navRowClasses} hidden={fitRoom !== undefined}>
             {!isAtTitle && (
               <Button
                 ref={backButtonRef}
@@ -1562,6 +1673,16 @@ function StudyScreen({
           )}
         </div>
       </StudyStage>
+
+      {/* Room below the page as tall as the keyboard, so it can scroll
+          the fitted card to the top of what's visible */}
+      {fitRoom !== undefined && keyboardRoom !== null && (
+        <div
+          aria-hidden
+          data-keyboard-room
+          style={{ height: window.innerHeight - keyboardRoom }}
+        />
+      )}
     </CenteredPage>
   );
 }

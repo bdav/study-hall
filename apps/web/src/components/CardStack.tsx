@@ -15,6 +15,13 @@ interface CardStackProps {
    * centres what it holds.
    */
   anchored?: boolean;
+  /**
+   * Fitted above a phone's keyboard (#140), its height capped by what it
+   * holds (`fitText` in StudyPage): it centres that clear of what's drawn
+   * on its corners, and the cards stacked behind it go, as they'd show
+   * below it once it gives up its 3:2 shape.
+   */
+  fitted?: boolean;
 }
 
 export function CardStack({
@@ -26,6 +33,7 @@ export function CardStack({
   className,
   onClick,
   anchored = false,
+  fitted = false,
 }: CardStackProps) {
   const hasFlip = backChildren !== undefined;
   // A padding's percentage is of the card's width, and two-sevenths of the
@@ -34,9 +42,13 @@ export function CardStack({
   // below it, sits balanced on the card. Less 1.125rem, half of text-3xl's
   // 2.25rem line, so the main text's first line has its middle there. It
   // assumes the main text is text-3xl (`cardTextClasses` in StudyPage)
-  const layout = anchored
-    ? 'justify-start pt-[calc(200%/7_-_1.125rem)]'
-    : 'justify-center';
+  // Fitted, its top clears the edit pencil and Today's Review's deck name,
+  // and its bottom the card count
+  const layout = fitted
+    ? 'justify-center px-5 pt-9 pb-7'
+    : anchored
+      ? 'justify-start p-8 pt-[calc(200%/7_-_1.125rem)]'
+      : 'justify-center p-8';
 
   return (
     <div
@@ -56,10 +68,10 @@ export function CardStack({
           : undefined
       }
     >
-      {queueLength > 2 && (
+      {!fitted && queueLength > 2 && (
         <div className="absolute inset-x-2 top-0 aspect-3/2 rounded-xl border border-white/30" />
       )}
-      {queueLength > 1 && (
+      {!fitted && queueLength > 1 && (
         <div className="absolute inset-x-1 top-1.5 aspect-3/2 rounded-xl border border-white/30" />
       )}
       {hasFlip ? (
@@ -75,7 +87,7 @@ export function CardStack({
           {/* Front face */}
           <div
             data-card-face
-            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
+            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm ${className ?? ''}`}
             style={{ backfaceVisibility: 'hidden' }}
             inert={isFlipped}
           >
@@ -89,7 +101,7 @@ export function CardStack({
           {/* Back face */}
           <div
             data-card-face
-            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/15 p-8 backdrop-blur-sm ${className ?? ''}`}
+            className={`relative col-start-1 row-start-1 flex aspect-3/2 w-full flex-col items-center ${layout} self-stretch rounded-xl border border-white/30 bg-white/15 backdrop-blur-sm ${className ?? ''}`}
             style={{
               backfaceVisibility: 'hidden',
               transform: 'rotateY(-180deg)',
@@ -107,7 +119,7 @@ export function CardStack({
       ) : (
         <div
           data-card-face
-          className={`relative flex aspect-3/2 w-full flex-col items-center ${layout} rounded-xl border border-white/30 bg-white/10 p-8 backdrop-blur-sm ${className ?? ''}`}
+          className={`relative flex aspect-3/2 w-full flex-col items-center ${layout} rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm ${className ?? ''}`}
         >
           {children}
           {progress && (

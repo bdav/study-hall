@@ -4584,3 +4584,136 @@ describe('the glow on what Enter will press (#94)', () => {
     expect(isGlowing(nextButton())).toBe(false);
   });
 });
+
+describe("the card kept in view above a phone's keyboard (#140)", () => {
+  /**
+   * A phone's visual viewport, as Safari gives one: `height` visible of
+   * the window's 768 (jsdom's), `offsetTop` scrolled down within it.
+   */
+  function phoneViewport() {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 768,
+      offsetTop: 0,
+      scale: 1,
+    });
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: viewport,
+    });
+    return {
+      openKeyboard(height: number, offsetTop = 0) {
+        act(() => {
+          Object.assign(viewport, { height, offsetTop });
+          viewport.dispatchEvent(new Event('resize'));
+        });
+      },
+      closeKeyboard() {
+        act(() => {
+          Object.assign(viewport, { height: 768, offsetTop: 0 });
+          viewport.dispatchEvent(new Event('resize'));
+        });
+      },
+    };
+  }
+
+  const cardFace = () =>
+    screen.getAllByText('What is 2+2?')[0].closest('[data-card-face]')!;
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'visualViewport');
+    vi.restoreAllMocks();
+  });
+
+  async function start() {
+    const user = userEvent.setup();
+    renderStudyPage();
+    await user.click(screen.getByRole('button', { name: /test deck/i }));
+    await screen.findByRole('textbox');
+    return user;
+  }
+
+  it('hides Previous and Next while the card waits for its answer, and fits the card in the room above the keyboard', async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport();
+    await start();
+
+    phone.openKeyboard(340);
+
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
+    // What's visible, less the answer field below the card and a margin
+    expect(cardFace()).toHaveStyle({ maxHeight: '228px' });
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  it("scrolls the card's top to the top of what's visible as the keyboard opens", async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport();
+    await start();
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 238, width: 358, height: 239 }),
+    );
+
+    // Safari has scrolled 50px down to show the answer field
+    phone.openKeyboard(340, 50);
+
+    // The card's top 8px below the top of what's visible
+    expect(scrollBy).toHaveBeenCalledWith({ top: 180 });
+  });
+
+  it('shows the card and its arrows as before once the keyboard closes, and once the card is graded', async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport();
+    const user = await start();
+
+    phone.openKeyboard(340);
+    phone.closeKeyboard();
+
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
+    // The text back at its own size
+    expect(
+      screen.getAllByText('What is 2+2?')[0].getAttribute('style') ?? '',
+    ).not.toContain('font-size');
+
+    phone.openKeyboard(340);
+    await user.type(screen.getByRole('textbox'), '4');
+    await user.click(screen.getByRole('button', { name: /submit/i }));
+    await findResult();
+
+    // Graded, the card isn't waiting for an answer, keyboard or not
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
+  });
+
+  it('leaves a tablet as it is with its keyboard open', async () => {
+    setupMocksWithStartSession();
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: true,
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }) as unknown as MediaQueryList,
+    );
+    const phone = phoneViewport();
+    await start();
+
+    phone.openKeyboard(500);
+
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
+  });
+
+  it('leaves the screen as it is with no keyboard open', async () => {
+    setupMocksWithStartSession();
+    phoneViewport();
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+    await start();
+
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+});
