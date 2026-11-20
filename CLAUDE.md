@@ -10,7 +10,7 @@ What the app does, area by area, is in `docs/features.md`; the plans and decisio
 
 ## Implementation Order
 
-**Completed: 11/25 planned issues**
+**Completed: 11/26 planned issues**
 
 When picking the next ticket, work the first unchecked ticket in this list whose blockers are all closed. Check a ticket's box in the commit that closes it, and update the completed count above to match the boxes. The issue's state on GitHub is the truth: when a box disagrees with it, fix the box. Checked tickets are cleared out now and then, last on 2026-11-09, and earlier work is in closed issues and git history.
 
@@ -31,6 +31,7 @@ A line marked "stop and ask" is a design, triage or setup session with the maint
    - [ ] #140 Keep the study card in view above a phone's keyboard
    - [ ] #141 Line up each Before with its After in the Revise cards preview
    - [ ] #142 Fit a long front in the study card's 3:2 shape
+   - [ ] #143 Keep a phone's keyboard open from one study card to the next
 2. Courses
    - [ ] #100 Refuse answers to an earlier Lesson Version's exercises
    - [ ] #101 Lesson Version view: render a version apart from the lesson around it
