@@ -87,8 +87,6 @@ const navRowClasses = 'mt-2 flex justify-between md:contents';
  * clear above and below what's visible, with a little to spare.
  */
 const ROOM_AROUND_FITTED_CARD = 112;
-/** How far below the top of what's visible a fitted card's top is kept. */
-const FITTED_CARD_CLEARANCE = 8;
 /** Less room than this, as in a phone held sideways, and the card isn't fitted. */
 const MIN_FITTED_CARD_HEIGHT = 120;
 /**
@@ -943,48 +941,52 @@ function StudyScreen({
     setKeptKeyboardSpace(null);
   }
   const cardAreaRef = useRef<HTMLDivElement>(null);
-  // Scrolls the card's top to just below the top of what's visible
+  // Scrolls the card's top to just below the top of what's visible, its
+  // scroll margin (scroll-mt-2) clear of it. The browser places it, as only
+  // it knows where what's visible starts: iOS 26's Safari measures an
+  // element's rect from there, not the layout viewport, and reports its
+  // visual viewport out of date while its keyboard moves (#140)
   const alignCard = useCallback(() => {
-    const cardArea = cardAreaRef.current;
-    if (!cardArea) return;
-    // Both down the page: iOS 26's Safari measures an element's rect from
-    // what's visible, not the layout viewport, so offsetTop would count its
-    // scroll twice
-    const cardTop = cardArea.getBoundingClientRect().top + window.scrollY;
-    const visibleTop = window.visualViewport?.pageTop ?? window.scrollY;
-    const offset = cardTop - visibleTop - FITTED_CARD_CLEARANCE;
-    if (Math.abs(offset) > 1) window.scrollBy({ top: offset });
+    cardAreaRef.current?.scrollIntoView({ block: 'start' });
   }, []);
+  // As the keyboard opens, not as the room left changes with Safari's
+  // toolbar while the page is dragged
+  const isFitted = fitRoom !== undefined;
   useLayoutEffect(() => {
-    if (fitRoom !== undefined) alignCard();
-  }, [fitRoom, alignCard]);
+    if (isFitted) alignCard();
+  }, [isFitted, alignCard]);
   // Safari goes on scrolling the page for a moment as its keyboard opens
   // or closes, so once it stops the card is lined up again, the graded one
-  // too, keeping it in place from card to card. Past that, the learner's
-  // own scrolling is left alone
+  // too, keeping it in place from card to card. Past that, or once the
+  // learner drags the page, their own scrolling is left alone
   const keepsCardInPlace =
     keptKeyboardSpace !== null && !!displayCard && !isEditing;
+  const isKeyboardOpen = keyboardRoom !== null;
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!keepsCardInPlace || !viewport) return;
     let settlesBy = performance.now() + VIEWPORT_SETTLE_MS;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    function onChange(e: Event) {
-      if (e.type === 'resize') {
-        settlesBy = performance.now() + VIEWPORT_SETTLE_MS;
-      }
+    function schedule() {
       if (performance.now() > settlesBy) return;
       clearTimeout(timer);
       timer = setTimeout(alignCard, VIEWPORT_QUIET_MS);
     }
-    viewport.addEventListener('resize', onChange);
-    viewport.addEventListener('scroll', onChange);
+    function onDrag() {
+      settlesBy = 0;
+      clearTimeout(timer);
+    }
+    schedule();
+    viewport.addEventListener('resize', schedule);
+    viewport.addEventListener('scroll', schedule);
+    window.addEventListener('touchmove', onDrag, { passive: true });
     return () => {
-      viewport.removeEventListener('resize', onChange);
-      viewport.removeEventListener('scroll', onChange);
+      viewport.removeEventListener('resize', schedule);
+      viewport.removeEventListener('scroll', schedule);
+      window.removeEventListener('touchmove', onDrag);
       clearTimeout(timer);
     };
-  }, [keepsCardInPlace, alignCard]);
+  }, [keepsCardInPlace, isKeyboardOpen, alignCard]);
   // An answered card keeps the side it shows; an unanswered one has no back
   // outside edit mode
   const editorShowsBack = displayResult
@@ -1426,7 +1428,8 @@ function StudyScreen({
       <StudyStage>
         <div
           ref={cardAreaRef}
-          className="relative w-full max-w-md"
+          data-card-area
+          className="relative w-full max-w-md scroll-mt-2"
           onTouchStart={swipe.onTouchStart}
           onTouchEnd={swipe.onTouchEnd}
         >

@@ -4629,9 +4629,21 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
       closeKeyboard() {
         resize(768, 0);
       },
-      /** Safari scrolling the page on, as it does while its keyboard moves */
-      scroll() {
+      /**
+       * Safari scrolling the page on, as it does while its keyboard moves,
+       * leaving the visual viewport and the page's scroll where given
+       */
+      scroll({
+        offsetTop,
+        pageTop,
+        scrollY,
+      }: { offsetTop?: number; pageTop?: number; scrollY?: number } = {}) {
         act(() => {
+          if (offsetTop !== undefined) viewport.offsetTop = offsetTop;
+          if (pageTop !== undefined) viewport.pageTop = pageTop;
+          if (scrollY !== undefined) {
+            vi.spyOn(window, 'scrollY', 'get').mockReturnValue(scrollY);
+          }
           viewport.dispatchEvent(new Event('scroll'));
         });
       },
@@ -4686,42 +4698,48 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     });
   });
 
-  it("scrolls the card's top to the top of what's visible as the keyboard opens", async () => {
+  /**
+   * The card's area lined up by the browser, which alone knows where what's
+   * visible starts while Safari's keyboard moves: each call's element.
+   */
+  function cardLineUps() {
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => {});
+    return {
+      count: () =>
+        scrollIntoView.mock.contexts.filter(
+          (element) =>
+            element instanceof Element &&
+            element.hasAttribute('data-card-area'),
+        ).length,
+      lastOptions: () => scrollIntoView.mock.lastCall?.[0],
+    };
+  }
+
+  it("has the browser scroll the card's top to the top of what's visible as the keyboard opens", async () => {
     setupMocksWithStartSession();
     const phone = phoneViewport();
     await start();
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
-      DOMRect.fromRect({ x: 0, y: 238, width: 358, height: 239 }),
-    );
+    const lineUps = cardLineUps();
 
-    // Safari has scrolled 50px down to show the answer field
     phone.openKeyboard(340, 50);
 
-    // The card's top 8px below the top of what's visible
-    expect(scrollBy).toHaveBeenCalledWith({ top: 180 });
+    expect(lineUps.count()).toBe(1);
+    expect(lineUps.lastOptions()).toEqual({ block: 'start' });
   });
 
   it('lines the card up again once Safari has stopped scrolling the page as its keyboard opens', async () => {
     setupMocksWithStartSession();
     const phone = phoneViewport();
     await start();
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
-    const rect = vi
-      .spyOn(Element.prototype, 'getBoundingClientRect')
-      .mockReturnValue(DOMRect.fromRect({ y: 238, width: 358, height: 239 }));
-
+    const lineUps = cardLineUps();
     phone.openKeyboard(340, 50);
-    expect(scrollBy).toHaveBeenLastCalledWith({ top: 180 });
 
-    // Safari scrolls on after the page's own scroll, as an iPhone showed,
-    // leaving the card's area 100 below what's visible
-    rect.mockReturnValue(DOMRect.fromRect({ y: 158, width: 358, height: 239 }));
-    phone.scroll();
+    // Safari scrolls on after the page's own scroll, as an iPhone showed
+    phone.scroll({ offsetTop: 181, pageTop: 399 });
 
-    await waitFor(() =>
-      expect(scrollBy).toHaveBeenLastCalledWith({ top: 100 }),
-    );
+    await waitFor(() => expect(lineUps.count()).toBe(2));
   });
 
   it('lines the graded card up the same once the keyboard closes, so it stays in place from card to card', async () => {
@@ -4732,14 +4750,29 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     await user.type(screen.getByRole('textbox'), '4');
     await user.click(screen.getByRole('button', { name: /submit/i }));
     await findResult();
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
-      DOMRect.fromRect({ y: 300, width: 358, height: 239 }),
-    );
+    const lineUps = cardLineUps();
 
     phone.closeKeyboard();
 
-    await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 292 }));
+    await waitFor(() => expect(lineUps.count()).toBe(1));
+  });
+
+  it('leaves the page alone while the learner drags it, though the toolbar resizes what is visible', async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport();
+    await start();
+    phone.openKeyboard(340);
+    const lineUps = cardLineUps();
+
+    act(() => {
+      window.dispatchEvent(new Event('touchmove'));
+    });
+    // Safari's toolbar shrinking as the page is dragged, the keyboard open
+    phone.openKeyboard(326);
+    phone.scroll();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(lineUps.count()).toBe(0);
   });
 
   it("leaves the learner's own scrolling alone once the page has settled", async () => {
@@ -4747,35 +4780,16 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     const phone = phoneViewport();
     await start();
     phone.openKeyboard(340);
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
-      DOMRect.fromRect({ y: 300, width: 358, height: 239 }),
-    );
+    // The pass that lines the card up once the keyboard has opened
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
+    const lineUps = cardLineUps();
     const now = performance.now();
     vi.spyOn(performance, 'now').mockReturnValue(now + 5000);
 
     phone.scroll();
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    expect(scrollBy).not.toHaveBeenCalled();
-  });
-
-  it("scrolls the card's top to the top of what's visible in iOS 26's Safari, which measures it from there", async () => {
-    setupMocksWithStartSession();
-    const phone = phoneViewport({ ios26: true });
-    await start();
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
-    // The iPhone's numbers: the card's area 182 down the page, read 148
-    // above what's visible once Safari has scrolled 330 down
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
-      DOMRect.fromRect({ x: 0, y: -148, width: 369, height: 259 }),
-    );
-
-    phone.openKeyboard(384, 330);
-
-    // Up 156, the card's top 8px below the top of what's visible, not 486
-    // up, to the top of the page
-    expect(scrollBy).toHaveBeenCalledWith({ top: -156 });
+    expect(lineUps.count()).toBe(0);
   });
 
   it('shows the card and its arrows as before once the keyboard closes, and once the card is graded', async () => {
@@ -4919,11 +4933,11 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
   it('leaves the screen as it is with no keyboard open', async () => {
     setupMocksWithStartSession();
     phoneViewport();
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+    const lineUps = cardLineUps();
     await start();
 
     expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
     expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
-    expect(scrollBy).not.toHaveBeenCalled();
+    expect(lineUps.count()).toBe(0);
   });
 });
