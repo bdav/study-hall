@@ -104,6 +104,21 @@ describe('the Study Session machine', () => {
     expect(commands).toEqual([{ type: 'start' }]);
   });
 
+  it('says while a start waits for the server, and not once it has answered or failed', () => {
+    const title = { resumable: false };
+    const starting = run([{ type: 'start' }]).state;
+
+    expect(studyView(initialState, title).starting).toBe(false);
+    expect(studyView(starting, title).starting).toBe(true);
+    expect(studyView(run(started(item('a'))).state, title).starting).toBe(
+      false,
+    );
+    const nothingDue = run([{ type: 'started', session: null }], starting);
+    expect(studyView(nothingDue.state, title).starting).toBe(false);
+    const failed = run([{ type: 'failed', of: 'start' }], starting);
+    expect(studyView(failed.state, title).starting).toBe(false);
+  });
+
   it("doesn't start a session already being started", () => {
     const { state, commands } = run([{ type: 'start' }, { type: 'start' }]);
 

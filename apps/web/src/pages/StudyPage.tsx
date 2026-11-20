@@ -1030,9 +1030,28 @@ function StudyScreen({
   // and once the session is over, Start another session
   const isDeckLoaded = review ? !!todayQuery.data : !!deck;
   const isOver = screen.kind === 'summary';
+
+  // On a touch screen iOS opens the keyboard only for focus given during a
+  // tap, and a session's first card comes once the server answers, so
+  // Start focuses a stand-in field as it's tapped, opening the keyboard,
+  // and the first card's answer takes it over (#140). Nothing to answer
+  // once the start is done, as when nothing is due, and the keyboard goes
+  const isTouchScreen = useMediaQuery('(pointer: coarse)');
+  const keyboardHoldRef = useRef<HTMLInputElement>(null);
+  const holdsKeyboard = () =>
+    !!keyboardHoldRef.current &&
+    document.activeElement === keyboardHoldRef.current;
+  useEffect(() => {
+    if (!view.starting && !isAnswering && holdsKeyboard()) {
+      keyboardHoldRef.current?.blur();
+    }
+  }, [view.starting, isAnswering]);
+
   useEffect(() => {
     if (!isDeckLoaded || exitingCard || isEditing || isAnswering || isOver)
       return;
+    // The stand-in keeps the keyboard until the first card's answer has it
+    if (holdsKeyboard()) return;
     if (lastNavDirection === 'back' && !isAtTitle) {
       backButtonRef.current?.focus();
     } else {
@@ -1072,9 +1091,16 @@ function StudyScreen({
   const titleCardGlows = canStart && isFocusWithin(active, '[data-title-card]');
   const submitGlows =
     !!view.answerInput.trim() && isFocusWithin(active, '[data-answer-form]');
+  // Next as tapped, swiped or clicked
+  function goForward() {
+    if (isTouchScreen && isAtTitle && canStart) {
+      keyboardHoldRef.current?.focus({ preventScroll: true });
+    }
+    slideToNext();
+  }
   const swipe = useSwipe((direction) => {
     if (isEditing) return;
-    if (direction === 'left' && canGoForward) slideToNext();
+    if (direction === 'left' && canGoForward) goForward();
     if (direction === 'right' && canGoPrevious) slideToPrev();
   });
 
@@ -1411,7 +1437,7 @@ function StudyScreen({
                     ? `cursor-pointer ${titleCardGlows ? KEYBOARD_ENTER_GLOW_BORDER : ''}`
                     : ''
                 }
-                onClick={canStart ? slideToNext : undefined}
+                onClick={canStart ? goForward : undefined}
               >
                 <p className="text-3xl font-bold text-white">{title}</p>
                 {titleDetails}
@@ -1466,7 +1492,7 @@ function StudyScreen({
             <Button
               ref={forwardButtonRef}
               id={nextId}
-              onClick={slideToNext}
+              onClick={goForward}
               disabled={!canGoForward}
               variant="ghost"
               size="icon"
@@ -1693,6 +1719,15 @@ function StudyScreen({
         </div>
       </StudyStage>
 
+      {isTouchScreen && (
+        <input
+          ref={keyboardHoldRef}
+          aria-hidden
+          tabIndex={-1}
+          data-keyboard-hold
+          className="pointer-events-none fixed left-0 top-0 h-px w-px text-base opacity-0"
+        />
+      )}
       {keptKeyboardSpace !== null && (
         <div
           aria-hidden

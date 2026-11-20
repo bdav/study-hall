@@ -4760,6 +4760,78 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     expect(keyboardRoom()).toBeNull();
   });
 
+  describe('opening the keyboard as Start is tapped', () => {
+    /** A start the server answers only when the test says. */
+    function pendingStart() {
+      let answer: ((data: typeof mockSession | null) => void) | undefined;
+      vi.mocked(trpc.study.startSession.useMutation).mockImplementation(
+        ((opts?: { onSuccess?: (data: typeof mockSession | null) => void }) =>
+          ({
+            mutate: vi.fn(() => {
+              answer = opts?.onSuccess;
+            }),
+            mutateAsync: vi.fn(),
+          }) as unknown as ReturnType<
+            typeof trpc.study.startSession.useMutation
+          >) as unknown as typeof trpc.study.startSession.useMutation,
+      );
+      return (data: typeof mockSession | null) => act(() => answer?.(data));
+    }
+
+    function touchScreen() {
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        (query) =>
+          ({
+            matches: query === '(pointer: coarse)',
+            media: query,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+          }) as unknown as MediaQueryList,
+      );
+    }
+
+    const keyboardHold = () => document.querySelector('[data-keyboard-hold]');
+
+    it("holds the keyboard open in a stand-in field while the start waits for the server, then hands it to the first card's answer", async () => {
+      setupMocksWithStartSession();
+      const answerStart = pendingStart();
+      touchScreen();
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      // iOS opens the keyboard only for focus given during a tap
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      expect(document.activeElement).toBe(keyboardHold());
+
+      answerStart(mockSession);
+      expect(await screen.findByRole('textbox')).toHaveFocus();
+    });
+
+    it('lets the keyboard close when nothing is due', async () => {
+      setupMocksWithStartSession();
+      const answerStart = pendingStart();
+      touchScreen();
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+      answerStart(null);
+
+      expect(document.activeElement).not.toBe(keyboardHold());
+    });
+
+    it('leaves focus alone with a mouse', async () => {
+      setupMocksWithStartSession();
+      pendingStart();
+      const user = userEvent.setup();
+      renderStudyPage();
+
+      await user.click(screen.getByRole('button', { name: /test deck/i }));
+
+      expect(document.activeElement).not.toBe(keyboardHold());
+    });
+  });
+
   it('leaves a tablet as it is with its keyboard open', async () => {
     setupMocksWithStartSession();
     vi.spyOn(window, 'matchMedia').mockImplementation(

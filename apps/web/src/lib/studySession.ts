@@ -813,6 +813,8 @@ export type StudyView = {
   answerInput: string;
   failure: Failure | null;
   canStart: boolean;
+  /** A start sent and waiting for the server's answer */
+  starting: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
 };
@@ -906,6 +908,7 @@ export function studyView(
     answerInput: state.answerInput,
     failure: state.failure,
     canStart: canStart(state, title),
+    starting: state.session.status === 'starting',
     canGoBack: canGoBack(state),
     canGoForward: canGoForward(state, title),
   };
