@@ -20,7 +20,7 @@ export function useKeyboardRoom() {
     subscribe,
     () =>
       keyboardRoom({
-        windowHeight: window.innerHeight,
+        layoutHeight: document.documentElement.clientHeight,
         viewport: window.visualViewport,
       }),
     () => null,

@@ -4588,9 +4588,11 @@ describe('the glow on what Enter will press (#94)', () => {
 describe("the card kept in view above a phone's keyboard (#140)", () => {
   /**
    * A phone's visual viewport, as Safari gives one: `height` visible of
-   * the window's 768 (jsdom's), `offsetTop` scrolled down within it.
+   * the layout viewport's 768 (jsdom's window), `offsetTop` scrolled down
+   * within it. iOS 26's Safari shrinks the window (`innerHeight`) with the
+   * visual viewport, firing no resize of its own (`windowShrinks`).
    */
-  function phoneViewport() {
+  function phoneViewport({ windowShrinks = false } = {}) {
     const viewport = Object.assign(new EventTarget(), {
       height: 768,
       offsetTop: 0,
@@ -4600,18 +4602,23 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
       configurable: true,
       value: viewport,
     });
+    Object.defineProperty(document.documentElement, 'clientHeight', {
+      configurable: true,
+      value: 768,
+    });
+    const resize = (height: number, offsetTop: number) =>
+      act(() => {
+        Object.assign(viewport, { height, offsetTop });
+        if (windowShrinks)
+          vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(height);
+        viewport.dispatchEvent(new Event('resize'));
+      });
     return {
       openKeyboard(height: number, offsetTop = 0) {
-        act(() => {
-          Object.assign(viewport, { height, offsetTop });
-          viewport.dispatchEvent(new Event('resize'));
-        });
+        resize(height, offsetTop);
       },
       closeKeyboard() {
-        act(() => {
-          Object.assign(viewport, { height: 768, offsetTop: 0 });
-          viewport.dispatchEvent(new Event('resize'));
-        });
+        resize(768, 0);
       },
     };
   }
@@ -4621,6 +4628,7 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
 
   afterEach(() => {
     Reflect.deleteProperty(window, 'visualViewport');
+    Reflect.deleteProperty(document.documentElement, 'clientHeight');
     vi.restoreAllMocks();
   });
 
@@ -4643,6 +4651,24 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     // What's visible, less the answer field below the card and a margin
     expect(cardFace()).toHaveStyle({ maxHeight: '228px' });
     expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  it('fits the card the same in a Safari that shrinks the window with the keyboard, as iOS 26 does', async () => {
+    setupMocksWithStartSession();
+    // An iPhone's numbers from Safari's Web Inspector: 714 tall, 384 with
+    // the keyboard open, the page scrolled 330 down to show the field
+    const phone = phoneViewport({ windowShrinks: true });
+    await start();
+
+    phone.openKeyboard(384, 330);
+
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
+    expect(cardFace()).toHaveStyle({ maxHeight: '272px' });
+    // Room below the page as tall as the keyboard, measured from the layout
+    // viewport, which keeps its height
+    expect(document.querySelector('[data-keyboard-room]')).toHaveStyle({
+      height: '384px',
+    });
   });
 
   it("scrolls the card's top to the top of what's visible as the keyboard opens", async () => {

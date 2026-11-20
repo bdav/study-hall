@@ -1680,7 +1680,9 @@ function StudyScreen({
         <div
           aria-hidden
           data-keyboard-room
-          style={{ height: window.innerHeight - keyboardRoom }}
+          style={{
+            height: document.documentElement.clientHeight - keyboardRoom,
+          }}
         />
       )}
     </CenteredPage>
