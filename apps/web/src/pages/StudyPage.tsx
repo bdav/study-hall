@@ -918,6 +918,22 @@ function StudyScreen({
     roomForCard >= MIN_FITTED_CARD_HEIGHT
       ? roomForCard
       : undefined;
+  // Room below the page as tall as the keyboard, so it can scroll the
+  // fitted card to the top of what's visible. It stays once the keyboard
+  // closes, while cards are on screen, as the page would otherwise be too
+  // short to stay scrolled and drop back to the header with each answer
+  const keyboardSpace =
+    fitRoom !== undefined && keyboardRoom !== null
+      ? document.documentElement.clientHeight - keyboardRoom
+      : null;
+  const [keptKeyboardSpace, setKeptKeyboardSpace] = useState<number | null>(
+    null,
+  );
+  if (keyboardSpace !== null && keyboardSpace !== keptKeyboardSpace) {
+    setKeptKeyboardSpace(keyboardSpace);
+  } else if (!displayCard && keptKeyboardSpace !== null) {
+    setKeptKeyboardSpace(null);
+  }
   const cardAreaRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const cardArea = cardAreaRef.current;
@@ -1677,15 +1693,11 @@ function StudyScreen({
         </div>
       </StudyStage>
 
-      {/* Room below the page as tall as the keyboard, so it can scroll
-          the fitted card to the top of what's visible */}
-      {fitRoom !== undefined && keyboardRoom !== null && (
+      {keptKeyboardSpace !== null && (
         <div
           aria-hidden
           data-keyboard-room
-          style={{
-            height: document.documentElement.clientHeight - keyboardRoom,
-          }}
+          style={{ height: keptKeyboardSpace }}
         />
       )}
     </CenteredPage>

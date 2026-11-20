@@ -4739,6 +4739,27 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     expect(cardFace().getAttribute('style') ?? '').not.toContain('max-height');
   });
 
+  it('keeps the room below the page once the keyboard closes, until the session ends, so the page holds its scroll', async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport();
+    const user = await start();
+    const keyboardRoom = () => document.querySelector('[data-keyboard-room]');
+
+    phone.openKeyboard(340);
+    await user.type(screen.getByRole('textbox'), '4');
+    await user.click(screen.getByRole('button', { name: /submit/i }));
+    phone.closeKeyboard();
+    await findResult();
+
+    // Without it the page would be too short to stay scrolled to the card,
+    // and drop back to the header as each answer closes the keyboard
+    expect(keyboardRoom()).toHaveStyle({ height: '428px' });
+
+    await user.click(screen.getByRole('button', { name: /finish session/i }));
+    await screen.findByRole('heading', { name: /session complete/i });
+    expect(keyboardRoom()).toBeNull();
+  });
+
   it('leaves a tablet as it is with its keyboard open', async () => {
     setupMocksWithStartSession();
     vi.spyOn(window, 'matchMedia').mockImplementation(
