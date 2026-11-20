@@ -922,9 +922,12 @@ function StudyScreen({
   useLayoutEffect(() => {
     const cardArea = cardAreaRef.current;
     if (fitRoom === undefined || !cardArea) return;
-    const visibleTop = window.visualViewport?.offsetTop ?? 0;
-    const offset =
-      cardArea.getBoundingClientRect().top - visibleTop - FITTED_CARD_CLEARANCE;
+    // Both down the page: iOS 26's Safari measures an element's rect from
+    // what's visible, not the layout viewport, so offsetTop would count its
+    // scroll twice
+    const cardTop = cardArea.getBoundingClientRect().top + window.scrollY;
+    const visibleTop = window.visualViewport?.pageTop ?? window.scrollY;
+    const offset = cardTop - visibleTop - FITTED_CARD_CLEARANCE;
     if (Math.abs(offset) > 1) window.scrollBy({ top: offset });
   }, [fitRoom]);
   // An answered card keeps the side it shows; an unanswered one has no back

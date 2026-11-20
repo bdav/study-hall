@@ -4589,13 +4589,17 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
   /**
    * A phone's visual viewport, as Safari gives one: `height` visible of
    * the layout viewport's 768 (jsdom's window), `offsetTop` scrolled down
-   * within it. iOS 26's Safari shrinks the window (`innerHeight`) with the
-   * visual viewport, firing no resize of its own (`windowShrinks`).
+   * within it, `pageTop` down the page. iOS 26's Safari (`ios26`) shrinks
+   * the window (`innerHeight`) with the visual viewport, firing no resize
+   * of its own, and shows the field by scrolling the page itself, so
+   * `scrollY`, `offsetTop` and `pageTop` are all the same, as read in Web
+   * Inspector on an iPhone.
    */
-  function phoneViewport({ windowShrinks = false } = {}) {
+  function phoneViewport({ ios26 = false } = {}) {
     const viewport = Object.assign(new EventTarget(), {
       height: 768,
       offsetTop: 0,
+      pageTop: 0,
       scale: 1,
     });
     Object.defineProperty(window, 'visualViewport', {
@@ -4608,9 +4612,14 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     });
     const resize = (height: number, offsetTop: number) =>
       act(() => {
-        Object.assign(viewport, { height, offsetTop });
-        if (windowShrinks)
+        if (ios26) {
           vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(height);
+          vi.spyOn(window, 'scrollY', 'get').mockReturnValue(offsetTop);
+          Object.assign(viewport, { height, offsetTop, pageTop: offsetTop });
+        } else {
+          const pageTop = window.scrollY + offsetTop;
+          Object.assign(viewport, { height, offsetTop, pageTop });
+        }
         viewport.dispatchEvent(new Event('resize'));
       });
     return {
@@ -4657,7 +4666,7 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
     setupMocksWithStartSession();
     // An iPhone's numbers from Safari's Web Inspector: 714 tall, 384 with
     // the keyboard open, the page scrolled 330 down to show the field
-    const phone = phoneViewport({ windowShrinks: true });
+    const phone = phoneViewport({ ios26: true });
     await start();
 
     phone.openKeyboard(384, 330);
@@ -4685,6 +4694,24 @@ describe("the card kept in view above a phone's keyboard (#140)", () => {
 
     // The card's top 8px below the top of what's visible
     expect(scrollBy).toHaveBeenCalledWith({ top: 180 });
+  });
+
+  it("scrolls the card's top to the top of what's visible in iOS 26's Safari, which measures it from there", async () => {
+    setupMocksWithStartSession();
+    const phone = phoneViewport({ ios26: true });
+    await start();
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+    // The iPhone's numbers: the card's area 182 down the page, read 148
+    // above what's visible once Safari has scrolled 330 down
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: -148, width: 369, height: 259 }),
+    );
+
+    phone.openKeyboard(384, 330);
+
+    // Up 156, the card's top 8px below the top of what's visible, not 486
+    // up, to the top of the page
+    expect(scrollBy).toHaveBeenCalledWith({ top: -156 });
   });
 
   it('shows the card and its arrows as before once the keyboard closes, and once the card is graded', async () => {
