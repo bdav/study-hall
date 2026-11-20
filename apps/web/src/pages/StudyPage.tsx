@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -90,6 +91,13 @@ const ROOM_AROUND_FITTED_CARD = 112;
 const FITTED_CARD_CLEARANCE = 8;
 /** Less room than this, as in a phone held sideways, and the card isn't fitted. */
 const MIN_FITTED_CARD_HEIGHT = 120;
+/**
+ * How long Safari goes on scrolling the page after its keyboard opens or
+ * closes, during which the card is lined up again once it stops, and how
+ * long it must have stopped for.
+ */
+const VIEWPORT_SETTLE_MS = 1000;
+const VIEWPORT_QUIET_MS = 100;
 
 /** Whether a key belongs to a dialog or the card's editor, not the page. */
 function isInDialog(target: EventTarget | null) {
@@ -935,9 +943,10 @@ function StudyScreen({
     setKeptKeyboardSpace(null);
   }
   const cardAreaRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
+  // Scrolls the card's top to just below the top of what's visible
+  const alignCard = useCallback(() => {
     const cardArea = cardAreaRef.current;
-    if (fitRoom === undefined || !cardArea) return;
+    if (!cardArea) return;
     // Both down the page: iOS 26's Safari measures an element's rect from
     // what's visible, not the layout viewport, so offsetTop would count its
     // scroll twice
@@ -945,7 +954,37 @@ function StudyScreen({
     const visibleTop = window.visualViewport?.pageTop ?? window.scrollY;
     const offset = cardTop - visibleTop - FITTED_CARD_CLEARANCE;
     if (Math.abs(offset) > 1) window.scrollBy({ top: offset });
-  }, [fitRoom]);
+  }, []);
+  useLayoutEffect(() => {
+    if (fitRoom !== undefined) alignCard();
+  }, [fitRoom, alignCard]);
+  // Safari goes on scrolling the page for a moment as its keyboard opens
+  // or closes, so once it stops the card is lined up again, the graded one
+  // too, keeping it in place from card to card. Past that, the learner's
+  // own scrolling is left alone
+  const keepsCardInPlace =
+    keptKeyboardSpace !== null && !!displayCard && !isEditing;
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!keepsCardInPlace || !viewport) return;
+    let settlesBy = performance.now() + VIEWPORT_SETTLE_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function onChange(e: Event) {
+      if (e.type === 'resize') {
+        settlesBy = performance.now() + VIEWPORT_SETTLE_MS;
+      }
+      if (performance.now() > settlesBy) return;
+      clearTimeout(timer);
+      timer = setTimeout(alignCard, VIEWPORT_QUIET_MS);
+    }
+    viewport.addEventListener('resize', onChange);
+    viewport.addEventListener('scroll', onChange);
+    return () => {
+      viewport.removeEventListener('resize', onChange);
+      viewport.removeEventListener('scroll', onChange);
+      clearTimeout(timer);
+    };
+  }, [keepsCardInPlace, alignCard]);
   // An answered card keeps the side it shows; an unanswered one has no back
   // outside edit mode
   const editorShowsBack = displayResult
