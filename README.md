@@ -76,6 +76,7 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | ----------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`          | —                   | Postgres connection string (set in `.env`)                                                                                 |
 | `PORT`                  | `3001`              | Port the API listens on                                                                                                    |
+| `HOST`                  | `127.0.0.1` (dev)   | Address the API listens on; unset in production, every interface                                                           |
 | `CORS_ORIGIN`           | `localhost:*` (dev) | Allowed CORS origin for the API; unset in production, none                                                                 |
 | `ANTHROPIC_API_KEY`     | —                   | Anthropic API key for course features (AI calls only)                                                                      |
 | `SIGNUP_ALLOWED_EMAILS` | — (nobody)          | Comma-separated emails allowed to make an account; the seed's login doesn't need it                                        |
@@ -106,7 +107,7 @@ A variable that 1Password provides overrides the same variable in `.env`.
 
 ### Optional: on a phone
 
-`pnpm dev:phone` (or `pnpm dev:phone:op`, with 1Password) serves the dev app to a phone on the same Wi-Fi network as the Mac. It prints the address to open, the Mac's network address on port 5173; the web app calls the API there, which allows that origin alone, so open the same address on the Mac too, not localhost. Allow incoming connections if macOS asks. Edits reload on the phone as they do on the Mac, and Safari's Web Inspector (Develop menu, with Web Inspector turned on in the iPhone's Settings → Apps → Safari → Advanced) shows its console.
+`pnpm dev:phone` (or `pnpm dev:phone:op`, with 1Password) serves the dev app to a phone on the same Wi-Fi network as the Mac. Both servers listen on the Mac's Wi-Fi address alone, which it prints, on port 5173 for the web app; the web app calls the API there, which allows that origin alone, so open the same address on the Mac too, not localhost. Anyone on the network can reach them while it runs, so use it only on a network you trust, and only while checking something on a phone; `pnpm dev` listens on the Mac alone. Allow incoming connections if macOS asks. Edits reload on the phone as they do on the Mac, and Safari's Web Inspector (Develop menu, with Web Inspector turned on in the iPhone's Settings → Apps → Safari → Advanced) shows its console.
 
 ## Repo Structure
 

@@ -27,6 +27,7 @@ Secrets live only in the hosts' settings, with 1Password as the maintainer's own
 | `DATABASE_URL`          | The Postgres connection string. Also needed to run `prisma generate`, which doesn't connect                                    |
 | `NODE_ENV`              | `production`. Marks the login cookie `Secure`, makes the seed refuse to run, and skips dev dependencies on install             |
 | `PORT`                  | The port to listen on, set by Railway. 3001 when unset                                                                         |
+| `HOST`                  | Leave unset: the API then listens on every interface, as Railway's proxy needs. Outside production, unset means `127.0.0.1`    |
 | `CORS_ORIGIN`           | The web app's address, `https://study.beaudavenport.com`. Unset in production, no site can call the API; in dev, localhost can |
 | `ANTHROPIC_API_KEY`     | Production's own key, in its own Anthropic workspace. Read by the Anthropic SDK; only AI calls need it                         |
 | `SIGNUP_ALLOWED_EMAILS` | Comma-separated emails that may make an account. Unset, nobody can. Never grants AI                                            |
