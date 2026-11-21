@@ -109,11 +109,19 @@ function isComplete(row: Row) {
   return row.front.trim() !== '' && row.canonicalAnswer.trim() !== '';
 }
 
+/**
+ * The box of an After field's text, which a Before line shares, so its text
+ * is level with the text in the field beside it, and its front and answer
+ * read as two lines apart where they stack.
+ */
+const lineBoxClassName = 'border-b-2 py-1';
+
 /** An After field that wraps and grows with its text, kept to one line. */
 function AfterField(props: {
   value: string;
   onChange: (value: string) => void;
   label: string;
+  className?: string;
 }) {
   return (
     <textarea
@@ -124,10 +132,16 @@ function AfterField(props: {
         if (e.key === 'Enter') e.preventDefault();
       }}
       aria-label={props.label}
-      className={`field-sizing-content w-full resize-none px-2.5 py-1 text-base outline-none pointer-coarse:min-h-touch md:text-sm ${glassInputClassName}`}
+      className={`field-sizing-content w-full resize-none px-2.5 text-base outline-none pointer-coarse:min-h-touch md:text-sm ${lineBoxClassName} ${glassInputClassName} ${props.className ?? ''}`}
     />
   );
 }
+
+/**
+ * A Before line, boxed as an After field is, without its look; its text the
+ * field's size where the two sit side by side, from sm to md.
+ */
+const beforeLineClassName = `min-w-0 break-words border-transparent text-sm sm:max-md:text-base ${lineBoxClassName}`;
 
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
@@ -246,50 +260,64 @@ export function ReviseCardsDialog({
                     className="size-4 accent-white"
                   />
                 </label>
-                <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
-                  <div className="min-w-0 text-sm">
-                    <p className="text-xs text-white/50">
-                      {action === 'DELETE' ? 'Delete' : 'Before'}
+                {action === 'DELETE' ? (
+                  <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+                    <div className="min-w-0 text-sm">
+                      <p className="text-xs text-white/50">Delete</p>
+                      <p className="break-words text-white/80 line-through">
+                        {before.front}
+                      </p>
+                      <p className="break-words text-white/60 line-through">
+                        {before.canonicalAnswer}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  // Stacked below sm, Before above After; from sm, row by
+                  // row, each Before line level with its After field.
+                  <div className="grid min-w-0 flex-1 grid-cols-1 items-start sm:grid-cols-2 sm:gap-x-3">
+                    <p className="text-xs text-white/50 sm:col-start-1 sm:row-start-1">
+                      Before
                     </p>
                     <p
-                      className={`break-words text-white/80 ${action === 'DELETE' ? 'line-through' : ''}`}
+                      className={`${beforeLineClassName} text-white/80 sm:col-start-1 sm:row-start-2`}
                     >
                       {before.front}
                     </p>
                     <p
-                      className={`break-words text-white/60 ${action === 'DELETE' ? 'line-through' : ''}`}
+                      className={`${beforeLineClassName} text-white/60 sm:col-start-1 sm:row-start-3`}
                     >
                       {before.canonicalAnswer}
                     </p>
+                    <p className="mt-3 text-xs text-white/50 sm:col-start-2 sm:row-start-1 sm:mt-0">
+                      After
+                    </p>
+                    <AfterField
+                      value={row.front}
+                      onChange={(front) => updateRow(i, { front })}
+                      label={`Change ${n} front`}
+                      className="sm:col-start-2 sm:row-start-2"
+                    />
+                    <AfterField
+                      value={row.canonicalAnswer}
+                      onChange={(canonicalAnswer) =>
+                        updateRow(i, { canonicalAnswer })
+                      }
+                      label={`Change ${n} answer`}
+                      className="sm:col-start-2 sm:row-start-3"
+                    />
+                    {clearedVariants > 0 && (
+                      <p className="mt-1 text-xs text-white/50 sm:col-start-2 sm:row-start-4">
+                        Clears{' '}
+                        {plural(
+                          clearedVariants,
+                          'accepted variant',
+                          'accepted variants',
+                        )}
+                      </p>
+                    )}
                   </div>
-                  {action === 'EDIT' && (
-                    <div className="min-w-0">
-                      <p className="text-xs text-white/50">After</p>
-                      <AfterField
-                        value={row.front}
-                        onChange={(front) => updateRow(i, { front })}
-                        label={`Change ${n} front`}
-                      />
-                      <AfterField
-                        value={row.canonicalAnswer}
-                        onChange={(canonicalAnswer) =>
-                          updateRow(i, { canonicalAnswer })
-                        }
-                        label={`Change ${n} answer`}
-                      />
-                      {clearedVariants > 0 && (
-                        <p className="mt-1 text-xs text-white/50">
-                          Clears{' '}
-                          {plural(
-                            clearedVariants,
-                            'accepted variant',
-                            'accepted variants',
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
               </li>
             );
           })}

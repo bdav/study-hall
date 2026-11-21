@@ -104,6 +104,26 @@ describe('ReviseCardsDialog', () => {
     expect(within(hello).queryByRole('textbox')).not.toBeInTheDocument();
   });
 
+  it('reads each edit as Before, its front and answer, then After and its fields', () => {
+    renderDialog();
+
+    const [seven] = screen.getAllByTestId('card-change');
+    const inOrder = [
+      within(seven).getByText('Before'),
+      within(seven).getByText("Italian for 'seven' (double t)"),
+      within(seven).getByText('sette', { selector: 'p' }),
+      within(seven).getByText('After'),
+      within(seven).getByLabelText('Change 1 front'),
+      within(seven).getByLabelText('Change 1 answer'),
+    ];
+    inOrder.slice(1).forEach((element, i) => {
+      expect(
+        inOrder[i].compareDocumentPosition(element) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
   it("shows the learner's instruction", () => {
     renderDialog();
 
