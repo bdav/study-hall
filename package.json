@@ -13,6 +13,8 @@
     "dev:api": "pnpm --filter api dev",
     "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:op": "concurrently \"op run --env-file=.env.1password -- pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:phone": "sh scripts/dev-phone.sh \"pnpm dev:api\"",
+    "dev:phone:op": "sh scripts/dev-phone.sh \"op run --env-file=.env.1password -- pnpm dev:api\"",
     "start": "pnpm --filter api start",
     "judge-eval": "pnpm --filter api judge-eval",
     "judge-eval:op": "op run --env-file=.env.1password -- pnpm --filter api judge-eval",

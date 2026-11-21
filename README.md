@@ -51,6 +51,8 @@ Log in with the seed account: **dev@example.com** / **password** (dev only — d
 | ------------------------------ | -------------------------------------- |
 | `pnpm dev`                     | Start both API and web dev servers     |
 | `pnpm dev:op`                  | `pnpm dev` with secrets from 1Password |
+| `pnpm dev:phone`               | `pnpm dev`, served to a phone          |
+| `pnpm dev:phone:op`            | `pnpm dev:phone` with 1Password        |
 | `pnpm dev:api`                 | Start API server only (port 3001)      |
 | `pnpm dev:web`                 | Start web dev server only (port 5173)  |
 | `pnpm start`                   | Start the API without watching files   |
@@ -101,6 +103,10 @@ Instead of putting `ANTHROPIC_API_KEY` in `.env`, you can keep it in 1Password a
    ```
 
 A variable that 1Password provides overrides the same variable in `.env`.
+
+### Optional: on a phone
+
+`pnpm dev:phone` (or `pnpm dev:phone:op`, with 1Password) serves the dev app to a phone on the same Wi-Fi network as the Mac. It prints the address to open, the Mac's network address on port 5173; the web app calls the API there, which allows that origin alone, so open the same address on the Mac too, not localhost. Allow incoming connections if macOS asks. Edits reload on the phone as they do on the Mac, and Safari's Web Inspector (Develop menu, with Web Inspector turned on in the iPhone's Settings → Apps → Safari → Advanced) shows its console.
 
 ## Repo Structure
 
